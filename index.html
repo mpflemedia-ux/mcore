@@ -1491,12 +1491,12 @@ async function _crmDelete(id, name) {
 async function renderCustomerForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Tambah Pelanggan', editTitle:'Edit Pelanggan', save:'Simpan', cancel:'Batal',
-    name:'Nama *', email:'Emel', phone:'No. Telefon', ic:'No. IC', dob:'Tarikh Lahir',
+    name:'Nama *', email:'Emel', phone:'No. Telefon',
     addr:'Alamat', city:'Bandar', state:'Negeri', postcode:'Poskod',
     notes:'Nota', saving:'Menyimpan...'
   } : {
     addTitle:'Add Customer', editTitle:'Edit Customer', save:'Save', cancel:'Cancel',
-    name:'Name *', email:'Email', phone:'Phone', ic:'IC Number', dob:'Date of Birth',
+    name:'Name *', email:'Email', phone:'Phone',
     addr:'Address', city:'City', state:'State', postcode:'Postcode',
     notes:'Notes', saving:'Saving...'
   }
@@ -1531,17 +1531,9 @@ async function renderCustomerForm(id=null) {
         <label class="form-label">${t.phone}</label>
         <input id="cf-phone" type="text" class="form-input" value="${cust.phone||''}" placeholder="+601X-XXXXXXX">
       </div>
-      <div class="form-group">
-        <label class="form-label">${t.ic}</label>
-        <input id="cf-ic" type="text" class="form-input" value="${cust.ic_no||''}" placeholder="XXXXXX-XX-XXXX">
-      </div>
-      <div class="form-group">
-        <label class="form-label">${t.dob}</label>
-        <input id="cf-dob" type="date" class="form-input" value="${cust.dob||''}">
-      </div>
       <div class="form-group" style="grid-column:1/-1">
         <label class="form-label">${t.addr}</label>
-        <input id="cf-addr" type="text" class="form-input" value="${cust.address||''}" placeholder="No, Jalan, Taman...">
+        <input id="cf-addr" type="text" class="form-input" value="${cust.address_line1||''}" placeholder="No, Jalan, Taman...">
       </div>
       <div class="form-group">
         <label class="form-label">${t.city}</label>
@@ -1582,9 +1574,7 @@ async function _crmSave(id) {
     name,
     email: document.getElementById('cf-email').value.trim()||null,
     phone: document.getElementById('cf-phone').value.trim()||null,
-    ic_no: document.getElementById('cf-ic').value.trim()||null,
-    dob: document.getElementById('cf-dob').value||null,
-    address: document.getElementById('cf-addr').value.trim()||null,
+    address_line1: document.getElementById('cf-addr').value.trim()||null,
     city: document.getElementById('cf-city').value.trim()||null,
     postcode: document.getElementById('cf-postcode').value.trim()||null,
     state: document.getElementById('cf-state').value||null,
@@ -1599,7 +1589,6 @@ async function _crmSave(id) {
     const res = await sb.from('customers').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
     error = res.error
   } else {
-    payload.created_by = APP.user.id
     const res = await sb.from('customers').insert(payload)
     error = res.error
   }
@@ -1649,9 +1638,7 @@ async function renderCustomerDetail(id) {
         ${[
           ['ti-mail', cust.email],
           ['ti-phone', cust.phone],
-          ['ti-id-badge', cust.ic_no],
-          ['ti-cake', cust.dob ? new Date(cust.dob).toLocaleDateString('en-MY') : null],
-          ['ti-map-pin', [cust.address, cust.city, cust.postcode, cust.state].filter(Boolean).join(', ')],
+          ['ti-map-pin', [cust.address_line1, cust.city, cust.postcode, cust.state].filter(Boolean).join(', ')],
           ['ti-note', cust.notes]
         ].filter(([,v])=>v).map(([icon,val])=>`
           <div style="display:flex;gap:10px;align-items:flex-start">
