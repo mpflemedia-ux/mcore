@@ -98,9 +98,27 @@ MPERS (Malaysia Private Entities Reporting Standard) — Statement of Financial 
 - Primary: #2563EB | Secondary: #7C3AED | Success: #16A34A | Warning: #D97706 | Danger: #DC2626
 - Font: Inter | Dark/Light guna CSS variables (`data-theme` attribute)
 
+## Testing / Preview Workflow
+Tiada local dev server — perubahan di-test dengan push terus ke GitHub, then verify live di **mpflemedia-ux.github.io/nexerp**. Bila buat perubahan:
+1. Commit + push ke branch `main`
+2. Tunggu GitHub Pages rebuild (biasanya <1 minit)
+3. Refresh mpflemedia-ux.github.io/nexerp untuk verify perubahan
+4. Kalau perubahan besar/berisiko (contoh: ubah struktur APP/LANG, ubah auth flow), bagitau dulu sebelum push supaya boleh direview dulu
+
+## Keselamatan API Key
+- `SUPABASE_URL` dan `SUPABASE_ANON` key **memang sengaja hardcoded** dalam index.html — ini normal untuk Supabase, sebab anon key direka untuk expose client-side. Proteksi sebenar datang dari **RLS (Row Level Security) policies** kat Supabase DB level, bukan dari sembunyi key ni.
+- **PENTING:** sebab tu RLS policies untuk setiap table WAJIB enforce tenant isolation betul-betul — kalau RLS ada gap, satu tenant boleh nampak/edit data tenant lain walaupun app-level check (canAccess, tenant_id filter) dah betul.
+- Groq API key **jangan** hardcode terus dalam index.html macam Supabase anon key — key AI provider macam ni ialah secret sebenar (bukan public-facing macam Supabase anon key). Kalau perlu panggil Groq, guna Supabase Edge Function sebagai proxy supaya key tak terdedah kat client.
+
+## Struktur Fail — JANGAN SPLIT
+index.html adalah **single-file** (HTML+CSS+JS sekali, macam pattern MP WorkSpace). Jangan cadangkan atau buat refactor ke multiple files, component-based structure, atau framework (React/Vue/dll) walaupun untuk "code cleanliness" — ini rule sengaja, bukan technical debt.
+
+## "Jangan Sentuh" Tanpa Confirm Dulu
+Struktur `APP` object dan `LANG` object dipakai across semua module (CRM, Sales, POS, Inventory, Accounting, Reports). Kalau nak ubah struktur asas ni (contoh: tambah/tukar key dalam APP.tenant atau APP.user), kena check dan bagitau impact ke semua module lain dulu sebelum ubah — sebab satu perubahan struktur boleh break banyak render function sekali gus.
+
 ## Git
 - Commit format: `feat/fix/ui/db/docs: description`
-- Repo public — jangan commit API key/secret dalam kod
+- Repo public — jangan commit API key/secret (selain Supabase anon key yang memang sengaja public) dalam kod
 
 ## Bahasa Komunikasi
 Bila reply dalam chat/PR description, guna Bahasa Melayu Malaysia — tidak formal tapi sopan, guna "aku/kau".
