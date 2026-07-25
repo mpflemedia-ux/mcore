@@ -717,7 +717,7 @@ function showToast(msg,type='info') {
   setTimeout(()=>{ t.classList.add('removing'); setTimeout(()=>t.remove(),300) },3500)
 }
 
-function auditLog(action,table,id) { sb.rpc('log_audit',{p_action:action,p_table_name:table,p_record_id:String(id)}).catch(()=>{}) }
+function auditLog(action,table,id) { sb.rpc('log_audit',{p_action:action,p_table_name:table,p_record_id:String(id)}).then(()=>{}, ()=>{}) }
 
 function togglePw(id, iconEl) {
   const input = document.getElementById(id)
@@ -2121,7 +2121,7 @@ async function _jnlSave(id) {
     if(error) { btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save'; errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     await sb.from('journal_lines').delete().eq('journal_entry_id', id)
   } else {
-    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).catch(()=>({data:null}))
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).then(r=>r, ()=>({data:null}))
     entryPayload.entry_no = refData || ('JNL-'+Date.now())
     entryPayload.created_by = APP.user.id
     const {data, error} = await sb.from('journal_entries').insert(entryPayload).select('id').single()
@@ -2638,7 +2638,7 @@ async function _invSave(id) {
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     await sb.from('invoice_items').delete().eq('invoice_id', id)
   } else {
-    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).catch(()=>({data:null}))
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).then(r=>r, ()=>({data:null}))
     payload.ref_no = refData || ('INV-'+Date.now())
     payload.status = 'unpaid'; payload.paid_amt = 0
     const {data, error} = await sb.from('invoices').insert(payload).select('id').single()
@@ -2730,7 +2730,7 @@ async function _paySave(invoiceId, balance) {
   const {data: inv} = await sb.from('invoices').select('ref_no,customer_id,customer_name,total,paid_amt').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { errEl.textContent='Invoice not found.'; errEl.style.display='block'; return }
 
-  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).catch(()=>({data:null}))
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).then(r=>r, ()=>({data:null}))
   const {data: payment, error} = await sb.from('payments').insert({
     tenant_id: APP.tenant.id, ref_no: refData || ('RCP-'+Date.now()), payment_type: 'receipt',
     customer_id: inv.customer_id, customer_name: inv.customer_name,
@@ -2853,7 +2853,7 @@ async function _quoSave(id) {
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     await sb.from('quotation_items').delete().eq('quotation_id', id)
   } else {
-    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'QUO'}).catch(()=>({data:null}))
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'QUO'}).then(r=>r, ()=>({data:null}))
     payload.ref_no = refData || ('QUO-'+Date.now())
     payload.status = 'draft'
     const {data, error} = await sb.from('quotations').insert(payload).select('id').single()
@@ -2877,7 +2877,7 @@ async function _quoConvert(quoId) {
   const {data: items} = await sb.from('quotation_items').select('*').eq('quotation_id',quoId)
   if(!quo || !items || items.length===0) { showToast('Nothing to convert', 'error'); return }
 
-  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).catch(()=>({data:null}))
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).then(r=>r, ()=>({data:null}))
   const {data: newInv, error} = await sb.from('invoices').insert({
     tenant_id: APP.tenant.id, customer_id: quo.customer_id, customer_name: quo.customer_name, ref_no: refData || ('INV-'+Date.now()),
     issue_date: new Date().toISOString().slice(0,10), total: quo.total, status:'unpaid', paid_amt:0
@@ -3004,7 +3004,7 @@ async function _posCheckout() {
   const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
   const method = document.getElementById('pos-method').value
 
-  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).catch(()=>({data:null}))
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).then(r=>r, ()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
     tenant_id: APP.tenant.id, session_id: session.id, receipt_no: refData || ('POS-'+Date.now()),
     total: total, payment_method: method, txn_type: 'sale', status: 'completed'
