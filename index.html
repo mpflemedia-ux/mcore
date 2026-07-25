@@ -1898,9 +1898,11 @@ async function _coaSave(id) {
   errEl.style.display='none'
   if(!code || !name) { errEl.textContent=t.codeRequired; errEl.style.display='block'; return }
 
+  const accountType = document.getElementById('cf-type').value
   const payload = {
     tenant_id: APP.tenant.id, code, name_en: name,
-    account_type: document.getElementById('cf-type').value,
+    account_type: accountType,
+    account_class: ['asset','liability','equity'].includes(accountType) ? 'balance_sheet' : 'income_statement',
     is_active: document.getElementById('cf-active').checked,
     updated_at: new Date().toISOString()
   }
