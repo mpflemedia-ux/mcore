@@ -1103,11 +1103,16 @@ async function loadDashboardData() {
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth()-5, 1)
 
-  const {data: allInv} = await sb.from('invoices')
+  const {data: allInv, error: invError} = await sb.from('invoices')
     .select('id,inv_no,inv_date,total_amount,paid_amount,status,customer_id,customers(name)')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .gte('inv_date', sixMonthsAgo.toISOString().slice(0,10))
     .order('inv_date', {ascending:true})
+
+  if(invError) {
+    console.error('loadDashboardData invoices query error:', invError)
+    showToast((isBm?'Gagal muatkan data invois: ':'Failed to load invoice data: ')+invError.message, 'error')
+  }
 
   const inv = allInv || []
   _dbInvCache = inv
