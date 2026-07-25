@@ -2674,8 +2674,7 @@ async function renderInvDetail(id) {
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
-  // payments table has no invoice_id FK (schema uses customer-level receipts) — approximated by customer_id until payment_allocations is wired up
-  const {data: payments} = await sb.from('payments').select('*').eq('customer_id',inv.customer_id).eq('tenant_id',APP.tenant.id).order('payment_date',{ascending:false})
+  const {data: allocations} = await sb.from('payment_allocations').select('amount,payments(payment_date,payment_method)').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
@@ -2716,9 +2715,9 @@ async function renderInvDetail(id) {
   </div>` : ''}
   <div class="card" style="max-width:900px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
-    ${(!payments||payments.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
+    ${(!allocations||allocations.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
     `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th></tr></thead>
-    <tbody>${payments.map(p=>`<tr><td>${formatDate(p.payment_date)}</td><td style="text-align:right">${formatRM(p.amount)}</td><td>${p.payment_method||'-'}</td></tr>`).join('')}</tbody></table>`}
+    <tbody>${allocations.map(a=>`<tr><td>${formatDate(a.payments?.payment_date)}</td><td style="text-align:right">${formatRM(a.amount)}</td><td>${a.payments?.payment_method||'-'}</td></tr>`).join('')}</tbody></table>`}
   </div>`
 }
 
@@ -2732,14 +2731,19 @@ async function _paySave(invoiceId, balance) {
   if(!inv) { errEl.textContent='Invoice not found.'; errEl.style.display='block'; return }
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).catch(()=>({data:null}))
-  const {error} = await sb.from('payments').insert({
+  const {data: payment, error} = await sb.from('payments').insert({
     tenant_id: APP.tenant.id, ref_no: refData || ('RCP-'+Date.now()), payment_type: 'receipt',
     customer_id: inv.customer_id, customer_name: inv.customer_name,
     payment_date: document.getElementById('pay-date').value,
     payment_method: document.getElementById('pay-method').value,
     amount, status: 'completed', notes: 'Invoice '+inv.ref_no, created_by: APP.user.id
-  })
+  }).select('id').single()
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+
+  const {error: allocErr} = await sb.from('payment_allocations').insert({
+    tenant_id: APP.tenant.id, payment_id: payment.id, invoice_id: invoiceId, amount
+  })
+  if(allocErr) { errEl.textContent='Error: '+allocErr.message; errEl.style.display='block'; return }
 
   const newPaid = Number(inv.paid_amt||0) + amount
   const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
@@ -2997,12 +3001,12 @@ async function _posCheckout() {
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).catch(()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
-    tenant_id: APP.tenant.id, trans_no: refData || ('POS-'+Date.now()),
-    total_amount: total, payment_method: method
+    tenant_id: APP.tenant.id, receipt_no: refData || ('POS-'+Date.now()),
+    total: total, payment_method: method
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
-  const itemsPayload = _posCart.map(c => ({ pos_transaction_id: trans.id, product_id: c.product_id, qty: c.qty, unit_price: c.unit_price, amount: c.qty*Number(c.unit_price||0) }))
+  const itemsPayload = _posCart.map(c => ({ tenant_id: APP.tenant.id, txn_id: trans.id, product_id: c.product_id, name: c.name, qty: c.qty, unit_price: c.unit_price, line_total: c.qty*Number(c.unit_price||0) }))
   await sb.from('pos_transaction_items').insert(itemsPayload)
 
   for(const c of _posCart) {
