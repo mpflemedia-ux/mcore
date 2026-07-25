@@ -2355,9 +2355,9 @@ async function _invLoad() {
   const t = APP.language==='bm' ? { sku:'SKU', name:'Nama Produk', price:'Harga Jual', cost:'Kos', stock:'Stok', noData:'Tiada produk lagi', noResult:'Tiada hasil', edit:'Edit', del:'Padam' }
     : { sku:'SKU', name:'Product Name', price:'Sell Price', cost:'Cost', stock:'Stock', noData:'No products yet', noResult:'No results', edit:'Edit', del:'Delete' }
   const wrap = document.getElementById('inv-table-wrap')
-  let q = sb.from('products').select('id,sku,name,unit_price,cost_price,stock_qty,unit')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name')
-  if(_invState.search) { const s=_invState.search.trim(); q = q.or(`sku.ilike.%${s}%,name.ilike.%${s}%`) }
+  let q = sb.from('products').select('id,code,name_en,unit_price,unit_cost,stock_qty,unit')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name_en')
+  if(_invState.search) { const s=_invState.search.trim(); q = q.or(`code.ilike.%${s}%,name_en.ilike.%${s}%`) }
   const {data, error} = await q
   _invState.data = data || []
   if(!wrap) return
@@ -2365,13 +2365,13 @@ async function _invLoad() {
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_invState.search?t.noResult:t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.sku}</th><th>${t.name}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.stock}</th><th style="width:100px"></th></tr></thead>
   <tbody>${data.map(p=>`<tr>
-    <td>${p.sku||'-'}</td><td><strong>${p.name}</strong></td>
+    <td>${p.code||'-'}</td><td><strong>${p.name_en}</strong></td>
     <td style="text-align:right">${formatRM(p.unit_price)}</td>
-    <td style="text-align:right;color:var(--text-2)">${formatRM(p.cost_price)}</td>
+    <td style="text-align:right;color:var(--text-2)">${formatRM(p.unit_cost)}</td>
     <td style="text-align:right;${Number(p.stock_qty)<=5?'color:var(--danger);font-weight:600':''}">${p.stock_qty ?? 0} ${p.unit||''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('inventory',{view:'product-form',id:'${p.id}'})"><i class="ti ti-edit"></i></button>
-      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_invDelete('${p.id}','${(p.name||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_invDelete('${p.id}','${(p.name_en||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td>
   </tr>`).join('')}</tbody></table>`
 }
@@ -2403,11 +2403,11 @@ async function renderProductForm(id=null) {
   <div class="card" style="max-width:600px">
     <div id="pf-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div class="form-group"><label class="form-label">${t.sku}</label><input id="pf-sku" type="text" class="form-input" value="${prod.sku||''}"></div>
+      <div class="form-group"><label class="form-label">${t.sku}</label><input id="pf-sku" type="text" class="form-input" value="${prod.code||''}"></div>
       <div class="form-group"><label class="form-label">${t.unit}</label><input id="pf-unit" type="text" class="form-input" value="${prod.unit||'pcs'}"></div>
-      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="pf-name" type="text" class="form-input" value="${prod.name||''}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="pf-name" type="text" class="form-input" value="${prod.name_en||''}"></div>
       <div class="form-group"><label class="form-label">${t.price}</label><input id="pf-price" type="number" step="0.01" class="form-input" value="${prod.unit_price||''}"></div>
-      <div class="form-group"><label class="form-label">${t.cost}</label><input id="pf-cost" type="number" step="0.01" class="form-input" value="${prod.cost_price||''}"></div>
+      <div class="form-group"><label class="form-label">${t.cost}</label><input id="pf-cost" type="number" step="0.01" class="form-input" value="${prod.unit_cost||''}"></div>
       <div class="form-group"><label class="form-label">${t.stock}</label><input id="pf-stock" type="number" class="form-input" value="${prod.stock_qty ?? 0}"></div>
     </div>
     <div style="padding:0 20px 20px;display:flex;gap:12px">
@@ -2425,8 +2425,8 @@ async function _prodSave(id) {
   errEl.style.display='none'
   if(!name || !price) { errEl.textContent=t.required; errEl.style.display='block'; return }
   const payload = {
-    tenant_id: APP.tenant.id, sku: document.getElementById('pf-sku').value.trim()||null, name,
-    unit_price: Number(price), cost_price: Number(document.getElementById('pf-cost').value||0),
+    tenant_id: APP.tenant.id, code: document.getElementById('pf-sku').value.trim()||null, name_en: name,
+    unit_price: Number(price), unit_cost: Number(document.getElementById('pf-cost').value||0),
     stock_qty: Number(document.getElementById('pf-stock').value||0), unit: document.getElementById('pf-unit').value.trim()||'pcs',
     updated_at: new Date().toISOString()
   }
@@ -2446,14 +2446,14 @@ async function renderStockMovements() {
   ${_invTabs('stock')}
   <div class="card"><div id="stock-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('stock-table-wrap')
-  const {data, error} = await sb.from('stock_movements').select('id,type,qty,note,created_at,products(name)')
+  const {data, error} = await sb.from('stock_movements').select('id,type,qty,note,created_at,products(name_en)')
     .eq('tenant_id', APP.tenant.id).order('created_at',{ascending:false}).limit(100)
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.product}</th><th>${t.type}</th><th style="text-align:right">${t.qty}</th><th>${t.note}</th></tr></thead>
   <tbody>${data.map(m=>`<tr>
     <td style="color:var(--text-3);font-size:12px">${m.created_at?new Date(m.created_at).toLocaleString('en-MY'):'-'}</td>
-    <td>${m.products?.name||'-'}</td>
+    <td>${m.products?.name_en||'-'}</td>
     <td><span style="color:${m.type==='in'?'var(--success)':'var(--danger)'}">${m.type==='in'?t.in:t.out}</span></td>
     <td style="text-align:right">${m.qty}</td>
     <td style="color:var(--text-2)">${m.note||'-'}</td>
@@ -2484,7 +2484,7 @@ function _salesTabs(active) {
 let _slItems = []
 let _slProducts = []
 async function _slLoadProducts() {
-  const {data} = await sb.from('products').select('id,sku,name,unit_price').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name')
+  const {data} = await sb.from('products').select('id,code,name_en,unit_price').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _slProducts = data || []
 }
 function _slAddItem() { _slItems.push({product_id:'',description:'',qty:1,unit_price:0}); _slRenderItems() }
@@ -2492,7 +2492,7 @@ function _slRemoveItem(i) { _slItems.splice(i,1); _slRenderItems() }
 function _slPickProduct(i, productId) {
   const p = _slProducts.find(x=>x.id===productId)
   _slItems[i].product_id = productId
-  if(p) { _slItems[i].description = p.name; _slItems[i].unit_price = p.unit_price }
+  if(p) { _slItems[i].description = p.name_en; _slItems[i].unit_price = p.unit_price }
   _slRenderItems()
 }
 function _slRenderItems() {
@@ -2504,7 +2504,7 @@ function _slRenderItems() {
     <td style="min-width:160px">
       <select class="form-select" onchange="_slPickProduct(${i},this.value)">
         <option value="">-- ${APP.language==='bm'?'Custom':'Custom'} --</option>
-        ${_slProducts.map(p=>`<option value="${p.id}" ${it.product_id===p.id?'selected':''}>${p.name}</option>`).join('')}
+        ${_slProducts.map(p=>`<option value="${p.id}" ${it.product_id===p.id?'selected':''}>${p.name_en}</option>`).join('')}
       </select>
     </td>
     <td><input type="text" class="form-input" value="${it.description||''}" oninput="_slItems[${i}].description=this.value"></td>
@@ -2910,7 +2910,7 @@ async function renderPOS() {
     total:'Grand Total', checkout:'Checkout', clear:'Clear', method:'Payment Method',
     confirm:'Confirm Payment', cancel:'Cancel', noProducts:'No products'
   }
-  const {data} = await sb.from('products').select('id,sku,name,unit_price,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name')
+  const {data} = await sb.from('products').select('id,code,name_en,unit_price,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = data || []
   _posCart = []
 
@@ -2951,12 +2951,12 @@ function _posFilterProducts(val) { _posSearch = val.toLowerCase(); _posRenderGri
 function _posRenderGrid() {
   const grid = document.getElementById('pos-grid')
   if(!grid) return
-  const list = _posProducts.filter(p => !_posSearch || p.name.toLowerCase().includes(_posSearch) || (p.sku||'').toLowerCase().includes(_posSearch))
+  const list = _posProducts.filter(p => !_posSearch || p.name_en.toLowerCase().includes(_posSearch) || (p.code||'').toLowerCase().includes(_posSearch))
   if(list.length===0) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:30px"><p>No products</p></div>`; return }
   grid.innerHTML = list.map(p => `
     <div onclick="_posAddToCart('${p.id}')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${p.name}</div>
-      <div style="color:var(--text-3);font-size:11px;margin-bottom:6px">${p.sku||''}</div>
+      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${p.name_en}</div>
+      <div style="color:var(--text-3);font-size:11px;margin-bottom:6px">${p.code||''}</div>
       <div style="font-weight:700;color:var(--primary)">${formatRM(p.unit_price)}</div>
       <div style="font-size:11px;color:${Number(p.stock_qty)<=5?'var(--danger)':'var(--text-3)'}">Stock: ${p.stock_qty ?? 0}</div>
     </div>`).join('')
@@ -2967,7 +2967,7 @@ function _posAddToCart(productId) {
   if(!p) return
   const existing = _posCart.find(c=>c.product_id===productId)
   if(existing) existing.qty++
-  else _posCart.push({product_id:p.id, name:p.name, unit_price:p.unit_price, qty:1})
+  else _posCart.push({product_id:p.id, name:p.name_en, unit_price:p.unit_price, qty:1})
   _posRenderCart()
 }
 
