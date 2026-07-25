@@ -670,12 +670,20 @@ const NAV_ITEMS = [
 ]
 
 // CORE FUNCTIONS
-function canAccess(module) { return APP.user.role==='owner'||APP.user.role==='admin'||true }
+function canAccess(module) {
+  const role = APP.user.role
+  if(!role) return false
+  if(role==='owner' || role==='admin') return true
+  if(module==='core') return true
+  const allowed = APP.tenantConfig.roles[role]
+  return Array.isArray(allowed) && allowed.includes(module)
+}
 
 function openPage(page, params={}) {
+  const item = NAV_ITEMS.find(n=>n.id===page)
+  if(item && !canAccess(item.module)) { renderAccessDenied(); return }
   APP.currentPage = page
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page))
-  const item = NAV_ITEMS.find(n=>n.id===page)
   if(item) document.getElementById('header-title').textContent = APP.language==='bm'?item.label_bm:item.label_en
   const main = document.getElementById('main')
   main.innerHTML = '<div class="page-loading"><div class="spinner dark"></div></div>'
@@ -934,6 +942,7 @@ function buildSidebar() {
   nav.innerHTML=''
   NAV_ITEMS.forEach(item=>{
     if(item.section){const s=document.createElement('div');s.className='nav-section';s.textContent=item.section;nav.appendChild(s);return}
+    if(!canAccess(item.module)) return
     const label=APP.language==='bm'?item.label_bm:item.label_en
     const el=document.createElement('div')
     el.className='nav-item'
@@ -1665,6 +1674,20 @@ async function renderCustomerDetail(id) {
   </div>`
 }
 
+
+function renderAccessDenied() {
+  const t = APP.language==='bm'
+    ? { title:'Akses Ditolak', msg:'Kau tiada kebenaran untuk akses bahagian ini.', back:'Kembali ke Papan Pemuka' }
+    : { title:'Access Denied', msg:"You don't have permission to access this section.", back:'Back to Dashboard' }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div class="page-title">${t.title}</div></div>
+  <div class="card"><div class="empty-state" style="padding:80px">
+    <i class="ti ti-lock" style="font-size:64px;opacity:.2"></i>
+    <h3>${t.title}</h3>
+    <p>${t.msg}</p>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="openPage('dashboard')">${t.back}</button>
+  </div></div>`
+}
 
 function renderComingSoon(title,icon) {
   const c = LANG[APP.language].common
