@@ -3002,7 +3002,7 @@ async function _posCheckout() {
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).catch(()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
     tenant_id: APP.tenant.id, receipt_no: refData || ('POS-'+Date.now()),
-    total: total, payment_method: method
+    total: total, payment_method: method, txn_type: 'sale', status: 'completed'
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
