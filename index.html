@@ -1103,21 +1103,26 @@ async function loadDashboardData() {
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth()-5, 1)
 
-  const {data: allInv} = await sb.from('invoices')
-    .select('id,inv_no,inv_date,total_amount,paid_amount,status,customer_id,customers(name)')
+  const {data: allInv, error: invError} = await sb.from('invoices')
+    .select('id,ref_no,issue_date,total,paid_amt,status,customer_id,customer_name')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-    .gte('inv_date', sixMonthsAgo.toISOString().slice(0,10))
-    .order('inv_date', {ascending:true})
+    .gte('issue_date', sixMonthsAgo.toISOString().slice(0,10))
+    .order('issue_date', {ascending:true})
+
+  if(invError) {
+    console.error('loadDashboardData invoices query error:', invError)
+    showToast((isBm?'Gagal muatkan data invois: ':'Failed to load invoice data: ')+invError.message, 'error')
+  }
 
   const inv = allInv || []
   _dbInvCache = inv
   const ms = monthStart.toISOString().slice(0,10)
   const lms = lastMonthStart.toISOString().slice(0,10)
-  const thisMonth = inv.filter(i => i.inv_date >= ms)
-  const lastMonth = inv.filter(i => i.inv_date >= lms && i.inv_date < ms)
+  const thisMonth = inv.filter(i => i.issue_date >= ms)
+  const lastMonth = inv.filter(i => i.issue_date >= lms && i.issue_date < ms)
 
-  const sum = arr => arr.reduce((s,i)=>s+Number(i.total_amount||0),0)
-  const sumPaid = arr => arr.reduce((s,i)=>s+Number(i.paid_amount||0),0)
+  const sum = arr => arr.reduce((s,i)=>s+Number(i.total||0),0)
+  const sumPaid = arr => arr.reduce((s,i)=>s+Number(i.paid_amt||0),0)
   const pctChange = (cur,prev) => prev===0 ? (cur>0?100:0) : ((cur-prev)/prev*100)
 
   const curSales = sum(thisMonth), prevSales = sum(lastMonth)
@@ -1169,7 +1174,7 @@ function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
   for(let d=days-1; d>=0; d--) {
     const day = new Date(now); day.getTime && day.setDate(now.getDate()-d)
     const dayStr = day.toISOString().slice(0,10)
-    const total = thisMonth.concat(lastMonth).filter(i=>i.inv_date===dayStr).reduce((s,i)=>s+Number(i.total_amount||0),0)
+    const total = thisMonth.concat(lastMonth).filter(i=>i.issue_date===dayStr).reduce((s,i)=>s+Number(i.total||0),0)
     daily.push(total)
   }
   _dbCharts['spark-'+key] = new Chart(ctx, {
@@ -1193,7 +1198,7 @@ function _dbRenderGrowthChart(inv) {
     let running = 0
     for(let d=1; d<=daysInMonth; d++) {
       const dayStr = new Date(now.getFullYear(), now.getMonth(), d).toISOString().slice(0,10)
-      const dayTotal = inv.filter(i=>i.inv_date===dayStr).reduce((s,i)=>s+Number(i.total_amount||0),0)
+      const dayTotal = inv.filter(i=>i.issue_date===dayStr).reduce((s,i)=>s+Number(i.total||0),0)
       running += dayTotal
       labels.push(String(d)); data.push(running)
     }
@@ -1201,7 +1206,7 @@ function _dbRenderGrowthChart(inv) {
     for(let w=7; w>=0; w--) {
       const end = new Date(now); end.setDate(now.getDate()-w*7)
       const start = new Date(end); start.setDate(end.getDate()-6)
-      const total = inv.filter(i=>i.inv_date>=start.toISOString().slice(0,10) && i.inv_date<=end.toISOString().slice(0,10)).reduce((s,i)=>s+Number(i.total_amount||0),0)
+      const total = inv.filter(i=>i.issue_date>=start.toISOString().slice(0,10) && i.issue_date<=end.toISOString().slice(0,10)).reduce((s,i)=>s+Number(i.total||0),0)
       labels.push((isBm?'Mgu ':'Wk ')+(8-w)); data.push(total)
     }
   } else {
@@ -1209,7 +1214,7 @@ function _dbRenderGrowthChart(inv) {
       const d = new Date(now.getFullYear(), now.getMonth()-m, 1)
       const start = d.toISOString().slice(0,10)
       const end = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString().slice(0,10)
-      const total = inv.filter(i=>i.inv_date>=start && i.inv_date<end).reduce((s,i)=>s+Number(i.total_amount||0),0)
+      const total = inv.filter(i=>i.issue_date>=start && i.issue_date<end).reduce((s,i)=>s+Number(i.total||0),0)
       labels.push(d.toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'short'})); data.push(total)
     }
   }
@@ -1261,12 +1266,12 @@ function _dbRenderBreakdown(thisMonth) {
   const isBm = APP.language==='bm'
   const el = document.getElementById('db-breakdown')
   if(!el) return
-  const total = thisMonth.reduce((s,i)=>s+Number(i.total_amount||0),0)
-  const paid = thisMonth.reduce((s,i)=>s+Number(i.paid_amount||0),0)
+  const total = thisMonth.reduce((s,i)=>s+Number(i.total||0),0)
+  const paid = thisMonth.reduce((s,i)=>s+Number(i.paid_amt||0),0)
   const outstanding = total-paid
   const count = thisMonth.length
   const avg = count?total/count:0
-  const largest = count?Math.max(...thisMonth.map(i=>Number(i.total_amount||0))):0
+  const largest = count?Math.max(...thisMonth.map(i=>Number(i.total||0))):0
 
   const rows = [
     {label: isBm?'Jualan Kasar':'Gross Sales', value: formatRM(total), color:'var(--db-text)'},
@@ -1285,7 +1290,7 @@ function _dbRenderCustomerDonut(thisMonth) {
   if(!ctx) return
   _dbDestroy('customer')
   const byCustomer = {}
-  thisMonth.forEach(i=>{ const name = i.customers?.name || (isBm?'Tanpa Nama':'Unnamed'); byCustomer[name] = (byCustomer[name]||0) + Number(i.total_amount||0) })
+  thisMonth.forEach(i=>{ const name = i.customer_name || (isBm?'Tanpa Nama':'Unnamed'); byCustomer[name] = (byCustomer[name]||0) + Number(i.total||0) })
   const sorted = Object.entries(byCustomer).sort((a,b)=>b[1]-a[1])
   const top = sorted.slice(0,4)
   const othersTotal = sorted.slice(4).reduce((s,[,v])=>s+v,0)
@@ -1320,7 +1325,7 @@ function _dbRenderMonthlyBar(inv) {
     const d = new Date(now.getFullYear(), now.getMonth()-m, 1)
     const start = d.toISOString().slice(0,10)
     const end = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString().slice(0,10)
-    const total = inv.filter(i=>i.inv_date>=start && i.inv_date<end).reduce((s,i)=>s+Number(i.total_amount||0),0)
+    const total = inv.filter(i=>i.issue_date>=start && i.issue_date<end).reduce((s,i)=>s+Number(i.total||0),0)
     labels.push(d.toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'short'})); data.push(total)
   }
   const c = _dbColors()
@@ -2544,18 +2549,18 @@ async function renderInvList() {
   <div class="card"><div id="inv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('inv-list-wrap')
-  const {data, error} = await sb.from('invoices').select('id,inv_no,inv_date,due_date,total_amount,paid_amount,status,customers(name)')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('inv_date',{ascending:false})
+  const {data, error} = await sb.from('invoices').select('id,ref_no,issue_date,due_date,total,paid_amt,status,customer_name')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('issue_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
   wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(i=>`<tr onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})" style="cursor:pointer">
-    <td><strong>${i.inv_no||'-'}</strong></td><td>${i.customers?.name||'-'}</td>
-    <td>${formatDate(i.inv_date)}</td><td>${formatDate(i.due_date)}</td>
-    <td style="text-align:right">${formatRM(i.total_amount)}</td>
-    <td style="text-align:right">${formatRM(i.paid_amount)}</td>
+    <td><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
+    <td>${formatDate(i.issue_date)}</td><td>${formatDate(i.due_date)}</td>
+    <td style="text-align:right">${formatRM(i.total)}</td>
+    <td style="text-align:right">${formatRM(i.paid_amt)}</td>
     <td><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
   </tr>`).join('')}</tbody></table>`
 }
@@ -2573,7 +2578,7 @@ async function renderInvForm(id=null) {
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
-  let inv = { inv_date: new Date().toISOString().slice(0,10) }
+  let inv = { issue_date: new Date().toISOString().slice(0,10) }
   _slItems = [{product_id:'',description:'',qty:1,unit_price:0}]
   if(id) {
     const {data} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
@@ -2594,7 +2599,7 @@ async function renderInvForm(id=null) {
           ${customers.map(c=>`<option value="${c.id}" ${inv.customer_id===c.id?'selected':''}>${c.name}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="form-label">${t.date}</label><input id="if-date" type="date" class="form-input" value="${inv.inv_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.date}</label><input id="if-date" type="date" class="form-input" value="${inv.issue_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.due}</label><input id="if-due" type="date" class="form-input" value="${inv.due_date||''}"></div>
     </div>
     <div style="padding:0 20px">
@@ -2619,11 +2624,12 @@ async function _invSave(id) {
   if(!customerId || validItems.length===0) { errEl.textContent=t.required; errEl.style.display='block'; return }
   const total = validItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
 
+  const customerName = document.getElementById('if-customer').selectedOptions[0]?.textContent || ''
   const payload = {
-    tenant_id: APP.tenant.id, customer_id: customerId,
-    inv_date: document.getElementById('if-date').value,
+    tenant_id: APP.tenant.id, customer_id: customerId, customer_name: customerName,
+    issue_date: document.getElementById('if-date').value,
     due_date: document.getElementById('if-due').value||null,
-    total_amount: total, updated_at: new Date().toISOString()
+    total: total, updated_at: new Date().toISOString()
   }
 
   let invId = id
@@ -2633,16 +2639,16 @@ async function _invSave(id) {
     await sb.from('invoice_items').delete().eq('invoice_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).catch(()=>({data:null}))
-    payload.inv_no = refData || ('INV-'+Date.now())
-    payload.status = 'unpaid'; payload.paid_amount = 0
+    payload.ref_no = refData || ('INV-'+Date.now())
+    payload.status = 'unpaid'; payload.paid_amt = 0
     const {data, error} = await sb.from('invoices').insert(payload).select('id').single()
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     invId = data.id
   }
 
   const itemsPayload = validItems.map(it => ({
-    invoice_id: invId, product_id: it.product_id||null, description: it.description,
-    qty: Number(it.qty), unit_price: Number(it.unit_price||0), amount: Number(it.qty)*Number(it.unit_price||0)
+    tenant_id: APP.tenant.id, invoice_id: invId, product_id: it.product_id||null, description: it.description,
+    qty: Number(it.qty), unit_price: Number(it.unit_price||0), line_total: Number(it.qty)*Number(it.unit_price||0)
   }))
   const {error: itemsErr} = await sb.from('invoice_items').insert(itemsPayload)
   if(itemsErr) { errEl.textContent='Error: '+itemsErr.message; errEl.style.display='block'; return }
@@ -2665,32 +2671,33 @@ async function renderInvDetail(id) {
     paid:'Paid', balance:'Balance', recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
     unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet'
   }
-  const {data: inv} = await sb.from('invoices').select('*,customers(name,email,phone)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
-  const {data: payments} = await sb.from('payments').select('*').eq('invoice_id',id).order('payment_date',{ascending:false})
-  const balance = Number(inv.total_amount||0) - Number(inv.paid_amount||0)
+  // payments table has no invoice_id FK (schema uses customer-level receipts) — approximated by customer_id until payment_allocations is wired up
+  const {data: payments} = await sb.from('payments').select('*').eq('customer_id',inv.customer_id).eq('tenant_id',APP.tenant.id).order('payment_date',{ascending:false})
+  const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
-    <div class="page-title">${inv.inv_no}</div>
+    <div class="page-title">${inv.ref_no}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{})">← ${t.back}</div>
   </div>
   <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button></div>
   <div class="card" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
-      <div><div style="color:var(--text-3);font-size:12px">${t.customer}</div><strong>${inv.customers?.name||'-'}</strong></div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.date}</div>${formatDate(inv.inv_date)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.customer}</div><strong>${inv.customer_name||'-'}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.date}</div>${formatDate(inv.issue_date)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.due}</div>${formatDate(inv.due_date)}</div>
       <div><span style="color:${statusColor(inv.status)};font-weight:700">${statusLabel(inv.status)}</span></div>
     </div>
     <table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.amount}</th></tr></thead>
-    <tbody>${(items||[]).map(it=>`<tr><td>${it.description}</td><td style="text-align:right">${it.qty}</td><td style="text-align:right">${formatRM(it.unit_price)}</td><td style="text-align:right">${formatRM(it.amount)}</td></tr>`).join('')}</tbody></table>
+    <tbody>${(items||[]).map(it=>`<tr><td>${it.description}</td><td style="text-align:right">${it.qty}</td><td style="text-align:right">${formatRM(it.unit_price)}</td><td style="text-align:right">${formatRM(it.line_total)}</td></tr>`).join('')}</tbody></table>
     <div style="text-align:right;margin-top:16px;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-      <div>${t.total}: <strong>${formatRM(inv.total_amount)}</strong></div>
-      <div style="color:var(--success)">${t.paid}: ${formatRM(inv.paid_amount)}</div>
+      <div>${t.total}: <strong>${formatRM(inv.total)}</strong></div>
+      <div style="color:var(--success)">${t.paid}: ${formatRM(inv.paid_amt)}</div>
       <div style="color:${balance>0?'var(--danger)':'var(--text-2)'}">${t.balance}: <strong>${formatRM(balance)}</strong></div>
     </div>
   </div>
@@ -2711,7 +2718,7 @@ async function renderInvDetail(id) {
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
     ${(!payments||payments.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
     `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th></tr></thead>
-    <tbody>${payments.map(p=>`<tr><td>${formatDate(p.payment_date)}</td><td style="text-align:right">${formatRM(p.amount)}</td><td>${p.method||'-'}</td></tr>`).join('')}</tbody></table>`}
+    <tbody>${payments.map(p=>`<tr><td>${formatDate(p.payment_date)}</td><td style="text-align:right">${formatRM(p.amount)}</td><td>${p.payment_method||'-'}</td></tr>`).join('')}</tbody></table>`}
   </div>`
 }
 
@@ -2721,17 +2728,22 @@ async function _paySave(invoiceId, balance) {
   errEl.style.display='none'
   if(amount<=0 || amount>balance+0.005) { errEl.textContent = APP.language==='bm'?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
 
+  const {data: inv} = await sb.from('invoices').select('ref_no,customer_id,customer_name,total,paid_amt').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
+  if(!inv) { errEl.textContent='Invoice not found.'; errEl.style.display='block'; return }
+
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).catch(()=>({data:null}))
   const {error} = await sb.from('payments').insert({
-    tenant_id: APP.tenant.id, invoice_id: invoiceId,
+    tenant_id: APP.tenant.id, ref_no: refData || ('RCP-'+Date.now()), payment_type: 'receipt',
+    customer_id: inv.customer_id, customer_name: inv.customer_name,
     payment_date: document.getElementById('pay-date').value,
-    amount, method: document.getElementById('pay-method').value
+    payment_method: document.getElementById('pay-method').value,
+    amount, status: 'completed', notes: 'Invoice '+inv.ref_no, created_by: APP.user.id
   })
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
 
-  const {data: inv} = await sb.from('invoices').select('total_amount,paid_amount').eq('id',invoiceId).single()
-  const newPaid = Number(inv.paid_amount||0) + amount
-  const newStatus = newPaid >= Number(inv.total_amount) - 0.005 ? 'paid' : 'partial'
-  await sb.from('invoices').update({paid_amount:newPaid, status:newStatus}).eq('id',invoiceId)
+  const newPaid = Number(inv.paid_amt||0) + amount
+  const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
+  await sb.from('invoices').update({paid_amt:newPaid, status:newStatus}).eq('id',invoiceId).eq('tenant_id',APP.tenant.id)
 
   showToast(APP.language==='bm'?'Bayaran direkod!':'Payment recorded!', 'success')
   renderInvDetail(invoiceId)
@@ -2753,14 +2765,14 @@ async function renderQuoList() {
   <div class="card"><div id="quo-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('quo-list-wrap')
-  const {data, error} = await sb.from('quotations').select('id,quo_no,quo_date,total_amount,status,customers(name)')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('quo_date',{ascending:false})
+  const {data, error} = await sb.from('quotations').select('id,ref_no,issue_date,total,status,customer_name')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('issue_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.quoNo}</th><th>${t.customer}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(q=>`<tr onclick="openPage('sales',{view:'quo-form',id:'${q.id}'})" style="cursor:pointer">
-    <td><strong>${q.quo_no||'-'}</strong></td><td>${q.customers?.name||'-'}</td><td>${formatDate(q.quo_date)}</td>
-    <td style="text-align:right">${formatRM(q.total_amount)}</td><td>${q.status||t.draft}</td>
+    <td><strong>${q.ref_no||'-'}</strong></td><td>${q.customer_name||'-'}</td><td>${formatDate(q.issue_date)}</td>
+    <td style="text-align:right">${formatRM(q.total)}</td><td>${q.status||t.draft}</td>
   </tr>`).join('')}</tbody></table>`
 }
 
@@ -2776,7 +2788,7 @@ async function renderQuoForm(id=null) {
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
-  let quo = { quo_date: new Date().toISOString().slice(0,10) }
+  let quo = { issue_date: new Date().toISOString().slice(0,10) }
   _slItems = [{product_id:'',description:'',qty:1,unit_price:0}]
   if(id) {
     const {data} = await sb.from('quotations').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
@@ -2798,7 +2810,7 @@ async function renderQuoForm(id=null) {
           ${customers.map(c=>`<option value="${c.id}" ${quo.customer_id===c.id?'selected':''}>${c.name}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="form-label">${t.date}</label><input id="qf-date" type="date" class="form-input" value="${quo.quo_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.date}</label><input id="qf-date" type="date" class="form-input" value="${quo.issue_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.valid}</label><input id="qf-valid" type="date" class="form-input" value="${quo.valid_until||''}"></div>
     </div>
     <div style="padding:0 20px">
@@ -2823,11 +2835,12 @@ async function _quoSave(id) {
   if(!customerId || validItems.length===0) { errEl.textContent=t.required; errEl.style.display='block'; return }
   const total = validItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
 
+  const customerName = document.getElementById('qf-customer').selectedOptions[0]?.textContent || ''
   const payload = {
-    tenant_id: APP.tenant.id, customer_id: customerId,
-    quo_date: document.getElementById('qf-date').value,
+    tenant_id: APP.tenant.id, customer_id: customerId, customer_name: customerName,
+    issue_date: document.getElementById('qf-date').value,
     valid_until: document.getElementById('qf-valid').value||null,
-    total_amount: total, updated_at: new Date().toISOString()
+    total: total, updated_at: new Date().toISOString()
   }
 
   let quoId = id
@@ -2837,7 +2850,7 @@ async function _quoSave(id) {
     await sb.from('quotation_items').delete().eq('quotation_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'QUO'}).catch(()=>({data:null}))
-    payload.quo_no = refData || ('QUO-'+Date.now())
+    payload.ref_no = refData || ('QUO-'+Date.now())
     payload.status = 'draft'
     const {data, error} = await sb.from('quotations').insert(payload).select('id').single()
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
@@ -2845,8 +2858,8 @@ async function _quoSave(id) {
   }
 
   const itemsPayload = validItems.map(it => ({
-    quotation_id: quoId, product_id: it.product_id||null, description: it.description,
-    qty: Number(it.qty), unit_price: Number(it.unit_price||0), amount: Number(it.qty)*Number(it.unit_price||0)
+    tenant_id: APP.tenant.id, quotation_id: quoId, product_id: it.product_id||null, description: it.description,
+    qty: Number(it.qty), unit_price: Number(it.unit_price||0), line_total: Number(it.qty)*Number(it.unit_price||0)
   }))
   const {error: itemsErr} = await sb.from('quotation_items').insert(itemsPayload)
   if(itemsErr) { errEl.textContent='Error: '+itemsErr.message; errEl.style.display='block'; return }
@@ -2862,12 +2875,12 @@ async function _quoConvert(quoId) {
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).catch(()=>({data:null}))
   const {data: newInv, error} = await sb.from('invoices').insert({
-    tenant_id: APP.tenant.id, customer_id: quo.customer_id, inv_no: refData || ('INV-'+Date.now()),
-    inv_date: new Date().toISOString().slice(0,10), total_amount: quo.total_amount, status:'unpaid', paid_amount:0
+    tenant_id: APP.tenant.id, customer_id: quo.customer_id, customer_name: quo.customer_name, ref_no: refData || ('INV-'+Date.now()),
+    issue_date: new Date().toISOString().slice(0,10), total: quo.total, status:'unpaid', paid_amt:0
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
-  const itemsPayload = items.map(it => ({ invoice_id: newInv.id, product_id: it.product_id, description: it.description, qty: it.qty, unit_price: it.unit_price, amount: it.amount }))
+  const itemsPayload = items.map(it => ({ tenant_id: APP.tenant.id, invoice_id: newInv.id, product_id: it.product_id, description: it.description, qty: it.qty, unit_price: it.unit_price, line_total: it.line_total }))
   await sb.from('invoice_items').insert(itemsPayload)
   await sb.from('quotations').update({status:'converted'}).eq('id',quoId)
 
@@ -3170,11 +3183,11 @@ async function _salesRepLoad() {
   const to = document.getElementById('sales-to')?.value
   const result = document.getElementById('sales-rep-result')
 
-  const {data} = await sb.from('invoices').select('total_amount,paid_amount').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('inv_date',from).lte('inv_date',to)
+  const {data} = await sb.from('invoices').select('total,paid_amt').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('issue_date',from).lte('issue_date',to)
   if(!data || data.length===0) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`; return }
 
-  const totalInv = data.reduce((s,i)=>s+Number(i.total_amount||0),0)
-  const totalPaid = data.reduce((s,i)=>s+Number(i.paid_amount||0),0)
+  const totalInv = data.reduce((s,i)=>s+Number(i.total||0),0)
+  const totalPaid = data.reduce((s,i)=>s+Number(i.paid_amt||0),0)
   result.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.invoiced}</div><div style="font-size:22px;font-weight:700">${formatRM(totalInv)}</div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.collected}</div><div style="font-size:22px;font-weight:700;color:var(--success)">${formatRM(totalPaid)}</div></div>
