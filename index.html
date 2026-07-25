@@ -2996,13 +2996,18 @@ function _posRemove(i) { _posCart.splice(i,1); _posRenderCart() }
 
 async function _posCheckout() {
   if(_posCart.length===0) { showToast('Cart is empty', 'error'); return }
+
+  const {data: session} = await sb.from('pos_sessions').select('id')
+    .eq('tenant_id',APP.tenant.id).eq('status','open').order('opened_at',{ascending:false}).limit(1).maybeSingle()
+  if(!session) { showToast(APP.language==='bm'?'Sila buka sesi POS dulu.':'Please open a POS session first.', 'error'); return }
+
   const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
   const method = document.getElementById('pos-method').value
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).catch(()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
-    tenant_id: APP.tenant.id, receipt_no: refData || ('POS-'+Date.now()),
-    total: total, payment_method: method
+    tenant_id: APP.tenant.id, session_id: session.id, receipt_no: refData || ('POS-'+Date.now()),
+    total: total, payment_method: method, txn_type: 'sale', status: 'completed'
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
