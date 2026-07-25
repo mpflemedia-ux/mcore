@@ -233,6 +233,23 @@ body.dark .form-input{background:rgba(255,255,255,0.08);border-color:rgba(255,25
 .toast.info .toast-icon{color:var(--primary)}
 @keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 @keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(20px)}}
+#ai-chat-fab{position:fixed;right:24px;bottom:24px;width:52px;height:52px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:var(--shadow-lg);cursor:pointer;z-index:1000;border:none}
+#ai-chat-fab:hover{background:var(--primary-dark)}
+#ai-chat-panel{position:fixed;right:24px;bottom:88px;width:340px;height:460px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);z-index:1000;display:none;flex-direction:column;overflow:hidden}
+#ai-chat-panel.active{display:flex}
+.ai-chat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--primary);color:#fff;flex-shrink:0}
+.ai-chat-header-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+.ai-chat-close{cursor:pointer;font-size:18px;opacity:.85}
+.ai-chat-close:hover{opacity:1}
+.ai-chat-messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.ai-chat-msg{max-width:85%;padding:9px 12px;border-radius:var(--radius-sm);font-size:13px;line-height:1.45;white-space:pre-wrap}
+.ai-chat-msg.assistant{align-self:flex-start;background:var(--bg);color:var(--text);border:1px solid var(--border)}
+.ai-chat-msg.user{align-self:flex-end;background:var(--primary);color:#fff}
+.ai-chat-msg.loading{align-self:flex-start;color:var(--text-3);font-style:italic}
+.ai-chat-input-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);flex-shrink:0}
+.ai-chat-input-row input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;outline:none}
+.ai-chat-send{width:36px;height:36px;border-radius:var(--radius-sm);background:var(--primary);color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.ai-chat-send:disabled{opacity:.5;cursor:default}
 .dropdown{position:relative}
 .dropdown-menu{position:absolute;top:calc(100% + 4px);right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;z-index:500;display:none;flex-direction:column;overflow:hidden}
 .dropdown-menu.open{display:flex}
@@ -601,6 +618,19 @@ tbody tr:hover{background:var(--bg)}
       <div class="page-loading"><div class="spinner dark"></div></div>
     </main>
   </div>
+
+  <button id="ai-chat-fab" onclick="toggleAIChat()" title="AI Assistant"><i class="ti ti-message-chatbot"></i></button>
+  <div id="ai-chat-panel">
+    <div class="ai-chat-header">
+      <div class="ai-chat-header-title"><i class="ti ti-sparkles"></i> <span id="ai-chat-title">AI Assistant</span></div>
+      <i class="ti ti-x ai-chat-close" onclick="toggleAIChat()"></i>
+    </div>
+    <div class="ai-chat-messages" id="ai-chat-messages"></div>
+    <div class="ai-chat-input-row">
+      <input type="text" id="ai-chat-input" placeholder="..." onkeydown="if(event.key==='Enter')sendAIChatMessage()">
+      <button class="ai-chat-send" id="ai-chat-send-btn" onclick="sendAIChatMessage()"><i class="ti ti-send"></i></button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -718,6 +748,89 @@ function showToast(msg,type='info') {
 }
 
 function auditLog(action,table,id) { sb.rpc('log_audit',{p_action:action,p_table_name:table,p_record_id:String(id)}).then(()=>{}, ()=>{}) }
+
+// AI ASSISTANT CHAT
+const AI_CHAT = { open:false, messages:[], loading:false }
+
+function toggleAIChat() {
+  AI_CHAT.open = !AI_CHAT.open
+  document.getElementById('ai-chat-panel').classList.toggle('active', AI_CHAT.open)
+  document.getElementById('ai-chat-title').textContent = APP.language==='bm' ? 'Pembantu AI' : 'AI Assistant'
+  document.getElementById('ai-chat-input').placeholder = APP.language==='bm' ? 'Tanya sesuatu...' : 'Ask something...'
+  if(AI_CHAT.open && AI_CHAT.messages.length===0) {
+    AI_CHAT.messages.push({
+      role: 'assistant',
+      text: APP.language==='bm'
+        ? 'Hai! Tanya apa-apa pasal data bisnes anda — cth: "berapa total sales bulan ni?"'
+        : 'Hi! Ask me anything about your business data — e.g. "what\'s total sales this month?"'
+    })
+    renderAIChatMessages()
+  }
+  if(AI_CHAT.open) document.getElementById('ai-chat-input').focus()
+}
+
+function _aiEscapeHtml(s) {
+  const d = document.createElement('div')
+  d.textContent = s
+  return d.innerHTML
+}
+
+function renderAIChatMessages() {
+  const el = document.getElementById('ai-chat-messages')
+  el.innerHTML = AI_CHAT.messages.map(m=>`<div class="ai-chat-msg ${m.role}">${_aiEscapeHtml(m.text)}</div>`).join('')
+    + (AI_CHAT.loading ? `<div class="ai-chat-msg loading">${APP.language==='bm'?'Menaip...':'Thinking...'}</div>` : '')
+  el.scrollTop = el.scrollHeight
+}
+
+async function aiChatGetContext() {
+  const tenantId = APP.tenant.id
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10)
+  const to = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10)
+  const parts = []
+  try {
+    const {data: inv} = await sb.from('invoices').select('total,paid_amt,status')
+      .eq('tenant_id', tenantId).is('deleted_at', null).gte('issue_date', from).lte('issue_date', to)
+    if(inv) {
+      const totalInv = inv.reduce((s,i)=>s+Number(i.total||0),0)
+      const totalPaid = inv.reduce((s,i)=>s+Number(i.paid_amt||0),0)
+      const unpaidCount = inv.filter(i=>i.status!=='paid').length
+      parts.push(`This month (${from} to ${to}): ${inv.length} invoices, total invoiced RM${totalInv.toFixed(2)}, total collected RM${totalPaid.toFixed(2)}, ${unpaidCount} unpaid/partially paid invoices.`)
+    }
+    const {count: custCount} = await sb.from('customers').select('id',{count:'exact',head:true})
+      .eq('tenant_id', tenantId).is('deleted_at', null)
+    if(custCount!=null) parts.push(`Total active customers: ${custCount}.`)
+  } catch(e) {
+    console.error('aiChatGetContext error:', e)
+  }
+  return parts.join('\n')
+}
+
+async function sendAIChatMessage() {
+  const input = document.getElementById('ai-chat-input')
+  const message = input.value.trim()
+  if(!message || AI_CHAT.loading) return
+  input.value = ''
+  AI_CHAT.messages.push({role:'user', text:message})
+  AI_CHAT.loading = true
+  renderAIChatMessages()
+  document.getElementById('ai-chat-send-btn').disabled = true
+
+  try {
+    const context = await aiChatGetContext()
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'chat', message, context } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    AI_CHAT.messages.push({role:'assistant', text: data.data.reply})
+  } catch(err) {
+    console.error('AI chat error:', err)
+    AI_CHAT.messages.push({role:'assistant', text: (APP.language==='bm'?'Maaf, ralat berlaku: ':'Sorry, an error occurred: ') + (err.message||'')})
+  }
+
+  AI_CHAT.loading = false
+  document.getElementById('ai-chat-send-btn').disabled = false
+  renderAIChatMessages()
+}
 
 function togglePw(id, iconEl) {
   const input = document.getElementById(id)
