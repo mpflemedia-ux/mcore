@@ -2119,7 +2119,7 @@ async function _jnlSave(id) {
   }
 
   const linesPayload = validLines.map(l => ({
-    journal_entry_id: entryId, account_id: l.account_id,
+    tenant_id: APP.tenant.id, journal_entry_id: entryId, account_id: l.account_id,
     debit: Number(l.debit||0), credit: Number(l.credit||0)
   }))
   const {error: linesErr} = await sb.from('journal_lines').insert(linesPayload)
