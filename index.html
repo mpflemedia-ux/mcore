@@ -2165,10 +2165,10 @@ function _fyShowForm() {
 }
 
 async function _fyLoad() {
-  const t = APP.language==='bm' ? { start:'Mula', end:'Tamat', status:'Status', open:'Terbuka', closed:'Ditutup', noData:'Tiada tahun kewangan lagi', del:'Padam' }
-    : { start:'Start', end:'End', status:'Status', open:'Open', closed:'Closed', noData:'No fiscal years set up yet', del:'Delete' }
+  const t = APP.language==='bm' ? { start:'Mula', end:'Tamat', status:'Status', open:'Terbuka', closed:'Ditutup', current:'Semasa', noData:'Tiada tahun kewangan lagi', close:'Tutup' }
+    : { start:'Start', end:'End', status:'Status', open:'Open', closed:'Closed', current:'Current', noData:'No fiscal years set up yet', close:'Close' }
   const wrap = document.getElementById('fy-table-wrap')
-  const {data, error} = await sb.from('fiscal_years').select('id,start_date,end_date,is_closed')
+  const {data, error} = await sb.from('fiscal_years').select('id,start_date,end_date,is_closed,is_current')
     .eq('tenant_id', APP.tenant.id).order('start_date',{ascending:false})
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
@@ -2176,8 +2176,8 @@ async function _fyLoad() {
   wrap.innerHTML = `<table><thead><tr><th>${t.start}</th><th>${t.end}</th><th>${t.status}</th><th style="width:60px"></th></tr></thead>
   <tbody>${data.map(f=>`<tr>
     <td>${formatDate(f.start_date)}</td><td>${formatDate(f.end_date)}</td>
-    <td><span style="color:${f.is_closed?'var(--text-3)':'var(--success)'}">${f.is_closed?t.closed:t.open}</span></td>
-    <td><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_fyDelete('${f.id}')"><i class="ti ti-trash"></i></button></td>
+    <td><span style="color:${f.is_closed?'var(--text-3)':'var(--success)'}">${f.is_closed?t.closed:t.open}</span>${f.is_current?` <span style="color:var(--primary);font-size:11px">(${t.current})</span>`:''}</td>
+    <td>${f.is_closed?'':`<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_fyClose('${f.id}')">${t.close}</button>`}</td>
   </tr>`).join('')}</tbody></table>`
 }
 
@@ -2188,16 +2188,18 @@ async function _fySave() {
   const startYear = new Date(start).getFullYear()
   const endYear = new Date(end).getFullYear()
   const yearLabel = startYear === endYear ? `FY${startYear}` : `FY${startYear}/${String(endYear).slice(-2)}`
-  const {error} = await sb.from('fiscal_years').insert({tenant_id:APP.tenant.id, start_date:start, end_date:end, year_label:yearLabel, is_closed:false})
+  const {data: newFy, error} = await sb.from('fiscal_years').insert({tenant_id:APP.tenant.id, start_date:start, end_date:end, year_label:yearLabel, is_closed:false, is_current:true}).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
+  await sb.from('fiscal_years').update({is_current:false}).eq('tenant_id',APP.tenant.id).neq('id', newFy.id)
   showToast(APP.language==='bm'?'Tahun kewangan ditambah!':'Fiscal year added!', 'success')
   document.getElementById('fy-form-wrap').innerHTML=''
   _fyLoad()
 }
 
-async function _fyDelete(id) {
-  if(!confirm(APP.language==='bm'?'Padam tahun kewangan ini?':'Delete this fiscal year?')) return
-  const {error} = await sb.from('fiscal_years').update({deleted_at: new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+async function _fyClose(id) {
+  const msg = APP.language==='bm' ? 'Tutup tahun kewangan ini? Tempoh ini akan dikunci untuk laporan/audit.' : 'Close this fiscal year? This period will be locked for reporting/audit.'
+  if(!confirm(msg)) return
+  const {error} = await sb.from('fiscal_years').update({is_closed:true, closed_at:new Date().toISOString(), closed_by:APP.user.id}).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
   _fyLoad()
 }
@@ -2221,15 +2223,23 @@ async function renderExpenseClaims(params={}) {
   <div class="card"><div id="exp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('exp-table-wrap')
-  const {data, error} = await sb.from('expense_claims').select('id,claimant_name,claim_date,description,total_amount,status')
+  const {data, error} = await sb.from('expense_claims').select('id,claimed_by,claim_date,description,total_amount,status')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('claim_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+
+  const claimantIds = [...new Set(data.map(e=>e.claimed_by).filter(Boolean))]
+  const {data: claimants} = claimantIds.length
+    ? await sb.from('user_profiles').select('id,full_name').in('id', claimantIds)
+    : {data:[]}
+  const claimantMap = {}
+  ;(claimants||[]).forEach(c=>{ claimantMap[c.id] = c.full_name })
+
   const statusColor = s => s==='approved'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
   const statusLabel = s => s==='approved'?t.approved:s==='rejected'?t.rejected:t.pending
   wrap.innerHTML = `<table><thead><tr><th>${t.claimant}</th><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(e=>`<tr onclick="openPage('accounting',{view:'exp-form',id:'${e.id}'})" style="cursor:pointer">
-    <td>${e.claimant_name||'-'}</td><td>${formatDate(e.claim_date)}</td><td style="color:var(--text-2)">${e.description||'-'}</td>
+    <td>${claimantMap[e.claimed_by]||'-'}</td><td>${formatDate(e.claim_date)}</td><td style="color:var(--text-2)">${e.description||'-'}</td>
     <td style="text-align:right">${formatRM(e.total_amount)}</td>
     <td><span style="color:${statusColor(e.status)}">${statusLabel(e.status)}</span></td>
   </tr>`).join('')}</tbody></table>`
@@ -2238,17 +2248,27 @@ async function renderExpenseClaims(params={}) {
 async function renderExpenseForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Tuntutan Baru', editTitle:'Edit Tuntutan', back:'Tuntutan Perbelanjaan',
-    claimant:'Nama Penuntut *', date:'Tarikh *', desc:'Keterangan', amount:'Jumlah (RM) *',
+    claimant:'Penuntut', date:'Tarikh *', desc:'Keterangan', amount:'Jumlah (RM) *',
     status:'Status', pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak',
-    save:'Simpan', cancel:'Batal', required:'Nama, tarikh dan jumlah diperlukan.'
+    save:'Simpan', cancel:'Batal', required:'Tarikh dan jumlah diperlukan.'
   } : {
     addTitle:'New Expense Claim', editTitle:'Edit Expense Claim', back:'Expense Claims',
-    claimant:'Claimant Name *', date:'Date *', desc:'Description', amount:'Amount (RM) *',
+    claimant:'Claimant', date:'Date *', desc:'Description', amount:'Amount (RM) *',
     status:'Status', pending:'Pending', approved:'Approved', rejected:'Rejected',
-    save:'Save', cancel:'Cancel', required:'Name, date and amount are required.'
+    save:'Save', cancel:'Cancel', required:'Date and amount are required.'
   }
   let claim = { claim_date: new Date().toISOString().slice(0,10), status:'pending' }
-  if(id) { const {data} = await sb.from('expense_claims').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(); if(data) claim = data }
+  let claimantName = APP.user.name || ''
+  if(id) {
+    const {data} = await sb.from('expense_claims').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(data) {
+      claim = data
+      if(data.claimed_by) {
+        const {data:profile} = await sb.from('user_profiles').select('full_name').eq('id',data.claimed_by).single()
+        claimantName = profile?.full_name || ''
+      }
+    }
+  }
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
@@ -2256,7 +2276,7 @@ async function renderExpenseForm(id=null) {
   <div class="card" style="max-width:600px">
     <div id="exp-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div class="form-group"><label class="form-label">${t.claimant}</label><input id="ef-claimant" type="text" class="form-input" value="${claim.claimant_name||''}"></div>
+      <div class="form-group"><label class="form-label">${t.claimant}</label><input type="text" class="form-input" value="${claimantName}" readonly disabled></div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="ef-date" type="date" class="form-input" value="${claim.claim_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.amount}</label><input id="ef-amount" type="number" step="0.01" class="form-input" value="${claim.total_amount||''}"></div>
       <div class="form-group"><label class="form-label">${t.status}</label>
@@ -2276,15 +2296,14 @@ async function renderExpenseForm(id=null) {
 }
 
 async function _expSave(id) {
-  const t = APP.language==='bm' ? {required:'Nama, tarikh dan jumlah diperlukan.'} : {required:'Name, date and amount are required.'}
-  const claimant = document.getElementById('ef-claimant').value.trim()
+  const t = APP.language==='bm' ? {required:'Tarikh dan jumlah diperlukan.'} : {required:'Date and amount are required.'}
   const date = document.getElementById('ef-date').value
   const amount = document.getElementById('ef-amount').value
   const errEl = document.getElementById('exp-form-err')
   errEl.style.display='none'
-  if(!claimant || !date || !amount) { errEl.textContent=t.required; errEl.style.display='block'; return }
+  if(!date || !amount) { errEl.textContent=t.required; errEl.style.display='block'; return }
   const payload = {
-    tenant_id: APP.tenant.id, claimant_name: claimant, claim_date: date,
+    tenant_id: APP.tenant.id, claim_date: date,
     total_amount: Number(amount), status: document.getElementById('ef-status').value,
     description: document.getElementById('ef-desc').value.trim()||null, updated_at: new Date().toISOString()
   }
@@ -2293,6 +2312,7 @@ async function _expSave(id) {
   else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'EXP'}).then(r=>r, ()=>({data:null}))
     payload.ref_no = refData || ('EXP-'+Date.now())
+    payload.claimed_by = APP.user.id
     const r = await sb.from('expense_claims').insert(payload); error = r.error
   }
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
