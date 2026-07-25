@@ -1787,14 +1787,14 @@ async function _coaLoad() {
   const wrap = document.getElementById('coa-table-wrap')
   if(wrap) wrap.innerHTML = '<div class="empty-state" style="padding:40px"><div class="spinner"></div></div>'
 
-  let q = sb.from('chart_of_accounts').select('id,code,name,type,is_active')
+  let q = sb.from('chart_of_accounts').select('id,code,name_en,account_type,is_active')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('code', {ascending:true})
 
   if(_coaState.search) {
     const s = _coaState.search.trim()
-    q = q.or(`code.ilike.%${s}%,name.ilike.%${s}%`)
+    q = q.or(`code.ilike.%${s}%,name_en.ilike.%${s}%`)
   }
-  if(_coaState.type) q = q.eq('type', _coaState.type)
+  if(_coaState.type) q = q.eq('account_type', _coaState.type)
 
   const {data, error} = await q
   _coaState.data = data || []
@@ -1810,16 +1810,16 @@ async function _coaLoad() {
   wrap.innerHTML = `<table>
     <thead><tr><th>${t.code}</th><th>${t.name}</th><th>${t.type}</th><th>${t.balance}</th><th style="width:70px"></th><th style="width:100px"></th></tr></thead>
     <tbody>${data.map(a => {
-      const typeInfo = ACC_TYPES.find(x=>x.id===a.type)
+      const typeInfo = ACC_TYPES.find(x=>x.id===a.account_type)
       return `<tr>
         <td><strong>${a.code||'-'}</strong></td>
-        <td>${a.name||'-'}</td>
-        <td><span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;color:#fff;background:${accTypeColor(a.type)}">${accTypeLabel(a.type)}</span></td>
+        <td>${a.name_en||'-'}</td>
+        <td><span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;color:#fff;background:${accTypeColor(a.account_type)}">${accTypeLabel(a.account_type)}</span></td>
         <td style="color:var(--text-2)">${typeInfo?(typeInfo.normal==='debit'?t.debit:t.credit):'-'}</td>
         <td>${a.is_active===false?`<span style="color:var(--text-3);font-size:11px">●</span>`:`<span style="color:var(--success);font-size:11px">●</span>`}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('accounting',{view:'coa-form',id:'${a.id}'})"><i class="ti ti-edit"></i></button>
-          <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_coaDelete('${a.id}','${(a.name||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+          <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_coaDelete('${a.id}','${(a.name_en||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
         </td>
       </tr>`
     }).join('')}</tbody>
@@ -1870,12 +1870,12 @@ async function renderCOAForm(id=null) {
       <div class="form-group">
         <label class="form-label">${t.type}</label>
         <select id="cf-type" class="form-select">
-          ${ACC_TYPES.map(a=>`<option value="${a.id}" ${acc.type===a.id?'selected':''}>${APP.language==='bm'?a.bm:a.en}</option>`).join('')}
+          ${ACC_TYPES.map(a=>`<option value="${a.id}" ${acc.account_type===a.id?'selected':''}>${APP.language==='bm'?a.bm:a.en}</option>`).join('')}
         </select>
       </div>
       <div class="form-group" style="grid-column:1/-1">
         <label class="form-label">${t.name}</label>
-        <input id="cf-name" type="text" class="form-input" value="${acc.name||''}" placeholder="Cash in Hand">
+        <input id="cf-name" type="text" class="form-input" value="${acc.name_en||''}" placeholder="Cash in Hand">
       </div>
       <div class="form-group" style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px">
         <input id="cf-active" type="checkbox" ${acc.is_active===false?'':'checked'} style="width:auto">
@@ -1899,8 +1899,8 @@ async function _coaSave(id) {
   if(!code || !name) { errEl.textContent=t.codeRequired; errEl.style.display='block'; return }
 
   const payload = {
-    tenant_id: APP.tenant.id, code, name,
-    type: document.getElementById('cf-type').value,
+    tenant_id: APP.tenant.id, code, name_en: name,
+    account_type: document.getElementById('cf-type').value,
     is_active: document.getElementById('cf-active').checked,
     updated_at: new Date().toISOString()
   }
@@ -1948,7 +1948,7 @@ async function renderJournalList() {
   if(!APP.tenant.id) return
   const wrap = document.getElementById('jnl-table-wrap')
 
-  const {data: entries, error} = await sb.from('journal_entries').select('id,entry_no,entry_date,description')
+  const {data: entries, error} = await sb.from('journal_entries').select('id,ref_no,entry_date,description')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('entry_date', {ascending:false})
 
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
@@ -1958,12 +1958,12 @@ async function renderJournalList() {
   }
 
   const ids = entries.map(e=>e.id)
-  const {data: lines} = await sb.from('journal_lines').select('journal_entry_id,debit,credit').in('journal_entry_id', ids)
+  const {data: lines} = await sb.from('journal_lines').select('entry_id,debit_amt,credit_amt').in('entry_id', ids)
   const totals = {}
   ;(lines||[]).forEach(l=>{
-    if(!totals[l.journal_entry_id]) totals[l.journal_entry_id] = {debit:0,credit:0}
-    totals[l.journal_entry_id].debit += Number(l.debit||0)
-    totals[l.journal_entry_id].credit += Number(l.credit||0)
+    if(!totals[l.entry_id]) totals[l.entry_id] = {debit:0,credit:0}
+    totals[l.entry_id].debit += Number(l.debit_amt||0)
+    totals[l.entry_id].credit += Number(l.credit_amt||0)
   })
 
   wrap.innerHTML = `<table>
@@ -1971,7 +1971,7 @@ async function renderJournalList() {
     <tbody>${entries.map(e => {
       const tot = totals[e.id] || {debit:0,credit:0}
       return `<tr onclick="openPage('accounting',{view:'journal-form',id:'${e.id}'})" style="cursor:pointer">
-        <td><strong>${e.entry_no||'-'}</strong></td>
+        <td><strong>${e.ref_no||'-'}</strong></td>
         <td style="color:var(--text-2)">${formatDate(e.entry_date)}</td>
         <td style="color:var(--text-2)">${e.description||'-'}</td>
         <td style="text-align:right">${formatRM(tot.debit)}</td>
@@ -1998,7 +1998,7 @@ async function renderJournalForm(id=null) {
     balanceErr:'Total debit and credit must be equal.', minLines:'At least 2 lines are required.'
   }
 
-  const {data: accData} = await sb.from('chart_of_accounts').select('id,code,name')
+  const {data: accData} = await sb.from('chart_of_accounts').select('id,code,name_en')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('code')
   _jnlAccounts = accData || []
 
@@ -2008,8 +2008,8 @@ async function renderJournalForm(id=null) {
   if(id) {
     const {data} = await sb.from('journal_entries').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
     if(data) entry = data
-    const {data: lines} = await sb.from('journal_lines').select('*').eq('journal_entry_id',id).order('id')
-    if(lines && lines.length) _jnlLines = lines.map(l=>({account_id:l.account_id, debit:l.debit||'', credit:l.credit||''}))
+    const {data: lines} = await sb.from('journal_lines').select('*').eq('entry_id',id).order('line_no')
+    if(lines && lines.length) _jnlLines = lines.map(l=>({account_id:l.account_id, debit:l.debit_amt||'', credit:l.credit_amt||''}))
   }
 
   document.getElementById('main').innerHTML = `
@@ -2055,7 +2055,7 @@ function _jnlRenderLines() {
     <td>
       <select class="form-select" onchange="_jnlLines[${i}].account_id=this.value">
         <option value="">--</option>
-        ${_jnlAccounts.map(a=>`<option value="${a.id}" ${l.account_id===a.id?'selected':''}>${a.code} - ${a.name}</option>`).join('')}
+        ${_jnlAccounts.map(a=>`<option value="${a.id}" ${l.account_id===a.id?'selected':''}>${a.code} - ${a.name_en}</option>`).join('')}
       </select>
     </td>
     <td><input type="number" step="0.01" class="form-input" style="text-align:right" value="${l.debit}" oninput="_jnlLines[${i}].debit=this.value;_jnlLines[${i}].credit='';_jnlUpdateTotals()"></td>
@@ -2108,19 +2108,20 @@ async function _jnlSave(id) {
   if(id) {
     const {error} = await sb.from('journal_entries').update(entryPayload).eq('id',id).eq('tenant_id',APP.tenant.id)
     if(error) { btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save'; errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
-    await sb.from('journal_lines').delete().eq('journal_entry_id', id)
+    await sb.from('journal_lines').delete().eq('entry_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).then(r=>r, ()=>({data:null}))
-    entryPayload.entry_no = refData || ('JNL-'+Date.now())
+    entryPayload.ref_no = refData || ('JNL-'+Date.now())
+    entryPayload.entry_type = 'manual'
     entryPayload.created_by = APP.user.id
     const {data, error} = await sb.from('journal_entries').insert(entryPayload).select('id').single()
     if(error) { btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save'; errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     entryId = data.id
   }
 
-  const linesPayload = validLines.map(l => ({
-    tenant_id: APP.tenant.id, journal_entry_id: entryId, account_id: l.account_id,
-    debit: Number(l.debit||0), credit: Number(l.credit||0)
+  const linesPayload = validLines.map((l,i) => ({
+    tenant_id: APP.tenant.id, entry_id: entryId, account_id: l.account_id, line_no: i+1,
+    debit_amt: Number(l.debit||0), credit_amt: Number(l.credit||0)
   }))
   const {error: linesErr} = await sb.from('journal_lines').insert(linesPayload)
 
@@ -2167,15 +2168,15 @@ async function _fyLoad() {
   const t = APP.language==='bm' ? { start:'Mula', end:'Tamat', status:'Status', open:'Terbuka', closed:'Ditutup', noData:'Tiada tahun kewangan lagi', del:'Padam' }
     : { start:'Start', end:'End', status:'Status', open:'Open', closed:'Closed', noData:'No fiscal years set up yet', del:'Delete' }
   const wrap = document.getElementById('fy-table-wrap')
-  const {data, error} = await sb.from('fiscal_years').select('id,start_date,end_date,status')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('start_date',{ascending:false})
+  const {data, error} = await sb.from('fiscal_years').select('id,start_date,end_date,is_closed')
+    .eq('tenant_id', APP.tenant.id).order('start_date',{ascending:false})
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.start}</th><th>${t.end}</th><th>${t.status}</th><th style="width:60px"></th></tr></thead>
   <tbody>${data.map(f=>`<tr>
     <td>${formatDate(f.start_date)}</td><td>${formatDate(f.end_date)}</td>
-    <td><span style="color:${f.status==='closed'?'var(--text-3)':'var(--success)'}">${f.status==='closed'?t.closed:t.open}</span></td>
+    <td><span style="color:${f.is_closed?'var(--text-3)':'var(--success)'}">${f.is_closed?t.closed:t.open}</span></td>
     <td><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_fyDelete('${f.id}')"><i class="ti ti-trash"></i></button></td>
   </tr>`).join('')}</tbody></table>`
 }
@@ -2184,7 +2185,10 @@ async function _fySave() {
   const start = document.getElementById('fy-start').value
   const end = document.getElementById('fy-end').value
   if(!start || !end) { showToast('Please fill in both dates', 'error'); return }
-  const {error} = await sb.from('fiscal_years').insert({tenant_id:APP.tenant.id, start_date:start, end_date:end, status:'open'})
+  const startYear = new Date(start).getFullYear()
+  const endYear = new Date(end).getFullYear()
+  const yearLabel = startYear === endYear ? `FY${startYear}` : `FY${startYear}/${String(endYear).slice(-2)}`
+  const {error} = await sb.from('fiscal_years').insert({tenant_id:APP.tenant.id, start_date:start, end_date:end, year_label:yearLabel, is_closed:false})
   if(error) { showToast('Error: '+error.message, 'error'); return }
   showToast(APP.language==='bm'?'Tahun kewangan ditambah!':'Fiscal year added!', 'success')
   document.getElementById('fy-form-wrap').innerHTML=''
@@ -2217,7 +2221,7 @@ async function renderExpenseClaims(params={}) {
   <div class="card"><div id="exp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('exp-table-wrap')
-  const {data, error} = await sb.from('expense_claims').select('id,claimant_name,claim_date,description,amount,status')
+  const {data, error} = await sb.from('expense_claims').select('id,claimant_name,claim_date,description,total_amount,status')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('claim_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
@@ -2226,7 +2230,7 @@ async function renderExpenseClaims(params={}) {
   wrap.innerHTML = `<table><thead><tr><th>${t.claimant}</th><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(e=>`<tr onclick="openPage('accounting',{view:'exp-form',id:'${e.id}'})" style="cursor:pointer">
     <td>${e.claimant_name||'-'}</td><td>${formatDate(e.claim_date)}</td><td style="color:var(--text-2)">${e.description||'-'}</td>
-    <td style="text-align:right">${formatRM(e.amount)}</td>
+    <td style="text-align:right">${formatRM(e.total_amount)}</td>
     <td><span style="color:${statusColor(e.status)}">${statusLabel(e.status)}</span></td>
   </tr>`).join('')}</tbody></table>`
 }
@@ -2254,7 +2258,7 @@ async function renderExpenseForm(id=null) {
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.claimant}</label><input id="ef-claimant" type="text" class="form-input" value="${claim.claimant_name||''}"></div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="ef-date" type="date" class="form-input" value="${claim.claim_date||''}"></div>
-      <div class="form-group"><label class="form-label">${t.amount}</label><input id="ef-amount" type="number" step="0.01" class="form-input" value="${claim.amount||''}"></div>
+      <div class="form-group"><label class="form-label">${t.amount}</label><input id="ef-amount" type="number" step="0.01" class="form-input" value="${claim.total_amount||''}"></div>
       <div class="form-group"><label class="form-label">${t.status}</label>
         <select id="ef-status" class="form-select">
           <option value="pending" ${claim.status==='pending'?'selected':''}>${t.pending}</option>
@@ -2281,12 +2285,16 @@ async function _expSave(id) {
   if(!claimant || !date || !amount) { errEl.textContent=t.required; errEl.style.display='block'; return }
   const payload = {
     tenant_id: APP.tenant.id, claimant_name: claimant, claim_date: date,
-    amount: Number(amount), status: document.getElementById('ef-status').value,
+    total_amount: Number(amount), status: document.getElementById('ef-status').value,
     description: document.getElementById('ef-desc').value.trim()||null, updated_at: new Date().toISOString()
   }
   let error
   if(id) { const r = await sb.from('expense_claims').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id); error = r.error }
-  else { const r = await sb.from('expense_claims').insert(payload); error = r.error }
+  else {
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'EXP'}).then(r=>r, ()=>({data:null}))
+    payload.ref_no = refData || ('EXP-'+Date.now())
+    const r = await sb.from('expense_claims').insert(payload); error = r.error
+  }
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
   showToast(APP.language==='bm'?'Tuntutan disimpan!':'Claim saved!', 'success')
   openPage('accounting',{view:'expense'})
@@ -3071,26 +3079,26 @@ async function _pnlLoad() {
 
   const {data: entries} = await sb.from('journal_entries').select('id').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('entry_date',from).lte('entry_date',to)
   const entryIds = (entries||[]).map(e=>e.id)
-  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name,type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('type',['revenue','expense'])
+  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('account_type',['revenue','expense'])
 
   if(!entryIds.length || !accounts?.length) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`; return }
 
-  const {data: lines} = await sb.from('journal_lines').select('account_id,debit,credit').in('journal_entry_id', entryIds)
+  const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
   const byAccount = {}
-  ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit||0); byAccount[l.account_id].credit+=Number(l.credit||0) })
+  ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit_amt||0); byAccount[l.account_id].credit+=Number(l.credit_amt||0) })
 
-  const revAccounts = accounts.filter(a=>a.type==='revenue')
-  const expAccounts = accounts.filter(a=>a.type==='expense')
+  const revAccounts = accounts.filter(a=>a.account_type==='revenue')
+  const expAccounts = accounts.filter(a=>a.account_type==='expense')
   let totalRev=0, totalExp=0
   const revRows = revAccounts.map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt=b.credit-b.debit; totalRev+=amt; return {a,amt} }).filter(r=>r.amt!==0)
   const expRows = expAccounts.map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt=b.debit-b.credit; totalExp+=amt; return {a,amt} }).filter(r=>r.amt!==0)
 
   result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
     <div style="font-weight:700;margin-bottom:8px">${t.revenue}</div>
-    <table><tbody>${revRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
+    <table><tbody>${revRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.revenue}</span><span>${formatRM(totalRev)}</span></div>
     <div style="font-weight:700;margin:16px 0 8px">${t.expense}</div>
-    <table><tbody>${expRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
+    <table><tbody>${expRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.expense}</span><span>${formatRM(totalExp)}</span></div>
     <div style="display:flex;justify-content:space-between;font-weight:700;font-size:18px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px;color:${(totalRev-totalExp)>=0?'var(--success)':'var(--danger)'}">
       <span>${t.netProfit}</span><span>${formatRM(totalRev-totalExp)}</span>
@@ -3127,18 +3135,18 @@ async function _bsLoad() {
 
   const {data: entries} = await sb.from('journal_entries').select('id').eq('tenant_id',APP.tenant.id).is('deleted_at',null).lte('entry_date',asOf)
   const entryIds = (entries||[]).map(e=>e.id)
-  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name,type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('type',['asset','liability','equity'])
+  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('account_type',['asset','liability','equity'])
 
   if(!accounts?.length) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`; return }
 
   let byAccount = {}
   if(entryIds.length) {
-    const {data: lines} = await sb.from('journal_lines').select('account_id,debit,credit').in('journal_entry_id', entryIds)
-    ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit||0); byAccount[l.account_id].credit+=Number(l.credit||0) })
+    const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+    ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit_amt||0); byAccount[l.account_id].credit+=Number(l.credit_amt||0) })
   }
 
   const build = (type, normal) => {
-    const rows = accounts.filter(a=>a.type===type).map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt = normal==='debit' ? b.debit-b.credit : b.credit-b.debit; return {a,amt} }).filter(r=>r.amt!==0)
+    const rows = accounts.filter(a=>a.account_type===type).map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt = normal==='debit' ? b.debit-b.credit : b.credit-b.debit; return {a,amt} }).filter(r=>r.amt!==0)
     const total = rows.reduce((s,r)=>s+r.amt,0)
     return {rows, total}
   }
@@ -3147,7 +3155,7 @@ async function _bsLoad() {
   const eq = build('equity','credit')
 
   const section = (label, group) => `<div style="font-weight:700;margin:16px 0 8px">${label}</div>
-    <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code} - ${r.a.name}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
+    <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div>`
 
   result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
