@@ -1589,6 +1589,8 @@ async function _crmSave(id) {
     const res = await sb.from('customers').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
     error = res.error
   } else {
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'CUST'}).then(r=>r, ()=>({data:null}))
+    payload.code = refData || ('CUST-'+Date.now())
     const res = await sb.from('customers').insert(payload)
     error = res.error
   }
