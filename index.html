@@ -1104,7 +1104,7 @@ async function loadDashboardData() {
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth()-5, 1)
 
   const {data: allInv, error: invError} = await sb.from('invoices')
-    .select('id,inv_no,inv_date,total_amount,paid_amount,status,customer_id,customers(name)')
+    .select('id,ref_no,inv_date,total_amount,paid_amount,status,customer_id,customers(name)')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .gte('inv_date', sixMonthsAgo.toISOString().slice(0,10))
     .order('inv_date', {ascending:true})
@@ -2549,7 +2549,7 @@ async function renderInvList() {
   <div class="card"><div id="inv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('inv-list-wrap')
-  const {data, error} = await sb.from('invoices').select('id,inv_no,inv_date,due_date,total_amount,paid_amount,status,customers(name)')
+  const {data, error} = await sb.from('invoices').select('id,ref_no,inv_date,due_date,total_amount,paid_amount,status,customers(name)')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('inv_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
@@ -2557,7 +2557,7 @@ async function renderInvList() {
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
   wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(i=>`<tr onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})" style="cursor:pointer">
-    <td><strong>${i.inv_no||'-'}</strong></td><td>${i.customers?.name||'-'}</td>
+    <td><strong>${i.ref_no||'-'}</strong></td><td>${i.customers?.name||'-'}</td>
     <td>${formatDate(i.inv_date)}</td><td>${formatDate(i.due_date)}</td>
     <td style="text-align:right">${formatRM(i.total_amount)}</td>
     <td style="text-align:right">${formatRM(i.paid_amount)}</td>
@@ -2638,7 +2638,7 @@ async function _invSave(id) {
     await sb.from('invoice_items').delete().eq('invoice_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).catch(()=>({data:null}))
-    payload.inv_no = refData || ('INV-'+Date.now())
+    payload.ref_no = refData || ('INV-'+Date.now())
     payload.status = 'unpaid'; payload.paid_amount = 0
     const {data, error} = await sb.from('invoices').insert(payload).select('id').single()
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
@@ -2680,7 +2680,7 @@ async function renderInvDetail(id) {
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
-    <div class="page-title">${inv.inv_no}</div>
+    <div class="page-title">${inv.ref_no}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{})">← ${t.back}</div>
   </div>
   <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button></div>
@@ -2867,7 +2867,7 @@ async function _quoConvert(quoId) {
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).catch(()=>({data:null}))
   const {data: newInv, error} = await sb.from('invoices').insert({
-    tenant_id: APP.tenant.id, customer_id: quo.customer_id, inv_no: refData || ('INV-'+Date.now()),
+    tenant_id: APP.tenant.id, customer_id: quo.customer_id, ref_no: refData || ('INV-'+Date.now()),
     inv_date: new Date().toISOString().slice(0,10), total_amount: quo.total_amount, status:'unpaid', paid_amount:0
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
