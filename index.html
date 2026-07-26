@@ -1237,6 +1237,16 @@ function renderDashboard() {
         <div id="db-marketing-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan idea pemasaran berdasarkan data jualan semasa.':'Click "Generate" to get marketing ideas based on your current sales data.'}</div>
       </div>
     </div>
+
+    <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="db-card-title"><i class="ti ti-list-check"></i> ${isBm?'Ringkasan Harian':'Daily Digest'}</div>
+          <button id="db-digest-btn" class="db-btn primary" onclick="_dbLoadDailyDigest()"><i class="ti ti-refresh"></i> ${isBm?'Jana Item Tindakan Hari Ni':"Generate Today's Action Items"}</button>
+        </div>
+        <div id="db-digest-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik butang untuk gabungkan invois overdue, stok rendah, dan deadline pematuhan jadi satu senarai tindakan hari ni.':"Click the button to combine overdue invoices, low stock, and compliance deadlines into one list of today's action items."}</div>
+      </div>
+    </div>
   </div>`
 
   _dbSyncGlobalTheme()
@@ -1427,6 +1437,57 @@ async function _dbLoadMarketingAdvice() {
     else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${ideas.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
   } catch(err) {
     console.error('AI marketing advice error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
+
+async function _dbLoadDailyDigest() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Menjana ringkasan harian...', err:'Ralat: ', empty:'Tiada item tindakan buat masa ini — semua nampak elok!' }
+    : { loading:"Generating today's digest...", err:'Error: ', empty:'No action items right now — everything looks fine!' }
+  const btn = document.getElementById('db-digest-btn')
+  const out = document.getElementById('db-digest-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--db-text4)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const today = new Date().toISOString().slice(0,10)
+
+    const [{data: overdueInv}, {data: allProducts}] = await Promise.all([
+      sb.from('invoices').select('ref_no,customer_name,total,paid_amt,due_date').eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('status','paid').lt('due_date', today),
+      sb.from('products').select('name_en,stock_qty,reorder_point').eq('tenant_id',APP.tenant.id).is('deleted_at',null),
+    ])
+    const lowStock = (allProducts||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+
+    const {pcbDeadline, sstDeadline} = _complianceNextDeadlines()
+    const now = new Date()
+    const daysUntil = d => Math.ceil((d - now) / 86400000)
+    const complianceLines = [
+      { label:'PCB', deadline:pcbDeadline, days:daysUntil(pcbDeadline) },
+      { label:'SST', deadline:sstDeadline, days:daysUntil(sstDeadline) },
+    ].filter(c=>c.days<=7).map(c=>`${c.label} deadline ${formatDate(c.deadline.toISOString().slice(0,10))} (${c.days<=0?'TODAY':c.days+' day(s) left'})`)
+
+    const overdueLines = (overdueInv||[]).map(i => {
+      const outstanding = Number(i.total||0) - Number(i.paid_amt||0)
+      return `${i.ref_no} — ${i.customer_name||'-'}, RM${outstanding.toFixed(2)} outstanding, due ${i.due_date}`
+    })
+    const lowStockLines = lowStock.map(p => `${p.name_en}: stock ${p.stock_qty}, reorder point ${p.reorder_point ?? 5}`)
+
+    const context =
+      `Overdue invoices (${overdueLines.length}):\n${overdueLines.join('\n') || 'none'}\n\n` +
+      `Low stock products (${lowStockLines.length}):\n${lowStockLines.join('\n') || 'none'}\n\n` +
+      `Compliance deadlines within 7 days:\n${complianceLines.join('\n') || 'none'}`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'daily_digest', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const items = data.data.items || []
+    if(!items.length) { if(out) out.innerHTML = `<span style="color:var(--db-text4)">${t.empty}</span>` }
+    else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${items.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
+  } catch(err) {
+    console.error('Daily digest error:', err)
     if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
   }
   if(btn) btn.disabled = false
