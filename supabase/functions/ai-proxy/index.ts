@@ -5,8 +5,11 @@
 // Request:  POST { action: 'chat' | 'categorize' | 'receipt', ...action-specific fields }
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
-// 'chat' and 'categorize' are implemented. 'receipt' is wired into the switch but
-// returns 501 until that feature is built (see NexERP AI feature plan).
+// All three actions (chat, categorize, receipt) are implemented. 'receipt' uses a
+// vision-capable model read from the GROQ_VISION_MODEL secret (falls back to
+// qwen/qwen3.6-27b) — kept out of code so it can be swapped without a redeploy if
+// Groq deprecates it, which has happened to every prior Groq vision model on a
+// roughly 3-4 month cadence.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -27,7 +30,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 async function callGroq(
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: unknown }[],
   model: string,
   extra: Record<string, unknown> = {},
 ) {
@@ -127,6 +130,54 @@ async function handleCategorize(body: Record<string, unknown>) {
   }
 }
 
+const DEFAULT_VISION_MODEL = 'qwen/qwen3.6-27b'
+
+async function handleReceipt(body: Record<string, unknown>) {
+  const imageBase64 = body.image_base64
+  const mimeType = typeof body.mime_type === 'string' && body.mime_type ? body.mime_type : 'image/jpeg'
+  if (!imageBase64 || typeof imageBase64 !== 'string') throw new Error('image_base64 is required')
+
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  const systemPrompt =
+    'You are a receipt-scanning assistant for a Malaysian SME expense claim system. Extract ' +
+    'the following fields from the receipt image and respond with ONLY a JSON object, no other ' +
+    'text: {"vendor": "<merchant/store name>", "amount": <total amount as a plain number, no ' +
+    'currency symbol>, "date": "<YYYY-MM-DD>", "description": "<short summary of what was ' +
+    'purchased>", "confidence": <number 0 to 1>}. If a field cannot be read clearly, use null ' +
+    'for that field and lower the confidence.'
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Extract the receipt details from this image.' },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+        ],
+      },
+    ],
+    visionModel,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { vendor?: string; amount?: number; date?: string; description?: string; confidence?: number }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+
+  return {
+    vendor: typeof parsed.vendor === 'string' ? parsed.vendor : null,
+    amount: typeof parsed.amount === 'number' ? parsed.amount : null,
+    date: typeof parsed.date === 'string' ? parsed.date : null,
+    description: typeof parsed.description === 'string' ? parsed.description : '',
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -157,7 +208,8 @@ Deno.serve(async (req: Request) => {
         data = await handleCategorize(body)
         break
       case 'receipt':
-        return jsonResponse({ success: false, error: 'receipt action not implemented yet' }, 501)
+        data = await handleReceipt(body)
+        break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
     }
