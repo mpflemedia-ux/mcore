@@ -375,6 +375,43 @@ async function handleMonthEndSummary(body: Record<string, unknown>) {
   return { summary: reply }
 }
 
+interface LowStockProduct {
+  name: string
+  code?: string
+  stock_qty: number
+  reorder_point: number
+  total_sold?: number
+}
+
+async function handleGeneratePO(body: Record<string, unknown>) {
+  const products = body.products as LowStockProduct[] | undefined
+  if (!Array.isArray(products) || products.length === 0) throw new Error('products is required and must be a non-empty list')
+
+  const productList = products
+    .map((p) => `${p.name}${p.code ? ' (' + p.code + ')' : ''}: current stock ${p.stock_qty}, reorder point ${p.reorder_point}, total units sold historically ${p.total_sold ?? 'unknown'}`)
+    .join('\n')
+
+  const systemPrompt =
+    'You are drafting a Purchase Order for a Malaysian SME whose stock has fallen at or below ' +
+    'reorder point for the products listed below. There is no supplier data on file and no ' +
+    'purchase order system — this is a plain-text DRAFT for the business owner to review, fill ' +
+    'in supplier details, and place manually. For EACH product, suggest a reasonable reorder ' +
+    'quantity based on its historical sales volume and current stock gap (there is no precise ' +
+    'sales-velocity data, so use judgement and keep quantities conservative, round numbers). ' +
+    'Format as a simple purchase order draft: a header noting supplier details are TBD, then a ' +
+    `product list (name, suggested qty, brief one-line reason). Reply in ${langName(body)}.\n\n` +
+    `Low-stock products:\n${productList}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Draft the purchase order.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { draft: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -424,6 +461,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'month_end_summary':
         data = await handleMonthEndSummary(body)
+        break
+      case 'generate_po':
+        data = await handleGeneratePO(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)

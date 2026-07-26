@@ -3079,6 +3079,7 @@ async function renderProductList() {
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('inventory',{view:'product-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_invTabs('products')}
+  <div id="inv-lowstock-wrap" style="margin-bottom:16px"></div>
   <div class="card" style="margin-bottom:0">
     <div style="padding:16px;border-bottom:1px solid var(--border)">
       <div class="input-group"><i class="ti ti-search input-icon"></i>
@@ -3086,6 +3087,20 @@ async function renderProductList() {
       </div>
     </div>
     <div id="inv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>
+
+  <div class="modal-overlay" id="po-modal-overlay">
+    <div class="modal-box" style="max-width:520px">
+      <div class="modal-box-header">${APP.language==='bm'?'Draf Purchase Order':'Purchase Order Draft'}</div>
+      <div class="modal-box-body">
+        <div id="po-modal-loading" style="color:var(--text-3);font-size:13px"></div>
+        <textarea id="po-modal-text" class="form-input" rows="12" style="display:none"></textarea>
+      </div>
+      <div class="modal-box-footer">
+        <button id="po-copy-btn" class="btn btn-primary" style="flex:1;display:none" onclick="_invCopyPODraft()"><i class="ti ti-copy"></i> ${APP.language==='bm'?'Salin':'Copy'}</button>
+        <button class="btn btn-outline" onclick="document.getElementById('po-modal-overlay').classList.remove('active')">${APP.language==='bm'?'Tutup':'Close'}</button>
+      </div>
+    </div>
   </div>`
   await _invLoad()
 }
@@ -3097,25 +3112,100 @@ async function _invLoad() {
   const t = APP.language==='bm' ? { sku:'SKU', name:'Nama Produk', price:'Harga Jual', cost:'Kos', stock:'Stok', noData:'Tiada produk lagi', noResult:'Tiada hasil', edit:'Edit', del:'Padam' }
     : { sku:'SKU', name:'Product Name', price:'Sell Price', cost:'Cost', stock:'Stock', noData:'No products yet', noResult:'No results', edit:'Edit', del:'Delete' }
   const wrap = document.getElementById('inv-table-wrap')
-  let q = sb.from('products').select('id,code,name_en,name_bm,unit_price,unit_cost,stock_qty,unit')
+  let q = sb.from('products').select('id,code,name_en,name_bm,unit_price,unit_cost,stock_qty,unit,reorder_point')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name_en')
   if(_invState.search) { const s=_invState.search.trim(); q = q.or(`code.ilike.%${s}%,name_en.ilike.%${s}%`) }
   const {data, error} = await q
   _invState.data = data || []
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  _invRenderLowStockAlert()
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_invState.search?t.noResult:t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.sku}</th><th>${t.name}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.stock}</th><th style="width:100px"></th></tr></thead>
-  <tbody>${data.map(p=>`<tr>
+  <tbody>${data.map(p=>{
+    const rp = p.reorder_point ?? 5
+    const isLow = Number(p.stock_qty) <= Number(rp)
+    return `<tr>
     <td>${p.code||'-'}</td><td><strong>${prodName(p)}</strong></td>
     <td style="text-align:right">${formatRM(p.unit_price)}</td>
     <td style="text-align:right;color:var(--text-2)">${formatRM(p.unit_cost)}</td>
-    <td style="text-align:right;${Number(p.stock_qty)<=5?'color:var(--danger);font-weight:600':''}">${p.stock_qty ?? 0} ${p.unit||''}</td>
+    <td style="text-align:right;${isLow?'color:var(--danger);font-weight:600':''}">${p.stock_qty ?? 0} ${p.unit||''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('inventory',{view:'product-form',id:'${p.id}'})"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_invDelete('${p.id}','${prodName(p).replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td>
-  </tr>`).join('')}</tbody></table>`
+  </tr>`
+  }).join('')}</tbody></table>`
+}
+
+function _invRenderLowStockAlert() {
+  const el = document.getElementById('inv-lowstock-wrap')
+  if(!el) return
+  const isBm = APP.language==='bm'
+  const lowStock = (_invState.data||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+  if(!lowStock.length) { el.innerHTML = ''; return }
+  const label = isBm ? `${lowStock.length} produk stok rendah` : `${lowStock.length} product(s) low on stock`
+  const btnLabel = isBm ? 'Jana Draf PO' : 'Generate PO Draft'
+  el.innerHTML = `<div class="card" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-color:var(--warning)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <i class="ti ti-alert-triangle" style="color:var(--warning);font-size:22px"></i>
+      <div>
+        <div style="font-weight:600;font-size:13px">${isBm?'Stok Rendah':'Stock Low'}</div>
+        <div style="font-size:12px;color:var(--text-3)">${label}: ${lowStock.map(p=>prodName(p)).join(', ')}</div>
+      </div>
+    </div>
+    <button id="po-generate-btn" class="btn btn-primary btn-sm" onclick="_invGeneratePODraft()"><i class="ti ti-file-text"></i> ${btnLabel}</button>
+  </div>`
+}
+
+async function _invGeneratePODraft() {
+  const isBm = APP.language==='bm'
+  const overlay = document.getElementById('po-modal-overlay')
+  const loadingEl = document.getElementById('po-modal-loading')
+  const textEl = document.getElementById('po-modal-text')
+  const copyBtn = document.getElementById('po-copy-btn')
+  const btn = document.getElementById('po-generate-btn')
+  const lowStock = (_invState.data||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+  if(!lowStock.length) return
+
+  if(btn) btn.disabled = true
+  if(overlay) overlay.classList.add('active')
+  if(textEl) textEl.style.display = 'none'
+  if(copyBtn) copyBtn.style.display = 'none'
+  if(loadingEl) loadingEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Menjana draf PO...':'Generating PO draft...'}`
+
+  try {
+    const products = await Promise.all(lowStock.map(async p => {
+      const [{data: invItems}, {data: posItems}] = await Promise.all([
+        sb.from('invoice_items').select('qty').eq('tenant_id',APP.tenant.id).eq('product_id',p.id),
+        sb.from('pos_transaction_items').select('qty').eq('tenant_id',APP.tenant.id).eq('product_id',p.id),
+      ])
+      const totalSold = (invItems||[]).reduce((s,i)=>s+Number(i.qty||0),0) + (posItems||[]).reduce((s,i)=>s+Number(i.qty||0),0)
+      return { name: prodName(p), code: p.code||undefined, stock_qty: Number(p.stock_qty||0), reorder_point: Number(p.reorder_point ?? 5), total_sold: totalSold }
+    }))
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'generate_po', products, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(loadingEl) loadingEl.innerHTML = ''
+    if(textEl) { textEl.value = data.data.draft; textEl.style.display = 'block' }
+    if(copyBtn) copyBtn.style.display = 'block'
+  } catch(err) {
+    console.error('Generate PO draft error:', err)
+    if(loadingEl) loadingEl.innerHTML = `<span style="color:var(--danger)">${isBm?'Ralat: ':'Error: '}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
+
+function _invCopyPODraft() {
+  const textEl = document.getElementById('po-modal-text')
+  if(!textEl) return
+  navigator.clipboard.writeText(textEl.value).then(()=>{
+    showToast(APP.language==='bm'?'Disalin!':'Copied!', 'success')
+  }, ()=>{
+    textEl.select()
+    showToast(APP.language==='bm'?'Sila salin manual (Ctrl+C).':'Please copy manually (Ctrl+C).', 'warning')
+  })
 }
 
 async function _invDelete(id, name) {
@@ -3130,10 +3220,12 @@ async function renderProductForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Tambah Produk', editTitle:'Edit Produk', back:'Inventori',
     sku:'SKU', name:'Nama Produk *', nameBm:'Nama Produk (BM, pilihan)', price:'Harga Jual (RM) *', cost:'Kos (RM)', stock:'Kuantiti Stok', unit:'Unit',
+    reorderPoint:'Titik Pesan Semula (pilihan, lalai 5)',
     save:'Simpan', cancel:'Batal', required:'Nama dan harga jual diperlukan.'
   } : {
     addTitle:'Add Product', editTitle:'Edit Product', back:'Inventory',
     sku:'SKU', name:'Product Name *', nameBm:'Product Name (BM, optional)', price:'Sell Price (RM) *', cost:'Cost (RM)', stock:'Stock Quantity', unit:'Unit',
+    reorderPoint:'Reorder Point (optional, default 5)',
     save:'Save', cancel:'Cancel', required:'Name and sell price are required.'
   }
   let prod = { unit:'pcs' }
@@ -3152,6 +3244,7 @@ async function renderProductForm(id=null) {
       <div class="form-group"><label class="form-label">${t.price}</label><input id="pf-price" type="number" step="0.01" class="form-input" value="${prod.unit_price||''}"></div>
       <div class="form-group"><label class="form-label">${t.cost}</label><input id="pf-cost" type="number" step="0.01" class="form-input" value="${prod.unit_cost||''}"></div>
       <div class="form-group"><label class="form-label">${t.stock}</label><input id="pf-stock" type="number" class="form-input" value="${prod.stock_qty ?? 0}"></div>
+      <div class="form-group"><label class="form-label">${t.reorderPoint}</label><input id="pf-reorder-point" type="number" class="form-input" value="${prod.reorder_point ?? ''}" placeholder="5"></div>
     </div>
     <div style="padding:0 20px 20px;display:flex;gap:12px">
       <button id="pf-save" class="btn btn-primary" onclick="_prodSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
@@ -3167,11 +3260,13 @@ async function _prodSave(id) {
   const errEl = document.getElementById('pf-form-err')
   errEl.style.display='none'
   if(!name || !price) { errEl.textContent=t.required; errEl.style.display='block'; return }
+  const reorderPointRaw = document.getElementById('pf-reorder-point').value
   const payload = {
     tenant_id: APP.tenant.id, code: document.getElementById('pf-sku').value.trim()||null, name_en: name,
     name_bm: document.getElementById('pf-name-bm').value.trim()||null,
     unit_price: Number(price), unit_cost: Number(document.getElementById('pf-cost').value||0),
     stock_qty: Number(document.getElementById('pf-stock').value||0), unit: document.getElementById('pf-unit').value.trim()||'pcs',
+    reorder_point: reorderPointRaw.trim()==='' ? 5 : Number(reorderPointRaw),
     updated_at: new Date().toISOString()
   }
   let error
