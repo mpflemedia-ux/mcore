@@ -1577,6 +1577,10 @@ function renderSettings() {
       <button class="btn btn-danger" style="width:fit-content" onclick="doLogout()"><i class="ti ti-logout"></i> ${c.signOut}</button>
     </div>
   </div>
+  <div class="card" style="max-width:500px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Peringatan Pematuhan':'Compliance Reminders'}</div></div>
+    <div id="compliance-reminders-wrap" style="padding:16px"></div>
+  </div>
   ${isAdmin ? `
   <div class="card" style="max-width:600px;margin-top:16px">
     <div class="card-header"><div class="card-title">${rp.title}</div></div>
@@ -1596,6 +1600,61 @@ function renderSettings() {
     _rolePermsState = JSON.parse(JSON.stringify(APP.tenantConfig.roles||{}))
     _rpRenderList()
   }
+  _complianceRender()
+}
+
+// Malaysia compliance deadlines — SST return/payment due by the last day of the
+// month following each 2-month taxable period (Jan-Feb, Mar-Apr, ... Nov-Dec);
+// PCB (Potongan Cukai Bulanan) due by the 15th of every month. Pure date math,
+// no AI/network call needed.
+function _complianceNextDeadlines() {
+  const now = new Date()
+  const year = now.getFullYear()
+
+  let pcbDeadline = new Date(year, now.getMonth(), 15)
+  if(pcbDeadline < now) pcbDeadline = new Date(year, now.getMonth()+1, 15)
+
+  const sstDeadlineMonths = [0,2,4,6,8,10] // Jan,Mar,May,Jul,Sep,Nov (0-indexed)
+  let sstDeadline = null
+  for(const m of sstDeadlineMonths) {
+    const d = new Date(year, m+1, 0) // last day of month m
+    if(d >= now) { sstDeadline = d; break }
+  }
+  if(!sstDeadline) sstDeadline = new Date(year+1, 1, 0) // last day of Jan, next year (all this year's deadlines passed)
+
+  return { pcbDeadline, sstDeadline }
+}
+
+function _complianceRender() {
+  const el = document.getElementById('compliance-reminders-wrap')
+  if(!el) return
+  const isBm = APP.language==='bm'
+  const {pcbDeadline, sstDeadline} = _complianceNextDeadlines()
+  const now = new Date()
+  const daysUntil = d => Math.ceil((d - now) / 86400000)
+  const items = [
+    { label: 'PCB (Potongan Cukai Bulanan)', deadline: pcbDeadline, days: daysUntil(pcbDeadline) },
+    { label: 'SST (Sales & Service Tax)', deadline: sstDeadline, days: daysUntil(sstDeadline) },
+  ]
+  const upcoming = items.filter(i=>i.days <= 7)
+  const footer = `<div style="margin-top:10px;font-size:11px;color:var(--text-3)">
+    ${isBm?'Deadline seterusnya':'Next deadlines'}: PCB ${formatDate(pcbDeadline.toISOString().slice(0,10))}, SST ${formatDate(sstDeadline.toISOString().slice(0,10))}
+  </div>`
+
+  if(upcoming.length===0) {
+    const noneText = isBm ? 'Tiada deadline dalam 7 hari akan datang.' : 'No deadlines within the next 7 days.'
+    el.innerHTML = `<p style="font-size:13px;color:var(--text-3)">${noneText}</p>` + footer
+    return
+  }
+
+  el.innerHTML = upcoming.map(i => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <i class="ti ti-alert-triangle" style="color:var(--warning);font-size:20px"></i>
+      <div>
+        <div style="font-weight:600;font-size:13px">${i.label}</div>
+        <div style="font-size:12px;color:var(--text-3)">${isBm?'Tarikh akhir':'Deadline'}: ${formatDate(i.deadline.toISOString().slice(0,10))} — ${i.days<=0?(isBm?'HARI INI':'TODAY'):(isBm?`${i.days} hari lagi`:`${i.days} day(s) left`)}</div>
+      </div>
+    </div>`).join('') + footer
 }
 
 function _rpRenderList() {
