@@ -2581,9 +2581,79 @@ async function renderFiscalYears() {
     <button class="btn btn-primary btn-sm" onclick="_fyShowForm()"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_accTabs('fiscal')}
   <div id="fy-form-wrap"></div>
-  <div class="card"><div id="fy-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div class="card"><div id="fy-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><i class="ti ti-sparkles"></i> ${APP.language==='bm'?'Ringkasan Akhir Bulan AI':'AI Month-End Summary'}</div>
+      <button id="fy-monthend-btn" class="btn btn-outline btn-sm" onclick="_fyMonthEndSummary()"><i class="ti ti-refresh"></i> ${APP.language==='bm'?'Jana':'Generate'}</button>
+    </div>
+    <div id="fy-monthend-out" style="padding:16px;font-size:13px;color:var(--text-3);line-height:1.6">${APP.language==='bm'?'Klik "Jana" untuk ringkasan bulan ini berbanding bulan lepas, termasuk sebarang anomali.':'Click "Generate" for a summary of this month vs last month, including any anomalies.'}</div>
+  </div>`
 
   await _fyLoad()
+}
+
+async function _fyMonthEndSummary() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { loading:'Menjana ringkasan...', err:'Ralat: ' } : { loading:'Generating summary...', err:'Error: ' }
+  const btn = document.getElementById('fy-monthend-btn')
+  const out = document.getElementById('fy-monthend-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}`
+
+  try {
+    const now = new Date()
+    const thisStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10)
+    const thisEnd = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10)
+    const lastStart = new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().slice(0,10)
+    const lastEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0,10)
+
+    const {data: accounts} = await sb.from('chart_of_accounts').select('id,name_en,account_type')
+      .eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('account_type',['revenue','expense'])
+
+    async function periodTotals(from, to) {
+      const {data: entries} = await sb.from('journal_entries').select('id').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('entry_date',from).lte('entry_date',to)
+      const entryIds = (entries||[]).map(e=>e.id)
+      const perAccount = {}
+      let totalRev = 0, totalExp = 0
+      if(entryIds.length) {
+        const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+        const byAccount = {}
+        ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit_amt||0); byAccount[l.account_id].credit+=Number(l.credit_amt||0) })
+        ;(accounts||[]).forEach(a=>{
+          const b = byAccount[a.id]||{debit:0,credit:0}
+          const amt = a.account_type==='revenue' ? b.credit-b.debit : b.debit-b.credit
+          perAccount[a.id] = amt
+          if(a.account_type==='revenue') totalRev += amt; else totalExp += amt
+        })
+      }
+      return { totalRev, totalExp, perAccount }
+    }
+
+    const [cur, prev] = await Promise.all([periodTotals(thisStart, thisEnd), periodTotals(lastStart, lastEnd)])
+
+    const expenseLines = (accounts||[]).filter(a=>a.account_type==='expense').map(a=>{
+      const curAmt = cur.perAccount[a.id]||0
+      const prevAmt = prev.perAccount[a.id]||0
+      if(curAmt===0 && prevAmt===0) return null
+      return `${a.name_en}: this month RM${curAmt.toFixed(2)}, last month RM${prevAmt.toFixed(2)}`
+    }).filter(Boolean).join('\n')
+
+    const context =
+      `This month (${thisStart} to ${thisEnd}): Total Revenue RM${cur.totalRev.toFixed(2)}, Total Expenses RM${cur.totalExp.toFixed(2)}, Net Profit/Loss RM${(cur.totalRev-cur.totalExp).toFixed(2)}.\n` +
+      `Last month (${lastStart} to ${lastEnd}): Total Revenue RM${prev.totalRev.toFixed(2)}, Total Expenses RM${prev.totalExp.toFixed(2)}, Net Profit/Loss RM${(prev.totalRev-prev.totalExp).toFixed(2)}.\n` +
+      `Expense breakdown by account (this month vs last month):\n${expenseLines || 'none'}`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'month_end_summary', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<div><i class="ti ti-sparkles" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.summary)}</div>`
+  } catch(err) {
+    console.error('Month-end summary error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
 }
 
 function _fyShowForm() {
