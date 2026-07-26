@@ -3268,6 +3268,8 @@ let _posCart = []
 let _posProducts = []
 let _posSearch = ''
 let _posCurrentSession = null
+let _posOtherSessions = []
+let _posEndShiftTarget = null
 
 async function renderPOS() {
   const t = APP.language==='bm' ? {
@@ -3292,6 +3294,7 @@ async function renderPOS() {
     <div><div class="page-title">${t.title}</div></div>
     <div id="pos-shift-status" style="font-size:13px"></div>
   </div>
+  <div id="pos-other-shifts" style="margin-bottom:16px"></div>
   <div style="display:flex;gap:16px;align-items:flex-start">
     <div class="card" style="flex:1.4;padding:16px">
       <div class="input-group" style="margin-bottom:12px"><i class="ti ti-search input-icon"></i>
@@ -3337,12 +3340,22 @@ async function renderPOS() {
         <button class="btn btn-outline" onclick="_posCloseShiftModal()">${t.cancel}</button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-overlay" id="pos-end-shift-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-box-header" id="pos-end-shift-title"></div>
+      <div class="modal-box-body" id="pos-end-shift-body"></div>
+      <div class="modal-box-footer" id="pos-end-shift-footer"></div>
+    </div>
   </div>`
 
   _posRenderGrid()
   _posRenderCart()
   await _posCheckSession()
   _posRenderShiftStatus()
+  await _posLoadOtherOpenSessions()
+  _posRenderOtherShifts()
 }
 
 // Best-effort lookup of an open session for the CURRENT cashier. Never throws —
@@ -3367,16 +3380,199 @@ function _posRenderShiftStatus() {
   const el = document.getElementById('pos-shift-status')
   if(!el) return
   const t = APP.language==='bm'
-    ? { open:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift' }
-    : { open:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift' }
+    ? { open:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift', closeShift:'Tutup Shift' }
+    : { open:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift', closeShift:'Close Shift' }
   if(_posCurrentSession) {
     const opened = _posCurrentSession.opened_at ? new Date(_posCurrentSession.opened_at).toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit'}) : ''
     el.innerHTML = `<span style="color:var(--success);font-weight:600"><i class="ti ti-circle-check"></i> ${t.open}</span>
-      <span style="color:var(--text-3);margin-left:8px">${t.openingCash}: ${formatRM(_posCurrentSession.opening_cash)} — ${opened}</span>`
+      <span style="color:var(--text-3);margin-left:8px">${t.openingCash}: ${formatRM(_posCurrentSession.opening_cash)} — ${opened}</span>
+      <button class="btn btn-outline btn-sm" style="margin-left:10px" onclick="_posOpenEndShiftModal('${_posCurrentSession.id}')"><i class="ti ti-clock-stop"></i> ${t.closeShift}</button>`
   } else {
     el.innerHTML = `<span style="color:var(--text-3)">${t.noShift}</span>
       <button class="btn btn-primary btn-sm" style="margin-left:10px" onclick="_posOpenShiftModal()"><i class="ti ti-clock-play"></i> ${t.startShift}</button>`
   }
+}
+
+// Admin/owner only: surface other cashiers' still-open shifts so a forgotten
+// close (or shift handover) can be resolved without a DB console.
+async function _posLoadOtherOpenSessions() {
+  _posOtherSessions = []
+  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  if(!isAdminOwner) return
+  try {
+    const {data: sessions, error} = await sb.from('pos_sessions').select('*')
+      .eq('tenant_id', APP.tenant.id).eq('status','open').neq('cashier_id', APP.user.id)
+    if(error) throw error
+    if(!sessions || sessions.length===0) return
+    const cashierIds = [...new Set(sessions.map(s=>s.cashier_id))]
+    const {data: profiles} = await sb.from('user_profiles').select('id,full_name').in('id', cashierIds)
+    const nameById = {}
+    ;(profiles||[]).forEach(p=>{ nameById[p.id] = p.full_name })
+    _posOtherSessions = sessions.map(s=>({ ...s, cashier_name: nameById[s.cashier_id] || '-' }))
+  } catch(e) {
+    console.error('_posLoadOtherOpenSessions error (non-blocking):', e)
+    _posOtherSessions = []
+  }
+}
+
+function _posRenderOtherShifts() {
+  const el = document.getElementById('pos-other-shifts')
+  if(!el) return
+  if(!_posOtherSessions.length) { el.innerHTML = ''; return }
+  const t = APP.language==='bm' ? { title:'Shift Lain Masih Terbuka', close:'Tutup' } : { title:'Other Open Shifts', close:'Close' }
+  el.innerHTML = `<div class="card" style="padding:12px 16px">
+    <div style="font-size:12px;color:var(--text-3);font-weight:600;margin-bottom:8px">${t.title}</div>
+    ${_posOtherSessions.map(s=>{
+      const opened = s.opened_at ? new Date(s.opened_at).toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit'}) : ''
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:13px">
+        <span>${s.cashier_name} — ${formatRM(s.opening_cash)} — ${opened}</span>
+        <button class="btn btn-outline btn-sm" onclick="_posOpenEndShiftModal('${s.id}')"><i class="ti ti-clock-stop"></i> ${t.close}</button>
+      </div>`
+    }).join('')}
+  </div>`
+}
+
+function _posFindSession(sessionId) {
+  if(_posCurrentSession && String(_posCurrentSession.id)===String(sessionId)) return _posCurrentSession
+  return _posOtherSessions.find(s=>String(s.id)===String(sessionId)) || null
+}
+
+function _posOpenEndShiftModal(sessionId) {
+  const session = _posFindSession(sessionId)
+  if(!session) { showToast(APP.language==='bm'?'Sesi tidak ditemui.':'Session not found.', 'error'); return }
+
+  const isOwn = String(session.cashier_id)===String(APP.user.id)
+  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  if(!isOwn && !isAdminOwner) { showToast(APP.language==='bm'?'Tiada kebenaran untuk tutup shift ini.':'Not permitted to close this shift.', 'error'); return }
+
+  _posEndShiftTarget = session
+  _posRenderEndShiftForm()
+  const el = document.getElementById('pos-end-shift-modal-overlay')
+  if(el) el.classList.add('active')
+}
+
+function _posHideEndShiftModal() {
+  const el = document.getElementById('pos-end-shift-modal-overlay')
+  if(el) el.classList.remove('active')
+  _posEndShiftTarget = null
+}
+
+function _posRenderEndShiftForm() {
+  const t = APP.language==='bm'
+    ? { title:'Tutup Shift', closingCash:'Tunai Penutupan (RM) *', notes:'Nota (pilihan)', submit:'Tutup Shift', cancel:'Batal' }
+    : { title:'Close Shift', closingCash:'Closing Cash (RM) *', notes:'Notes (optional)', submit:'Close Shift', cancel:'Cancel' }
+  document.getElementById('pos-end-shift-title').textContent = t.title
+  document.getElementById('pos-end-shift-body').innerHTML = `
+    <div id="pos-end-shift-err" class="auth-error" style="display:none"></div>
+    <div class="form-group">
+      <label class="form-label">${t.closingCash}</label>
+      <input id="es-closing-cash" type="number" step="0.01" min="0" class="form-input" placeholder="0.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">${t.notes}</label>
+      <textarea id="es-notes" class="form-input" rows="2"></textarea>
+    </div>`
+  document.getElementById('pos-end-shift-footer').innerHTML = `
+    <button id="es-submit-btn" class="btn btn-primary" style="flex:1" onclick="_posSubmitEndShift()"><i class="ti ti-clock-stop"></i> ${t.submit}</button>
+    <button class="btn btn-outline" onclick="_posHideEndShiftModal()">${t.cancel}</button>`
+}
+
+// Aggregates this session's own pos_transactions rows. txn_type is only ever
+// 'sale' anywhere in the app today (no refund feature exists yet), so
+// total_refunds/cash_refunds will read 0 until a refund flow is built — that's
+// expected, not a bug in this calculation.
+async function _posComputeSessionTotals(sessionId) {
+  const {data, error} = await sb.from('pos_transactions').select('total,payment_method,txn_type,status')
+    .eq('session_id', sessionId).eq('tenant_id', APP.tenant.id)
+  if(error) throw error
+  const txns = data || []
+  const sales = txns.filter(x=>x.txn_type==='sale' && x.status==='completed')
+  const refunds = txns.filter(x=>x.txn_type==='refund' && x.status==='completed')
+  return {
+    total_sales: sales.reduce((s,x)=>s+Number(x.total||0),0),
+    total_refunds: refunds.reduce((s,x)=>s+Number(x.total||0),0),
+    total_txn: txns.length,
+    cash_sales: sales.filter(x=>x.payment_method==='cash').reduce((s,x)=>s+Number(x.total||0),0),
+    cash_refunds: refunds.filter(x=>x.payment_method==='cash').reduce((s,x)=>s+Number(x.total||0),0),
+  }
+}
+
+async function _posSubmitEndShift() {
+  const L = APP.language
+  const t = L==='bm' ? { required:'Sila isi Tunai Penutupan.', err:'Ralat: ', submit:'Tutup Shift' } : { required:'Please enter Closing Cash.', err:'Error: ', submit:'Close Shift' }
+  const errEl = document.getElementById('pos-end-shift-err')
+  const btn = document.getElementById('es-submit-btn')
+  const closingCashRaw = document.getElementById('es-closing-cash').value
+
+  if(errEl) errEl.style.display='none'
+  if(closingCashRaw===null || closingCashRaw.trim()==='') {
+    if(errEl) { errEl.textContent = t.required; errEl.style.display='block' }
+    return
+  }
+  if(!_posEndShiftTarget) { showToast(L==='bm'?'Sesi tidak sah.':'Invalid session.', 'error'); return }
+
+  if(btn) { btn.disabled=true; btn.innerHTML='<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>' }
+
+  try {
+    const session = _posEndShiftTarget
+    const totals = await _posComputeSessionTotals(session.id)
+    const closingCash = Number(closingCashRaw)
+    const expectedCash = Number(session.opening_cash||0) + totals.cash_sales - totals.cash_refunds
+    const cashVariance = closingCash - expectedCash
+    const notes = document.getElementById('es-notes').value.trim() || null
+
+    const {error} = await sb.from('pos_sessions').update({
+      closed_at: new Date().toISOString(),
+      closing_cash: closingCash,
+      expected_cash: expectedCash,
+      cash_variance: cashVariance,
+      total_sales: totals.total_sales,
+      total_refunds: totals.total_refunds,
+      total_txn: totals.total_txn,
+      notes,
+      status: 'closed'
+    }).eq('id', session.id).eq('tenant_id', APP.tenant.id)
+    if(error) throw error
+
+    if(_posCurrentSession && String(_posCurrentSession.id)===String(session.id)) {
+      _posCurrentSession = null
+      _posRenderShiftStatus()
+    }
+    await _posLoadOtherOpenSessions()
+    _posRenderOtherShifts()
+
+    _posRenderEndShiftSummary({
+      ...session, closing_cash: closingCash, expected_cash: expectedCash, cash_variance: cashVariance,
+      total_sales: totals.total_sales, total_refunds: totals.total_refunds, total_txn: totals.total_txn
+    })
+  } catch(err) {
+    console.error('_posSubmitEndShift error:', err)
+    if(errEl) { errEl.textContent = t.err + (err.message||''); errEl.style.display='block' }
+    if(btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-clock-stop"></i> '+t.submit }
+  }
+}
+
+function _posRenderEndShiftSummary(s) {
+  const L = APP.language
+  const t = L==='bm'
+    ? { title:'Ringkasan Shift', opening:'Tunai Pembukaan', sales:'Jumlah Jualan', expected:'Tunai Dijangka', closing:'Tunai Penutupan', variance:'Perbezaan', done:'Selesai' }
+    : { title:'Shift Summary', opening:'Opening Cash', sales:'Total Sales', expected:'Expected Cash', closing:'Closing Cash', variance:'Variance', done:'Done' }
+  const varianceAbs = Math.abs(s.cash_variance)
+  const varianceColor = varianceAbs < 0.01 ? 'var(--success)' : (varianceAbs <= 10 ? 'var(--warning)' : 'var(--danger)')
+  const varianceLabel = s.cash_variance > 0 ? '+'+formatRM(s.cash_variance) : formatRM(s.cash_variance)
+
+  document.getElementById('pos-end-shift-title').textContent = t.title
+  document.getElementById('pos-end-shift-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.opening}</span><strong>${formatRM(s.opening_cash)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.sales}</span><strong>${formatRM(s.total_sales)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.expected}</span><strong>${formatRM(s.expected_cash)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.closing}</span><strong>${formatRM(s.closing_cash)}</strong></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
+        <span style="color:var(--text-3)">${t.variance}</span><strong style="color:${varianceColor}">${varianceLabel}</strong>
+      </div>
+    </div>`
+  document.getElementById('pos-end-shift-footer').innerHTML = `<button class="btn btn-primary" style="flex:1" onclick="_posHideEndShiftModal()">${t.done}</button>`
 }
 
 function _posOpenShiftModal() {
