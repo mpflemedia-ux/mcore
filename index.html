@@ -2114,17 +2114,19 @@ function renderAccounting(params={}) {
   if(params.view==='journal') { renderJournalList(); return }
   if(params.view==='fiscal') { renderFiscalYears(); return }
   if(params.view==='expense' || params.view==='exp-form') { renderExpenseClaims(params); return }
+  if(params.view==='reconcile') { renderReconcile(); return }
   renderCOAList()
 }
 
 function _accTabs(active) {
-  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan' }
-    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims' }
+  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Segan Bank' }
+    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
     <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
     <button class="btn btn-sm ${active==='fiscal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'fiscal'})"><i class="ti ti-calendar"></i> ${t.fiscal}</button>
     <button class="btn btn-sm ${active==='expense'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'expense'})"><i class="ti ti-receipt"></i> ${t.expense}</button>
+    <button class="btn btn-sm ${active==='reconcile'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'reconcile'})"><i class="ti ti-arrows-left-right"></i> ${t.reconcile}</button>
   </div>`
 }
 
@@ -2815,6 +2817,162 @@ async function _expScanReceipt(event) {
     console.error('Receipt scan error:', err)
     if(statusEl) statusEl.innerHTML = `<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`
   }
+}
+
+// ─── Bank Reconciliation (AI-assisted, suggestion only) ────────────────────────
+// Ephemeral: parses a CSV client-side, matches against existing invoices/payments/
+// journal_entries (read-only), and never writes anything back to the DB — there is
+// no bank_transactions table. Confirm/Reject only toggle local UI state.
+let _recoTxns = []
+let _recoMatches = []
+
+async function renderReconcile() {
+  const t = APP.language==='bm' ? {
+    title:'Segan Bank (Reconciliation)',
+    instructions:'Muat naik atau tampal senarai transaksi bank (satu baris satu transaksi, format: tarikh,keterangan,jumlah). Tiada data disimpan ke pangkalan data — ni alat cadangan sahaja.',
+    parse:'Padan dengan AI'
+  } : {
+    title:'Bank Reconciliation',
+    instructions:'Upload or paste a list of bank transactions (one per line, format: date,description,amount). Nothing here is saved to the database — this is a suggestion tool only.',
+    parse:'Match with AI'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_accTabs('reconcile')}
+  <div class="card" style="padding:16px;margin-bottom:16px">
+    <p style="font-size:13px;color:var(--text-3);margin-bottom:10px">${t.instructions}</p>
+    <input type="file" accept=".csv,text/csv" id="reco-file-input" onchange="_recoFileUpload(event)" style="margin-bottom:10px;display:block">
+    <textarea id="reco-csv-text" class="form-input" rows="6" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00"></textarea>
+    <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.parse}</button>
+  </div>
+  <div id="reco-result"></div>`
+  _recoTxns = []
+  _recoMatches = []
+}
+
+function _recoFileUpload(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const reader = new FileReader()
+  reader.onload = () => { const el = document.getElementById('reco-csv-text'); if(el) el.value = reader.result }
+  reader.onerror = () => showToast(APP.language==='bm'?'Gagal baca fail.':'Failed to read file.', 'error')
+  reader.readAsText(file)
+}
+
+function _recoNormalizeDate(s) {
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
+  return null
+}
+
+function _recoParseCsv(text) {
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean)
+  const rows = []
+  for(const line of lines) {
+    const cols = line.split(',').map(c=>c.trim())
+    if(cols.length < 2) continue
+    const dateNorm = _recoNormalizeDate(cols[0])
+    const amountRaw = cols[cols.length-1].replace(/[^0-9.\-]/g,'')
+    const amount = Number(amountRaw)
+    if(!dateNorm || !amountRaw || isNaN(amount)) continue
+    const description = cols.slice(1, cols.length-1).join(', ') || ''
+    rows.push({date:dateNorm, description, amount})
+  }
+  return rows
+}
+
+async function _recoRunMatch() {
+  const isBm = APP.language==='bm'
+  const text = document.getElementById('reco-csv-text').value
+  const resultEl = document.getElementById('reco-result')
+  const rows = _recoParseCsv(text)
+  if(!rows.length) {
+    showToast(isBm?'Tiada baris transaksi sah dijumpai. Format: tarikh,keterangan,jumlah':'No valid transaction rows found. Format: date,description,amount', 'warning')
+    return
+  }
+  _recoTxns = rows
+  _recoMatches = rows.map(()=>null)
+
+  resultEl.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><div class="spinner"></div><p style="margin-top:10px">${isBm?'Memadankan dengan AI...':'Matching with AI...'}</p></div></div>`
+
+  try {
+    const dates = rows.map(r=>r.date).slice().sort()
+    const minDate = new Date(dates[0]); minDate.setDate(minDate.getDate()-5)
+    const maxDate = new Date(dates[dates.length-1]); maxDate.setDate(maxDate.getDate()+5)
+    const minStr = minDate.toISOString().slice(0,10), maxStr = maxDate.toISOString().slice(0,10)
+
+    const [{data: invoices}, {data: payments}, {data: entries}] = await Promise.all([
+      sb.from('invoices').select('id,ref_no,issue_date,total,customer_name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('issue_date',minStr).lte('issue_date',maxStr),
+      sb.from('payments').select('id,ref_no,payment_date,amount,customer_name,notes').eq('tenant_id',APP.tenant.id).gte('payment_date',minStr).lte('payment_date',maxStr),
+      sb.from('journal_entries').select('id,ref_no,entry_date,description').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('entry_date',minStr).lte('entry_date',maxStr),
+    ])
+
+    const entryIds = (entries||[]).map(e=>e.id)
+    const entryTotals = {}
+    if(entryIds.length) {
+      const {data: lines} = await sb.from('journal_lines').select('entry_id,debit_amt').in('entry_id', entryIds)
+      ;(lines||[]).forEach(l=>{ entryTotals[l.entry_id] = (entryTotals[l.entry_id]||0) + Number(l.debit_amt||0) })
+    }
+
+    const candidates = []
+    ;(invoices||[]).forEach(i=>candidates.push({ type:'invoice', ref:i.ref_no, date:i.issue_date, amount:Number(i.total||0), desc:i.customer_name||'' }))
+    ;(payments||[]).forEach(p=>candidates.push({ type:'payment', ref:p.ref_no, date:p.payment_date, amount:Number(p.amount||0), desc:p.customer_name||p.notes||'' }))
+    ;(entries||[]).forEach(e=>candidates.push({ type:'journal_entry', ref:e.ref_no, date:e.entry_date, amount:entryTotals[e.id]||0, desc:e.description||'' }))
+
+    if(!candidates.length) {
+      resultEl.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod sedia ada dalam julat tarikh ni untuk dipadankan.':'No existing records in this date range to match against.'}</p></div></div>`
+      return
+    }
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: {
+      action:'reconcile_match',
+      transactions: rows.map((r,i)=>({idx:i, date:r.date, description:r.description, amount:r.amount})),
+      candidates,
+      language: APP.language
+    }})
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+
+    ;(data.data.matches||[]).forEach(m => { if(m.txn_idx!=null && m.txn_idx < _recoMatches.length) _recoMatches[m.txn_idx] = m })
+    _recoRenderResults()
+  } catch(err) {
+    console.error('Reconciliation match error:', err)
+    resultEl.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${isBm?'Ralat: ':'Error: '}${err.message||''}</p></div></div>`
+  }
+}
+
+function _recoRenderResults() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { date:'Tarikh', desc:'Keterangan', amount:'Jumlah', match:'Cadangan Padanan', confidence:'Keyakinan', action:'Tindakan', noMatch:'Tiada padanan', confirmed:'Disahkan', rejected:'Ditolak' }
+    : { date:'Date', desc:'Description', amount:'Amount', match:'Suggested Match', confidence:'Confidence', action:'Action', noMatch:'No match', confirmed:'Confirmed', rejected:'Rejected' }
+  const resultEl = document.getElementById('reco-result')
+  if(!resultEl) return
+  resultEl.innerHTML = `<div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.match}</th><th>${t.confidence}</th><th>${t.action}</th></tr></thead>
+    <tbody>${_recoTxns.map((txn,i) => {
+      const m = _recoMatches[i]
+      const cand = m && m.candidate
+      const state = txn._state
+      return `<tr>
+        <td>${formatDate(txn.date)}</td>
+        <td>${_aiEscapeHtml(txn.description)}</td>
+        <td style="text-align:right">${formatRM(txn.amount)}</td>
+        <td>${cand ? `<span style="font-size:12px">[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)} (${formatDate(cand.date)})</span>` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
+        <td>${m && m.confidence!=null ? Math.round(m.confidence*100)+'%' : '-'}</td>
+        <td>${state
+          ? `<span style="color:${state==='confirmed'?'var(--success)':'var(--text-3)'};font-size:12px;font-weight:600">${state==='confirmed'?t.confirmed:t.rejected}</span>`
+          : (cand ? `<button class="btn btn-outline btn-sm" style="padding:3px 8px" onclick="_recoSetState(${i},'confirmed')"><i class="ti ti-check"></i></button> <button class="btn btn-outline btn-sm" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)" onclick="_recoSetState(${i},'rejected')"><i class="ti ti-x"></i></button>` : '')}
+        </td>
+      </tr>`
+    }).join('')}</tbody>
+  </table></div></div>`
+}
+
+function _recoSetState(i, state) {
+  if(_recoTxns[i]) _recoTxns[i]._state = state
+  _recoRenderResults()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
