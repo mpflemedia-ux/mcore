@@ -466,6 +466,39 @@ async function handleTaxGuidance(body: Record<string, unknown>) {
   return { answer: reply }
 }
 
+const DOC_TYPE_DESCRIPTIONS: Record<string, string> = {
+  demand_letter: 'a formal demand letter (surat tuntutan) requesting overdue payment',
+  followup_email: 'a professional follow-up email',
+  sop: 'a simple Standard Operating Procedure (SOP)',
+  proposal: 'a simple business proposal',
+}
+
+async function handleGenerateDocument(body: Record<string, unknown>) {
+  const docType = typeof body.doc_type === 'string' ? body.doc_type : ''
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const context = typeof body.context === 'string' ? body.context.trim() : ''
+  if (!context) throw new Error('context is required')
+
+  const docLabel = DOC_TYPE_DESCRIPTIONS[docType] || 'a business document'
+
+  const systemPrompt =
+    `You are drafting ${docLabel} for a Malaysian SME business owner. ` +
+    `${name ? `Recipient/subject name: ${name}. ` : ''}` +
+    `Purpose/context provided by the user: ${context}\n\n` +
+    'Write a complete, ready-to-use plain-text draft (no markdown formatting symbols) that the ' +
+    'owner can copy and use directly, with placeholders like [Company Name] only for details ' +
+    `genuinely not given above. Reply in ${langName(body)}.`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Generate the document draft.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { draft: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -524,6 +557,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'tax_guidance':
         data = await handleTaxGuidance(body)
+        break
+      case 'generate_document':
+        data = await handleGenerateDocument(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)

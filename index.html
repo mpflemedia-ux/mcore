@@ -1658,6 +1658,37 @@ function renderSettings() {
       <div id="tax-answer-out" style="margin-top:12px;font-size:13px;line-height:1.6"></div>
     </div>
   </div>
+  <div class="card" style="max-width:500px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Penjana Dokumen AI':'AI Document Generator'}</div></div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div class="form-group">
+        <label class="form-label">${APP.language==='bm'?'Jenis Dokumen':'Document Type'}</label>
+        <select id="doc-type" class="form-select">
+          <option value="demand_letter">${APP.language==='bm'?'Surat Tuntutan':'Demand Letter'}</option>
+          <option value="followup_email">${APP.language==='bm'?'Email Susulan':'Follow-up Email'}</option>
+          <option value="sop">${APP.language==='bm'?'SOP Ringkas':'Simple SOP'}</option>
+          <option value="proposal">${APP.language==='bm'?'Proposal Ringkas':'Simple Proposal'}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Nama / Penerima':'Name / Recipient'}</label><input id="doc-name" type="text" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Tujuan / Konteks':'Purpose / Context'}</label><textarea id="doc-context" class="form-input" rows="3" placeholder="${APP.language==='bm'?'cth: susulan lepas mesyuarat pasar sebut harga bekalan bahan mentah':'e.g. follow-up after meeting about a raw material supply quote'}"></textarea></div>
+      <button id="doc-generate-btn" class="btn btn-primary btn-sm" onclick="_docGenerate()"><i class="ti ti-file-text"></i> ${APP.language==='bm'?'Jana Draf':'Generate Draft'}</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="doc-modal-overlay">
+    <div class="modal-box" style="max-width:520px">
+      <div class="modal-box-header">${APP.language==='bm'?'Draf Dokumen':'Document Draft'}</div>
+      <div class="modal-box-body">
+        <div id="doc-modal-loading" style="color:var(--text-3);font-size:13px"></div>
+        <textarea id="doc-modal-text" class="form-input" rows="14" style="display:none"></textarea>
+      </div>
+      <div class="modal-box-footer">
+        <button id="doc-copy-btn" class="btn btn-primary" style="flex:1;display:none" onclick="_docCopyDraft()"><i class="ti ti-copy"></i> ${APP.language==='bm'?'Salin':'Copy'}</button>
+        <button class="btn btn-outline" onclick="document.getElementById('doc-modal-overlay').classList.remove('active')">${APP.language==='bm'?'Tutup':'Close'}</button>
+      </div>
+    </div>
+  </div>
   ${isAdmin ? `
   <div class="card" style="max-width:600px;margin-top:16px">
     <div class="card-header"><div class="card-title">${rp.title}</div></div>
@@ -1758,6 +1789,52 @@ async function _taxAskGuidance() {
     if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
   }
   if(btn) btn.disabled = false
+}
+
+async function _docGenerate() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Menjana draf...', err:'Ralat: ', required:'Sila isi tujuan/konteks dahulu.' }
+    : { loading:'Generating draft...', err:'Error: ', required:'Please fill in purpose/context first.' }
+  const docType = document.getElementById('doc-type').value
+  const name = document.getElementById('doc-name').value.trim()
+  const context = document.getElementById('doc-context').value.trim()
+  const overlay = document.getElementById('doc-modal-overlay')
+  const loadingEl = document.getElementById('doc-modal-loading')
+  const textEl = document.getElementById('doc-modal-text')
+  const copyBtn = document.getElementById('doc-copy-btn')
+
+  if(!context) { showToast(t.required, 'warning'); return }
+
+  if(overlay) overlay.classList.add('active')
+  if(textEl) textEl.style.display = 'none'
+  if(copyBtn) copyBtn.style.display = 'none'
+  if(loadingEl) loadingEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}`
+
+  try {
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: {
+      action:'generate_document', doc_type: docType, name, context, language: APP.language
+    }})
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(loadingEl) loadingEl.innerHTML = ''
+    if(textEl) { textEl.value = data.data.draft; textEl.style.display = 'block' }
+    if(copyBtn) copyBtn.style.display = 'block'
+  } catch(err) {
+    console.error('Generate document error:', err)
+    if(loadingEl) loadingEl.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+}
+
+function _docCopyDraft() {
+  const textEl = document.getElementById('doc-modal-text')
+  if(!textEl) return
+  navigator.clipboard.writeText(textEl.value).then(()=>{
+    showToast(APP.language==='bm'?'Disalin!':'Copied!', 'success')
+  }, ()=>{
+    textEl.select()
+    showToast(APP.language==='bm'?'Sila salin manual (Ctrl+C).':'Please copy manually (Ctrl+C).', 'warning')
+  })
 }
 
 function _rpRenderList() {
