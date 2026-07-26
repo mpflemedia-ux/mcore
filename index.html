@@ -1217,6 +1217,16 @@ function renderDashboard() {
         <canvas id="db-monthly-bar" height="150"></canvas>
       </div>
     </div>
+
+    <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="db-card-title"><i class="ti ti-sparkles"></i> ${isBm?'Wawasan Bisnes AI':'AI Business Insight'}</div>
+          <button id="db-insight-btn" class="db-btn primary" onclick="_dbLoadAiInsight()"><i class="ti ti-refresh"></i> ${isBm?'Jana':'Generate'}</button>
+        </div>
+        <div id="db-insight-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan wawasan AI berdasarkan data bisnes semasa.':'Click "Generate" to get AI insights based on your current business data.'}</div>
+      </div>
+    </div>
   </div>`
 
   _dbSyncGlobalTheme()
@@ -1317,6 +1327,46 @@ async function loadDashboardData() {
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
+
+async function _dbLoadAiInsight() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Menjana wawasan...', err:'Ralat: ', empty:'Tiada data mencukupi untuk wawasan buat masa ini.' }
+    : { loading:'Generating insights...', err:'Error: ', empty:'Not enough data yet for insights.' }
+  const btn = document.getElementById('db-insight-btn')
+  const out = document.getElementById('db-insight-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--db-text4)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const now = new Date()
+    const monthStart = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01'
+    const thisMonth = _dbInvCache.filter(i=>i.issue_date >= monthStart)
+    const curSales = thisMonth.reduce((s,i)=>s+Number(i.total||0),0)
+    const curPaid = thisMonth.reduce((s,i)=>s+Number(i.paid_amt||0),0)
+
+    const {data: unpaidInv} = await sb.from('invoices').select('total,paid_amt').eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('status','paid')
+    const outstanding = (unpaidInv||[]).reduce((s,i)=>s+(Number(i.total||0)-Number(i.paid_amt||0)),0)
+
+    const {data: lowStock} = await sb.from('products').select('name_en,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).lte('stock_qty',5).order('stock_qty')
+    const lowStockList = (lowStock||[]).slice(0,10).map(p=>`${p.name_en} (${p.stock_qty})`).join(', ')
+
+    const context = `This month (from ${monthStart}): Total Sales RM${curSales.toFixed(2)}, Collected RM${curPaid.toFixed(2)}, Invoice Count ${thisMonth.length}.\n` +
+      `Outstanding receivables (all unpaid/partial invoices, all-time): RM${outstanding.toFixed(2)}.\n` +
+      `Low stock products (5 units or fewer): ${lowStock?.length || 0} product(s)${lowStockList ? ' — ' + lowStockList : ''}.`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'business_insight', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const insights = data.data.insights || []
+    if(!insights.length) { if(out) out.innerHTML = `<span style="color:var(--db-text4)">${t.empty}</span>` }
+    else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${insights.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
+  } catch(err) {
+    console.error('AI business insight error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
 
 function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
   const ctx = document.getElementById('db-spark-'+key)
