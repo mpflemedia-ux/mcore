@@ -3746,6 +3746,40 @@ function _repTabs(active) {
   </div>`
 }
 
+let _repPnlContext = ''
+let _repBsContext = ''
+
+async function _repAiSummary(reportType) {
+  const t = APP.language==='bm' ? { loading:'Menjana ringkasan...', err:'Ralat: ' } : { loading:'Generating summary...', err:'Error: ' }
+  const ids = reportType==='pnl' ? {btn:'pnl-ai-btn', out:'pnl-ai-out'} : {btn:'bs-ai-btn', out:'bs-ai-out'}
+  const context = reportType==='pnl' ? _repPnlContext : _repBsContext
+  const btn = document.getElementById(ids.btn)
+  const out = document.getElementById(ids.out)
+  if(!context) return
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--text-3);font-size:13px"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'narrate_report', report_type: reportType, context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<div style="font-size:13px;line-height:1.5"><i class="ti ti-sparkles" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.summary)}</div>`
+  } catch(err) {
+    console.error('AI report summary error:', err)
+    if(out) out.innerHTML = `<div style="color:var(--danger);font-size:13px">${t.err}${err.message||''}</div>`
+  }
+  if(btn) btn.disabled = false
+}
+
+function _repAiSummaryBlock(btnId, outId) {
+  const t = APP.language==='bm' ? { label:'Ringkasan AI' } : { label:'AI Summary' }
+  const reportType = btnId==='pnl-ai-btn' ? 'pnl' : 'bs'
+  return `<div class="card" style="max-width:700px;padding:16px;margin-top:12px">
+    <button id="${btnId}" class="btn btn-outline btn-sm" onclick="_repAiSummary('${reportType}')"><i class="ti ti-sparkles"></i> ${t.label}</button>
+    <div id="${outId}" style="margin-top:10px"></div>
+  </div>`
+}
+
 function _repDateRangeBar(fromId, toId, onApply) {
   const t = APP.language==='bm' ? { from:'Dari', to:'Hingga', apply:'Guna' } : { from:'From', to:'To', apply:'Apply' }
   const today = new Date().toISOString().slice(0,10)
@@ -3807,7 +3841,11 @@ async function _pnlLoad() {
     <div style="display:flex;justify-content:space-between;font-weight:700;font-size:18px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px;color:${(totalRev-totalExp)>=0?'var(--success)':'var(--danger)'}">
       <span>${t.netProfit}</span><span>${formatRM(totalRev-totalExp)}</span>
     </div>
-  </div>`
+  </div>` + _repAiSummaryBlock('pnl-ai-btn','pnl-ai-out')
+
+  _repPnlContext = `Period: ${from} to ${to}. Total Revenue: RM${totalRev.toFixed(2)}. Total Expenses: RM${totalExp.toFixed(2)}. Net Profit/Loss: RM${(totalRev-totalExp).toFixed(2)}.\n` +
+    `Revenue breakdown: ${revRows.map(r=>`${r.a.name_en} RM${r.amt.toFixed(2)}`).join(', ')||'none'}.\n` +
+    `Expense breakdown: ${expRows.map(r=>`${r.a.name_en} RM${r.amt.toFixed(2)}`).join(', ')||'none'}.`
 }
 
 // ─── Balance Sheet ────────────────────────────────────────────────────────────
@@ -3868,7 +3906,9 @@ async function _bsLoad() {
     ${section(t.liabilities, liab)}
     ${section(t.equity, eq)}
     <div style="display:flex;justify-content:space-between;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span>${formatRM(liab.total+eq.total)}</span></div>
-  </div>`
+  </div>` + _repAiSummaryBlock('bs-ai-btn','bs-ai-out')
+
+  _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity: RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
 }
 
 // ─── Sales Report ──────────────────────────────────────────────────────────────
