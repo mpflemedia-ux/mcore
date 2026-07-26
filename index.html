@@ -1962,6 +1962,8 @@ async function _crmSave(id) {
 }
 
 // ─── Hari 17: Customer Detail ─────────────────────────────────────────────────
+let _custDetailCache = null
+
 async function renderCustomerDetail(id) {
   const t = APP.language==='bm' ? { back:'Senarai Pelanggan', edit:'Edit', invoices:'Invois', noInv:'Tiada invois', totalSpent:'Jumlah Belanja', lastOrder:'Pesanan Terakhir', created:'Ahli Sejak' }
     : { back:'Customer List', edit:'Edit', invoices:'Invoices', noInv:'No invoices', totalSpent:'Total Spent', lastOrder:'Last Order', created:'Member Since' }
@@ -1974,6 +1976,7 @@ async function renderCustomerDetail(id) {
   ])
 
   if(!cust) { document.getElementById('main').innerHTML='<div class="empty-state"><p>Customer not found.</p></div>'; return }
+  _custDetailCache = { cust, invs: invs||[] }
 
   const totalSpent = (invs||[]).filter(i=>i.status==='paid').reduce((s,i)=>s+(i.total||0),0)
   const lastOrder = (invs||[]).length ? (invs[0].issue_date ? new Date(invs[0].issue_date).toLocaleDateString('en-MY') : '-') : '-'
@@ -2025,9 +2028,45 @@ async function renderCustomerDetail(id) {
           </tbody></table>`
       }
     </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><i class="ti ti-sparkles"></i> ${APP.language==='bm'?'Cadangan Susulan AI':'AI Follow-up Suggestion'}</div>
+      <button id="cust-followup-btn" class="btn btn-outline btn-sm" onclick="_custFollowUpSuggest('${id}')"><i class="ti ti-refresh"></i> ${APP.language==='bm'?'Jana':'Generate'}</button>
+    </div>
+    <div id="cust-followup-out" style="padding:16px;font-size:13px;color:var(--text-3);line-height:1.5">${APP.language==='bm'?'Klik "Jana" untuk dapatkan cadangan susulan AI berdasarkan sejarah invois pelanggan ni.':'Click "Generate" to get an AI follow-up suggestion based on this customer\'s invoice history.'}</div>
   </div>`
 }
 
+async function _custFollowUpSuggest(custId) {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Menjana cadangan...', err:'Ralat: ' }
+    : { loading:'Generating suggestion...', err:'Error: ' }
+  const btn = document.getElementById('cust-followup-btn')
+  const out = document.getElementById('cust-followup-out')
+  if(!_custDetailCache || String(_custDetailCache.cust.id)!==String(custId)) return
+  const {cust, invs} = _custDetailCache
+
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}`
+
+  try {
+    const historyLines = invs.map(i=>`${i.issue_date||'-'}: RM${Number(i.total||0).toFixed(2)} (${i.status})`).join('\n')
+    const context = `Customer: ${cust.name}. Member since: ${cust.created_at ? cust.created_at.slice(0,10) : '-'}.\n` +
+      `Recent invoice history (most recent first, up to 10):\n${historyLines || (isBm?'Tiada sejarah invois.':'No invoice history.')}`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'follow_up_suggestion', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<div><i class="ti ti-bulb" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.suggestion)}</div>`
+  } catch(err) {
+    console.error('AI follow-up suggestion error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
 
 function renderAccessDenied() {
   const t = APP.language==='bm'
