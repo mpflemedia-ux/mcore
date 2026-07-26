@@ -2952,35 +2952,100 @@ async function _slLoadCustomers() {
 }
 
 // ─── Invoices: List ────────────────────────────────────────────────────────────
+let _invListCache = []
+
 async function renderInvList() {
   const t = APP.language==='bm' ? {
     title:'Invois', add:'Invois Baru', invNo:'No. Invois', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
-    total:'Jumlah', paid:'Dibayar', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', noData:'Tiada invois lagi'
+    total:'Jumlah', paid:'Dibayar', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', noData:'Tiada invois lagi',
+    draftReminder:'Draf Peringatan', close:'Tutup', copy:'Salin'
   } : {
     title:'Invoices', add:'New Invoice', invNo:'Invoice No.', customer:'Customer', date:'Date', due:'Due Date',
-    total:'Total', paid:'Paid', status:'Status', unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', noData:'No invoices yet'
+    total:'Total', paid:'Paid', status:'Status', unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', noData:'No invoices yet',
+    draftReminder:'Draft Reminder', close:'Close', copy:'Copy'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('sales',{view:'inv-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_salesTabs('inv')}
-  <div class="card"><div id="inv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div class="card"><div id="inv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+
+  <div class="modal-overlay" id="reminder-modal-overlay">
+    <div class="modal-box" style="max-width:480px">
+      <div class="modal-box-header">${t.draftReminder}</div>
+      <div class="modal-box-body">
+        <div id="reminder-modal-loading" style="color:var(--text-3);font-size:13px"></div>
+        <textarea id="reminder-modal-text" class="form-input" rows="8" style="display:none"></textarea>
+      </div>
+      <div class="modal-box-footer">
+        <button id="reminder-copy-btn" class="btn btn-primary" style="flex:1;display:none" onclick="_invCopyReminder()"><i class="ti ti-copy"></i> ${t.copy}</button>
+        <button class="btn btn-outline" onclick="document.getElementById('reminder-modal-overlay').classList.remove('active')">${t.close}</button>
+      </div>
+    </div>
+  </div>`
 
   const wrap = document.getElementById('inv-list-wrap')
   const {data, error} = await sb.from('invoices').select('id,ref_no,issue_date,due_date,total,paid_amt,status,customer_name')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('issue_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  _invListCache = data
+  const today = new Date().toISOString().slice(0,10)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
-  wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(i=>`<tr onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})" style="cursor:pointer">
+  wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th><th></th></tr></thead>
+  <tbody>${data.map(i=>{
+    const overdue = i.status!=='paid' && i.due_date && i.due_date < today
+    return `<tr onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})" style="cursor:pointer">
     <td><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
     <td>${formatDate(i.issue_date)}</td><td>${formatDate(i.due_date)}</td>
     <td style="text-align:right">${formatRM(i.total)}</td>
     <td style="text-align:right">${formatRM(i.paid_amt)}</td>
     <td><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
-  </tr>`).join('')}</tbody></table>`
+    <td>${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;white-space:nowrap" onclick="event.stopPropagation();_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i> ${t.draftReminder}</button>`:''}</td>
+  </tr>`
+  }).join('')}</tbody></table>`
+}
+
+async function _invDraftReminder(invId) {
+  const inv = _invListCache.find(i=>String(i.id)===String(invId))
+  if(!inv) return
+  const isBm = APP.language==='bm'
+  const overlay = document.getElementById('reminder-modal-overlay')
+  const loadingEl = document.getElementById('reminder-modal-loading')
+  const textEl = document.getElementById('reminder-modal-text')
+  const copyBtn = document.getElementById('reminder-copy-btn')
+  if(overlay) overlay.classList.add('active')
+  if(textEl) textEl.style.display = 'none'
+  if(copyBtn) copyBtn.style.display = 'none'
+  if(loadingEl) loadingEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Menjana draf...':'Generating draft...'}`
+
+  try {
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: {
+      action:'draft_reminder',
+      invoice: { ref_no: inv.ref_no, customer_name: inv.customer_name, total: inv.total, paid_amt: inv.paid_amt, due_date: inv.due_date },
+      language: APP.language
+    }})
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(loadingEl) loadingEl.innerHTML = ''
+    if(textEl) { textEl.value = data.data.draft; textEl.style.display = 'block' }
+    if(copyBtn) copyBtn.style.display = 'block'
+  } catch(err) {
+    console.error('Draft reminder error:', err)
+    if(loadingEl) loadingEl.innerHTML = `<span style="color:var(--danger)">${isBm?'Ralat: ':'Error: '}${err.message||''}</span>`
+  }
+}
+
+function _invCopyReminder() {
+  const textEl = document.getElementById('reminder-modal-text')
+  if(!textEl) return
+  navigator.clipboard.writeText(textEl.value).then(()=>{
+    showToast(APP.language==='bm'?'Disalin!':'Copied!', 'success')
+  }, ()=>{
+    textEl.select()
+    showToast(APP.language==='bm'?'Sila salin manual (Ctrl+C).':'Please copy manually (Ctrl+C).', 'warning')
+  })
 }
 
 // ─── Invoices: Form ────────────────────────────────────────────────────────────
