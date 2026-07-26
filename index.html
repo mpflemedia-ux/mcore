@@ -2495,12 +2495,14 @@ async function renderExpenseForm(id=null) {
     addTitle:'Tuntutan Baru', editTitle:'Edit Tuntutan', back:'Tuntutan Perbelanjaan',
     claimant:'Penuntut', date:'Tarikh *', desc:'Keterangan', amount:'Jumlah (RM) *',
     status:'Status', pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak',
-    save:'Simpan', cancel:'Batal', required:'Tarikh dan jumlah diperlukan.'
+    save:'Simpan', cancel:'Batal', required:'Tarikh dan jumlah diperlukan.',
+    scanReceipt:'Imbas Resit (pilihan)'
   } : {
     addTitle:'New Expense Claim', editTitle:'Edit Expense Claim', back:'Expense Claims',
     claimant:'Claimant', date:'Date *', desc:'Description', amount:'Amount (RM) *',
     status:'Status', pending:'Pending', approved:'Approved', rejected:'Rejected',
-    save:'Save', cancel:'Cancel', required:'Date and amount are required.'
+    save:'Save', cancel:'Cancel', required:'Date and amount are required.',
+    scanReceipt:'Scan Receipt (optional)'
   }
   let claim = { claim_date: new Date().toISOString().slice(0,10), status:'pending' }
   let claimantName = APP.user.name || ''
@@ -2520,6 +2522,11 @@ async function renderExpenseForm(id=null) {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('accounting',{view:'expense'})">← ${t.back}</div></div></div>
   <div class="card" style="max-width:600px">
     <div id="exp-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
+    <div style="padding:20px 20px 0">
+      <label class="form-label">${t.scanReceipt}</label>
+      <input type="file" accept="image/*" capture="environment" id="ef-receipt-input" onchange="_expScanReceipt(event)" style="display:block;margin-top:6px">
+      <div id="ef-receipt-status" style="margin-top:8px;font-size:13px;color:var(--text-3)"></div>
+    </div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.claimant}</label><input type="text" class="form-input" value="${claimantName}" readonly disabled></div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="ef-date" type="date" class="form-input" value="${claim.claim_date||''}"></div>
@@ -2563,6 +2570,64 @@ async function _expSave(id) {
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
   showToast(APP.language==='bm'?'Tuntutan disimpan!':'Claim saved!', 'success')
   openPage('accounting',{view:'expense'})
+}
+
+function _compressImageToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Failed to load image'))
+      img.onload = () => {
+        const maxW = 1280
+        const scale = Math.min(1, maxW / img.width)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+        resolve({ base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' })
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function _expScanReceipt(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const t = APP.language==='bm'
+    ? { scanning:'Mengimbas resit...', done:'Resit diimbas — sila semak field di bawah.', err:'Ralat imbas resit: ', badFile:'Sila pilih fail imej.' }
+    : { scanning:'Scanning receipt...', done:'Receipt scanned — please review the fields below.', err:'Receipt scan error: ', badFile:'Please select an image file.' }
+
+  if(!file.type.startsWith('image/')) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+
+  const statusEl = document.getElementById('ef-receipt-status')
+  if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+
+  try {
+    const {base64, mimeType} = await _compressImageToBase64(file)
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'receipt', image_base64: base64, mime_type: mimeType } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const r = data.data
+
+    if(r.amount != null) document.getElementById('ef-amount').value = r.amount
+    if(r.date) document.getElementById('ef-date').value = r.date
+    const descParts = []
+    if(r.vendor) descParts.push(`${APP.language==='bm'?'Resit dari':'Receipt from'} ${r.vendor}`)
+    if(r.description) descParts.push(r.description)
+    if(descParts.length) document.getElementById('ef-desc').value = descParts.join(' — ')
+
+    const pct = r.confidence!=null ? ` (${Math.round(r.confidence*100)}%)` : ''
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--success)"><i class="ti ti-check"></i> ${t.done}${pct}</span>`
+  } catch(err) {
+    console.error('Receipt scan error:', err)
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
