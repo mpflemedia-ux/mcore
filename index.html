@@ -250,6 +250,12 @@ body.dark .form-input{background:rgba(255,255,255,0.08);border-color:rgba(255,25
 .ai-chat-input-row input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .ai-chat-send{width:36px;height:36px;border-radius:var(--radius-sm);background:var(--primary);color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
 .ai-chat-send:disabled{opacity:.5;cursor:default}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:2000;display:none;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal-box{background:var(--bg-card);border-radius:var(--radius);box-shadow:var(--shadow-lg);width:100%;max-width:400px;margin:16px}
+.modal-box-header{padding:18px 20px;border-bottom:1px solid var(--border);font-weight:600;font-size:15px}
+.modal-box-body{padding:20px;display:flex;flex-direction:column;gap:14px}
+.modal-box-footer{padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px}
 .dropdown{position:relative}
 .dropdown-menu{position:absolute;top:calc(100% + 4px);right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;z-index:500;display:none;flex-direction:column;overflow:hidden}
 .dropdown-menu.open{display:flex}
@@ -3261,23 +3267,31 @@ async function _quoConvert(quoId) {
 let _posCart = []
 let _posProducts = []
 let _posSearch = ''
+let _posCurrentSession = null
 
 async function renderPOS() {
   const t = APP.language==='bm' ? {
     title:'Titik Jualan', search:'Cari produk...', cart:'Troli', empty:'Troli kosong',
     total:'Jumlah Besar', checkout:'Bayar', clear:'Kosongkan', method:'Kaedah Bayaran',
-    confirm:'Sahkan Pembayaran', cancel:'Batal', noProducts:'Tiada produk'
+    confirm:'Sahkan Pembayaran', cancel:'Batal', noProducts:'Tiada produk',
+    shiftOpen:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift',
+    notes:'Nota (pilihan)'
   } : {
     title:'Point of Sale', search:'Search products...', cart:'Cart', empty:'Cart is empty',
     total:'Grand Total', checkout:'Checkout', clear:'Clear', method:'Payment Method',
-    confirm:'Confirm Payment', cancel:'Cancel', noProducts:'No products'
+    confirm:'Confirm Payment', cancel:'Cancel', noProducts:'No products',
+    shiftOpen:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift',
+    notes:'Notes (optional)'
   }
   const {data} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = data || []
   _posCart = []
 
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header">
+    <div><div class="page-title">${t.title}</div></div>
+    <div id="pos-shift-status" style="font-size:13px"></div>
+  </div>
   <div style="display:flex;gap:16px;align-items:flex-start">
     <div class="card" style="flex:1.4;padding:16px">
       <div class="input-group" style="margin-bottom:12px"><i class="ti ti-search input-icon"></i>
@@ -3302,10 +3316,119 @@ async function renderPOS() {
         <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="_posCart=[];_posRenderCart()">${t.clear}</button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-overlay" id="pos-shift-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-box-header">${t.startShift}</div>
+      <div class="modal-box-body">
+        <div id="pos-shift-err" class="auth-error" style="display:none"></div>
+        <div class="form-group">
+          <label class="form-label">${t.openingCash} (RM)</label>
+          <input id="ps-opening-cash" type="number" step="0.01" min="0" class="form-input" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">${t.notes}</label>
+          <textarea id="ps-notes" class="form-input" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-box-footer">
+        <button id="ps-start-btn" class="btn btn-primary" style="flex:1" onclick="_posStartShift()"><i class="ti ti-clock-play"></i> ${t.startShift}</button>
+        <button class="btn btn-outline" onclick="_posCloseShiftModal()">${t.cancel}</button>
+      </div>
+    </div>
   </div>`
 
   _posRenderGrid()
   _posRenderCart()
+  await _posCheckSession()
+  _posRenderShiftStatus()
+}
+
+// Best-effort lookup of an open session for the CURRENT cashier. Never throws —
+// callers must treat _posCurrentSession===null as "unknown/none", not "definitely none",
+// since a failed check is not the same as a confirmed absence of a shift.
+async function _posCheckSession() {
+  try {
+    const {data, error} = await sb.from('pos_sessions').select('*')
+      .eq('tenant_id', APP.tenant.id).eq('cashier_id', APP.user.id).eq('status','open')
+      .order('opened_at',{ascending:false}).limit(1).maybeSingle()
+    if(error) throw error
+    _posCurrentSession = data || null
+    return true
+  } catch(e) {
+    console.error('_posCheckSession error:', e)
+    _posCurrentSession = null
+    return false
+  }
+}
+
+function _posRenderShiftStatus() {
+  const el = document.getElementById('pos-shift-status')
+  if(!el) return
+  const t = APP.language==='bm'
+    ? { open:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift' }
+    : { open:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift' }
+  if(_posCurrentSession) {
+    const opened = _posCurrentSession.opened_at ? new Date(_posCurrentSession.opened_at).toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit'}) : ''
+    el.innerHTML = `<span style="color:var(--success);font-weight:600"><i class="ti ti-circle-check"></i> ${t.open}</span>
+      <span style="color:var(--text-3);margin-left:8px">${t.openingCash}: ${formatRM(_posCurrentSession.opening_cash)} — ${opened}</span>`
+  } else {
+    el.innerHTML = `<span style="color:var(--text-3)">${t.noShift}</span>
+      <button class="btn btn-primary btn-sm" style="margin-left:10px" onclick="_posOpenShiftModal()"><i class="ti ti-clock-play"></i> ${t.startShift}</button>`
+  }
+}
+
+function _posOpenShiftModal() {
+  const el = document.getElementById('pos-shift-modal-overlay')
+  if(el) el.classList.add('active')
+}
+function _posCloseShiftModal() {
+  const el = document.getElementById('pos-shift-modal-overlay')
+  if(el) el.classList.remove('active')
+}
+
+async function _posStartShift() {
+  const t = APP.language==='bm' ? { err:'Ralat: ', started:'Shift dibuka!', start:'Mula Shift' } : { err:'Error: ', started:'Shift started!', start:'Start Shift' }
+  const errEl = document.getElementById('pos-shift-err')
+  const btn = document.getElementById('ps-start-btn')
+  if(errEl) errEl.style.display='none'
+  if(btn) { btn.disabled=true; btn.innerHTML='<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>' }
+
+  try {
+    // Single-branch systems have no branch picker yet — fall back to the tenant's
+    // first branch, or null if none exist. Never block starting a shift on this.
+    let branchId = null
+    try {
+      const {data: branch} = await sb.from('branches').select('id')
+        .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('created_at').limit(1).maybeSingle()
+      branchId = branch?.id || null
+    } catch(e) {
+      console.error('branch lookup error (non-blocking):', e)
+    }
+
+    const openingCash = Number(document.getElementById('ps-opening-cash').value || 0)
+    const notes = document.getElementById('ps-notes').value.trim() || null
+
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).then(r=>r, ()=>({data:null}))
+    const sessionNo = refData || await _genFallbackRefNo('pos_sessions','session_no','POS')
+
+    const {data, error} = await sb.from('pos_sessions').insert({
+      tenant_id: APP.tenant.id, branch_id: branchId, cashier_id: APP.user.id,
+      session_no: sessionNo, opening_cash: openingCash, notes,
+      status: 'open', opened_at: new Date().toISOString()
+    }).select('*').single()
+    if(error) throw error
+
+    _posCurrentSession = data
+    _posRenderShiftStatus()
+    _posCloseShiftModal()
+    showToast(t.started, 'success')
+  } catch(err) {
+    console.error('_posStartShift error:', err)
+    if(errEl) { errEl.textContent = t.err + (err.message||''); errEl.style.display='block' }
+  }
+  if(btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-clock-play"></i> '+t.start }
 }
 
 function _posFilterProducts(val) { _posSearch = val.toLowerCase(); _posRenderGrid() }
@@ -3359,9 +3482,29 @@ function _posRemove(i) { _posCart.splice(i,1); _posRenderCart() }
 async function _posCheckout() {
   if(_posCart.length===0) { showToast('Cart is empty', 'error'); return }
 
-  const {data: session} = await sb.from('pos_sessions').select('id')
-    .eq('tenant_id',APP.tenant.id).eq('status','open').order('opened_at',{ascending:false}).limit(1).maybeSingle()
-  if(!session) { showToast(APP.language==='bm'?'Sila buka sesi POS dulu.':'Please open a POS session first.', 'error'); return }
+  const checkOk = await _posCheckSession()
+  let session = _posCurrentSession
+
+  if(!checkOk) {
+    // The session check itself failed (network/RPC error) — never let that fully
+    // block POS for admin/owner. Fall back to any open session for the tenant so
+    // a bug in the shift-check logic can't stop sales outright.
+    const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+    if(isAdminOwner) {
+      try {
+        const {data} = await sb.from('pos_sessions').select('*')
+          .eq('tenant_id',APP.tenant.id).eq('status','open').order('opened_at',{ascending:false}).limit(1).maybeSingle()
+        session = data || null
+        if(session) showToast(APP.language==='bm'?'Semakan shift gagal — meneruskan sebagai admin/owner.':'Shift check failed — proceeding as admin/owner.', 'warning')
+      } catch(e) { console.error('POS session fallback lookup failed:', e) }
+    }
+    if(!session) {
+      showToast(APP.language==='bm'?'Gagal semak status shift. Sila cuba lagi atau hubungi admin.':'Failed to check shift status. Please retry or contact an admin.', 'error')
+      return
+    }
+  }
+
+  if(!session) { _posOpenShiftModal(); return }
 
   const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
   const method = document.getElementById('pos-method').value
