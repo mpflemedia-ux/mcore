@@ -147,26 +147,34 @@ async function handleReceipt(body: Record<string, unknown>) {
     'purchased>", "confidence": <number 0 to 1>}. If a field cannot be read clearly, use null ' +
     'for that field and lower the confidence.'
 
-  const raw = await callGroq(
-    [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Extract the receipt details from this image.' },
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-        ],
-      },
-    ],
-    visionModel,
-    { response_format: { type: 'json_object' } },
-  )
+  let raw: string
+  try {
+    raw = await callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract the receipt details from this image.' },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        },
+      ],
+      visionModel,
+      { response_format: { type: 'json_object' } },
+    )
+  } catch (err) {
+    // Re-thrown with the resolved model + payload size so the caller can see in the
+    // error body whether GROQ_VISION_MODEL was actually picked up, and rule out truncation.
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Receipt vision call failed (model=${visionModel}, base64_len=${imageBase64.length}): ${msg}`)
+  }
 
   let parsed: { vendor?: string; amount?: number; date?: string; description?: string; confidence?: number }
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error('AI returned an unparseable response')
+    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
   }
 
   return {
@@ -217,6 +225,14 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ success: true, data })
   } catch (err) {
     console.error('ai-proxy error:', err)
-    return jsonResponse({ success: false, error: err instanceof Error ? err.message : 'Internal error' }, 500)
+    return jsonResponse({
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      debug: {
+        groq_api_key_set: !!Deno.env.get('GROQ_API_KEY'),
+        groq_vision_model_secret: Deno.env.get('GROQ_VISION_MODEL') || `(not set — using default: ${DEFAULT_VISION_MODEL})`,
+      },
+    }, 500)
   }
 })
