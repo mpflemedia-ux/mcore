@@ -5,8 +5,8 @@
 // Request:  POST { action: 'chat' | 'categorize' | 'receipt', ...action-specific fields }
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
-// Only 'chat' is implemented so far. 'categorize' and 'receipt' are wired into the
-// switch but return 501 until those features are built (see NexERP AI feature plan).
+// 'chat' and 'categorize' are implemented. 'receipt' is wired into the switch but
+// returns 501 until that feature is built (see NexERP AI feature plan).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -26,7 +26,11 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-async function callGroq(messages: { role: string; content: string }[], model: string) {
+async function callGroq(
+  messages: { role: string; content: string }[],
+  model: string,
+  extra: Record<string, unknown> = {},
+) {
   const groqKey = Deno.env.get('GROQ_API_KEY')
   if (!groqKey) throw new Error('GROQ_API_KEY secret not configured')
 
@@ -36,7 +40,7 @@ async function callGroq(messages: { role: string; content: string }[], model: st
       Authorization: `Bearer ${groqKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model, messages, temperature: 0.3 }),
+    body: JSON.stringify({ model, messages, temperature: 0.3, ...extra }),
   })
 
   if (!res.ok) {
@@ -70,6 +74,59 @@ async function handleChat(body: Record<string, unknown>) {
   return { reply }
 }
 
+interface CoaOption {
+  id: string
+  code?: string
+  name_en?: string
+  name?: string
+}
+
+async function handleCategorize(body: Record<string, unknown>) {
+  const description = body.description
+  const accounts = body.accounts as CoaOption[] | undefined
+  if (!description || typeof description !== 'string') throw new Error('description is required')
+  if (!Array.isArray(accounts) || accounts.length === 0) throw new Error('accounts is required and must be a non-empty list')
+
+  const accountList = accounts
+    .map((a) => `${a.id}: ${a.code ? a.code + ' - ' : ''}${a.name_en || a.name || ''}`)
+    .join('\n')
+
+  const systemPrompt =
+    'You are an accounting assistant for a Malaysian SME. Given a bank/business transaction ' +
+    'description and a list of available chart-of-accounts entries, pick the SINGLE most ' +
+    'appropriate account for this transaction. Respond with ONLY a JSON object in this exact ' +
+    'shape, no other text: {"account_id": "<id from the list below>", "confidence": <number 0 to 1>, ' +
+    '"reasoning": "<short one-sentence reason>"}. You MUST pick account_id from the ids listed ' +
+    'below — never invent one. If nothing fits well, pick the closest match and lower the confidence.\n\n' +
+    'Available accounts:\n' + accountList
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: description },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { account_id?: string; confidence?: number; reasoning?: string }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+
+  const match = accounts.find((a) => String(a.id) === String(parsed.account_id))
+  if (!match) throw new Error('AI suggested an account not in the provided list')
+
+  return {
+    account_id: match.id,
+    account_name: match.name_en || match.name || '',
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+    reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -97,7 +154,8 @@ Deno.serve(async (req: Request) => {
         data = await handleChat(body)
         break
       case 'categorize':
-        return jsonResponse({ success: false, error: 'categorize action not implemented yet' }, 501)
+        data = await handleCategorize(body)
+        break
       case 'receipt':
         return jsonResponse({ success: false, error: 'receipt action not implemented yet' }, 501)
       default:
