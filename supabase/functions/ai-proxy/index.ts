@@ -412,6 +412,39 @@ async function handleGeneratePO(body: Record<string, unknown>) {
   return { draft: reply }
 }
 
+async function handleMarketingAdvice(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a marketing advisor for a Malaysian SME. Given the business snapshot below (sales ' +
+    'trend, customer count, top-selling products), suggest 3 to 4 short, concrete marketing or ' +
+    'promotion ideas relevant to this specific data (eg. bundle top sellers, target repeat ' +
+    'customers, run a promotion during a slow trend). Each idea ONE sentence. Respond with ONLY a ' +
+    'JSON object in this exact shape, no other text: {"ideas": ["...", "..."]}. Base every idea ' +
+    `strictly on the data given — never invent products/numbers not present in it. Reply in ${langName(body)}.\n\n` +
+    `Business snapshot:\n${context}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Suggest marketing ideas.' },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { ideas?: unknown }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+  const ideas = Array.isArray(parsed.ideas) ? parsed.ideas.filter((i) => typeof i === 'string') : []
+  if (ideas.length === 0) throw new Error('AI returned no usable ideas')
+  return { ideas }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -464,6 +497,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'generate_po':
         data = await handleGeneratePO(body)
+        break
+      case 'marketing_advice':
+        data = await handleMarketingAdvice(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)

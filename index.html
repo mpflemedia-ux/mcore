@@ -1227,6 +1227,16 @@ function renderDashboard() {
         <div id="db-insight-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan wawasan AI berdasarkan data bisnes semasa.':'Click "Generate" to get AI insights based on your current business data.'}</div>
       </div>
     </div>
+
+    <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="db-card-title"><i class="ti ti-speakerphone"></i> ${isBm?'Penasihat Pemasaran AI':'AI Marketing Advisor'}</div>
+          <button id="db-marketing-btn" class="db-btn primary" onclick="_dbLoadMarketingAdvice()"><i class="ti ti-refresh"></i> ${isBm?'Jana':'Generate'}</button>
+        </div>
+        <div id="db-marketing-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan idea pemasaran berdasarkan data jualan semasa.':'Click "Generate" to get marketing ideas based on your current sales data.'}</div>
+      </div>
+    </div>
   </div>`
 
   _dbSyncGlobalTheme()
@@ -1348,12 +1358,13 @@ async function _dbLoadAiInsight() {
     const {data: unpaidInv} = await sb.from('invoices').select('total,paid_amt').eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('status','paid')
     const outstanding = (unpaidInv||[]).reduce((s,i)=>s+(Number(i.total||0)-Number(i.paid_amt||0)),0)
 
-    const {data: lowStock} = await sb.from('products').select('name_en,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).lte('stock_qty',5).order('stock_qty')
-    const lowStockList = (lowStock||[]).slice(0,10).map(p=>`${p.name_en} (${p.stock_qty})`).join(', ')
+    const {data: allProducts} = await sb.from('products').select('name_en,stock_qty,reorder_point').eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+    const lowStock = (allProducts||[]).filter(p=>Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+    const lowStockList = lowStock.slice(0,10).map(p=>`${p.name_en} (${p.stock_qty})`).join(', ')
 
     const context = `This month (from ${monthStart}): Total Sales RM${curSales.toFixed(2)}, Collected RM${curPaid.toFixed(2)}, Invoice Count ${thisMonth.length}.\n` +
       `Outstanding receivables (all unpaid/partial invoices, all-time): RM${outstanding.toFixed(2)}.\n` +
-      `Low stock products (5 units or fewer): ${lowStock?.length || 0} product(s)${lowStockList ? ' — ' + lowStockList : ''}.`
+      `Low stock products (at or below each product's reorder point): ${lowStock.length} product(s)${lowStockList ? ' — ' + lowStockList : ''}.`
 
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'business_insight', context, language: APP.language } })
     if(error) throw error
@@ -1363,6 +1374,59 @@ async function _dbLoadAiInsight() {
     else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${insights.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
   } catch(err) {
     console.error('AI business insight error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
+
+async function _dbLoadMarketingAdvice() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Menjana idea...', err:'Ralat: ', empty:'Tiada data mencukupi untuk idea pemasaran buat masa ini.' }
+    : { loading:'Generating ideas...', err:'Error: ', empty:'Not enough data yet for marketing ideas.' }
+  const btn = document.getElementById('db-marketing-btn')
+  const out = document.getElementById('db-marketing-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--db-text4)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const now = new Date()
+    const monthStart = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01'
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1)
+    const lastMonthStart = lastMonthDate.toISOString().slice(0,10)
+    const curSales = _dbInvCache.filter(i=>i.issue_date >= monthStart).reduce((s,i)=>s+Number(i.total||0),0)
+    const prevSales = _dbInvCache.filter(i=>i.issue_date >= lastMonthStart && i.issue_date < monthStart).reduce((s,i)=>s+Number(i.total||0),0)
+    const trend = prevSales===0 ? (curSales>0?'up (no prior data)':'flat') : (curSales>prevSales?'up':curSales<prevSales?'down':'flat')
+
+    const [{data: invItems}, {data: posItems}, {count: custCount}] = await Promise.all([
+      sb.from('invoice_items').select('product_id,qty').eq('tenant_id',APP.tenant.id).not('product_id','is',null),
+      sb.from('pos_transaction_items').select('product_id,qty').eq('tenant_id',APP.tenant.id).not('product_id','is',null),
+      sb.from('customers').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null),
+    ])
+    const qtyByProduct = {}
+    ;[...(invItems||[]), ...(posItems||[])].forEach(it=>{ qtyByProduct[it.product_id] = (qtyByProduct[it.product_id]||0) + Number(it.qty||0) })
+    const topIds = Object.entries(qtyByProduct).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([id])=>id)
+    let topProductsList = ''
+    if(topIds.length) {
+      const {data: prods} = await sb.from('products').select('id,name_en').in('id', topIds)
+      topProductsList = topIds.map(id => {
+        const p = (prods||[]).find(x=>String(x.id)===String(id))
+        return p ? `${p.name_en} (${qtyByProduct[id]} units sold)` : null
+      }).filter(Boolean).join(', ')
+    }
+
+    const context = `This month sales so far: RM${curSales.toFixed(2)}. Last month sales: RM${prevSales.toFixed(2)}. Sales trend: ${trend}.\n` +
+      `Total active customers: ${custCount ?? 0}.\n` +
+      `Top selling products (all-time, by units sold): ${topProductsList || 'no sales data yet'}.`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'marketing_advice', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const ideas = data.data.ideas || []
+    if(!ideas.length) { if(out) out.innerHTML = `<span style="color:var(--db-text4)">${t.empty}</span>` }
+    else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${ideas.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
+  } catch(err) {
+    console.error('AI marketing advice error:', err)
     if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
   }
   if(btn) btn.disabled = false
