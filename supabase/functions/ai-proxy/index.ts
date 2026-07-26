@@ -293,6 +293,88 @@ async function handleFollowUpSuggestion(body: Record<string, unknown>) {
   return { suggestion: reply }
 }
 
+interface ReconcileCandidate {
+  type: string
+  ref: string
+  date: string
+  amount: number
+  desc?: string
+}
+
+async function handleReconcileMatch(body: Record<string, unknown>) {
+  const transactions = body.transactions as { idx: number; date: string; description: string; amount: number }[] | undefined
+  const candidates = body.candidates as ReconcileCandidate[] | undefined
+  if (!Array.isArray(transactions) || transactions.length === 0) throw new Error('transactions is required and must be a non-empty list')
+  if (!Array.isArray(candidates)) throw new Error('candidates is required')
+
+  const txnList = transactions.map((t) => `#${t.idx}: ${t.date}, "${t.description}", RM${Number(t.amount).toFixed(2)}`).join('\n')
+  const candList = candidates.map((c, i) => `${i}: [${c.type}] ${c.ref} — ${c.date}, RM${Number(c.amount).toFixed(2)}, ${c.desc || ''}`).join('\n')
+
+  const systemPrompt =
+    'You are a bank reconciliation assistant for a Malaysian SME. Given a list of bank ' +
+    'transactions and a list of candidate accounting records (invoices, payments, journal ' +
+    'entries), match each bank transaction to the SINGLE best candidate by amount (must be equal ' +
+    'or very close) and date proximity. If nothing fits well, say no match rather than guessing. ' +
+    'Respond with ONLY a JSON object in this exact shape, no other text: {"matches": ' +
+    '[{"txn_idx": <number>, "candidate_index": <number or null>, "confidence": <0 to 1>, ' +
+    '"reasoning": "<short reason>"}]}. candidate_index MUST be an index from the candidate list ' +
+    `below, or null. Include exactly one entry per transaction index given.\n\n` +
+    `Bank transactions:\n${txnList || '(none)'}\n\nCandidate records:\n${candList || '(none)'}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Match the bank transactions to candidates.' },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { matches?: { txn_idx?: number; candidate_index?: number | null; confidence?: number; reasoning?: string }[] }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+  const rawMatches = Array.isArray(parsed.matches) ? parsed.matches : []
+
+  const matches = rawMatches.map((m) => {
+    const candidate =
+      typeof m.candidate_index === 'number' && candidates[m.candidate_index] ? candidates[m.candidate_index] : null
+    return {
+      txn_idx: typeof m.txn_idx === 'number' ? m.txn_idx : null,
+      candidate,
+      confidence: typeof m.confidence === 'number' ? m.confidence : null,
+      reasoning: typeof m.reasoning === 'string' ? m.reasoning : '',
+    }
+  })
+
+  return { matches }
+}
+
+async function handleMonthEndSummary(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are an accountant assistant for a Malaysian SME, writing a month-end close summary for ' +
+    'the business owner. Given the figures below, write a SHORT summary (3-5 sentences) covering: ' +
+    'total income, total expenses, net profit/loss, and a comparison to the prior month if that ' +
+    'data is given. Explicitly call out any anomaly (eg. an expense category that jumped ' +
+    'sharply vs last month) if the data shows one — otherwise say performance looks normal. ' +
+    'Base this strictly on the figures given, never invent numbers not present in them. Format ' +
+    `money as RM X,XXX.XX. Reply in ${langName(body)}.\n\nFigures:\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Write the month-end summary.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { summary: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -336,6 +418,12 @@ Deno.serve(async (req: Request) => {
         break
       case 'follow_up_suggestion':
         data = await handleFollowUpSuggestion(body)
+        break
+      case 'reconcile_match':
+        data = await handleReconcileMatch(body)
+        break
+      case 'month_end_summary':
+        data = await handleMonthEndSummary(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
