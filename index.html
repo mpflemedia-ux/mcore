@@ -749,6 +749,30 @@ function showToast(msg,type='info') {
 
 function auditLog(action,table,id) { sb.rpc('log_audit',{p_action:action,p_table_name:table,p_record_id:String(id)}).then(()=>{}, ()=>{}) }
 
+// Fallback ref-no generator used only when the next_ref_no() RPC returns null/fails
+// (eg. a doc_type it doesn't recognize yet). Looks at this tenant's own existing rows
+// to keep numbering sequential-looking instead of a raw Date.now() timestamp. Only
+// ever used for the NEW record being created — never renumbers existing rows.
+async function _genFallbackRefNo(table, column, prefix) {
+  try {
+    const {data} = await sb.from(table).select(column)
+      .eq('tenant_id', APP.tenant.id)
+      .ilike(column, `${prefix}-%`)
+    let maxNum = 0
+    const re = new RegExp(`^${prefix}-(\\d+)$`)
+    if(data) {
+      data.forEach(row => {
+        const m = re.exec(row[column])
+        if(m) { const n = parseInt(m[1],10); if(n > maxNum) maxNum = n }
+      })
+    }
+    return `${prefix}-${String(maxNum+1).padStart(4,'0')}`
+  } catch(e) {
+    console.error('_genFallbackRefNo error:', e)
+    return `${prefix}-${Date.now()}`
+  }
+}
+
 // AI ASSISTANT CHAT
 const AI_CHAT = { open:false, messages:[], loading:false }
 
@@ -1802,7 +1826,7 @@ async function _crmSave(id) {
     error = res.error
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'CUST'}).then(r=>r, ()=>({data:null}))
-    payload.code = refData || ('CUST-'+Date.now())
+    payload.code = refData || await _genFallbackRefNo('customers','code','CUST')
     const res = await sb.from('customers').insert(payload)
     error = res.error
   }
@@ -2356,7 +2380,7 @@ async function _jnlSave(id) {
     await sb.from('journal_lines').delete().eq('entry_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).then(r=>r, ()=>({data:null}))
-    entryPayload.ref_no = refData || ('JNL-'+Date.now())
+    entryPayload.ref_no = refData || await _genFallbackRefNo('journal_entries','ref_no','JNL')
     entryPayload.entry_type = 'manual'
     entryPayload.created_by = APP.user.id
     const {data, error} = await sb.from('journal_entries').insert(entryPayload).select('id').single()
@@ -2563,7 +2587,7 @@ async function _expSave(id) {
   if(id) { const r = await sb.from('expense_claims').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id); error = r.error }
   else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'EXP'}).then(r=>r, ()=>({data:null}))
-    payload.ref_no = refData || ('EXP-'+Date.now())
+    payload.ref_no = refData || await _genFallbackRefNo('expense_claims','ref_no','EXP')
     payload.claimed_by = APP.user.id
     const r = await sb.from('expense_claims').insert(payload); error = r.error
   }
@@ -2966,7 +2990,7 @@ async function _invSave(id) {
     await sb.from('invoice_items').delete().eq('invoice_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).then(r=>r, ()=>({data:null}))
-    payload.ref_no = refData || ('INV-'+Date.now())
+    payload.ref_no = refData || await _genFallbackRefNo('invoices','ref_no','INV')
     payload.status = 'unpaid'; payload.paid_amt = 0
     const {data, error} = await sb.from('invoices').insert(payload).select('id').single()
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
@@ -3059,7 +3083,7 @@ async function _paySave(invoiceId, balance) {
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).then(r=>r, ()=>({data:null}))
   const {data: payment, error} = await sb.from('payments').insert({
-    tenant_id: APP.tenant.id, ref_no: refData || ('RCP-'+Date.now()), payment_type: 'receipt',
+    tenant_id: APP.tenant.id, ref_no: refData || await _genFallbackRefNo('payments','ref_no','RCP'), payment_type: 'receipt',
     customer_id: inv.customer_id, customer_name: inv.customer_name,
     payment_date: document.getElementById('pay-date').value,
     payment_method: document.getElementById('pay-method').value,
@@ -3181,7 +3205,7 @@ async function _quoSave(id) {
     await sb.from('quotation_items').delete().eq('quotation_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'QUO'}).then(r=>r, ()=>({data:null}))
-    payload.ref_no = refData || ('QUO-'+Date.now())
+    payload.ref_no = refData || await _genFallbackRefNo('quotations','ref_no','QUO')
     payload.status = 'draft'
     const {data, error} = await sb.from('quotations').insert(payload).select('id').single()
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
@@ -3206,7 +3230,7 @@ async function _quoConvert(quoId) {
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).then(r=>r, ()=>({data:null}))
   const {data: newInv, error} = await sb.from('invoices').insert({
-    tenant_id: APP.tenant.id, customer_id: quo.customer_id, customer_name: quo.customer_name, ref_no: refData || ('INV-'+Date.now()),
+    tenant_id: APP.tenant.id, customer_id: quo.customer_id, customer_name: quo.customer_name, ref_no: refData || await _genFallbackRefNo('invoices','ref_no','INV'),
     issue_date: new Date().toISOString().slice(0,10), total: quo.total, status:'unpaid', paid_amt:0
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
@@ -3333,7 +3357,7 @@ async function _posCheckout() {
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).then(r=>r, ()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
-    tenant_id: APP.tenant.id, session_id: session.id, receipt_no: refData || ('POS-'+Date.now()),
+    tenant_id: APP.tenant.id, session_id: session.id, receipt_no: refData || await _genFallbackRefNo('pos_transactions','receipt_no','POS'),
     total: total, payment_method: method, txn_type: 'sale', status: 'completed'
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
