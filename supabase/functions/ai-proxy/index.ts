@@ -499,6 +499,39 @@ async function handleGenerateDocument(body: Record<string, unknown>) {
   return { draft: reply }
 }
 
+async function handleDailyDigest(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are producing a short daily action-item digest for a Malaysian SME owner, combining ' +
+    'overdue invoices, low-stock products, and upcoming compliance deadlines given below. ' +
+    'Produce a prioritized list of concrete action items for TODAY — each ONE sentence, most ' +
+    'urgent first (eg. a compliance deadline due today outranks a low-stock item). If a section ' +
+    'has no items, do not invent one. If everything is empty, return an empty list. Respond with ' +
+    'ONLY a JSON object in this exact shape, no other text: {"items": ["...", "..."]}. Base this ' +
+    `strictly on the data given — never invent figures/dates not present in it. Reply in ${langName(body)}.\n\n` +
+    `${context}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: "Generate today's action items." },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { items?: unknown }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+  const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => typeof i === 'string') : []
+  return { items }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -560,6 +593,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'generate_document':
         data = await handleGenerateDocument(body)
+        break
+      case 'daily_digest':
+        data = await handleDailyDigest(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
