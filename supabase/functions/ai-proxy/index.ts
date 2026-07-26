@@ -2,14 +2,15 @@
 // Single reuse-able proxy to Groq for all AI features (chat, categorize, receipt).
 // The Groq API key is read from the GROQ_API_KEY secret — never hardcode it here.
 //
-// Request:  POST { action: 'chat' | 'categorize' | 'receipt', ...action-specific fields }
+// Request:  POST { action: '...', language: 'en'|'bm', ...action-specific fields }
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
-// All three actions (chat, categorize, receipt) are implemented. 'receipt' uses a
-// vision-capable model read from the GROQ_VISION_MODEL secret (falls back to
-// qwen/qwen3.6-27b) — kept out of code so it can be swapped without a redeploy if
-// Groq deprecates it, which has happened to every prior Groq vision model on a
-// roughly 3-4 month cadence.
+// Actions: chat, categorize, receipt (vision), narrate_report, business_insight,
+// draft_reminder, follow_up_suggestion. 'receipt' uses a vision-capable model read
+// from the GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of
+// code so it can be swapped without a redeploy if Groq deprecates it, which has
+// happened to every prior Groq vision model on a roughly 3-4 month cadence. Every
+// other action uses CHAT_MODEL (text-only).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -53,6 +54,10 @@ async function callGroq(
 
   const data = await res.json()
   return data.choices?.[0]?.message?.content ?? ''
+}
+
+function langName(body: Record<string, unknown>) {
+  return body.language === 'bm' ? 'Bahasa Melayu' : 'English'
 }
 
 async function handleChat(body: Record<string, unknown>) {
@@ -186,6 +191,108 @@ async function handleReceipt(body: Record<string, unknown>) {
   }
 }
 
+async function handleNarrateReport(body: Record<string, unknown>) {
+  const context = body.context
+  const reportType = typeof body.report_type === 'string' && body.report_type ? body.report_type : 'financial report'
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a financial narrator for a Malaysian SME. Given the report figures below, write a ' +
+    'SHORT plain-language summary — 2 to 3 sentences maximum — of business performance that a ' +
+    "non-accountant owner can understand at a glance. Mention the key number(s) and one notable " +
+    'observation. Format money as RM X,XXX.XX. Interpret the data, do not just repeat it verbatim. ' +
+    `Reply in ${langName(body)}.\n\nReport type: ${reportType}\n\nData:\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Summarize this report.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { summary: reply }
+}
+
+async function handleBusinessInsight(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a business advisor for a Malaysian SME. Given the business snapshot below (sales, ' +
+    'stock, cashflow), produce 3 to 5 short, concrete insights or recommendations — each ONE ' +
+    'sentence. Respond with ONLY a JSON object in this exact shape, no other text: ' +
+    '{"insights": ["...", "..."]}. Base every insight strictly on the data given — never invent ' +
+    `numbers not present in it. Reply in ${langName(body)}.\n\nBusiness snapshot:\n${context}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Give me insights and recommendations.' },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { insights?: unknown }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+  const insights = Array.isArray(parsed.insights) ? parsed.insights.filter((i) => typeof i === 'string') : []
+  if (insights.length === 0) throw new Error('AI returned no usable insights')
+  return { insights }
+}
+
+async function handleDraftReminder(body: Record<string, unknown>) {
+  const invoice = body.invoice as { ref_no?: string; customer_name?: string; total?: number; paid_amt?: number; due_date?: string } | undefined
+  if (!invoice || typeof invoice !== 'object') throw new Error('invoice is required')
+
+  const outstanding = Number(invoice.total || 0) - Number(invoice.paid_amt || 0)
+  const invoiceSummary =
+    `Invoice ${invoice.ref_no || '-'} for ${invoice.customer_name || 'the customer'}, ` +
+    `amount RM${Number(invoice.total || 0).toFixed(2)}, outstanding RM${outstanding.toFixed(2)}, ` +
+    `due date ${invoice.due_date || '-'} (overdue).`
+
+  const systemPrompt =
+    'You are drafting a payment reminder message for a Malaysian SME to send to a customer with ' +
+    'an overdue invoice. Write a short, polite, professional reminder (email or WhatsApp style, ' +
+    'plain text, no subject line) that includes the invoice number, outstanding amount, and due ' +
+    'date. Do not be aggressive or threatening. This is a DRAFT for the business owner to review ' +
+    `and edit before sending — do not include placeholders like [Your Name], sign off simply. ` +
+    `Reply in ${langName(body)}.\n\n${invoiceSummary}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Draft the reminder message.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { draft: reply }
+}
+
+async function handleFollowUpSuggestion(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a sales assistant for a Malaysian SME. Given a customer\'s order/invoice history ' +
+    'below, suggest ONE short, concrete follow-up action for the salesperson (eg. re-engage a ' +
+    'lapsed customer, suggest an upsell based on buying pattern, or note nothing urgent is ' +
+    'needed). 1-2 sentences maximum. Base it strictly on the history given — never invent orders ' +
+    `or dates not present in it. Reply in ${langName(body)}.\n\nCustomer history:\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Suggest a follow-up action.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { suggestion: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -217,6 +324,18 @@ Deno.serve(async (req: Request) => {
         break
       case 'receipt':
         data = await handleReceipt(body)
+        break
+      case 'narrate_report':
+        data = await handleNarrateReport(body)
+        break
+      case 'business_insight':
+        data = await handleBusinessInsight(body)
+        break
+      case 'draft_reminder':
+        data = await handleDraftReminder(body)
+        break
+      case 'follow_up_suggestion':
+        data = await handleFollowUpSuggestion(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
