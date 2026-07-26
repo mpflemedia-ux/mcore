@@ -445,6 +445,27 @@ async function handleMarketingAdvice(body: Record<string, unknown>) {
   return { ideas }
 }
 
+async function handleTaxGuidance(body: Record<string, unknown>) {
+  const question = body.question
+  if (!question || typeof question !== 'string') throw new Error('question is required')
+
+  const systemPrompt =
+    'You are answering a general Malaysian tax/compliance question (SST, PCB, LHDN e-Invoice) for ' +
+    'a Malaysian SME owner, based on general public knowledge of Malaysian tax rules. Be concise ' +
+    'and practical. You are NOT a licensed tax agent and this is NOT official advice — do not ' +
+    'claim certainty on edge cases, and explicitly suggest confirming with LHDN or a licensed ' +
+    `accountant when the question involves a specific/unusual situation. Reply in ${langName(body)}.`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: question },
+    ],
+    CHAT_MODEL,
+  )
+  return { answer: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -500,6 +521,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'marketing_advice':
         data = await handleMarketingAdvice(body)
+        break
+      case 'tax_guidance':
+        data = await handleTaxGuidance(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
