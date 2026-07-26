@@ -2899,11 +2899,11 @@ let _recoMatches = []
 async function renderReconcile() {
   const t = APP.language==='bm' ? {
     title:'Segan Bank (Reconciliation)',
-    instructions:'Muat naik atau tampal senarai transaksi bank (satu baris satu transaksi, format: tarikh,keterangan,jumlah). Tiada data disimpan ke pangkalan data — ni alat cadangan sahaja.',
+    instructions:'Muat naik atau tampal senarai transaksi bank (satu baris satu transaksi). Dua format disokong (auto-detect ikut bilangan kolum): "tarikh,keterangan,jumlah" (1 kolum jumlah bertanda +/-), ATAU format statement bank sebenar "tarikh,keterangan,debit,kredit,..." (kolum lain macam no./nama akaun diabaikan). Header row (cth "DATE,DESCRIPTION,...") dikesan dan diskip automatik. Tiada data disimpan ke pangkalan data — ni alat cadangan sahaja.',
     parse:'Padan dengan AI'
   } : {
     title:'Bank Reconciliation',
-    instructions:'Upload or paste a list of bank transactions (one per line, format: date,description,amount). Nothing here is saved to the database — this is a suggestion tool only.',
+    instructions:'Upload or paste a list of bank transactions (one per line). Two formats supported (auto-detected by column count): "date,description,amount" (single signed amount), OR real bank statement exports "date,description,debit,credit,..." (extra columns like account no./name are ignored). A header row (eg. "DATE,DESCRIPTION,...") is detected and skipped automatically. Nothing here is saved to the database — this is a suggestion tool only.',
     parse:'Match with AI'
   }
   document.getElementById('main').innerHTML = `
@@ -2912,7 +2912,7 @@ async function renderReconcile() {
   <div class="card" style="padding:16px;margin-bottom:16px">
     <p style="font-size:13px;color:var(--text-3);margin-bottom:10px">${t.instructions}</p>
     <input type="file" accept=".csv,text/csv" id="reco-file-input" onchange="_recoFileUpload(event)" style="margin-bottom:10px;display:block">
-    <textarea id="reco-csv-text" class="form-input" rows="6" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00"></textarea>
+    <textarea id="reco-csv-text" class="form-input" rows="6" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00&#10;01/04/2026,CIB Instant Transfer - Operation Cost,799.00,,35600156696,LE AROMA SDN BHD"></textarea>
     <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.parse}</button>
   </div>
   <div id="reco-result"></div>`
@@ -2936,17 +2936,43 @@ function _recoNormalizeDate(s) {
   return null
 }
 
+// Supports two layouts, auto-detected per row by column count:
+//  - 3 columns:  date, description, amount (single signed amount)
+//  - 4+ columns: date, description, debit, credit, ...(ignored, eg. account no/name)
+//    amount = +credit if present, else -debit (money out). Real bank exports
+//    (eg. Malaysian bank CSV statements) commonly use this debit/credit-split shape.
+// A header row (first column isn't a parseable date and contains letters, eg.
+// "DATE") is detected and skipped automatically.
 function _recoParseCsv(text) {
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean)
+  if(!lines.length) return []
+
+  const firstCols = lines[0].split(',').map(c=>c.trim())
+  const looksLikeHeader = !_recoNormalizeDate(firstCols[0]) && /[a-zA-Z]/.test(firstCols[0]||'')
+  const dataLines = looksLikeHeader ? lines.slice(1) : lines
+
   const rows = []
-  for(const line of lines) {
+  for(const line of dataLines) {
     const cols = line.split(',').map(c=>c.trim())
-    if(cols.length < 2) continue
+    if(cols.length < 3) continue
     const dateNorm = _recoNormalizeDate(cols[0])
-    const amountRaw = cols[cols.length-1].replace(/[^0-9.\-]/g,'')
-    const amount = Number(amountRaw)
-    if(!dateNorm || !amountRaw || isNaN(amount)) continue
-    const description = cols.slice(1, cols.length-1).join(', ') || ''
+    if(!dateNorm) continue
+    const description = cols[1] || ''
+
+    let amount = null
+    if(cols.length >= 4) {
+      const debitRaw = (cols[2]||'').replace(/[^0-9.\-]/g,'')
+      const creditRaw = (cols[3]||'').replace(/[^0-9.\-]/g,'')
+      const debit = debitRaw ? Number(debitRaw) : NaN
+      const credit = creditRaw ? Number(creditRaw) : NaN
+      if(creditRaw && !isNaN(credit)) amount = credit
+      else if(debitRaw && !isNaN(debit)) amount = -debit
+    } else {
+      const amountRaw = (cols[2]||'').replace(/[^0-9.\-]/g,'')
+      const amt = amountRaw ? Number(amountRaw) : NaN
+      if(!isNaN(amt)) amount = amt
+    }
+    if(amount===null || isNaN(amount)) continue
     rows.push({date:dateNorm, description, amount})
   }
   return rows
