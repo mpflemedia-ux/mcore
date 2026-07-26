@@ -1645,6 +1645,19 @@ function renderSettings() {
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Peringatan Pematuhan':'Compliance Reminders'}</div></div>
     <div id="compliance-reminders-wrap" style="padding:16px"></div>
   </div>
+  <div class="card" style="max-width:500px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Panduan Cukai AI':'AI Tax Guidance'}</div></div>
+    <div style="padding:16px">
+      <div style="font-size:12px;color:var(--warning);background:var(--warning-light,rgba(217,119,6,.1));border:1px solid var(--warning);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px">
+        <i class="ti ti-alert-triangle"></i> ${APP.language==='bm'
+          ?'Ini panduan umum sahaja, bukan nasihat cukai rasmi — sila rujuk LHDN atau akauntan bertauliah untuk kes spesifik.'
+          :'This is general guidance only, not official tax advice — please consult LHDN or a licensed accountant for specific cases.'}
+      </div>
+      <textarea id="tax-question" class="form-input" rows="3" placeholder="${APP.language==='bm'?'cth: macam mana nak kira SST untuk servis?':'e.g. how do I calculate SST for services?'}"></textarea>
+      <button id="tax-ask-btn" class="btn btn-primary btn-sm" style="margin-top:10px" onclick="_taxAskGuidance()"><i class="ti ti-message-question"></i> ${APP.language==='bm'?'Tanya pasal SST/PCB/e-Invois':'Ask about SST/PCB/e-Invoice'}</button>
+      <div id="tax-answer-out" style="margin-top:12px;font-size:13px;line-height:1.6"></div>
+    </div>
+  </div>
   ${isAdmin ? `
   <div class="card" style="max-width:600px;margin-top:16px">
     <div class="card-header"><div class="card-title">${rp.title}</div></div>
@@ -1719,6 +1732,32 @@ function _complianceRender() {
         <div style="font-size:12px;color:var(--text-3)">${isBm?'Tarikh akhir':'Deadline'}: ${formatDate(i.deadline.toISOString().slice(0,10))} — ${i.days<=0?(isBm?'HARI INI':'TODAY'):(isBm?`${i.days} hari lagi`:`${i.days} day(s) left`)}</div>
       </div>
     </div>`).join('') + footer
+}
+
+async function _taxAskGuidance() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Menjana jawapan...', err:'Ralat: ', required:'Sila taip soalan dahulu.', disclaimer:'Panduan umum sahaja, bukan nasihat cukai rasmi — sila rujuk LHDN atau akauntan bertauliah untuk kes spesifik.' }
+    : { loading:'Generating answer...', err:'Error: ', required:'Please type a question first.', disclaimer:'General guidance only, not official tax advice — please consult LHDN or a licensed accountant for specific cases.' }
+  const question = document.getElementById('tax-question').value.trim()
+  const btn = document.getElementById('tax-ask-btn')
+  const out = document.getElementById('tax-answer-out')
+  if(!question) { showToast(t.required, 'warning'); return }
+
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'tax_guidance', question, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<div>${_aiEscapeHtml(data.data.answer)}</div>` +
+      `<div style="margin-top:10px;font-size:11px;color:var(--warning);border-top:1px solid var(--border);padding-top:8px"><i class="ti ti-alert-triangle"></i> ${t.disclaimer}</div>`
+  } catch(err) {
+    console.error('Tax guidance error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
 }
 
 function _rpRenderList() {
