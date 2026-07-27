@@ -532,6 +532,62 @@ async function handleDailyDigest(body: Record<string, unknown>) {
   return { items }
 }
 
+async function handleFraudScan(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a fraud/anomaly detection assistant reviewing recent POS transactions and journal ' +
+    'entries for a Malaysian SME (last 30 days, given below). Flag any suspicious PATTERNS — eg. ' +
+    'transactions clustered outside normal business hours (very early morning/late night), ' +
+    'unusual clusters of identical amounts in quick succession, statistical outliers in amount ' +
+    'compared to the rest of the data, or repeated suspicious round-number transactions. This ' +
+    'dataset has NO discount or void tracking, so do not claim to check for those specifically — ' +
+    'only flag what the data actually shows. If nothing looks suspicious, return an empty list — ' +
+    'do not invent findings to fill a quota. Respond with ONLY a JSON object, no other text: ' +
+    '{"flags": ["...", "..."]}. Each flag ONE sentence, citing the specific transaction/entry ref ' +
+    `or date that triggered it. Reply in ${langName(body)}.\n\n${context}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Scan for anomalies.' },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { flags?: unknown }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+  const flags = Array.isArray(parsed.flags) ? parsed.flags.filter((f) => typeof f === 'string') : []
+  return { flags }
+}
+
+async function handleOnboardingTip(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a friendly onboarding guide for a Malaysian SME setting up their ERP system for the ' +
+    'first time. Given the current wizard step described below, give ONE short, encouraging, ' +
+    'practical tip (1-2 sentences) relevant to that step — eg. why an accurate SSM number matters, ' +
+    'how fiscal year choice affects reporting, which chart-of-accounts template suits which ' +
+    `industry. Keep it simple and non-technical. Reply in ${langName(body)}.\n\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Give the tip.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { tip: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -596,6 +652,12 @@ Deno.serve(async (req: Request) => {
         break
       case 'daily_digest':
         data = await handleDailyDigest(body)
+        break
+      case 'fraud_scan':
+        data = await handleFraudScan(body)
+        break
+      case 'onboarding_tip':
+        data = await handleOnboardingTip(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
