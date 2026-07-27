@@ -736,7 +736,13 @@ Deno.serve(async (req: Request) => {
         data = await handleHrPayslipNote(body)
         break
       default:
-        return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
+        return jsonResponse({
+          success: false,
+          error: `Unknown action: ${action}`,
+          debug: {
+            hint: 'If this action was added recently, confirm the deployed ai-proxy code actually includes it — copy-pasting from an unmerged PR branch (not main) is a common cause of this.',
+          },
+        }, 400)
     }
 
     return jsonResponse({ success: true, data })
