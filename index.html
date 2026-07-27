@@ -699,6 +699,8 @@ const NAV_ITEMS = [
   { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },
   { id:'pos',        icon:'ti-device-desktop',    label_en:'POS',         label_bm:'POS',          module:'pos' },
   { id:'inventory',  icon:'ti-box',               label_en:'Inventory',   label_bm:'Inventori',    module:'inventory' },
+  { id:'logistics',  icon:'ti-truck-delivery',    label_en:'Logistics',   label_bm:'Logistik',     module:'logistics' },
+  { id:'production', icon:'ti-tools',             label_en:'Production',  label_bm:'Pengeluaran',  module:'production' },
   { section:'Finance' },
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
   { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'core' },
@@ -731,6 +733,8 @@ function openPage(page, params={}) {
       case 'sales':      renderSales(params); break
       case 'pos':        renderPOS(); break
       case 'inventory':  renderInventory(params); break
+      case 'logistics':  renderLogistics(params); break
+      case 'production': renderProduction(params); break
       case 'accounting': renderAccounting(params); break
       case 'reports':    renderReports(params); break
       case 'settings':   renderSettings(); break
@@ -1675,6 +1679,9 @@ const RP_MODULES = [
   { id:'pos',        en:'POS',       bm:'POS' },
   { id:'inventory',  en:'Inventory', bm:'Inventori' },
   { id:'accounting', en:'Accounting',bm:'Perakaunan' },
+  { id:'logistics',  en:'Logistics', bm:'Logistik' },
+  { id:'production', en:'Production',bm:'Pengeluaran' },
+  { id:'hr',         en:'HR',        bm:'Sumber Manusia' },
 ]
 let _rolePermsState = {}
 
@@ -3891,17 +3898,28 @@ async function renderInvDetail(id) {
     back:'Invois', edit:'Edit', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
     items:'Item', qty:'Kuantiti', price:'Harga', amount:'Jumlah', total:'Jumlah Besar',
     paid:'Dibayar', balance:'Baki', recordPayment:'Rekod Bayaran', payDate:'Tarikh Bayaran', payAmount:'Jumlah Bayaran', payMethod:'Kaedah', save:'Simpan',
-    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi'
+    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi',
+    createDO:'Cipta Delivery Order', createDOBtn:'Cipta DO', driverName:'Nama Pemandu', vehicleNo:'No. Kenderaan', deliveryAddress:'Alamat Penghantaran *', notes:'Nota',
+    doTitle:'Delivery Order', viewDO:'Lihat DO', addressRequired:'Alamat penghantaran diperlukan.'
   } : {
     back:'Invoices', edit:'Edit', customer:'Customer', date:'Date', due:'Due Date',
     items:'Items', qty:'Qty', price:'Price', amount:'Amount', total:'Grand Total',
     paid:'Paid', balance:'Balance', recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
-    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet'
+    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet',
+    createDO:'Create Delivery Order', createDOBtn:'Create DO', driverName:'Driver Name', vehicleNo:'Vehicle No.', deliveryAddress:'Delivery Address *', notes:'Notes',
+    doTitle:'Delivery Order', viewDO:'View DO', addressRequired:'Delivery address is required.'
   }
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
   const {data: allocations} = await sb.from('payment_allocations').select('amount,payments(payment_date,payment_method)').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
+  const {data: existingDO} = await sb.from('delivery_orders').select('id,do_no,status').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false}).limit(1).maybeSingle()
+  let doCustomerAddr = ''
+  if(!existingDO && inv.customer_id) {
+    const {data: cust} = await sb.from('customers').select('address_line1,city,postcode,state').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
+    if(cust) doCustomerAddr = [cust.address_line1,cust.city,cust.postcode,cust.state].filter(Boolean).join(', ')
+  }
+  const doStatusLabel = s => s==='delivered'?(APP.language==='bm'?'Dihantar':'Delivered'):s==='in_transit'?(APP.language==='bm'?'Dalam Perjalanan':'In Transit'):(APP.language==='bm'?'Menunggu':'Pending')
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
@@ -3945,7 +3963,48 @@ async function renderInvDetail(id) {
     ${(!allocations||allocations.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
     `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th></tr></thead>
     <tbody>${allocations.map(a=>`<tr><td>${formatDate(a.payments?.payment_date)}</td><td style="text-align:right">${formatRM(a.amount)}</td><td>${a.payments?.payment_method||'-'}</td></tr>`).join('')}</tbody></table>`}
+  </div>
+  <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
+    ${existingDO ? `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div><div style="font-weight:600">${t.doTitle}</div><div style="font-size:13px;color:var(--text-3)">${existingDO.do_no||'-'} — ${doStatusLabel(existingDO.status)}</div></div>
+      <button class="btn btn-outline btn-sm" onclick="openPage('logistics',{view:'do-detail',id:'${existingDO.id}'})">${t.viewDO}</button>
+    </div>` : `
+    <div style="font-weight:600;margin-bottom:12px">${t.createDO}</div>
+    <div id="do-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${t.driverName}</label><input id="do-driver" type="text" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${t.vehicleNo}</label><input id="do-vehicle" type="text" class="form-input"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.deliveryAddress}</label><textarea id="do-address" class="form-input" rows="2">${doCustomerAddr}</textarea></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.notes}</label><input id="do-notes" type="text" class="form-input"></div>
+    </div>
+    <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="_doCreate('${id}','${inv.customer_id||''}')"><i class="ti ti-truck-delivery"></i> ${t.createDOBtn}</button>`}
   </div>`
+}
+
+async function _doCreate(invoiceId, customerId) {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('do-form-err')
+  const driverName = document.getElementById('do-driver').value.trim()
+  const vehicleNo = document.getElementById('do-vehicle').value.trim()
+  const address = document.getElementById('do-address').value.trim()
+  const notes = document.getElementById('do-notes').value.trim()
+  if(errEl) errEl.style.display='none'
+  if(!address) { if(errEl){errEl.textContent=isBm?'Alamat penghantaran diperlukan.':'Delivery address is required.'; errEl.style.display='block'} return }
+
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'DO'}).then(r=>r, ()=>({data:null}))
+  const doNo = refData || await _genFallbackRefNo('delivery_orders','do_no','DO')
+
+  const {data, error} = await sb.from('delivery_orders').insert({
+    tenant_id: APP.tenant.id, invoice_id: invoiceId||null, customer_id: customerId||null,
+    do_no: doNo, driver_name: driverName||null, vehicle_no: vehicleNo||null,
+    delivery_address: address, notes: notes||null, status: 'pending'
+  }).select('id').single()
+  if(error) { if(errEl){errEl.textContent='Error: '+error.message; errEl.style.display='block'} return }
+
+  showToast(isBm?'Delivery Order dicipta!':'Delivery Order created!', 'success')
+  auditLog('create','delivery_orders', data.id)
+  openPage('logistics', {view:'do-detail', id:data.id, justCreated:true})
 }
 
 async function _paySave(invoiceId, balance) {
@@ -4117,6 +4176,124 @@ async function _quoConvert(quoId) {
 
   showToast(APP.language==='bm'?'Ditukar kepada invois!':'Converted to invoice!', 'success')
   openPage('sales',{view:'inv-detail',id:newInv.id})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOGISTICS MODULE (Batch 4, #15 — MVP: manual status, AI text advisory only,
+// no real routing/maps integration)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function renderLogistics(params={}) {
+  if(params.view==='do-detail' && params.id) { renderDODetail(params.id, params.justCreated); return }
+  renderDOList()
+}
+
+async function renderDOList() {
+  const t = APP.language==='bm' ? {
+    title:'Delivery Order', noData:'Tiada delivery order lagi', customer:'Pelanggan', driver:'Pemandu', vehicle:'Kenderaan', status:'Status', date:'Tarikh',
+    pending:'Menunggu', inTransit:'Dalam Perjalanan', delivered:'Dihantar'
+  } : {
+    title:'Delivery Orders', noData:'No delivery orders yet', customer:'Customer', driver:'Driver', vehicle:'Vehicle', status:'Status', date:'Date',
+    pending:'Pending', inTransit:'In Transit', delivered:'Delivered'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="card"><div id="do-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('do-list-wrap')
+  const {data, error} = await sb.from('delivery_orders').select('id,do_no,driver_name,vehicle_no,status,created_at,customers(name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const statusColor = s => s==='delivered'?'var(--success)':s==='in_transit'?'var(--warning)':'var(--text-3)'
+  const statusLabel = s => s==='delivered'?t.delivered:s==='in_transit'?t.inTransit:t.pending
+  wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.customer}</th><th>${t.driver}</th><th>${t.vehicle}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(d=>`<tr onclick="openPage('logistics',{view:'do-detail',id:'${d.id}'})" style="cursor:pointer">
+    <td>${formatDate(d.created_at)}</td>
+    <td>${d.customers?.name||'-'}</td>
+    <td>${d.driver_name||'-'}</td>
+    <td>${d.vehicle_no||'-'}</td>
+    <td><span style="color:${statusColor(d.status)};font-weight:600">${statusLabel(d.status)}</span></td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function renderDODetail(id, justCreated) {
+  const t = APP.language==='bm' ? {
+    back:'Delivery Order', customer:'Pelanggan', invoice:'Invois', driverName:'Nama Pemandu', vehicleNo:'No. Kenderaan', deliveryAddress:'Alamat Penghantaran',
+    status:'Status', pending:'Menunggu', inTransit:'Dalam Perjalanan', delivered:'Dihantar', notFound:'Delivery order tidak dijumpai.',
+    aiSuggestTitle:'Cadangan Logistik AI', getSuggestion:'Dapatkan Cadangan', suggestionHint:'Klik untuk cadangan ringkas masa/laluan penghantaran (teks sahaja, bukan peta sebenar).'
+  } : {
+    back:'Delivery Orders', customer:'Customer', invoice:'Invoice', driverName:'Driver Name', vehicleNo:'Vehicle No.', deliveryAddress:'Delivery Address',
+    status:'Status', pending:'Pending', inTransit:'In Transit', delivered:'Delivered', notFound:'Delivery order not found.',
+    aiSuggestTitle:'AI Logistics Suggestion', getSuggestion:'Get Suggestion', suggestionHint:'Click for a brief delivery timing/routing suggestion (text only, not a real map).'
+  }
+  const {data: doRec} = await sb.from('delivery_orders').select('*,customers(name),invoices(ref_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!doRec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${doRec.do_no||t.back}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('logistics',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:700px;padding:20px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div><div style="color:var(--text-3);font-size:12px">${t.customer}</div><strong>${doRec.customers?.name||'-'}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.invoice}</div>${doRec.invoices?.ref_no||'-'}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.driverName}</div>${doRec.driver_name||'-'}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.vehicleNo}</div>${doRec.vehicle_no||'-'}</div>
+      <div style="grid-column:1/-1"><div style="color:var(--text-3);font-size:12px">${t.deliveryAddress}</div>${doRec.delivery_address||'-'}</div>
+    </div>
+    <div class="form-group" style="max-width:220px">
+      <label class="form-label">${t.status}</label>
+      <select id="do-status-select" class="form-select" onchange="_doUpdateStatus('${id}', this.value)">
+        <option value="pending" ${doRec.status==='pending'?'selected':''}>${t.pending}</option>
+        <option value="in_transit" ${doRec.status==='in_transit'?'selected':''}>${t.inTransit}</option>
+        <option value="delivered" ${doRec.status==='delivered'?'selected':''}>${t.delivered}</option>
+      </select>
+    </div>
+  </div>
+  <div class="card" style="max-width:700px;margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><i class="ti ti-sparkles"></i> ${t.aiSuggestTitle}</div>
+      <button id="do-suggest-btn" class="btn btn-outline btn-sm" onclick="_doLoadSuggestion('${id}')"><i class="ti ti-refresh"></i> ${t.getSuggestion}</button>
+    </div>
+    <div id="do-suggest-out" style="padding:16px;font-size:13px;color:var(--text-3);line-height:1.6">${t.suggestionHint}</div>
+  </div>`
+
+  if(justCreated) _doLoadSuggestion(id)
+}
+
+async function _doUpdateStatus(id, status) {
+  const isBm = APP.language==='bm'
+  const payload = { status }
+  if(status==='delivered') payload.delivered_at = new Date().toISOString()
+  const {error} = await sb.from('delivery_orders').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  showToast(isBm?'Status dikemaskini!':'Status updated!', 'success')
+  auditLog('update','delivery_orders', id)
+}
+
+async function _doLoadSuggestion(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { loading:'Menjana cadangan...', err:'Ralat: ' } : { loading:'Generating suggestion...', err:'Error: ' }
+  const btn = document.getElementById('do-suggest-btn')
+  const out = document.getElementById('do-suggest-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const {data: doRec} = await sb.from('delivery_orders').select('delivery_address,driver_name,vehicle_no,created_at').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(!doRec) throw new Error('Delivery order not found')
+    const context = `Delivery address: ${doRec.delivery_address||'-'}. Driver: ${doRec.driver_name||'not assigned'}. Vehicle: ${doRec.vehicle_no||'not assigned'}. Created: ${doRec.created_at||'-'}.`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'logistics_suggest', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<i class="ti ti-route" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.suggestion)}`
+  } catch(err) {
+    console.error('Logistics suggest error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

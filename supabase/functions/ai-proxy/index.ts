@@ -588,6 +588,28 @@ async function handleOnboardingTip(body: Record<string, unknown>) {
   return { tip: reply }
 }
 
+async function handleLogisticsSuggest(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a logistics assistant for a Malaysian SME giving a brief delivery planning tip for ' +
+    'the delivery order below. This is TEXT-BASED ADVISORY ONLY — you have no real map/routing ' +
+    'data, so do not claim precise distances, travel times, or turn-by-turn directions. Give ONE ' +
+    'short practical suggestion (1-2 sentences) about timing (eg. avoid peak traffic hours in ' +
+    'Malaysian cities) or general routing considerations based on the address/area given, or note ' +
+    `if a driver/vehicle assignment is missing. Reply in ${langName(body)}.\n\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Give delivery planning advice.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { suggestion: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -658,6 +680,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'onboarding_tip':
         data = await handleOnboardingTip(body)
+        break
+      case 'logistics_suggest':
+        data = await handleLogisticsSuggest(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
