@@ -3462,6 +3462,7 @@ async function _invLoad() {
     <td style="text-align:right;${isLow?'color:var(--danger);font-weight:600':''}">${p.stock_qty ?? 0} ${p.unit||''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('inventory',{view:'product-form',id:'${p.id}'})"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" title="${APP.language==='bm'?'Cipta Work Order':'Create Work Order'}" onclick="openPage('production',{view:'wo-form',productId:'${p.id}'})"><i class="ti ti-tools"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_invDelete('${p.id}','${prodName(p).replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td>
   </tr>`
@@ -4291,6 +4292,182 @@ async function _doLoadSuggestion(id) {
     if(out) out.innerHTML = `<i class="ti ti-route" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.suggestion)}`
   } catch(err) {
     console.error('Logistics suggest error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRODUCTION MODULE (Batch 4, #16 — MVP: manual status, no linked BOM/component
+// inventory, AI check is a text-based sanity/scheduling advisory only)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function renderProduction(params={}) {
+  if(params.view==='wo-form' && params.productId) { renderWOForm(params.productId); return }
+  if(params.view==='wo-detail' && params.id) { renderWODetail(params.id, params.justCreated); return }
+  renderWOList()
+}
+
+async function renderWOForm(productId) {
+  const t = APP.language==='bm' ? {
+    title:'Work Order Baru', product:'Produk', qty:'Kuantiti Untuk Dikeluarkan', materials:'Bahan Diperlukan (nota bebas)',
+    materialsPh:'cth: 10kg tepung, 5L minyak masak...', assignedTo:'Ditugaskan Kepada', none:'Tiada',
+    create:'Cipta Work Order', cancel:'Batal', notFound:'Produk tidak dijumpai.', qtyRequired:'Kuantiti mesti lebih daripada 0'
+  } : {
+    title:'New Work Order', product:'Product', qty:'Quantity To Produce', materials:'Materials Needed (free text notes)',
+    materialsPh:'e.g. 10kg flour, 5L cooking oil...', assignedTo:'Assigned To', none:'None',
+    create:'Create Work Order', cancel:'Cancel', notFound:'Product not found.', qtyRequired:'Quantity must be greater than 0'
+  }
+  const {data: product} = await sb.from('products').select('id,name_en,name_bm,stock_qty').eq('id',productId).eq('tenant_id',APP.tenant.id).single()
+  if(!product) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const {data: staff} = await sb.from('user_profiles').select('id,full_name').eq('tenant_id',APP.tenant.id)
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="card" style="max-width:600px;padding:20px">
+    <div class="form-group"><label class="form-label">${t.product}</label><input class="form-input" value="${prodName(product)}" disabled></div>
+    <div class="form-group"><label class="form-label">${t.qty}</label><input type="number" id="wo-qty" class="form-input" min="1" value="1"></div>
+    <div class="form-group"><label class="form-label">${t.materials}</label><textarea id="wo-materials" class="form-input" rows="3" placeholder="${t.materialsPh}"></textarea></div>
+    <div class="form-group">
+      <label class="form-label">${t.assignedTo}</label>
+      <select id="wo-assigned" class="form-select">
+        <option value="">${t.none}</option>
+        ${(staff||[]).map(s=>`<option value="${s.id}">${_aiEscapeHtml(s.full_name||'')}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">${APP.language==='bm'?'Nota':'Notes'}</label><textarea id="wo-notes" class="form-input" rows="2"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="_woCreate('${productId}')"><i class="ti ti-tools"></i> ${t.create}</button>
+      <button class="btn btn-outline" onclick="openPage('inventory',{})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _woCreate(productId) {
+  const isBm = APP.language==='bm'
+  const qty = Number(document.getElementById('wo-qty').value)
+  if(!qty || qty <= 0) { showToast(isBm?'Kuantiti mesti lebih daripada 0':'Quantity must be greater than 0', 'error'); return }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    product_id: productId,
+    qty_to_produce: qty,
+    materials_needed: document.getElementById('wo-materials').value || null,
+    assigned_to: document.getElementById('wo-assigned').value || null,
+    notes: document.getElementById('wo-notes').value || null,
+    status: 'pending'
+  }
+  const {data, error} = await sb.from('work_orders').insert(payload).select().single()
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('create','work_orders', data.id)
+  showToast(isBm?'Work order dicipta!':'Work order created!', 'success')
+  openPage('production', {view:'wo-detail', id:data.id, justCreated:true})
+}
+
+async function renderWOList() {
+  const t = APP.language==='bm' ? {
+    title:'Work Order', noData:'Tiada work order lagi', product:'Produk', qty:'Kuantiti', assignedTo:'Ditugaskan', status:'Status', date:'Tarikh',
+    pending:'Menunggu', inProgress:'Dalam Proses', completed:'Selesai'
+  } : {
+    title:'Work Orders', noData:'No work orders yet', product:'Product', qty:'Quantity', assignedTo:'Assigned To', status:'Status', date:'Date',
+    pending:'Pending', inProgress:'In Progress', completed:'Completed'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="card"><div id="wo-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('wo-list-wrap')
+  const {data, error} = await sb.from('work_orders').select('id,qty_to_produce,status,created_at,products(name_en,name_bm),user_profiles(full_name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const statusColor = s => s==='completed'?'var(--success)':s==='in_progress'?'var(--warning)':'var(--text-3)'
+  const statusLabel = s => s==='completed'?t.completed:s==='in_progress'?t.inProgress:t.pending
+  wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.product}</th><th>${t.qty}</th><th>${t.assignedTo}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(w=>`<tr onclick="openPage('production',{view:'wo-detail',id:'${w.id}'})" style="cursor:pointer">
+    <td>${formatDate(w.created_at)}</td>
+    <td>${prodName(w.products)}</td>
+    <td>${w.qty_to_produce}</td>
+    <td>${w.user_profiles?.full_name||'-'}</td>
+    <td><span style="color:${statusColor(w.status)};font-weight:600">${statusLabel(w.status)}</span></td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function renderWODetail(id, justCreated) {
+  const t = APP.language==='bm' ? {
+    back:'Work Order', product:'Produk', qty:'Kuantiti Untuk Dikeluarkan', currentStock:'Stok Semasa', materials:'Bahan Diperlukan',
+    assignedTo:'Ditugaskan Kepada', notes:'Nota', status:'Status', pending:'Menunggu', inProgress:'Dalam Proses', completed:'Selesai',
+    notFound:'Work order tidak dijumpai.', aiCheckTitle:'Semakan AI Pengeluaran', getCheck:'Dapatkan Semakan',
+    checkHint:'Klik untuk semakan ringkas kesediaan/penjadualan (berdasarkan teks sahaja, tiada data stok komponen/BOM sebenar).'
+  } : {
+    back:'Work Orders', product:'Product', qty:'Quantity To Produce', currentStock:'Current Stock', materials:'Materials Needed',
+    assignedTo:'Assigned To', notes:'Notes', status:'Status', pending:'Pending', inProgress:'In Progress', completed:'Completed',
+    notFound:'Work order not found.', aiCheckTitle:'AI Production Check', getCheck:'Get Check',
+    checkHint:'Click for a brief readiness/scheduling check (text-based only, no real component/BOM stock data).'
+  }
+  const {data: wo} = await sb.from('work_orders').select('*,products(name_en,name_bm,stock_qty),user_profiles(full_name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!wo) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${prodName(wo.products)}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('production',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:700px;padding:20px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div><div style="color:var(--text-3);font-size:12px">${t.qty}</div><strong>${wo.qty_to_produce}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.currentStock}</div>${wo.products?.stock_qty ?? '-'}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.assignedTo}</div>${wo.user_profiles?.full_name||'-'}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.notes}</div>${wo.notes||'-'}</div>
+      <div style="grid-column:1/-1"><div style="color:var(--text-3);font-size:12px">${t.materials}</div>${wo.materials_needed||'-'}</div>
+    </div>
+    <div class="form-group" style="max-width:220px">
+      <label class="form-label">${t.status}</label>
+      <select id="wo-status-select" class="form-select" onchange="_woUpdateStatus('${id}', this.value)">
+        <option value="pending" ${wo.status==='pending'?'selected':''}>${t.pending}</option>
+        <option value="in_progress" ${wo.status==='in_progress'?'selected':''}>${t.inProgress}</option>
+        <option value="completed" ${wo.status==='completed'?'selected':''}>${t.completed}</option>
+      </select>
+    </div>
+  </div>
+  <div class="card" style="max-width:700px;margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><i class="ti ti-sparkles"></i> ${t.aiCheckTitle}</div>
+      <button id="wo-check-btn" class="btn btn-outline btn-sm" onclick="_woLoadCheck('${id}')"><i class="ti ti-refresh"></i> ${t.getCheck}</button>
+    </div>
+    <div id="wo-check-out" style="padding:16px;font-size:13px;color:var(--text-3);line-height:1.6">${t.checkHint}</div>
+  </div>`
+
+  if(justCreated) _woLoadCheck(id)
+}
+
+async function _woUpdateStatus(id, status) {
+  const isBm = APP.language==='bm'
+  const payload = { status }
+  if(status==='completed') payload.completed_at = new Date().toISOString()
+  const {error} = await sb.from('work_orders').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  showToast(isBm?'Status dikemaskini!':'Status updated!', 'success')
+  auditLog('update','work_orders', id)
+}
+
+async function _woLoadCheck(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { loading:'Menjana semakan...', err:'Ralat: ' } : { loading:'Generating check...', err:'Error: ' }
+  const btn = document.getElementById('wo-check-btn')
+  const out = document.getElementById('wo-check-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const {data: wo} = await sb.from('work_orders').select('qty_to_produce,materials_needed,products(name_en,name_bm,stock_qty)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(!wo) throw new Error('Work order not found')
+    const context = `Product: ${prodName(wo.products)} (current stock: ${wo.products?.stock_qty ?? '-'}). Quantity to produce: ${wo.qty_to_produce}. Materials needed (free text, no linked inventory/BOM data): ${wo.materials_needed||'not specified'}.`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'production_check', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<i class="ti ti-clipboard-check" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.advisory)}`
+  } catch(err) {
+    console.error('Production check error:', err)
     if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
   }
   if(btn) btn.disabled = false

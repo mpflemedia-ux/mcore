@@ -610,6 +610,29 @@ async function handleLogisticsSuggest(body: Record<string, unknown>) {
   return { suggestion: reply }
 }
 
+async function handleProductionCheck(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are a production planning assistant for a Malaysian SME giving a brief sanity check for ' +
+    'the work order below. IMPORTANT: there is no linked bill-of-materials or component-level ' +
+    'inventory data available — you only have the free-text "materials needed" note and the ' +
+    'finished-product stock level, so this is a general sanity check based on the text given, NOT ' +
+    'a precise stock/component availability check. Give ONE short practical note (1-2 sentences) ' +
+    'about scheduling (eg. lead time, batching with other orders) or flag if materials/assignment ' +
+    `info looks missing or incomplete. Reply in ${langName(body)}.\n\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Give a production readiness/scheduling check.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { advisory: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -683,6 +706,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'logistics_suggest':
         data = await handleLogisticsSuggest(body)
+        break
+      case 'production_check':
+        data = await handleProductionCheck(body)
         break
       default:
         return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
