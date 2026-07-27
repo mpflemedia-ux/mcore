@@ -4484,25 +4484,77 @@ async function _woLoadCheck(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HR MODULE (Batch 4, #17 — MVP: employee records + simplified payroll run.
-// EPF/SOCSO/EIS/PCB below are FLAT-RATE DEMO APPROXIMATIONS, not the real
-// tiered statutory tables. NOT for actual payroll processing/filing — use
-// licensed payroll software (KWSP/PERKESO/LHDN compliant) for real payroll.)
+// HR MODULE (Batch 4, #17 — employee records + payroll run.
+// EPF/SOCSO/EIS/PCB below follow the latest statutory rate STRUCTURE known to
+// this system (age/wage-tiered percentages + wage ceilings + progressive PCB
+// brackets) — NOT a byte-exact reproduction of the official RM-rounded
+// wage-band lookup tables KWSP/PERKESO publish for every RM20/RM100
+// increment, and PCB here has NO individual relief (spouse/child/insurance/
+// etc) beyond EPF + standard personal relief. Verify against official
+// KWSP/PERKESO/LHDN tables or a licensed accountant before real submission.)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const HR_DISCLAIMER_EN = 'DEMO ONLY — figures use simplified flat-rate approximations (EPF 11%/13%, SOCSO/EIS flat rates, basic PCB estimate), NOT the real tiered KWSP/PERKESO/LHDN statutory tables. Do not use for actual payroll processing, payslips, or statutory filing — use licensed payroll software.'
-const HR_DISCLAIMER_BM = 'UNTUK DEMO SAHAJA — angka guna anggaran kadar rata ringkas (EPF 11%/13%, SOCSO/EIS kadar rata, anggaran PCB asas), BUKAN jadual berperingkat KWSP/PERKESO/LHDN sebenar. Jangan guna untuk pemprosesan gaji sebenar, slip gaji, atau failing statutori — guna software payroll berlesen.'
+const HR_DISCLAIMER_EN = 'Calculations use the latest statutory rate structure known to this system (age/wage-tiered EPF, SOCSO/EIS with wage ceiling, progressive PCB brackets) — NOT the exact official RM-rounded wage-band tables, and PCB has no individual relief (spouse/child/insurance, etc). Please verify with KWSP/PERKESO/LHDN or a licensed accountant before official submission, especially for PCB.'
+const HR_DISCLAIMER_BM = 'Kalkulasi guna struktur kadar berkanun terkini yang diketahui sistem (EPF ikut tier umur/gaji, SOCSO/EIS dengan siling gaji, PCB ikut jadual bertingkat) — BUKAN jadual RM tepat rasmi KWSP/PERKESO, dan PCB tiada relief individu (pasangan/anak/insurans, dll). Sila verify dengan KWSP/PERKESO/LHDN atau akauntan bertauliah sebelum submission rasmi, terutama untuk PCB.'
 
-function _calcPayroll(basicSalary) {
-  const b = Number(basicSalary) || 0
+function _ageFromIC(icNo) {
+  if(!icNo) return null
+  const digits = String(icNo).replace(/[^0-9]/g,'')
+  if(digits.length < 6) return null
+  const yy = Number(digits.slice(0,2)), mm = Number(digits.slice(2,4)), dd = Number(digits.slice(4,6))
+  if(isNaN(yy) || isNaN(mm) || mm < 1 || mm > 12 || isNaN(dd) || dd < 1 || dd > 31) return null
+  const now = new Date()
+  const century = yy > (now.getFullYear() % 100) ? 1900 : 2000
+  const birthDate = new Date(century + yy, mm - 1, dd)
+  if(isNaN(birthDate.getTime())) return null
+  let age = now.getFullYear() - birthDate.getFullYear()
+  const hadBirthdayThisYear = now.getMonth() > birthDate.getMonth() || (now.getMonth()===birthDate.getMonth() && now.getDate() >= birthDate.getDate())
+  if(!hadBirthdayThisYear) age--
+  return age
+}
+
+function _calcPayroll(employee) {
   const r2 = n => Math.round(n * 100) / 100
-  const epf_employee = r2(b * 0.11)
-  const epf_employer = r2(b * 0.13)
-  const socso_employee = r2(b * 0.005)
-  const socso_employer = r2(b * 0.0175)
-  const eis_employee = r2(b * 0.002)
-  const eis_employer = r2(b * 0.002)
-  const pcb = b > 3000 ? r2(b * 0.02) : 0
+  const b = Number(employee?.basic_salary) || 0
+  const age = _ageFromIC(employee?.ic_no)
+  const isSenior = age !== null && age >= 60 // no IC on file → assumed under 60
+
+  // EPF (KWSP) — Third Schedule, simplified to the published percentage tiers
+  // (age 60+: employee 0%; employer 4% ≤RM5,000 wage, 6.5% above)
+  const epf_employee = isSenior ? 0 : r2(b * 0.11)
+  const epf_employer = isSenior ? r2(b * (b <= 5000 ? 0.04 : 0.065)) : r2(b * (b <= 5000 ? 0.13 : 0.12))
+
+  // SOCSO (PERKESO) — wage ceiling RM5,000; age 60+ = Category 2 (employment
+  // injury only, employer-only), under 60 = Category 1 (both schemes)
+  const socsoWage = Math.min(b, 5000)
+  const socso_employee = isSenior ? 0 : r2(socsoWage * 0.005)
+  const socso_employer = isSenior ? r2(socsoWage * 0.0125) : r2(socsoWage * 0.0175)
+
+  // EIS — wage ceiling RM5,000; not applicable from age 60 onward
+  const eisWage = Math.min(b, 5000)
+  const eis_employee = isSenior ? 0 : r2(eisWage * 0.002)
+  const eis_employer = isSenior ? 0 : r2(eisWage * 0.002)
+
+  // PCB — progressive resident-individual tax brackets on annualized chargeable
+  // income (wage×12 − EPF relief capped RM4,000/yr − RM9,000 personal relief),
+  // divided back to a monthly estimate. NO other individual relief applied.
+  const annualWage = b * 12
+  const epfRelief = Math.min(epf_employee * 12, 4000)
+  const chargeableIncome = Math.max(0, annualWage - epfRelief - 9000)
+  const PCB_BRACKETS = [
+    { upTo: 5000, rate: 0 }, { upTo: 20000, rate: 0.01 }, { upTo: 35000, rate: 0.03 },
+    { upTo: 50000, rate: 0.06 }, { upTo: 70000, rate: 0.11 }, { upTo: 100000, rate: 0.19 },
+    { upTo: 400000, rate: 0.25 }, { upTo: 600000, rate: 0.26 }, { upTo: 2000000, rate: 0.28 },
+    { upTo: Infinity, rate: 0.30 },
+  ]
+  let annualTax = 0, prevCap = 0
+  for(const band of PCB_BRACKETS) {
+    if(chargeableIncome <= prevCap) break
+    annualTax += (Math.min(chargeableIncome, band.upTo) - prevCap) * band.rate
+    prevCap = band.upTo
+  }
+  const pcb = r2(annualTax / 12)
+
   const net_pay = r2(b - epf_employee - socso_employee - eis_employee - pcb)
   return { basic_salary: b, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, net_pay }
 }
@@ -4646,13 +4698,17 @@ async function renderPayrollRun() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Jalankan Payroll', back:'SDM & Gaji', month:'Bulan', year:'Tahun', run:'Jalankan Payroll',
-    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana)'
+    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana)',
+    noIc:'(tiada IC — anggap bawah 60 tahun untuk EPF/SOCSO/EIS)',
+    pcbNote:'PCB dikira ikut jadual bertingkat asas sahaja — TIDAK account untuk relief individu (pasangan, anak, insurans, dll). Sila verify dengan akauntan sebelum submission rasmi.'
   } : {
     title:'Run Payroll', back:'HR & Payroll', month:'Month', year:'Year', run:'Run Payroll',
-    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated)'
+    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated)',
+    noIc:'(no IC on file — assumed under 60 for EPF/SOCSO/EIS)',
+    pcbNote:'PCB is calculated using basic progressive brackets only — does NOT account for individual reliefs (spouse, child, insurance, etc). Please verify with an accountant before official submission.'
   }
   const now = new Date()
-  const {data: employees} = await sb.from('employees').select('id,name,basic_salary').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  const {data: employees} = await sb.from('employees').select('id,name,basic_salary,ic_no').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
   const month = now.getMonth()+1, year = now.getFullYear()
   const {data: existing} = await sb.from('payroll_records').select('employee_id').eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year)
   const existingIds = new Set((existing||[]).map(r=>String(r.employee_id)))
@@ -4679,10 +4735,11 @@ async function renderPayrollRun() {
       <table><thead><tr><th></th><th>${t.name}</th><th style="text-align:right">${t.salary}</th></tr></thead>
       <tbody>${employees.map(e=>`<tr>
         <td><input type="checkbox" class="payroll-emp-check" value="${e.id}" ${existingIds.has(String(e.id))?'disabled':'checked'}></td>
-        <td>${_aiEscapeHtml(e.name)}${existingIds.has(String(e.id))?` <span style="color:var(--text-3);font-size:12px">${t.already}</span>`:''}</td>
+        <td>${_aiEscapeHtml(e.name)}${existingIds.has(String(e.id))?` <span style="color:var(--text-3);font-size:12px">${t.already}</span>`:''}${!e.ic_no?` <span style="color:var(--warning);font-size:12px">${t.noIc}</span>`:''}</td>
         <td style="text-align:right">${formatRM(e.basic_salary)}</td>
       </tr>`).join('')}</tbody></table>`}
     </div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:8px">${t.pcbNote}</div>
     <div style="margin-top:16px">
       <button class="btn btn-primary" onclick="_payrollRunExecute()"><i class="ti ti-cash"></i> ${t.run}</button>
     </div>
@@ -4700,9 +4757,9 @@ async function _payrollRunExecute() {
   let okCount = 0, errCount = 0
   for(const chk of checks) {
     const empId = chk.value
-    const {data: emp} = await sb.from('employees').select('basic_salary').eq('id',empId).eq('tenant_id',APP.tenant.id).single()
+    const {data: emp} = await sb.from('employees').select('basic_salary,ic_no').eq('id',empId).eq('tenant_id',APP.tenant.id).single()
     if(!emp) { errCount++; continue }
-    const calc = _calcPayroll(emp.basic_salary)
+    const calc = _calcPayroll(emp)
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
     const {error} = await sb.from('payroll_records').insert(payload)
     if(error) errCount++; else { okCount++; auditLog('create','payroll_records', empId) }
@@ -4716,11 +4773,13 @@ async function renderPayslipDetail(id) {
   const t = isBm ? {
     back:'SDM & Gaji', period:'Tempoh', basic:'Gaji Pokok', epf:'EPF (Pekerja/Majikan)', socso:'SOCSO (Pekerja/Majikan)',
     eis:'EIS (Pekerja/Majikan)', pcb:'PCB', netPay:'Gaji Bersih', notFound:'Rekod payroll tidak dijumpai.',
-    aiNoteTitle:'Nota AI Slip Gaji', getNote:'Dapatkan Nota', noteHint:'Klik untuk ringkasan ringkas slip gaji dalam bahasa mudah.', print:'Cetak'
+    aiNoteTitle:'Nota AI Slip Gaji', getNote:'Dapatkan Nota', noteHint:'Klik untuk ringkasan ringkas slip gaji dalam bahasa mudah.', print:'Cetak',
+    pcbNote:'PCB asas sahaja — tiada relief individu (pasangan, anak, insurans, dll).'
   } : {
     back:'HR & Payroll', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
     eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', notFound:'Payroll record not found.',
-    aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print'
+    aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print',
+    pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).'
   }
   const {data: rec} = await sb.from('payroll_records').select('*,employees(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
@@ -4743,7 +4802,7 @@ async function renderPayslipDetail(id) {
       <div><div style="color:var(--text-3);font-size:12px">${t.epf}</div>${formatRM(rec.epf_employee)} / ${formatRM(rec.epf_employer)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.socso}</div>${formatRM(rec.socso_employee)} / ${formatRM(rec.socso_employer)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.eis}</div>${formatRM(rec.eis_employee)} / ${formatRM(rec.eis_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}<div style="font-size:10px;color:var(--text-3)">${t.pcbNote}</div></div>
       <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><div style="color:var(--text-3);font-size:12px">${t.netPay}</div><strong style="font-size:18px">${formatRM(rec.net_pay)}</strong></div>
     </div>
   </div>

@@ -639,11 +639,13 @@ async function handleHrPayslipNote(body: Record<string, unknown>) {
 
   const systemPrompt =
     'You are an HR assistant for a Malaysian SME writing a brief plain-language summary note for ' +
-    'the payslip below. IMPORTANT: the figures are DEMO/DEMONSTRATION approximations using simplified ' +
-    'flat rates, NOT the real tiered KWSP (EPF), PERKESO (SOCSO/EIS), or LHDN (PCB) statutory tables. ' +
-    'Explicitly state in your reply that this is a demo estimate only and not an official payslip. ' +
-    'Then give ONE short plain-language sentence explaining the net pay in simple terms (eg. what was ' +
-    `deducted and why, at a high level). Reply in ${langName(body)}.\n\n${context}`
+    'the payslip below. IMPORTANT: figures use the latest statutory rate STRUCTURE known to this ' +
+    'system (age/wage-tiered EPF, SOCSO/EIS with wage ceiling, progressive PCB brackets), NOT the ' +
+    'exact official RM-rounded wage-band tables KWSP/PERKESO publish, and PCB has no individual ' +
+    'relief (spouse/child/insurance, etc). Explicitly state in your reply that this should be ' +
+    'verified against official KWSP/PERKESO/LHDN tables or a licensed accountant before official ' +
+    'use, and is not a substitute for one. Then give ONE short plain-language sentence explaining ' +
+    `the net pay in simple terms (eg. what was deducted and why, at a high level). Reply in ${langName(body)}.\n\n${context}`
 
   const reply = await callGroq(
     [
