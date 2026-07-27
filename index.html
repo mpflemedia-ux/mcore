@@ -573,6 +573,7 @@ tbody tr:hover{background:var(--bg)}
     <div class="ob-card">
       <div class="ob-error" id="ob-error"></div>
       <div id="ob-step-content"></div>
+      <div id="ob-ai-tip" style="display:none;margin-top:16px;padding:12px 14px;background:var(--primary-light);border-radius:var(--radius-sm);font-size:13px;line-height:1.5;color:var(--text-2)"></div>
     </div>
   </div>
 </div>
@@ -1736,6 +1737,16 @@ function renderSettings() {
       <button id="doc-generate-btn" class="btn btn-primary btn-sm" onclick="_docGenerate()"><i class="ti ti-file-text"></i> ${APP.language==='bm'?'Jana Draf':'Generate Draft'}</button>
     </div>
   </div>
+  <div class="card" style="max-width:500px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Semakan Penipuan AI':'AI Fraud Check'}</div></div>
+    <div style="padding:16px">
+      <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
+        ?'Imbas transaksi POS dan entri jurnal 30 hari lepas untuk pattern mencurigakan (cth: transaksi luar jam operasi, jumlah luar biasa).'
+        :'Scans POS transactions and journal entries from the last 30 days for suspicious patterns (eg. transactions outside business hours, unusual amounts).'}</p>
+      <button id="fraud-scan-btn" class="btn btn-primary btn-sm" onclick="_fraudScan()"><i class="ti ti-shield-search"></i> ${APP.language==='bm'?'Imbas Anomali':'Scan for Anomalies'}</button>
+      <div id="fraud-scan-out" style="margin-top:12px;font-size:13px;line-height:1.6"></div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="doc-modal-overlay">
     <div class="modal-box" style="max-width:520px">
@@ -1896,6 +1907,51 @@ function _docCopyDraft() {
     textEl.select()
     showToast(APP.language==='bm'?'Sila salin manual (Ctrl+C).':'Please copy manually (Ctrl+C).', 'warning')
   })
+}
+
+// Note: pos_transactions/journal_entries have no discount or void concept in this
+// schema, so the scan works off what's actually tracked (amount, timing, payment
+// method, entry type) rather than the discount/void examples mentioned in the
+// original spec — flagged to the user as a scope adjustment.
+async function _fraudScan() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { loading:'Mengimbas...', err:'Ralat: ', clean:'Tiada anomali dikesan dalam 30 hari lepas.' }
+    : { loading:'Scanning...', err:'Error: ', clean:'No anomalies detected in the last 30 days.' }
+  const btn = document.getElementById('fraud-scan-btn')
+  const out = document.getElementById('fraud-scan-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const since = new Date()
+    since.setDate(since.getDate() - 30)
+    const sinceDate = since.toISOString().slice(0,10)
+
+    const [{data: posTxns, error: posErr}, {data: entries, error: jeErr}] = await Promise.all([
+      sb.from('pos_transactions').select('receipt_no,total,payment_method,txn_type,status,created_at').eq('tenant_id',APP.tenant.id).gte('created_at', since.toISOString()),
+      sb.from('journal_entries').select('ref_no,entry_date,description,entry_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('entry_date', sinceDate),
+    ])
+    if(posErr) throw posErr
+    if(jeErr) throw jeErr
+
+    const posLines = (posTxns||[]).map(p=>`${p.receipt_no||'-'} — RM${Number(p.total||0).toFixed(2)}, ${p.payment_method||'-'}, ${p.txn_type||'-'}, ${p.status||'-'}, ${p.created_at||'-'}`)
+    const jeLines = (entries||[]).map(e=>`${e.ref_no||'-'} — ${e.entry_date}, ${e.description||''}, type:${e.entry_type||'-'}`)
+
+    const context = `POS transactions, last 30 days (${posLines.length}):\n${posLines.join('\n') || 'none'}\n\n` +
+      `Journal entries, last 30 days (${jeLines.length}):\n${jeLines.join('\n') || 'none'}`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'fraud_scan', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const flags = data.data.flags || []
+    if(!flags.length) { if(out) out.innerHTML = `<span style="color:var(--success)"><i class="ti ti-shield-check"></i> ${t.clean}</span>` }
+    else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${flags.map(f=>`<li style="color:var(--warning)">${_aiEscapeHtml(f)}</li>`).join('')}</ul>`
+  } catch(err) {
+    console.error('Fraud scan error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
 }
 
 function _rpRenderList() {
@@ -4999,6 +5055,39 @@ function obRenderStep() {
         <i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Setup!':'Complete Setup!'}
       </button>
     </div>`
+  }
+
+  obLoadAiTip()
+}
+
+const OB_STEP_TOPICS = {
+  1: 'entering basic company information (name, SSM/ROC number, entity type, address) during ERP onboarding for a Malaysian SME',
+  2: "choosing their business industry and describing their business during ERP onboarding",
+  3: 'setting up their fiscal year (start/end date) during ERP onboarding',
+  4: 'choosing a chart-of-accounts template during ERP onboarding',
+}
+
+// Best-effort contextual tip — never blocks the wizard. On any failure the tip
+// box is simply hidden rather than showing an error during a new user's setup.
+async function obLoadAiTip() {
+  const el = document.getElementById('ob-ai-tip')
+  if(!el) return
+  const isBm = APP.language==='bm'
+  el.style.display = 'block'
+  el.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Memuatkan tip...':'Loading tip...'}</div>`
+
+  try {
+    const topic = OB_STEP_TOPICS[OB.step] || 'onboarding a new business'
+    const industry = OB.data.industry || null
+    const context = `Step topic: ${topic}.${industry ? ` The user has selected industry: ${industry}.` : ''}`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'onboarding_tip', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    el.innerHTML = `<i class="ti ti-bulb" style="color:var(--primary)"></i> <strong>${isBm?'Tip AI':'AI Tip'}:</strong> ${_aiEscapeHtml(data.data.tip)}`
+  } catch(err) {
+    console.error('Onboarding tip error (non-blocking):', err)
+    el.style.display = 'none'
   }
 }
 
