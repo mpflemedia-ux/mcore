@@ -701,6 +701,8 @@ const NAV_ITEMS = [
   { id:'inventory',  icon:'ti-box',               label_en:'Inventory',   label_bm:'Inventori',    module:'inventory' },
   { id:'logistics',  icon:'ti-truck-delivery',    label_en:'Logistics',   label_bm:'Logistik',     module:'logistics' },
   { id:'production', icon:'ti-tools',             label_en:'Production',  label_bm:'Pengeluaran',  module:'production' },
+  { section:'People' },
+  { id:'hr',         icon:'ti-id-badge-2',        label_en:'HR & Payroll', label_bm:'SDM & Gaji',   module:'hr' },
   { section:'Finance' },
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
   { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'core' },
@@ -735,6 +737,7 @@ function openPage(page, params={}) {
       case 'inventory':  renderInventory(params); break
       case 'logistics':  renderLogistics(params); break
       case 'production': renderProduction(params); break
+      case 'hr':         renderHR(params); break
       case 'accounting': renderAccounting(params); break
       case 'reports':    renderReports(params); break
       case 'settings':   renderSettings(); break
@@ -4468,6 +4471,297 @@ async function _woLoadCheck(id) {
     if(out) out.innerHTML = `<i class="ti ti-clipboard-check" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.advisory)}`
   } catch(err) {
     console.error('Production check error:', err)
+    if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+  if(btn) btn.disabled = false
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HR MODULE (Batch 4, #17 — MVP: employee records + simplified payroll run.
+// EPF/SOCSO/EIS/PCB below are FLAT-RATE DEMO APPROXIMATIONS, not the real
+// tiered statutory tables. NOT for actual payroll processing/filing — use
+// licensed payroll software (KWSP/PERKESO/LHDN compliant) for real payroll.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const HR_DISCLAIMER_EN = 'DEMO ONLY — figures use simplified flat-rate approximations (EPF 11%/13%, SOCSO/EIS flat rates, basic PCB estimate), NOT the real tiered KWSP/PERKESO/LHDN statutory tables. Do not use for actual payroll processing, payslips, or statutory filing — use licensed payroll software.'
+const HR_DISCLAIMER_BM = 'UNTUK DEMO SAHAJA — angka guna anggaran kadar rata ringkas (EPF 11%/13%, SOCSO/EIS kadar rata, anggaran PCB asas), BUKAN jadual berperingkat KWSP/PERKESO/LHDN sebenar. Jangan guna untuk pemprosesan gaji sebenar, slip gaji, atau failing statutori — guna software payroll berlesen.'
+
+function _calcPayroll(basicSalary) {
+  const b = Number(basicSalary) || 0
+  const r2 = n => Math.round(n * 100) / 100
+  const epf_employee = r2(b * 0.11)
+  const epf_employer = r2(b * 0.13)
+  const socso_employee = r2(b * 0.005)
+  const socso_employer = r2(b * 0.0175)
+  const eis_employee = r2(b * 0.002)
+  const eis_employer = r2(b * 0.002)
+  const pcb = b > 3000 ? r2(b * 0.02) : 0
+  const net_pay = r2(b - epf_employee - socso_employee - eis_employee - pcb)
+  return { basic_salary: b, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, net_pay }
+}
+
+function renderHR(params={}) {
+  if(params.view==='employee-form') { renderEmployeeForm(params.id); return }
+  if(params.view==='payroll-run') { renderPayrollRun(); return }
+  if(params.view==='payslip' && params.id) { renderPayslipDetail(params.id); return }
+  renderEmployeeList()
+}
+
+async function renderEmployeeList() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'SDM & Gaji', addEmployee:'Tambah Pekerja', runPayroll:'Jalankan Payroll', noData:'Tiada rekod pekerja lagi',
+    name:'Nama', position:'Jawatan', salary:'Gaji Pokok', ic:'No. IC', payrollHistory:'Sejarah Payroll',
+    period:'Tempoh', netPay:'Gaji Bersih', noPayroll:'Tiada payroll dijana lagi'
+  } : {
+    title:'HR & Payroll', addEmployee:'Add Employee', runPayroll:'Run Payroll', noData:'No employee records yet',
+    name:'Name', position:'Position', salary:'Basic Salary', ic:'IC No.', payrollHistory:'Payroll History',
+    period:'Period', netPay:'Net Pay', noPayroll:'No payroll generated yet'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" onclick="openPage('hr',{view:'payroll-run'})"><i class="ti ti-cash"></i> ${t.runPayroll}</button>
+      <button class="btn btn-primary" onclick="openPage('hr',{view:'employee-form'})"><i class="ti ti-plus"></i> ${t.addEmployee}</button>
+    </div>
+  </div>
+  <div style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
+    <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
+  </div>
+  <div class="card"><div id="emp-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('emp-list-wrap')
+  const {data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.ic}</th><th>${t.position}</th><th style="text-align:right">${t.salary}</th><th></th></tr></thead>
+  <tbody>${data.map(e=>`<tr>
+    <td>${_aiEscapeHtml(e.name)}</td>
+    <td>${e.ic_no||'-'}</td>
+    <td>${_aiEscapeHtml(e.position||'-')}</td>
+    <td style="text-align:right">${formatRM(e.basic_salary)}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('hr',{view:'employee-form',id:'${e.id}'})"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_employeeDelete('${e.id}','${e.name.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </td>
+  </tr>`).join('')}</tbody></table>`
+
+  const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,net_pay,generated_at,employees(name)')
+    .eq('tenant_id',APP.tenant.id).order('generated_at',{ascending:false}).limit(20)
+  const historyHtml = (!payrolls || payrolls.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noPayroll}</p></div>` : `
+    <table><thead><tr><th>${t.period}</th><th>${t.name}</th><th style="text-align:right">${t.netPay}</th></tr></thead>
+    <tbody>${payrolls.map(p=>`<tr onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">
+      <td>${p.month}/${p.year}</td>
+      <td>${_aiEscapeHtml(p.employees?.name||'-')}</td>
+      <td style="text-align:right">${formatRM(p.net_pay)}</td>
+    </tr>`).join('')}</tbody></table>`
+  document.getElementById('main').insertAdjacentHTML('beforeend', `
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title">${t.payrollHistory}</div></div>
+    <div style="overflow-x:auto">${historyHtml}</div>
+  </div>`)
+}
+
+async function renderEmployeeForm(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    titleAdd:'Tambah Pekerja', titleEdit:'Kemaskini Pekerja', name:'Nama', ic:'No. IC', icPh:'XXXXXX-XX-XXXX',
+    position:'Jawatan', salary:'Gaji Pokok (RM)', epfNo:'No. EPF', socsoNo:'No. SOCSO', save:'Simpan', cancel:'Batal',
+    nameRequired:'Nama diperlukan', icInvalid:'Format IC tidak sah (XXXXXX-XX-XXXX)', notFound:'Pekerja tidak dijumpai.'
+  } : {
+    titleAdd:'Add Employee', titleEdit:'Edit Employee', name:'Name', ic:'IC No.', icPh:'XXXXXX-XX-XXXX',
+    position:'Position', salary:'Basic Salary (RM)', epfNo:'EPF No.', socsoNo:'SOCSO No.', save:'Save', cancel:'Cancel',
+    nameRequired:'Name is required', icInvalid:'Invalid IC format (XXXXXX-XX-XXXX)', notFound:'Employee not found.'
+  }
+  let emp = null
+  if(id) {
+    const {data} = await sb.from('employees').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(!data) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+    emp = data
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${emp?t.titleEdit:t.titleAdd}</div></div></div>
+  <div class="card" style="max-width:600px;padding:20px">
+    <div class="form-group"><label class="form-label">${t.name}</label><input id="emp-name" class="form-input" value="${emp?_aiEscapeHtml(emp.name):''}"></div>
+    <div class="form-group"><label class="form-label">${t.ic}</label><input id="emp-ic" class="form-input" placeholder="${t.icPh}" value="${emp?.ic_no||''}"></div>
+    <div class="form-group"><label class="form-label">${t.position}</label><input id="emp-position" class="form-input" value="${emp?_aiEscapeHtml(emp.position||''):''}"></div>
+    <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${emp?.basic_salary??''}"></div>
+    <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
+    <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="_employeeSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('hr',{})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _employeeSave(id) {
+  const isBm = APP.language==='bm'
+  const name = document.getElementById('emp-name').value.trim()
+  const ic = document.getElementById('emp-ic').value.trim()
+  if(!name) { showToast(isBm?'Nama diperlukan':'Name is required', 'error'); return }
+  if(ic && !validateIC(ic)) { showToast(isBm?'Format IC tidak sah (XXXXXX-XX-XXXX)':'Invalid IC format (XXXXXX-XX-XXXX)', 'error'); return }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    name,
+    ic_no: ic || null,
+    position: document.getElementById('emp-position').value.trim() || null,
+    basic_salary: Number(document.getElementById('emp-salary').value) || 0,
+    epf_no: document.getElementById('emp-epf').value.trim() || null,
+    socso_no: document.getElementById('emp-socso').value.trim() || null,
+  }
+  let error
+  if(id) {
+    ({error} = await sb.from('employees').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+  } else {
+    ({error} = await sb.from('employees').insert(payload))
+  }
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog(id?'update':'create','employees', id||null)
+  showToast(isBm?'Pekerja disimpan!':'Employee saved!', 'success')
+  openPage('hr',{})
+}
+
+async function _employeeDelete(id, name) {
+  const isBm = APP.language==='bm'
+  if(!confirm((isBm?'Padam pekerja ':'Delete employee ')+name+'?')) return
+  const {error} = await sb.from('employees').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('delete','employees', id)
+  showToast(isBm?'Pekerja dipadam.':'Employee deleted.', 'success')
+  renderEmployeeList()
+}
+
+async function renderPayrollRun() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Jalankan Payroll', back:'SDM & Gaji', month:'Bulan', year:'Tahun', run:'Jalankan Payroll',
+    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana)'
+  } : {
+    title:'Run Payroll', back:'HR & Payroll', month:'Month', year:'Year', run:'Run Payroll',
+    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated)'
+  }
+  const now = new Date()
+  const {data: employees} = await sb.from('employees').select('id,name,basic_salary').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  const month = now.getMonth()+1, year = now.getFullYear()
+  const {data: existing} = await sb.from('payroll_records').select('employee_id').eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year)
+  const existingIds = new Set((existing||[]).map(r=>String(r.employee_id)))
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  <div style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
+    <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
+  </div>
+  <div class="card" style="max-width:700px;padding:20px">
+    <div style="display:flex;gap:16px;margin-bottom:16px">
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">${t.month}</label>
+        <select id="payroll-month" class="form-select">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===month?'selected':''}>${i+1}</option>`).join('')}</select>
+      </div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">${t.year}</label>
+        <input id="payroll-year" type="number" class="form-input" style="width:100px" value="${year}">
+      </div>
+    </div>
+    <div id="payroll-emp-wrap" style="overflow-x:auto">
+      ${(!employees || employees.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
+      <table><thead><tr><th></th><th>${t.name}</th><th style="text-align:right">${t.salary}</th></tr></thead>
+      <tbody>${employees.map(e=>`<tr>
+        <td><input type="checkbox" class="payroll-emp-check" value="${e.id}" ${existingIds.has(String(e.id))?'disabled':'checked'}></td>
+        <td>${_aiEscapeHtml(e.name)}${existingIds.has(String(e.id))?` <span style="color:var(--text-3);font-size:12px">${t.already}</span>`:''}</td>
+        <td style="text-align:right">${formatRM(e.basic_salary)}</td>
+      </tr>`).join('')}</tbody></table>`}
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primary" onclick="_payrollRunExecute()"><i class="ti ti-cash"></i> ${t.run}</button>
+    </div>
+    <div id="payroll-run-result" style="margin-top:12px;font-size:13px"></div>
+  </div>`
+}
+
+async function _payrollRunExecute() {
+  const isBm = APP.language==='bm'
+  const month = Number(document.getElementById('payroll-month').value)
+  const year = Number(document.getElementById('payroll-year').value)
+  const checks = Array.from(document.querySelectorAll('.payroll-emp-check:checked'))
+  const result = document.getElementById('payroll-run-result')
+  if(checks.length===0) { showToast(isBm?'Tiada pekerja dipilih':'No employees selected', 'error'); return }
+  let okCount = 0, errCount = 0
+  for(const chk of checks) {
+    const empId = chk.value
+    const {data: emp} = await sb.from('employees').select('basic_salary').eq('id',empId).eq('tenant_id',APP.tenant.id).single()
+    if(!emp) { errCount++; continue }
+    const calc = _calcPayroll(emp.basic_salary)
+    const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
+    const {error} = await sb.from('payroll_records').insert(payload)
+    if(error) errCount++; else { okCount++; auditLog('create','payroll_records', empId) }
+  }
+  result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
+  showToast(isBm?'Payroll selesai dijalankan':'Payroll run complete', 'success')
+}
+
+async function renderPayslipDetail(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    back:'SDM & Gaji', period:'Tempoh', basic:'Gaji Pokok', epf:'EPF (Pekerja/Majikan)', socso:'SOCSO (Pekerja/Majikan)',
+    eis:'EIS (Pekerja/Majikan)', pcb:'PCB', netPay:'Gaji Bersih', notFound:'Rekod payroll tidak dijumpai.',
+    aiNoteTitle:'Nota AI Slip Gaji', getNote:'Dapatkan Nota', noteHint:'Klik untuk ringkasan ringkas slip gaji dalam bahasa mudah.'
+  } : {
+    back:'HR & Payroll', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
+    eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', notFound:'Payroll record not found.',
+    aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.'
+  }
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  <div style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
+    <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
+  </div>
+  <div class="card" style="max-width:600px;padding:20px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:8px">
+      <div><div style="color:var(--text-3);font-size:12px">${t.period}</div><strong>${rec.month}/${rec.year}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.basic}</div>${formatRM(rec.basic_salary)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.epf}</div>${formatRM(rec.epf_employee)} / ${formatRM(rec.epf_employer)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.socso}</div>${formatRM(rec.socso_employee)} / ${formatRM(rec.socso_employer)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.eis}</div>${formatRM(rec.eis_employee)} / ${formatRM(rec.eis_employer)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}</div>
+      <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><div style="color:var(--text-3);font-size:12px">${t.netPay}</div><strong style="font-size:18px">${formatRM(rec.net_pay)}</strong></div>
+    </div>
+  </div>
+  <div class="card" style="max-width:600px;margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><i class="ti ti-sparkles"></i> ${t.aiNoteTitle}</div>
+      <button id="payslip-note-btn" class="btn btn-outline btn-sm" onclick="_payslipLoadNote('${id}')"><i class="ti ti-refresh"></i> ${t.getNote}</button>
+    </div>
+    <div id="payslip-note-out" style="padding:16px;font-size:13px;color:var(--text-3);line-height:1.6">${t.noteHint}</div>
+  </div>`
+}
+
+async function _payslipLoadNote(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { loading:'Menjana nota...', err:'Ralat: ' } : { loading:'Generating note...', err:'Error: ' }
+  const btn = document.getElementById('payslip-note-btn')
+  const out = document.getElementById('payslip-note-out')
+  if(btn) btn.disabled = true
+  if(out) out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
+
+  try {
+    const {data: rec} = await sb.from('payroll_records').select('*,employees(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(!rec) throw new Error('Payroll record not found')
+    const context = `Employee: ${rec.employees?.name||'-'}. Period: ${rec.month}/${rec.year}. Basic salary: RM${rec.basic_salary}. EPF employee: RM${rec.epf_employee}. SOCSO employee: RM${rec.socso_employee}. EIS employee: RM${rec.eis_employee}. PCB: RM${rec.pcb}. Net pay: RM${rec.net_pay}.`
+
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'hr_payslip_note', context, language: APP.language } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    if(out) out.innerHTML = `<i class="ti ti-notes" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.note)}`
+  } catch(err) {
+    console.error('Payslip note error:', err)
     if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
   }
   if(btn) btn.disabled = false

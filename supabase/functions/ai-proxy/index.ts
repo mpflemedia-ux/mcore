@@ -633,6 +633,28 @@ async function handleProductionCheck(body: Record<string, unknown>) {
   return { advisory: reply }
 }
 
+async function handleHrPayslipNote(body: Record<string, unknown>) {
+  const context = body.context
+  if (!context || typeof context !== 'string') throw new Error('context is required')
+
+  const systemPrompt =
+    'You are an HR assistant for a Malaysian SME writing a brief plain-language summary note for ' +
+    'the payslip below. IMPORTANT: the figures are DEMO/DEMONSTRATION approximations using simplified ' +
+    'flat rates, NOT the real tiered KWSP (EPF), PERKESO (SOCSO/EIS), or LHDN (PCB) statutory tables. ' +
+    'Explicitly state in your reply that this is a demo estimate only and not an official payslip. ' +
+    'Then give ONE short plain-language sentence explaining the net pay in simple terms (eg. what was ' +
+    `deducted and why, at a high level). Reply in ${langName(body)}.\n\n${context}`
+
+  const reply = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Give a brief payslip summary note.' },
+    ],
+    CHAT_MODEL,
+  )
+  return { note: reply }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
@@ -710,8 +732,17 @@ Deno.serve(async (req: Request) => {
       case 'production_check':
         data = await handleProductionCheck(body)
         break
+      case 'hr_payslip_note':
+        data = await handleHrPayslipNote(body)
+        break
       default:
-        return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400)
+        return jsonResponse({
+          success: false,
+          error: `Unknown action: ${action}`,
+          debug: {
+            hint: 'If this action was added recently, confirm the deployed ai-proxy code actually includes it — copy-pasting from an unmerged PR branch (not main) is a common cause of this.',
+          },
+        }, 400)
     }
 
     return jsonResponse({ success: true, data })
