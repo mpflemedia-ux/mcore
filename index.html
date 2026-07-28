@@ -4894,7 +4894,7 @@ async function renderSalaryDisbursement(month, year) {
     noData:'Tiada rekod payroll untuk tempoh ini.', runPayrollFirst:'Sila Jalankan Payroll dahulu untuk tempoh ini.',
     preparedBy:'Disediakan Oleh', checkedBy:'Disemak Oleh', firstApproval:'Kelulusan Pertama', secondApproval:'Kelulusan Kedua',
     generatePayslip:'Jana Slip Gaji', allPayslips:'Semua Slip Gaji',
-    sessionHint:'Elaun/Pendahuluan/Potongan disimpan bila kau klik Simpan.'
+    sessionHint:'KWSP/SOCSO/EIS/PCB (pekerja) dan Elaun/Pendahuluan/Potongan boleh diedit terus — disimpan bila kau klik Simpan. Border kuning = medan yang dah diubah dari nilai auto-kira asal.'
   } : {
     title:'Salary Disbursement', back:'HR & Payroll', month:'Month', year:'Year', print:'Print', save:'Save',
     no:'No', payee:'Payee Name', bank:'Bank Account', salary:'Salary',
@@ -4905,7 +4905,7 @@ async function renderSalaryDisbursement(month, year) {
     noData:'No payroll records for this period.', runPayrollFirst:'Please Run Payroll first for this period.',
     preparedBy:'Prepared By', checkedBy:'Checked By', firstApproval:'First Approval', secondApproval:'Second Approval',
     generatePayslip:'Generate Payslip', allPayslips:'All Payslips',
-    sessionHint:'Allowance/Advance/Deduction are saved when you click Save.'
+    sessionHint:'KWSP/SOCSO/EIS/PCB (employee) and Allowance/Advance/Deduction are editable — saved when you click Save. Yellow border = field amended from the original auto-calculated value.'
   }
   const now = new Date()
   month = month || now.getMonth()+1
@@ -4979,10 +4979,10 @@ async function renderSalaryDisbursement(month, year) {
       <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a2-${r.id}" style="width:80px;text-align:right" value="${r.allowance_2||0}" oninput="_sdRecalc()"></td>
       <td><select class="form-select no-print" id="sd-atype3-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select></td>
       <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a3-${r.id}" style="width:80px;text-align:right" value="${r.allowance_3||0}" oninput="_sdRecalc()"></td>
-      <td style="text-align:right">${formatRM(r.epf_employee)}</td>
-      <td style="text-align:right">${formatRM(r.socso_employee)}</td>
-      <td style="text-align:right">${formatRM(r.eis_employee)}</td>
-      <td style="text-align:right">${formatRM(r.pcb)}</td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-epf-${r.id}" style="width:80px;text-align:right" value="${r.epf_employee||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-${r.id}" style="width:80px;text-align:right" value="${r.socso_employee||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" style="width:80px;text-align:right" value="${r.eis_employee||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" style="width:80px;text-align:right" value="${r.pcb||0}" oninput="_sdRecalc()"></td>
       <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" style="width:80px;text-align:right" value="${r.advance||0}" oninput="_sdRecalc()"></td>
       <td><select class="form-select no-print" id="sd-dtype1-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select></td>
       <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d1-${r.id}" style="width:80px;text-align:right" value="${r.deduction_1||0}" oninput="_sdRecalc()"></td>
@@ -5019,6 +5019,10 @@ async function renderSalaryDisbursement(month, year) {
 }
 
 function _sdRowValues(r) {
+  const epf_employee = Number(document.getElementById(`sd-epf-${r.id}`)?.value) || 0
+  const socso_employee = Number(document.getElementById(`sd-socso-${r.id}`)?.value) || 0
+  const eis_employee = Number(document.getElementById(`sd-eis-${r.id}`)?.value) || 0
+  const pcb = Number(document.getElementById(`sd-pcb-${r.id}`)?.value) || 0
   const allowance_type_1 = document.getElementById(`sd-atype1-${r.id}`)?.value || null
   const allowance_1 = Number(document.getElementById(`sd-a1-${r.id}`)?.value) || 0
   const allowance_type_2 = document.getElementById(`sd-atype2-${r.id}`)?.value || null
@@ -5032,8 +5036,16 @@ function _sdRowValues(r) {
   const deduction_2 = Number(document.getElementById(`sd-d2-${r.id}`)?.value) || 0
   const totalAllowance = allowance_1 + allowance_2 + allowance_3
   const totalDeduction = advance + deduction_1 + deduction_2
-  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - totalDeduction) * 100) / 100
-  return { allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, net_pay }
+  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance - epf_employee - socso_employee - eis_employee - pcb - totalDeduction) * 100) / 100
+  return { epf_employee, socso_employee, eis_employee, pcb, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, net_pay }
+}
+
+function _sdMarkAmended(inputId, originalValue) {
+  const el = document.getElementById(inputId)
+  if(!el) return
+  const amended = Number(el.value) !== Number(originalValue||0)
+  el.style.borderColor = amended ? 'var(--warning)' : ''
+  el.title = amended ? (APP.language==='bm'?'Dah diubah dari nilai auto-kira':'Amended from auto-calculated value') : ''
 }
 
 function _sdRecalc() {
@@ -5043,6 +5055,10 @@ function _sdRecalc() {
     grand += v.net_pay
     const cell = document.getElementById(`sd-net-${r.id}`)
     if(cell) cell.textContent = formatRM(v.net_pay)
+    _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
+    _sdMarkAmended(`sd-socso-${r.id}`, r.socso_employee)
+    _sdMarkAmended(`sd-eis-${r.id}`, r.eis_employee)
+    _sdMarkAmended(`sd-pcb-${r.id}`, r.pcb)
   })
   const totalCell = document.getElementById('sd-grand-total')
   if(totalCell) totalCell.textContent = formatRM(grand)
