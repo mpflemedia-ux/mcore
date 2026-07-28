@@ -4698,14 +4698,16 @@ async function renderPayrollRun() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Jalankan Payroll', back:'SDM & Gaji', month:'Bulan', year:'Tahun', run:'Jalankan Payroll',
-    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana)',
+    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana — tanda untuk jana semula)',
     noIc:'(tiada IC — anggap bawah 60 tahun untuk EPF/SOCSO/EIS)',
-    pcbNote:'PCB dikira ikut jadual bertingkat asas sahaja — TIDAK account untuk relief individu (pasangan, anak, insurans, dll). Sila verify dengan akauntan sebelum submission rasmi.'
+    pcbNote:'PCB dikira ikut jadual bertingkat asas sahaja — TIDAK account untuk relief individu (pasangan, anak, insurans, dll). Sila verify dengan akauntan sebelum submission rasmi.',
+    regenWarn:'Menanda pekerja yang "sudah dijana" akan OVERWRITE rekod payroll sedia ada untuk period ini (basic salary + semua kalkulasi EPF/SOCSO/EIS/PCB dikira semula dari data pekerja terkini).'
   } : {
     title:'Run Payroll', back:'HR & Payroll', month:'Month', year:'Year', run:'Run Payroll',
-    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated)',
+    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated — check to regenerate)',
     noIc:'(no IC on file — assumed under 60 for EPF/SOCSO/EIS)',
-    pcbNote:'PCB is calculated using basic progressive brackets only — does NOT account for individual reliefs (spouse, child, insurance, etc). Please verify with an accountant before official submission.'
+    pcbNote:'PCB is calculated using basic progressive brackets only — does NOT account for individual reliefs (spouse, child, insurance, etc). Please verify with an accountant before official submission.',
+    regenWarn:'Checking an "already generated" employee will OVERWRITE their existing payroll record for this period (basic salary + all EPF/SOCSO/EIS/PCB figures recalculated from current employee data).'
   }
   const now = new Date()
   const {data: employees} = await sb.from('employees').select('id,name,basic_salary,ic_no').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
@@ -4734,12 +4736,13 @@ async function renderPayrollRun() {
       ${(!employees || employees.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
       <table><thead><tr><th></th><th>${t.name}</th><th style="text-align:right">${t.salary}</th></tr></thead>
       <tbody>${employees.map(e=>`<tr>
-        <td><input type="checkbox" class="payroll-emp-check" value="${e.id}" ${existingIds.has(String(e.id))?'disabled':'checked'}></td>
-        <td>${_aiEscapeHtml(e.name)}${existingIds.has(String(e.id))?` <span style="color:var(--text-3);font-size:12px">${t.already}</span>`:''}${!e.ic_no?` <span style="color:var(--warning);font-size:12px">${t.noIc}</span>`:''}</td>
+        <td><input type="checkbox" class="payroll-emp-check" value="${e.id}" ${existingIds.has(String(e.id))?'':'checked'}></td>
+        <td>${_aiEscapeHtml(e.name)}${existingIds.has(String(e.id))?` <span style="color:var(--warning);font-size:12px">${t.already}</span>`:''}${!e.ic_no?` <span style="color:var(--warning);font-size:12px">${t.noIc}</span>`:''}</td>
         <td style="text-align:right">${formatRM(e.basic_salary)}</td>
       </tr>`).join('')}</tbody></table>`}
     </div>
-    <div style="font-size:11px;color:var(--text-3);margin-top:8px">${t.pcbNote}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:8px">${t.regenWarn}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:4px">${t.pcbNote}</div>
     <div style="margin-top:16px">
       <button class="btn btn-primary" onclick="_payrollRunExecute()"><i class="ti ti-cash"></i> ${t.run}</button>
     </div>
@@ -4761,7 +4764,7 @@ async function _payrollRunExecute() {
     if(!emp) { errCount++; continue }
     const calc = _calcPayroll(emp)
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
-    const {error} = await sb.from('payroll_records').insert(payload)
+    const {error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' })
     if(error) errCount++; else { okCount++; auditLog('create','payroll_records', empId) }
   }
   result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
