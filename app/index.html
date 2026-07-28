@@ -6335,7 +6335,6 @@ async function init() {
 // Kalau takde file, auto fallback ke animated logo screen
 
 const INTRO_VIDEO_DURATION = 15000  // 15 saat
-const INTRO_SEEN_KEY = 'nexerp_intro_seen'
 
 let _introTimer = null
 let _hardTimer = null
@@ -6346,7 +6345,6 @@ function skipIntro() {
 }
 
 function _finishIntro() {
-  localStorage.setItem(INTRO_SEEN_KEY, '1')
   const screen = document.getElementById('intro-screen')
   if(!screen || screen.classList.contains('hidden')) return
   screen.classList.add('fade-out')
@@ -6414,32 +6412,37 @@ window.onYouTubeIframeAPIReady = function() {
   })
 }
 
-if(localStorage.getItem(INTRO_SEEN_KEY) === '1') {
-  // Already seen on this device — skip straight past the intro, no video load.
+;(async function(){
+  const { data: { session } } = await sb.auth.getSession()
   const screen = document.getElementById('intro-screen')
-  if(screen) screen.classList.add('hidden')
-} else {
-  // Independent safety timer — buttons + fade guaranteed even if YT API fails
-  setTimeout(() => {
-    const bs = document.getElementById('intro-sound')
-    const bk = document.getElementById('intro-skip')
-    if(bs) bs.style.display='flex'
-    if(bk) bk.style.display='flex'
-  }, 1500)
+  if(session?.user) {
+    // Already logged in (eg. refreshing the dashboard) — skip straight past
+    // the intro, no video load.
+    if(screen) screen.classList.add('hidden')
+  } else {
+    // Not logged in — always play the intro, regardless of past visits.
+    // Independent safety timer — buttons + fade guaranteed even if YT API fails
+    setTimeout(() => {
+      const bs = document.getElementById('intro-sound')
+      const bk = document.getElementById('intro-skip')
+      if(bs) bs.style.display='flex'
+      if(bk) bk.style.display='flex'
+    }, 1500)
 
-  _hardTimer = setTimeout(() => { _finishIntro() }, INTRO_VIDEO_DURATION)
+    _hardTimer = setTimeout(() => { _finishIntro() }, INTRO_VIDEO_DURATION)
 
-  // Load YouTube IFrame API
-  ;(function() {
-    const tag = document.createElement('script')
-    tag.src = 'https://www.youtube.com/iframe_api'
-    document.head.appendChild(tag)
-  })()
+    // Load YouTube IFrame API
+    ;(function() {
+      const tag = document.createElement('script')
+      tag.src = 'https://www.youtube.com/iframe_api'
+      document.head.appendChild(tag)
+    })()
 
-  // Hide fallback, show logo overlay
-  document.getElementById('intro-fallback').style.display = 'none'
-  document.getElementById('intro-logo-overlay').style.display = 'flex'
-}
+    // Hide fallback, show logo overlay
+    document.getElementById('intro-fallback').style.display = 'none'
+    document.getElementById('intro-logo-overlay').style.display = 'flex'
+  }
+})()
 init()
 </script>
 </body>
