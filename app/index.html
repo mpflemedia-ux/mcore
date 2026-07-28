@@ -384,6 +384,14 @@ tbody tr:hover{background:var(--bg)}
 .db-donut-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
 .db-donut-wrap{position:relative;display:flex;justify-content:center;margin-bottom:12px}
 @media (max-width:900px){.db-row,.db-bottom-row{grid-template-columns:1fr}}
+@media (max-width:768px) {
+  /* Sidebar becomes a fixed overlay drawer instead of pushing/squeezing
+     main content — #main-area (flex:1) naturally fills the full width
+     once #sidebar is taken out of the flex flow. */
+  #sidebar { position:fixed; top:0; left:0; height:100vh; z-index:200; }
+  #sidebar.collapsed { width:0; min-width:0; border-right:none; }
+  .header-search { display:none; }
+}
 @media print {
   #sidebar, #header, .no-print { display:none !important; }
   #main-area { margin:0 !important; }
@@ -1100,6 +1108,7 @@ function showShell() {
   document.getElementById('auth-page').style.display='none'
   document.getElementById('shell').classList.add('active')
   if(!alreadyActive) {
+    if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
     buildSidebar()
     updateUserUI()
     openPage('dashboard')
