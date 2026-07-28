@@ -391,6 +391,10 @@ tbody tr:hover{background:var(--bg)}
   #sidebar { position:fixed; top:0; left:0; height:100vh; z-index:200; }
   #sidebar.collapsed { width:0; min-width:0; border-right:none; }
   .header-search { display:none; }
+  #sidebar-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.4); z-index: 150;
+  }
 }
 @media print {
   #sidebar, #header, .no-print { display:none !important; }
@@ -609,6 +613,7 @@ tbody tr:hover{background:var(--bg)}
       </div>
     </div>
   </nav>
+  <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
   <div id="main-area">
     <header id="header">
@@ -738,6 +743,7 @@ function canAccess(module) {
 function openPage(page, params={}) {
   const item = NAV_ITEMS.find(n=>n.id===page)
   if(item && !canAccess(item.module)) { renderAccessDenied(); return }
+  localStorage.setItem('nexerp_last_page', page)
   APP.currentPage = page
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page))
   if(item) document.getElementById('header-title').textContent = APP.language==='bm'?item.label_bm:item.label_en
@@ -1062,6 +1068,7 @@ async function doLogout() {
   APP.currentPage = null
   AI_CHAT.messages = []
   AI_CHAT.open = false
+  localStorage.removeItem('nexerp_last_page')
   showAuthPage()
   showToast('You have been signed out.','info')
 }
@@ -1111,7 +1118,7 @@ function showShell() {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
     buildSidebar()
     updateUserUI()
-    openPage('dashboard')
+    openPage(localStorage.getItem('nexerp_last_page') || 'dashboard')
   }
 }
 
@@ -1127,7 +1134,14 @@ function buildSidebar() {
     el.dataset.page=item.id
     el.dataset.label=label
     el.innerHTML=`<i class="ti ${item.icon} nav-icon"></i><span class="nav-label">${label}</span>`
-    el.onclick=()=>openPage(item.id)
+    el.onclick=()=>{
+      openPage(item.id)
+      if(window.innerWidth <= 768) {
+        document.getElementById('sidebar').classList.add('collapsed')
+        const backdrop = document.getElementById('sidebar-backdrop')
+        if(backdrop) backdrop.style.display = 'none'
+      }
+    }
     nav.appendChild(el)
   })
 }
@@ -1141,7 +1155,15 @@ function updateUserUI() {
   document.getElementById('tenant-name-header').textContent=APP.tenant.name||'-'
 }
 
-function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed') }
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar')
+  sidebar.classList.toggle('collapsed')
+  if(window.innerWidth <= 768) {
+    const backdrop = document.getElementById('sidebar-backdrop')
+    const isOpen = !sidebar.classList.contains('collapsed')
+    if(backdrop) backdrop.style.display = isOpen ? 'block' : 'none'
+  }
+}
 function toggleTheme() { applyTheme(APP.theme==='light'?'dark':'light') }
 function applyTheme(t) {
   APP.theme=t
