@@ -4774,15 +4774,16 @@ async function renderPayslipDetail(id) {
     back:'SDM & Gaji', period:'Tempoh', basic:'Gaji Pokok', epf:'EPF (Pekerja/Majikan)', socso:'SOCSO (Pekerja/Majikan)',
     eis:'EIS (Pekerja/Majikan)', pcb:'PCB', netPay:'Gaji Bersih', notFound:'Rekod payroll tidak dijumpai.',
     aiNoteTitle:'Nota AI Slip Gaji', getNote:'Dapatkan Nota', noteHint:'Klik untuk ringkasan ringkas slip gaji dalam bahasa mudah.', print:'Cetak',
-    pcbNote:'PCB asas sahaja — tiada relief individu (pasangan, anak, insurans, dll).'
+    pcbNote:'PCB asas sahaja — tiada relief individu (pasangan, anak, insurans, dll).', advance:'Pendahuluan'
   } : {
     back:'HR & Payroll', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
     eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', notFound:'Payroll record not found.',
     aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print',
-    pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).'
+    pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).', advance:'Advance'
   }
   const {data: rec} = await sb.from('payroll_records').select('*,employees(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const _sdRows = _sdBreakdownRows(rec, t)
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
@@ -4803,6 +4804,7 @@ async function renderPayslipDetail(id) {
       <div><div style="color:var(--text-3);font-size:12px">${t.socso}</div>${formatRM(rec.socso_employee)} / ${formatRM(rec.socso_employer)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.eis}</div>${formatRM(rec.eis_employee)} / ${formatRM(rec.eis_employer)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}<div style="font-size:10px;color:var(--text-3)">${t.pcbNote}</div></div>
+      ${_sdRows.map(row=>`<div><div style="color:var(--text-3);font-size:12px">${row.label}</div>${row.sign}${formatRM(row.amount)}</div>`).join('')}
       <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><div style="color:var(--text-3);font-size:12px">${t.netPay}</div><strong style="font-size:18px">${formatRM(rec.net_pay)}</strong></div>
     </div>
   </div>
@@ -4841,26 +4843,69 @@ async function _payslipLoadNote(id) {
 
 let _sdRecords = []
 
+const SD_ALLOWANCE_TYPES = [
+  { key:'', en:'— None —', bm:'— Tiada —' },
+  { key:'transport', en:'Transport Allowance', bm:'Elaun Pengangkutan' },
+  { key:'meal', en:'Meal Allowance', bm:'Elaun Makan' },
+  { key:'housing', en:'Housing Allowance', bm:'Elaun Perumahan' },
+  { key:'phone', en:'Phone Allowance', bm:'Elaun Telefon' },
+  { key:'other', en:'Other Allowance', bm:'Elaun Lain' },
+]
+const SD_DEDUCTION_TYPES = [
+  { key:'', en:'— None —', bm:'— Tiada —' },
+  { key:'unpaid_leave', en:'Off Day / Unpaid Leave', bm:'Cuti Tanpa Gaji' },
+  { key:'late_penalty', en:'Late / Lateness Penalty', bm:'Penalti Lewat' },
+  { key:'lost_damage', en:'Lost Item / Damage', bm:'Kehilangan / Kerosakan' },
+  { key:'uniform_equipment', en:'Uniform / Equipment', bm:'Uniform / Peralatan' },
+  { key:'loan_repayment', en:'Loan Repayment', bm:'Bayaran Balik Pinjaman' },
+  { key:'rental', en:'Rental', bm:'Sewaan' },
+  { key:'other', en:'Other Deduction', bm:'Potongan Lain' },
+]
+
+function _sdTypeOptions(list, selected) {
+  return list.map(o => `<option value="${o.key}" ${String(selected||'')===o.key?'selected':''}>${APP.language==='bm'?o.bm:o.en}</option>`).join('')
+}
+function _sdTypeLabel(list, key) {
+  const found = list.find(o => o.key===key)
+  return found ? (APP.language==='bm'?found.bm:found.en) : (key||'-')
+}
+
+function _sdBreakdownRows(rec, t) {
+  const rows = []
+  ;[[rec.allowance_type_1, rec.allowance_1], [rec.allowance_type_2, rec.allowance_2], [rec.allowance_type_3, rec.allowance_3]].forEach(([type, amt]) => {
+    if(Number(amt) > 0) rows.push({ label: _sdTypeLabel(SD_ALLOWANCE_TYPES, type) + ' (+)', sign: '+', amount: amt })
+  })
+  if(Number(rec.advance) > 0) rows.push({ label: t.advance + ' (-)', sign: '-', amount: rec.advance })
+  ;[[rec.deduction_type_1, rec.deduction_1], [rec.deduction_type_2, rec.deduction_2]].forEach(([type, amt]) => {
+    if(Number(amt) > 0) rows.push({ label: _sdTypeLabel(SD_DEDUCTION_TYPES, type) + ' (-)', sign: '-', amount: amt })
+  })
+  return rows
+}
+
 async function renderSalaryDisbursement(month, year) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Penyaluran Gaji', back:'SDM & Gaji', month:'Bulan', year:'Tahun', print:'Cetak',
-    no:'No', payee:'Nama Penerima', bank:'Akaun Bank', salary:'Gaji', allowance:'Elaun (+)',
+    title:'Penyaluran Gaji', back:'SDM & Gaji', month:'Bulan', year:'Tahun', print:'Cetak', save:'Simpan',
+    no:'No', payee:'Nama Penerima', bank:'Akaun Bank', salary:'Gaji',
+    allowType:'Jenis Elaun', allowAmt:'Elaun (RM)',
     epf:'KWSP (-)', socso:'SOCSO (-)', eis:'EIS (-)', pcb:'PCB (-)', advance:'Pendahuluan (-)',
-    deduction:'Potongan (-)', netPay:'Gaji Bersih (RM)', grandTotal:'Jumlah Besar Gaji Bersih',
+    dedType:'Jenis Potongan', dedAmt:'Potongan (RM)',
+    netPay:'Gaji Bersih (RM)', grandTotal:'Jumlah Besar Gaji Bersih',
     noData:'Tiada rekod payroll untuk tempoh ini.', runPayrollFirst:'Sila Jalankan Payroll dahulu untuk tempoh ini.',
     preparedBy:'Disediakan Oleh', checkedBy:'Disemak Oleh', firstApproval:'Kelulusan Pertama', secondApproval:'Kelulusan Kedua',
     generatePayslip:'Jana Slip Gaji', allPayslips:'Semua Slip Gaji',
-    sessionHint:'Elaun/Pendahuluan/Potongan hanya untuk paparan/cetakan semasa — tidak disimpan.'
+    sessionHint:'Elaun/Pendahuluan/Potongan disimpan bila kau klik Simpan.'
   } : {
-    title:'Salary Disbursement', back:'HR & Payroll', month:'Month', year:'Year', print:'Print',
-    no:'No', payee:'Payee Name', bank:'Bank Account', salary:'Salary', allowance:'Allowance (+)',
+    title:'Salary Disbursement', back:'HR & Payroll', month:'Month', year:'Year', print:'Print', save:'Save',
+    no:'No', payee:'Payee Name', bank:'Bank Account', salary:'Salary',
+    allowType:'Allowance Type', allowAmt:'Allowance (RM)',
     epf:'KWSP (-)', socso:'SOCSO (-)', eis:'EIS (-)', pcb:'PCB (-)', advance:'Advance (-)',
-    deduction:'Deduction (-)', netPay:'Net Pay (RM)', grandTotal:'Grand Total Net Pay',
+    dedType:'Deduction Type', dedAmt:'Deduction (RM)',
+    netPay:'Net Pay (RM)', grandTotal:'Grand Total Net Pay',
     noData:'No payroll records for this period.', runPayrollFirst:'Please Run Payroll first for this period.',
     preparedBy:'Prepared By', checkedBy:'Checked By', firstApproval:'First Approval', secondApproval:'Second Approval',
     generatePayslip:'Generate Payslip', allPayslips:'All Payslips',
-    sessionHint:'Allowance/Advance/Deduction are for this view/print only — not saved.'
+    sessionHint:'Allowance/Advance/Deduction are saved when you click Save.'
   }
   const now = new Date()
   month = month || now.getMonth()+1
@@ -4891,7 +4936,10 @@ async function renderSalaryDisbursement(month, year) {
 
   const wrap = document.getElementById('sd-content')
   const {data, error} = await sb.from('payroll_records')
-    .select('id,basic_salary,epf_employee,socso_employee,eis_employee,pcb,net_pay,employees(name,bank_name,bank_account_no)')
+    .select(`id,basic_salary,epf_employee,socso_employee,eis_employee,pcb,net_pay,
+      allowance_type_1,allowance_1,allowance_type_2,allowance_2,allowance_type_3,allowance_3,
+      advance,deduction_type_1,deduction_1,deduction_type_2,deduction_2,
+      employees(name,bank_name,bank_account_no)`)
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) {
@@ -4900,31 +4948,57 @@ async function renderSalaryDisbursement(month, year) {
   }
   _sdRecords = data
 
+  const grandTotal = data.reduce((s,r) => {
+    const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
+    const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
+    return s + Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - totalDeduction
+  }, 0)
+
   wrap.innerHTML = `
   <div class="card" style="overflow-x:auto">
     <table><thead><tr>
       <th>${t.no}</th><th>${t.payee}</th><th>${t.bank}</th><th style="text-align:right">${t.salary}</th>
-      <th style="text-align:right">${t.allowance}</th><th style="text-align:right">${t.epf}</th><th style="text-align:right">${t.socso}</th>
-      <th style="text-align:right">${t.eis}</th><th style="text-align:right">${t.pcb}</th><th style="text-align:right">${t.advance}</th>
-      <th style="text-align:right">${t.deduction}</th><th style="text-align:right">${t.netPay}</th>
+      <th>${t.allowType} 1</th><th style="text-align:right">${t.allowAmt} 1</th>
+      <th>${t.allowType} 2</th><th style="text-align:right">${t.allowAmt} 2</th>
+      <th>${t.allowType} 3</th><th style="text-align:right">${t.allowAmt} 3</th>
+      <th style="text-align:right">${t.epf}</th><th style="text-align:right">${t.socso}</th>
+      <th style="text-align:right">${t.eis}</th><th style="text-align:right">${t.pcb}</th>
+      <th style="text-align:right">${t.advance}</th>
+      <th>${t.dedType} 1</th><th style="text-align:right">${t.dedAmt} 1</th>
+      <th>${t.dedType} 2</th><th style="text-align:right">${t.dedAmt} 2</th>
+      <th style="text-align:right">${t.netPay}</th>
     </tr></thead>
     <tbody>${data.map((r,i)=>`<tr>
       <td>${i+1}</td>
       <td>${_aiEscapeHtml(r.employees?.name||'-')}</td>
       <td>${r.employees?.bank_name?`${_aiEscapeHtml(r.employees.bank_name)} - ${_aiEscapeHtml(r.employees.bank_account_no||'-')}`:'-'}</td>
       <td style="text-align:right">${formatRM(r.basic_salary)}</td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-allow-${r.id}" style="width:90px;text-align:right" value="0" oninput="_sdRecalc()"></td>
+      <td><select class="form-select no-print" id="sd-atype1-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_1)}</select></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a1-${r.id}" style="width:80px;text-align:right" value="${r.allowance_1||0}" oninput="_sdRecalc()"></td>
+      <td><select class="form-select no-print" id="sd-atype2-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_2)}</select></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a2-${r.id}" style="width:80px;text-align:right" value="${r.allowance_2||0}" oninput="_sdRecalc()"></td>
+      <td><select class="form-select no-print" id="sd-atype3-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a3-${r.id}" style="width:80px;text-align:right" value="${r.allowance_3||0}" oninput="_sdRecalc()"></td>
       <td style="text-align:right">${formatRM(r.epf_employee)}</td>
       <td style="text-align:right">${formatRM(r.socso_employee)}</td>
       <td style="text-align:right">${formatRM(r.eis_employee)}</td>
       <td style="text-align:right">${formatRM(r.pcb)}</td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" style="width:90px;text-align:right" value="0" oninput="_sdRecalc()"></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-ded-${r.id}" style="width:90px;text-align:right" value="0" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" style="width:80px;text-align:right" value="${r.advance||0}" oninput="_sdRecalc()"></td>
+      <td><select class="form-select no-print" id="sd-dtype1-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d1-${r.id}" style="width:80px;text-align:right" value="${r.deduction_1||0}" oninput="_sdRecalc()"></td>
+      <td><select class="form-select no-print" id="sd-dtype2-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_2)}</select></td>
+      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d2-${r.id}" style="width:80px;text-align:right" value="${r.deduction_2||0}" oninput="_sdRecalc()"></td>
       <td style="text-align:right"><strong id="sd-net-${r.id}">${formatRM(r.net_pay)}</strong></td>
     </tr>`).join('')}</tbody>
-    <tfoot><tr><td colspan="11" style="text-align:right;font-weight:600">${t.grandTotal}</td><td style="text-align:right;font-weight:700" id="sd-grand-total">${formatRM(data.reduce((s,r)=>s+Number(r.net_pay||0),0))}</td></tr></tfoot>
+    <tfoot><tr><td colspan="19" style="text-align:right;font-weight:600">${t.grandTotal}</td><td style="text-align:right;font-weight:700" id="sd-grand-total">${formatRM(grandTotal)}</td></tr></tfoot>
     </table>
-    <div class="no-print" style="font-size:11px;color:var(--text-3);margin-top:8px">${t.sessionHint}</div>
+    <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+      <div style="font-size:11px;color:var(--text-3)">${t.sessionHint}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="sd-save-result" style="font-size:12px"></span>
+        <button class="btn btn-primary btn-sm" onclick="_sdSaveAll()"><i class="ti ti-device-floppy"></i> ${t.save}</button>
+      </div>
+    </div>
   </div>
   <div class="card" style="margin-top:16px;max-width:700px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 16px">
@@ -4944,29 +5018,57 @@ async function renderSalaryDisbursement(month, year) {
   </div>`
 }
 
+function _sdRowValues(r) {
+  const allowance_type_1 = document.getElementById(`sd-atype1-${r.id}`)?.value || null
+  const allowance_1 = Number(document.getElementById(`sd-a1-${r.id}`)?.value) || 0
+  const allowance_type_2 = document.getElementById(`sd-atype2-${r.id}`)?.value || null
+  const allowance_2 = Number(document.getElementById(`sd-a2-${r.id}`)?.value) || 0
+  const allowance_type_3 = document.getElementById(`sd-atype3-${r.id}`)?.value || null
+  const allowance_3 = Number(document.getElementById(`sd-a3-${r.id}`)?.value) || 0
+  const advance = Number(document.getElementById(`sd-adv-${r.id}`)?.value) || 0
+  const deduction_type_1 = document.getElementById(`sd-dtype1-${r.id}`)?.value || null
+  const deduction_1 = Number(document.getElementById(`sd-d1-${r.id}`)?.value) || 0
+  const deduction_type_2 = document.getElementById(`sd-dtype2-${r.id}`)?.value || null
+  const deduction_2 = Number(document.getElementById(`sd-d2-${r.id}`)?.value) || 0
+  const totalAllowance = allowance_1 + allowance_2 + allowance_3
+  const totalDeduction = advance + deduction_1 + deduction_2
+  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - totalDeduction) * 100) / 100
+  return { allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, net_pay }
+}
+
 function _sdRecalc() {
   let grand = 0
   _sdRecords.forEach(r => {
-    const allowance = Number(document.getElementById(`sd-allow-${r.id}`)?.value) || 0
-    const advance = Number(document.getElementById(`sd-adv-${r.id}`)?.value) || 0
-    const deduction = Number(document.getElementById(`sd-ded-${r.id}`)?.value) || 0
-    const net = Number(r.net_pay||0) + allowance - advance - deduction
-    grand += net
+    const v = _sdRowValues(r)
+    grand += v.net_pay
     const cell = document.getElementById(`sd-net-${r.id}`)
-    if(cell) cell.textContent = formatRM(net)
+    if(cell) cell.textContent = formatRM(v.net_pay)
   })
   const totalCell = document.getElementById('sd-grand-total')
   if(totalCell) totalCell.textContent = formatRM(grand)
+}
+
+async function _sdSaveAll() {
+  const isBm = APP.language==='bm'
+  const result = document.getElementById('sd-save-result')
+  let okCount = 0, errCount = 0
+  for(const r of _sdRecords) {
+    const payload = _sdRowValues(r)
+    const {error} = await sb.from('payroll_records').update(payload).eq('id', r.id).eq('tenant_id', APP.tenant.id)
+    if(error) errCount++; else { okCount++; auditLog('update','payroll_records', r.id) }
+  }
+  if(result) result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} rekod disimpan`:`${okCount} record(s) saved`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
+  showToast(isBm?'Penyaluran gaji disimpan!':'Salary disbursement saved!', 'success')
 }
 
 async function renderPayslipsPrint(month, year) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     back:'Penyaluran Gaji', period:'Tempoh', basic:'Gaji Pokok', epf:'EPF (Pekerja/Majikan)', socso:'SOCSO (Pekerja/Majikan)',
-    eis:'EIS (Pekerja/Majikan)', pcb:'PCB', netPay:'Gaji Bersih', print:'Cetak Semua', noData:'Tiada rekod payroll untuk tempoh ini.'
+    eis:'EIS (Pekerja/Majikan)', pcb:'PCB', netPay:'Gaji Bersih', print:'Cetak Semua', noData:'Tiada rekod payroll untuk tempoh ini.', advance:'Pendahuluan'
   } : {
     back:'Salary Disbursement', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
-    eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', print:'Print All', noData:'No payroll records for this period.'
+    eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', print:'Print All', noData:'No payroll records for this period.', advance:'Advance'
   }
   const {data, error} = await sb.from('payroll_records').select('*,employees(name)')
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
@@ -4994,6 +5096,7 @@ async function renderPayslipsPrint(month, year) {
       <div><div style="color:var(--text-3);font-size:12px">${t.socso}</div>${formatRM(rec.socso_employee)} / ${formatRM(rec.socso_employer)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.eis}</div>${formatRM(rec.eis_employee)} / ${formatRM(rec.eis_employer)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}</div>
+      ${_sdBreakdownRows(rec, t).map(row=>`<div><div style="color:var(--text-3);font-size:12px">${row.label}</div>${row.sign}${formatRM(row.amount)}</div>`).join('')}
       <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><div style="color:var(--text-3);font-size:12px">${t.netPay}</div><strong style="font-size:18px">${formatRM(rec.net_pay)}</strong></div>
     </div>
   </div>`).join('')}`
