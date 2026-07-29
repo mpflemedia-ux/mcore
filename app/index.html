@@ -823,7 +823,7 @@ function toggleAIChat() {
     AI_CHAT.messages.push({
       role: 'assistant',
       text: APP.language==='bm'
-        ? 'Hai! Tanya apa-apa pasal data bisnes anda — cth: "berapa total sales bulan ni?"'
+        ? 'Hai! Tanya apa-apa pasal data perniagaan anda — cth: "berapa total sales bulan ni?"'
         : 'Hi! Ask me anything about your business data — e.g. "what\'s total sales this month?"'
     })
     renderAIChatMessages()
@@ -1269,10 +1269,10 @@ function renderDashboard() {
     <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="db-card-title"><i class="ti ti-sparkles"></i> ${isBm?'Wawasan Bisnes AI':'AI Business Insight'}</div>
+          <div class="db-card-title"><i class="ti ti-sparkles"></i> ${isBm?'Wawasan Perniagaan AI':'AI Business Insight'}</div>
           <button id="db-insight-btn" class="db-btn primary" onclick="_dbLoadAiInsight()"><i class="ti ti-refresh"></i> ${isBm?'Jana':'Generate'}</button>
         </div>
-        <div id="db-insight-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan wawasan AI berdasarkan data bisnes semasa.':'Click "Generate" to get AI insights based on your current business data.'}</div>
+        <div id="db-insight-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan wawasan AI berdasarkan data perniagaan semasa.':'Click "Generate" to get AI insights based on your current business data.'}</div>
       </div>
     </div>
 
@@ -1367,7 +1367,7 @@ async function loadDashboardData() {
 
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
-    collected:{ label: isBm?'Jumlah Dikutip':'Net Collected', value: formatRM(curPaid), delta: pctChange(curPaid,prevPaid), color:'#3B82F6' },
+    collected:{ label: isBm?'Jumlah Kutipan':'Net Collected', value: formatRM(curPaid), delta: pctChange(curPaid,prevPaid), color:'#3B82F6' },
     rate:    { label: isBm?'Kadar Kutipan':'Collection Rate', value: curRate.toFixed(1)+'%', delta: null, sub: curRate>=80?(isBm?'Baik':'Good'):curRate>=50?(isBm?'Sederhana':'Fair'):(isBm?'Perlu Perhatian':'Needs Attention'), color:'#A855F7' },
     avg:     { label: isBm?'Purata Nilai Invois':'Avg Invoice Value', value: formatRM(curAvg), delta: pctChange(curAvg,prevAvg), color:'#F59E0B' },
     count:   { label: t_dash('invoices').charAt(0).toUpperCase()+t_dash('invoices').slice(1), value: String(curCount), delta: pctChange(curCount,prevCount), color:'#38BDF8' },
@@ -1652,7 +1652,7 @@ function _dbRenderBreakdown(thisMonth) {
 
   const rows = [
     {label: isBm?'Jualan Kasar':'Gross Sales', value: formatRM(total), color:'var(--db-text)'},
-    {label: isBm?'Jumlah Dikutip':'Total Collected', value: formatRM(paid), color:'#22C55E'},
+    {label: isBm?'Jumlah Kutipan':'Total Collected', value: formatRM(paid), color:'#22C55E'},
     {label: isBm?'Tertunggak':'Outstanding', value: formatRM(outstanding), color:'#EF4444'},
     {label: isBm?'Bilangan Invois':'Total Invoices', value: String(count), color:'var(--db-text)'},
     {label: isBm?'Purata Invois':'Avg Invoice', value: formatRM(avg), color:'var(--db-text)'},
@@ -1783,7 +1783,7 @@ function renderSettings() {
         </select>
       </div>
       <div class="form-group"><label class="form-label">${APP.language==='bm'?'Nama / Penerima':'Name / Recipient'}</label><input id="doc-name" type="text" class="form-input"></div>
-      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Tujuan / Konteks':'Purpose / Context'}</label><textarea id="doc-context" class="form-input" rows="3" placeholder="${APP.language==='bm'?'cth: susulan lepas mesyuarat pasar sebut harga bekalan bahan mentah':'e.g. follow-up after meeting about a raw material supply quote'}"></textarea></div>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Tujuan / Konteks':'Purpose / Context'}</label><textarea id="doc-context" class="form-input" rows="3" placeholder="${APP.language==='bm'?'cth: susulan lepas mesyuarat pasal sebut harga bekalan bahan mentah':'e.g. follow-up after meeting about a raw material supply quote'}"></textarea></div>
       <button id="doc-generate-btn" class="btn btn-primary btn-sm" onclick="_docGenerate()"><i class="ti ti-file-text"></i> ${APP.language==='bm'?'Jana Draf':'Generate Draft'}</button>
     </div>
   </div>
@@ -1868,7 +1868,7 @@ function _complianceRender() {
   ]
   const upcoming = items.filter(i=>i.days <= 7)
   const footer = `<div style="margin-top:10px;font-size:11px;color:var(--text-3)">
-    ${isBm?'Deadline seterusnya':'Next deadlines'}: PCB ${formatDate(pcbDeadline.toISOString().slice(0,10))}, SST ${formatDate(sstDeadline.toISOString().slice(0,10))}
+    ${isBm?'Tarikh akhir seterusnya':'Next deadlines'}: PCB ${formatDate(pcbDeadline.toISOString().slice(0,10))}, SST ${formatDate(sstDeadline.toISOString().slice(0,10))}
   </div>`
 
   if(upcoming.length===0) {
@@ -2466,7 +2466,7 @@ function renderAccounting(params={}) {
 }
 
 function _accTabs(active) {
-  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Segan Bank' }
+  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank' }
     : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
@@ -3245,7 +3245,7 @@ let _recoMatches = []
 
 async function renderReconcile() {
   const t = APP.language==='bm' ? {
-    title:'Segan Bank (Reconciliation)',
+    title:'Penyesuaian Bank (Reconciliation)',
     instructions:'Muat naik atau tampal senarai transaksi bank (satu baris satu transaksi). Dua format disokong (auto-detect ikut bilangan kolum): "tarikh,keterangan,jumlah" (1 kolum jumlah bertanda +/-), ATAU format statement bank sebenar "tarikh,keterangan,debit,kredit,..." (kolum lain macam no./nama akaun diabaikan). Header row (cth "DATE,DESCRIPTION,...") dikesan dan diskip automatik. Tiada data disimpan ke pangkalan data — ni alat cadangan sahaja.',
     parse:'Padan dengan AI'
   } : {
@@ -3464,7 +3464,7 @@ async function renderProductList() {
 
   <div class="modal-overlay" id="po-modal-overlay">
     <div class="modal-box" style="max-width:520px">
-      <div class="modal-box-header">${APP.language==='bm'?'Draf Purchase Order':'Purchase Order Draft'}</div>
+      <div class="modal-box-header">${APP.language==='bm'?'Draf PO':'Purchase Order Draft'}</div>
       <div class="modal-box-body">
         <div id="po-modal-loading" style="color:var(--text-3);font-size:13px"></div>
         <textarea id="po-modal-text" class="form-input" rows="12" style="display:none"></textarea>
@@ -3716,7 +3716,7 @@ function _slRenderItems() {
   body.innerHTML = _slItems.map((it,i) => `<tr>
     <td style="min-width:160px">
       <select class="form-select" onchange="_slPickProduct(${i},this.value)">
-        <option value="">-- ${APP.language==='bm'?'Custom':'Custom'} --</option>
+        <option value="">-- ${APP.language==='bm'?'Tersendiri':'Custom'} --</option>
         ${_slProducts.map(p=>`<option value="${p.id}" ${it.product_id===p.id?'selected':''}>${prodName(p)}</option>`).join('')}
       </select>
     </td>
@@ -4528,7 +4528,7 @@ async function _woLoadCheck(id) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const HR_DISCLAIMER_EN = 'Calculations use the latest statutory rate structure known to this system (age/wage-tiered EPF, SOCSO/EIS with wage ceiling, progressive PCB brackets) — NOT the exact official RM-rounded wage-band tables, and PCB has no individual relief (spouse/child/insurance, etc). Please verify with KWSP/PERKESO/LHDN or a licensed accountant before official submission, especially for PCB.'
-const HR_DISCLAIMER_BM = 'Kalkulasi guna struktur kadar berkanun terkini yang diketahui sistem (EPF ikut tier umur/gaji, SOCSO/EIS dengan siling gaji, PCB ikut jadual bertingkat) — BUKAN jadual RM tepat rasmi KWSP/PERKESO, dan PCB tiada relief individu (pasangan/anak/insurans, dll). Sila verify dengan KWSP/PERKESO/LHDN atau akauntan bertauliah sebelum submission rasmi, terutama untuk PCB.'
+const HR_DISCLAIMER_BM = 'Kalkulasi guna struktur kadar berkanun terkini yang diketahui sistem (EPF ikut tier umur/gaji, SOCSO/EIS dengan siling gaji, PCB ikut jadual bertingkat) — BUKAN jadual RM tepat rasmi KWSP/PERKESO, dan PCB tiada relief individu (pasangan/anak/insurans, dll). Sila semak dengan KWSP/PERKESO/LHDN atau akauntan bertauliah sebelum penyerahan rasmi, terutama untuk PCB.'
 
 function _ageFromIC(icNo) {
   if(!icNo) return null
@@ -4733,7 +4733,7 @@ async function renderPayrollRun() {
     title:'Jalankan Payroll', back:'SDM & Gaji', month:'Bulan', year:'Tahun', run:'Jalankan Payroll',
     noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana — tanda untuk jana semula)',
     noIc:'(tiada IC — anggap bawah 60 tahun untuk EPF/SOCSO/EIS)',
-    pcbNote:'PCB dikira ikut jadual bertingkat asas sahaja — TIDAK account untuk relief individu (pasangan, anak, insurans, dll). Sila verify dengan akauntan sebelum submission rasmi.',
+    pcbNote:'PCB dikira ikut jadual bertingkat asas sahaja — TIDAK mengambil kira relief individu (pasangan, anak, insurans, dll). Sila semak dengan akauntan sebelum penyerahan rasmi.',
     regenWarn:'Menanda pekerja yang "sudah dijana" akan OVERWRITE rekod payroll sedia ada untuk period ini (basic salary + semua kalkulasi EPF/SOCSO/EIS/PCB dikira semula dari data pekerja terkini).'
   } : {
     title:'Run Payroll', back:'HR & Payroll', month:'Month', year:'Year', run:'Run Payroll',
@@ -5808,7 +5808,7 @@ async function _bsLoad() {
 // ─── Sales Report ──────────────────────────────────────────────────────────────
 async function renderSalesReport() {
   const t = APP.language==='bm' ? {
-    title:'Laporan Jualan', invoiced:'Jumlah Invois', collected:'Jumlah Dikutip', outstanding:'Tertunggak', count:'Bilangan Invois'
+    title:'Laporan Jualan', invoiced:'Jumlah Invois', collected:'Jumlah Kutipan', outstanding:'Tertunggak', count:'Bilangan Invois'
   } : {
     title:'Sales Report', invoiced:'Total Invoiced', collected:'Total Collected', outstanding:'Outstanding', count:'Invoice Count'
   }
@@ -5821,7 +5821,7 @@ async function renderSalesReport() {
 }
 
 async function _salesRepLoad() {
-  const t = APP.language==='bm' ? { invoiced:'Jumlah Invois', collected:'Jumlah Dikutip', outstanding:'Tertunggak', count:'Bilangan Invois', noData:'Tiada invois untuk tempoh ini' }
+  const t = APP.language==='bm' ? { invoiced:'Jumlah Invois', collected:'Jumlah Kutipan', outstanding:'Tertunggak', count:'Bilangan Invois', noData:'Tiada invois untuk tempoh ini' }
     : { invoiced:'Total Invoiced', collected:'Total Collected', outstanding:'Outstanding', count:'Invoice Count', noData:'No invoices for this period' }
   const from = document.getElementById('sales-from')?.value
   const to = document.getElementById('sales-to')?.value
@@ -5906,7 +5906,7 @@ function hideOnboarding() {
 function obUpdateLang() {
   const L = APP.language
   document.getElementById('ob-title').textContent = L==='bm' ? 'Selamat Datang ke NexERP' : 'Welcome to NexERP'
-  document.getElementById('ob-sub').textContent   = L==='bm' ? 'Jom set up syarikat anda dalam beberapa langkah sahaja' : "Let's set up your company in just a few steps"
+  document.getElementById('ob-sub').textContent   = L==='bm' ? 'Jom sediakan syarikat anda dalam beberapa langkah sahaja' : "Let's set up your company in just a few steps"
 }
 
 function obRenderSteps() {
@@ -6056,7 +6056,7 @@ function obRenderStep() {
     </div>
     <div style="background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.25);border-radius:10px;padding:14px 16px;font-size:12px;color:rgba(255,255,255,.6)">
       <i class="ti ti-info-circle" style="color:var(--primary);margin-right:6px"></i>
-      ${L==='bm'?'Standard Malaysia: 1 Jan – 31 Dis. Kau boleh ubah kemudian dalam settings.':'Malaysia standard: 1 Jan – 31 Dec. You can change this later in settings.'}
+      ${L==='bm'?'Standard Malaysia: 1 Jan – 31 Dis. Kau boleh ubah kemudian dalam tetapan.':'Malaysia standard: 1 Jan – 31 Dec. You can change this later in settings.'}
     </div>
     <div class="ob-actions">
       <button class="ob-btn ob-btn-outline" onclick="obBack()">
@@ -6069,7 +6069,7 @@ function obRenderStep() {
 
   } else if(OB.step === 4) {
     el.innerHTML = `
-    <div class="ob-section-title">${L==='bm'?'Template Carta Akaun':'Chart of Accounts Template'}</div>
+    <div class="ob-section-title">${L==='bm'?'Templat Carta Akaun':'Chart of Accounts Template'}</div>
     <div class="ob-section-sub">${L==='bm'?'Pilih templat yang paling sesuai — anda boleh sesuaikan kemudian':'Choose the most suitable template — you can customize later'}</div>
     <div class="ob-coa-grid">
       ${OB_COA_TEMPLATES.map(t=>`
@@ -6087,7 +6087,7 @@ function obRenderStep() {
         <i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}
       </button>
       <button class="ob-btn ob-btn-success" id="ob-finish-btn" onclick="obFinish()">
-        <i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Setup!':'Complete Setup!'}
+        <i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Persediaan!':'Complete Setup!'}
       </button>
     </div>`
   }
@@ -6261,7 +6261,7 @@ async function obFinish() {
     el.innerHTML = `
     <div class="ob-complete">
       <i class="ti ti-circle-check"></i>
-      <h3>${L==='bm'?'Setup Selesai! 🎉':'Setup Complete! 🎉'}</h3>
+      <h3>${L==='bm'?'Persediaan Selesai! 🎉':'Setup Complete! 🎉'}</h3>
       <p>${L==='bm'?`Selamat datang ke NexERP, ${APP.tenant.name}. Sistem anda telah sedia!`:`Welcome to NexERP, ${APP.tenant.name}. Your system is ready!`}</p>
       <button class="ob-btn ob-btn-primary" style="margin-top:24px" onclick="obGoToDashboard()">
         ${L==='bm'?'Pergi ke Dashboard':'Go to Dashboard'} <i class="ti ti-arrow-right"></i>
@@ -6272,7 +6272,7 @@ async function obFinish() {
   } catch(err) {
     console.error('Onboarding error:', err)
     obShowError((L==='bm'?'Ralat: ':'Error: ') + (err.message || 'Something went wrong. Please try again.'))
-    if(btn) { btn.disabled=false; btn.innerHTML=`<i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Setup!':'Complete Setup!'}` }
+    if(btn) { btn.disabled=false; btn.innerHTML=`<i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Persediaan!':'Complete Setup!'}` }
   }
 }
 
