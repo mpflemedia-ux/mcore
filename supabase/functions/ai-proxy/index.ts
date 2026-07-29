@@ -57,7 +57,14 @@ async function callGroq(
 }
 
 function langName(body: Record<string, unknown>) {
-  return body.language === 'bm' ? 'Bahasa Melayu' : 'English'
+  return body.language === 'bm'
+    ? 'Bahasa Melayu Malaysia standard (ikut Dewan Bahasa dan Pustaka). ' +
+      'JANGAN guna perkataan gaya Bahasa Indonesia (elak: bisa, kwitansi, ' +
+      'faktur, jadwal, cek, kantor, pajak — guna: boleh, resit, invois, ' +
+      'jadual, semak, pejabat, cukai). Bila describe perniagaan/data milik ' +
+      'pengguna, guna "anda"/"perniagaan anda", BUKAN "kami"/"perniagaan kami" ' +
+      '(AI bercakap DENGAN pengguna pasal bisnes DIA, bukan pasal bisnes AI).'
+    : 'English'
 }
 
 async function handleChat(body: Record<string, unknown>) {
