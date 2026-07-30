@@ -2588,19 +2588,360 @@ function renderAccounting(params={}) {
   if(params.view==='fiscal') { renderFiscalYears(); return }
   if(params.view==='expense' || params.view==='exp-form') { renderExpenseClaims(params); return }
   if(params.view==='reconcile') { renderReconcile(); return }
+  if(params.view==='fixed-assets') { renderFixedAssets(); return }
+  if(params.view==='fa-form') { renderFAForm(); return }
+  if(params.view==='fa-detail') { renderFADetail(params.id); return }
   renderCOAList()
 }
 
 function _accTabs(active) {
-  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank' }
-    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation' }
+  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap' }
+    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
     <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
     <button class="btn btn-sm ${active==='fiscal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'fiscal'})"><i class="ti ti-calendar"></i> ${t.fiscal}</button>
     <button class="btn btn-sm ${active==='expense'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'expense'})"><i class="ti ti-receipt"></i> ${t.expense}</button>
     <button class="btn btn-sm ${active==='reconcile'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'reconcile'})"><i class="ti ti-arrows-left-right"></i> ${t.reconcile}</button>
+    <button class="btn btn-sm ${active==='fa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'fixed-assets'})"><i class="ti ti-building"></i> ${t.fa}</button>
   </div>`
+}
+
+// ─── Fixed Assets: List ──────────────────────────────────────────────────────
+async function renderFixedAssets() {
+  const t = APP.language==='bm' ? {
+    title:'Aset Tetap', add:'Tambah Aset', assetNo:'No. Aset', name:'Nama', category:'Kategori', purchaseDate:'Tarikh Beli',
+    cost:'Kos', accumDep:'Susut Nilai Terkumpul', nbv:'Nilai Buku Bersih', status:'Status', active:'Aktif', disposed:'Dilupuskan',
+    noData:'Tiada aset tetap lagi', runDep:'Jalankan Susut Nilai Bulanan'
+  } : {
+    title:'Fixed Assets', add:'Add Asset', assetNo:'Asset No', name:'Name', category:'Category', purchaseDate:'Purchase Date',
+    cost:'Cost', accumDep:'Accumulated Depreciation', nbv:'Net Book Value', status:'Status', active:'Active', disposed:'Disposed',
+    noData:'No fixed assets yet', runDep:'Run Monthly Depreciation'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header">
+    <div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="_faOpenRunModal()"><i class="ti ti-calculator"></i> ${t.runDep}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'fa-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div>
+  </div>
+  ${_accTabs('fa')}
+  <div id="fa-run-summary"></div>
+  <div class="card"><div id="fa-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+  ${_faRunModalHtml()}`
+  await _faLoadList()
+}
+
+async function _faLoadList() {
+  const t = APP.language==='bm' ? {
+    assetNo:'No. Aset', name:'Nama', category:'Kategori', purchaseDate:'Tarikh Beli', cost:'Kos',
+    accumDep:'Susut Nilai Terkumpul', nbv:'Nilai Buku Bersih', status:'Status', active:'Aktif', disposed:'Dilupuskan', noData:'Tiada aset tetap lagi'
+  } : {
+    assetNo:'Asset No', name:'Name', category:'Category', purchaseDate:'Purchase Date', cost:'Cost',
+    accumDep:'Accumulated Depreciation', nbv:'Net Book Value', status:'Status', active:'Active', disposed:'Disposed', noData:'No fixed assets yet'
+  }
+  const wrap = document.getElementById('fa-list-wrap')
+  const {data, error} = await sb.from('fixed_assets').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('asset_no')
+  if(!wrap) return
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  wrap.innerHTML = `<table><thead><tr><th>${t.assetNo}</th><th>${t.name}</th><th>${t.category}</th><th>${t.purchaseDate}</th>
+    <th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.accumDep}</th><th style="text-align:right">${t.nbv}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(a=>{
+    const nbv = Number(a.cost) - Number(a.accumulated_depreciation||0)
+    return `<tr onclick="openPage('accounting',{view:'fa-detail',id:'${a.id}'})" style="cursor:pointer">
+      <td><strong>${a.asset_no}</strong></td><td>${a.name}</td><td>${a.category||'-'}</td><td>${formatDate(a.purchase_date)}</td>
+      <td style="text-align:right">${formatRM(a.cost)}</td><td style="text-align:right">${formatRM(a.accumulated_depreciation||0)}</td>
+      <td style="text-align:right">${formatRM(nbv)}</td>
+      <td><span style="color:${a.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${a.status==='active'?t.active:t.disposed}</span></td>
+    </tr>`
+  }).join('')}</tbody></table>`
+}
+
+// ─── Fixed Assets: Add Form ───────────────────────────────────────────────────
+async function renderFAForm() {
+  const t = APP.language==='bm' ? {
+    title:'Tambah Aset Tetap', back:'Aset Tetap', name:'Nama Aset *', category:'Kategori', purchaseDate:'Tarikh Beli *',
+    cost:'Kos (RM) *', residual:'Nilai Baki (RM)', usefulLife:'Tempoh Guna (Tahun) *',
+    save:'Simpan', cancel:'Batal', required:'Nama, tarikh beli, kos dan tempoh guna diperlukan.'
+  } : {
+    title:'Add Fixed Asset', back:'Fixed Assets', name:'Asset Name *', category:'Category', purchaseDate:'Purchase Date *',
+    cost:'Cost (RM) *', residual:'Residual Value (RM)', usefulLife:'Useful Life (Years) *',
+    save:'Save', cancel:'Cancel', required:'Name, purchase date, cost and useful life are required.'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('accounting',{view:'fixed-assets'})">← ${t.back}</div></div></div>
+  <div class="card" style="max-width:600px">
+    <div id="fa-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="fa-name" type="text" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${t.category}</label><input id="fa-category" type="text" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${t.purchaseDate}</label><input id="fa-purchase-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="form-label">${t.cost}</label><input id="fa-cost" type="number" step="0.01" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${t.residual}</label><input id="fa-residual" type="number" step="0.01" class="form-input" value="0"></div>
+      <div class="form-group"><label class="form-label">${t.usefulLife}</label><input id="fa-useful-life" type="number" step="0.1" class="form-input"></div>
+    </div>
+    <div style="padding:0 20px 20px;display:flex;gap:12px">
+      <button id="fa-save" class="btn btn-primary" onclick="_faSave()"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('accounting',{view:'fixed-assets'})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _faSave() {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('fa-form-err')
+  errEl.style.display='none'
+  const name = document.getElementById('fa-name').value.trim()
+  const purchaseDate = document.getElementById('fa-purchase-date').value
+  const cost = document.getElementById('fa-cost').value
+  const usefulLife = document.getElementById('fa-useful-life').value
+  if(!name || !purchaseDate || !cost || Number(cost)<=0 || !usefulLife || Number(usefulLife)<=0) {
+    errEl.textContent = isBm?'Nama, tarikh beli, kos dan tempoh guna diperlukan.':'Name, purchase date, cost and useful life are required.'
+    errEl.style.display='block'
+    return
+  }
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'FA'}).then(r=>r, ()=>({data:null}))
+  const payload = {
+    tenant_id: APP.tenant.id,
+    asset_no: refData || await _genFallbackRefNo('fixed_assets','asset_no','FA'),
+    name, category: document.getElementById('fa-category').value.trim()||null,
+    purchase_date: purchaseDate, cost: Number(cost),
+    residual_value: Number(document.getElementById('fa-residual').value||0),
+    useful_life_years: Number(usefulLife),
+    accumulated_depreciation: 0, status: 'active'
+  }
+  const {data, error} = await sb.from('fixed_assets').insert(payload).select('id').single()
+  if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+  auditLog('create','fixed_assets', data.id)
+  showToast(isBm?'Aset disimpan!':'Asset saved!', 'success')
+  openPage('accounting',{view:'fixed-assets'})
+}
+
+// ─── Fixed Assets: Detail (projected schedule + actual history + disposal) ──
+async function renderFADetail(id) {
+  const t = APP.language==='bm' ? {
+    back:'Aset Tetap', assetNo:'No. Aset', category:'Kategori', purchaseDate:'Tarikh Beli', cost:'Kos', residual:'Nilai Baki',
+    usefulLife:'Tempoh Guna (Tahun)', accumDep:'Susut Nilai Terkumpul', nbv:'Nilai Buku Bersih', status:'Status', active:'Aktif', disposed:'Dilupuskan',
+    projTitle:'Jadual Susut Nilai (Unjuran)', month:'Bulan', depAmount:'Jumlah Susut Nilai', accumulated:'Terkumpul',
+    actualTitle:'Sejarah Susut Nilai Sebenar', period:'Tempoh', amount:'Jumlah', journalRef:'Rujukan Jurnal', noActual:'Tiada susut nilai di-post lagi.',
+    dispose:'Lupuskan Aset', disposalDate:'Tarikh Lupus', proceeds:'Hasil Lupusan (RM)', save:'Simpan', cancel:'Batal',
+    notFound:'Aset tidak dijumpai.'
+  } : {
+    back:'Fixed Assets', assetNo:'Asset No', category:'Category', purchaseDate:'Purchase Date', cost:'Cost', residual:'Residual Value',
+    usefulLife:'Useful Life (Years)', accumDep:'Accumulated Depreciation', nbv:'Net Book Value', status:'Status', active:'Active', disposed:'Disposed',
+    projTitle:'Depreciation Schedule (Projected)', month:'Month', depAmount:'Depreciation Amount', accumulated:'Accumulated',
+    actualTitle:'Actual Depreciation History (Posted)', period:'Period', amount:'Amount', journalRef:'Journal Ref', noActual:'No depreciation posted yet.',
+    dispose:'Dispose Asset', disposalDate:'Disposal Date', proceeds:'Disposal Proceeds (RM)', save:'Save', cancel:'Cancel',
+    notFound:'Asset not found.'
+  }
+  const {data: asset} = await sb.from('fixed_assets').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!asset) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+
+  const nbv = Number(asset.cost) - Number(asset.accumulated_depreciation||0)
+  const depreciableAmt = Number(asset.cost) - Number(asset.residual_value||0)
+  const monthly = depreciableAmt / Number(asset.useful_life_years) / 12
+  const totalMonths = Math.round(Number(asset.useful_life_years) * 12)
+  const purchaseDate = new Date(asset.purchase_date)
+  let accum = 0
+  const scheduleRows = []
+  for(let i=1;i<=totalMonths;i++) {
+    const monthDate = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth()+i, 1)
+    accum = Math.min(accum + monthly, depreciableAmt)
+    scheduleRows.push({ month: monthDate, amount: monthly, accum, nbv: Number(asset.cost)-accum })
+  }
+
+  const {data: runs} = await sb.from('depreciation_runs').select('period,amount,journal_entries(ref_no)').eq('asset_id',id).eq('tenant_id',APP.tenant.id).order('period')
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${asset.asset_no} — ${asset.name}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('accounting',{view:'fixed-assets'})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:800px;padding:20px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div><div style="color:var(--text-3);font-size:12px">${t.category}</div>${asset.category||'-'}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.purchaseDate}</div>${formatDate(asset.purchase_date)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.status}</div><span style="color:${asset.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${asset.status==='active'?t.active:t.disposed}</span></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.cost}</div>${formatRM(asset.cost)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.residual}</div>${formatRM(asset.residual_value||0)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.usefulLife}</div>${asset.useful_life_years}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.accumDep}</div>${formatRM(asset.accumulated_depreciation||0)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.nbv}</div><strong>${formatRM(nbv)}</strong></div>
+    </div>
+    ${asset.status==='active' ? `<div style="margin-top:16px"><button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_faShowDisposeForm()"><i class="ti ti-trash"></i> ${t.dispose}</button></div>
+    <div id="fa-dispose-form" style="display:none;margin-top:16px;padding:16px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group"><label class="form-label">${t.disposalDate}</label><input id="fa-disposal-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="form-group"><label class="form-label">${t.proceeds}</label><input id="fa-disposal-proceeds" type="number" step="0.01" class="form-input" value="0"></div>
+        <button class="btn btn-primary" onclick="_faDispose('${id}')">${t.save}</button>
+        <button class="btn btn-outline" onclick="document.getElementById('fa-dispose-form').style.display='none'">${t.cancel}</button>
+      </div>
+    </div>` : ''}
+  </div>
+
+  <div class="card" style="max-width:800px;margin-top:16px">
+    <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.projTitle}</div>
+    <div style="max-height:320px;overflow-y:auto"><table><thead><tr><th>${t.month}</th><th style="text-align:right">${t.depAmount}</th><th style="text-align:right">${t.accumulated}</th><th style="text-align:right">${t.nbv}</th></tr></thead>
+    <tbody>${scheduleRows.map(r=>`<tr><td>${r.month.toLocaleDateString('en-MY',{month:'short',year:'numeric'})}</td><td style="text-align:right">${formatRM(r.amount)}</td><td style="text-align:right">${formatRM(r.accum)}</td><td style="text-align:right">${formatRM(r.nbv)}</td></tr>`).join('')}</tbody></table></div>
+  </div>
+
+  <div class="card" style="max-width:800px;margin-top:16px">
+    <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.actualTitle}</div>
+    ${(!runs||runs.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noActual}</p></div>` :
+    `<table><thead><tr><th>${t.period}</th><th style="text-align:right">${t.amount}</th><th>${t.journalRef}</th></tr></thead>
+    <tbody>${runs.map(r=>`<tr><td>${new Date(r.period).toLocaleDateString('en-MY',{month:'short',year:'numeric'})}</td><td style="text-align:right">${formatRM(r.amount)}</td><td>${r.journal_entries?.ref_no||'-'}</td></tr>`).join('')}</tbody></table>`}
+  </div>`
+}
+
+function _faShowDisposeForm() {
+  const el = document.getElementById('fa-dispose-form')
+  if(el) el.style.display = 'block'
+}
+
+async function _faDispose(id) {
+  const isBm = APP.language==='bm'
+  const disposalDate = document.getElementById('fa-disposal-date').value
+  const proceeds = Number(document.getElementById('fa-disposal-proceeds').value||0)
+  const {error} = await sb.from('fixed_assets').update({ status:'disposed', disposal_date: disposalDate, disposal_proceeds: proceeds }).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('update','fixed_assets', id)
+  showToast(isBm?'Aset dilupuskan.':'Asset disposed.', 'success')
+  renderFADetail(id)
+}
+
+// ─── Fixed Assets: Run Monthly Depreciation ──────────────────────────────────
+function _faRunModalHtml() {
+  const t = APP.language==='bm' ? {
+    title:'Jalankan Susut Nilai Bulanan', period:'Tempoh', expenseAcc:'Akaun Perbelanjaan Susut Nilai',
+    accumAcc:'Akaun Susut Nilai Terkumpul (pilih akaun kontra-aset)', run:'Jalankan', cancel:'Batal'
+  } : {
+    title:'Run Monthly Depreciation', period:'Period', expenseAcc:'Depreciation Expense Account',
+    accumAcc:'Accumulated Depreciation Account (select the contra-asset account)', run:'Run', cancel:'Cancel'
+  }
+  const now = new Date()
+  const defaultPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+  return `<div class="modal-overlay" id="fa-run-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-box-header">${t.title}</div>
+      <div class="modal-box-body">
+        <div id="fa-run-err" class="auth-error" style="display:none"></div>
+        <div class="form-group"><label class="form-label">${t.period}</label><input id="fa-run-period" type="month" class="form-input" value="${defaultPeriod}"></div>
+        <div class="form-group"><label class="form-label">${t.expenseAcc}</label><select id="fa-run-expense-acc" class="form-select"><option value="">-</option></select></div>
+        <div class="form-group"><label class="form-label">${t.accumAcc}</label><select id="fa-run-accum-acc" class="form-select"><option value="">-</option></select></div>
+      </div>
+      <div class="modal-box-footer">
+        <button id="fa-run-btn" class="btn btn-primary" style="flex:1" onclick="_faRunDepreciation()"><i class="ti ti-calculator"></i> ${t.run}</button>
+        <button class="btn btn-outline" onclick="_faCloseRunModal()">${t.cancel}</button>
+      </div>
+    </div>
+  </div>`
+}
+
+async function _faOpenRunModal() {
+  const [{data: expAccounts}, {data: assetAccounts}] = await Promise.all([
+    sb.from('chart_of_accounts').select('id,code,name_en').eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('account_type','expense').order('code'),
+    sb.from('chart_of_accounts').select('id,code,name_en').eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('account_type','asset').order('code'),
+  ])
+  const expSel = document.getElementById('fa-run-expense-acc')
+  const accumSel = document.getElementById('fa-run-accum-acc')
+  if(expSel) expSel.innerHTML = '<option value="">-</option>' + (expAccounts||[]).map(a=>`<option value="${a.id}">${a.code} - ${a.name_en}</option>`).join('')
+  if(accumSel) accumSel.innerHTML = '<option value="">-</option>' + (assetAccounts||[]).map(a=>`<option value="${a.id}">${a.code} - ${a.name_en}</option>`).join('')
+  document.getElementById('fa-run-modal-overlay').classList.add('active')
+}
+
+function _faCloseRunModal() {
+  document.getElementById('fa-run-modal-overlay').classList.remove('active')
+}
+
+async function _faRunDepreciation() {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('fa-run-err')
+  errEl.style.display='none'
+  const periodStr = document.getElementById('fa-run-period').value
+  const expenseAccId = document.getElementById('fa-run-expense-acc').value
+  const accumAccId = document.getElementById('fa-run-accum-acc').value
+  if(!periodStr || !expenseAccId || !accumAccId) {
+    errEl.textContent = isBm?'Sila lengkapkan tempoh dan kedua-dua akaun.':'Please fill in the period and both accounts.'
+    errEl.style.display='block'
+    return
+  }
+  const [pYear, pMonth] = periodStr.split('-').map(Number)
+  const period = `${pYear}-${String(pMonth).padStart(2,'0')}-01`
+  const periodEnd = new Date(pYear, pMonth, 0).toISOString().slice(0,10)
+
+  const btn = document.getElementById('fa-run-btn')
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>'
+
+  const {data: candidates} = await sb.from('fixed_assets').select('id,cost,residual_value,useful_life_years,accumulated_depreciation')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('status','active').lte('purchase_date', periodEnd)
+  const {data: existingRuns} = await sb.from('depreciation_runs').select('asset_id').eq('tenant_id',APP.tenant.id).eq('period', period)
+  const alreadyRun = new Set((existingRuns||[]).map(r=>r.asset_id))
+
+  const toProcess = []
+  ;(candidates||[]).forEach(a => {
+    if(alreadyRun.has(a.id)) return
+    const depreciableAmt = Number(a.cost) - Number(a.residual_value||0)
+    const remaining = depreciableAmt - Number(a.accumulated_depreciation||0)
+    if(remaining <= 0) return
+    const monthly = depreciableAmt / Number(a.useful_life_years) / 12
+    const amount = Math.round(Math.min(monthly, remaining) * 100) / 100
+    if(amount <= 0) return
+    toProcess.push({ asset: a, amount })
+  })
+
+  if(toProcess.length === 0) {
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-calculator"></i> '+(isBm?'Jalankan':'Run')
+    _faCloseRunModal()
+    const summary = document.getElementById('fa-run-summary')
+    if(summary) summary.innerHTML = `<div class="card" style="padding:16px;margin-bottom:16px;color:var(--text-3)">${isBm?'Tiada aset untuk diproses bagi tempoh ini (semua sudah diproses atau tiada aset aktif).':'No assets to process for this period (all already processed or no active assets).'}</div>`
+    return
+  }
+
+  const totalAmount = toProcess.reduce((s,p)=>s+p.amount,0)
+
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).then(r=>r, ()=>({data:null}))
+  const entryPayload = {
+    tenant_id: APP.tenant.id,
+    ref_no: refData || await _genFallbackRefNo('journal_entries','ref_no','JNL'),
+    entry_date: periodEnd,
+    description: (isBm?'Susut Nilai Bulanan - ':'Monthly Depreciation - ')+periodStr,
+    entry_type: 'depreciation',
+    created_by: APP.user.id,
+  }
+  const {data: entry, error: entryErr} = await sb.from('journal_entries').insert(entryPayload).select('id,ref_no').single()
+  if(entryErr) {
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-calculator"></i> '+(isBm?'Jalankan':'Run')
+    errEl.textContent = 'Error: '+entryErr.message; errEl.style.display='block'
+    return
+  }
+
+  const linesPayload = [
+    { tenant_id: APP.tenant.id, entry_id: entry.id, account_id: expenseAccId, line_no: 1, debit_amt: totalAmount, credit_amt: 0 },
+    { tenant_id: APP.tenant.id, entry_id: entry.id, account_id: accumAccId, line_no: 2, debit_amt: 0, credit_amt: totalAmount },
+  ]
+  await sb.from('journal_lines').insert(linesPayload)
+
+  const runsPayload = toProcess.map(p => ({ tenant_id: APP.tenant.id, asset_id: p.asset.id, period, amount: p.amount, journal_entry_id: entry.id }))
+  await sb.from('depreciation_runs').insert(runsPayload)
+
+  for(const p of toProcess) {
+    const newAccum = Number(p.asset.accumulated_depreciation||0) + p.amount
+    await sb.from('fixed_assets').update({ accumulated_depreciation: newAccum }).eq('id', p.asset.id).eq('tenant_id',APP.tenant.id)
+  }
+
+  auditLog('create','journal_entries', entry.id)
+  btn.disabled = false; btn.innerHTML = '<i class="ti ti-calculator"></i> '+(isBm?'Jalankan':'Run')
+  _faCloseRunModal()
+  showToast(isBm?'Susut nilai berjaya di-post!':'Depreciation posted successfully!', 'success')
+
+  const summary = document.getElementById('fa-run-summary')
+  if(summary) summary.innerHTML = `<div class="card" style="padding:16px;margin-bottom:16px;color:var(--success)">
+    ${isBm ? `${toProcess.length} aset diproses, jumlah ${formatRM(totalAmount)} di-post ke Journal ${entry.ref_no}` : `${toProcess.length} assets processed, total ${formatRM(totalAmount)} posted to Journal ${entry.ref_no}`}
+  </div>`
+  await _faLoadList()
 }
 
 // ─── Chart of Accounts: List ──────────────────────────────────────────────────
