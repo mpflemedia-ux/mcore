@@ -1196,39 +1196,69 @@ async function doLogout() {
   AI_CHAT.messages = []
   AI_CHAT.open = false
   localStorage.removeItem('nexerp_last_page')
+  _resetSessionLoadGuard()
   showAuthPage()
   showToast('You have been signed out.','info')
 }
 
 // SESSION
+// loadUserSession() has multiple legitimate entry points that can all fire for
+// the SAME sign-in (the onAuthStateChange listener, the explicit getSession()
+// check in init(), and doLogin()'s/hash-token flows' own direct call — signing
+// in or restoring a session triggers the listener as a side effect too). Left
+// un-deduplicated, two concurrent calls each do their own profile fetch; the
+// second one is harmless to the DOM (showShell()'s "already active" guard
+// blocks a second render) but it still overwrites the shared APP.language/
+// APP.user/APP.tenant state on its own timeline. Because openPage() defers the
+// actual page render via a 150ms setTimeout, a second call resolving in that
+// window can flip APP.language AFTER the sidebar already rendered with the
+// correct value but BEFORE the deferred dashboard render reads it — sidebar
+// and dashboard content end up in different languages. Coalescing concurrent/
+// duplicate calls for the same user into one in-flight promise removes the
+// race entirely instead of papering over the symptom.
+let _sessionLoadPromise = null
+let _sessionLoadUserId = null
+
 async function loadUserSession(user) {
   if(!user){showAuthPage();return}
-  APP.user.id=user.id
-  APP.user.email=user.email
-  const {data:profile}=await sb.from('user_profiles').select('*,tenants(*)').eq('id',user.id).single()
-  // New user — no profile yet, redirect to onboarding
-  if(!profile){
-    APP.user.name=user.email.split('@')[0]
-    showOnboarding()
-    return
-  }
-  APP.user.name=profile.full_name
-  APP.user.role=profile.role
-  APP.language=profile.language||'en'
-  APP.theme = localStorage.getItem('nexerp_theme') || profile.theme || 'light'
-  applyTheme(APP.theme)
-  if(profile.tenants){
-    APP.tenant.id=profile.tenants.id
-    APP.tenant.code=profile.tenants.code
-    APP.tenant.name=profile.tenants.name
-    APP.tenant.config=profile.tenants.config||{}
-    APP.tenantConfig.roles=APP.tenant.config.roles||{}
-    if(!profile.tenants.onboarding_completed) {
+  if(_sessionLoadPromise && _sessionLoadUserId === user.id) return _sessionLoadPromise
+  _sessionLoadUserId = user.id
+  _sessionLoadPromise = (async () => {
+    APP.user.id=user.id
+    APP.user.email=user.email
+    const {data:profile}=await sb.from('user_profiles').select('*,tenants(*)').eq('id',user.id).single()
+    // New user — no profile yet, redirect to onboarding
+    if(!profile){
+      APP.user.name=user.email.split('@')[0]
       showOnboarding()
       return
     }
-  }
-  showShell()
+    APP.user.name=profile.full_name
+    APP.user.role=profile.role
+    APP.language=profile.language||'en'
+    APP.theme = localStorage.getItem('nexerp_theme') || profile.theme || 'light'
+    applyTheme(APP.theme)
+    if(profile.tenants){
+      APP.tenant.id=profile.tenants.id
+      APP.tenant.code=profile.tenants.code
+      APP.tenant.name=profile.tenants.name
+      APP.tenant.config=profile.tenants.config||{}
+      APP.tenantConfig.roles=APP.tenant.config.roles||{}
+      if(!profile.tenants.onboarding_completed) {
+        showOnboarding()
+        return
+      }
+    }
+    showShell()
+  })()
+  return _sessionLoadPromise
+}
+
+// Clears the de-dupe guard so a subsequent sign-in (same tab, no page reload)
+// is allowed to run loadUserSession() fresh instead of being coalesced away.
+function _resetSessionLoadGuard() {
+  _sessionLoadPromise = null
+  _sessionLoadUserId = null
 }
 
 // SHELL UI
@@ -7920,8 +7950,8 @@ async function init() {
   sb.auth.onAuthStateChange(async(event,session)=>{
     console.log('Auth event:', event, session?.user?.email)
     if(event==='SIGNED_IN'&&session?.user) await loadUserSession(session.user)
-    else if(event==='SIGNED_OUT') showAuthPage()
-    else if(event==='TOKEN_REFRESHED'&&!session) { await sb.auth.signOut(); showAuthPage() }
+    else if(event==='SIGNED_OUT') { _resetSessionLoadGuard(); showAuthPage() }
+    else if(event==='TOKEN_REFRESHED'&&!session) { await sb.auth.signOut(); _resetSessionLoadGuard(); showAuthPage() }
   })
 
   // Check for email confirmation token in URL hash
