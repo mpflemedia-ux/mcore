@@ -475,7 +475,7 @@
 </section>
 
 <script>
-let currentLang = 'en';
+let currentLang = localStorage.getItem('phion_lang') === 'ms' ? 'ms' : 'en';
 // ---------- data ----------
 const icons = {
   book: '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5V4.5Z" stroke-width="1.5" stroke-linejoin="round"/><path d="M4 19V4.5" stroke-width="1.5"/>',
@@ -804,8 +804,11 @@ const I18N = {
   },
 };
 
+applyLang(currentLang);
+
 function applyLang(lang){
   currentLang = lang;
+  localStorage.setItem('phion_lang', lang);
   document.documentElement.lang = lang;
   document.querySelectorAll('[data-i18n]').forEach(el=>{
     const key = el.dataset.i18n;
