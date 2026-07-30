@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root {
   --primary:#0E7490;--primary-dark:#0C6178;--primary-light:#E6FAFD;--on-primary:#fff;
@@ -788,6 +789,126 @@ function showToast(msg,type='info') {
 }
 
 function auditLog(action,table,id) { sb.rpc('log_audit',{p_action:action,p_table_name:table,p_record_id:String(id)}).then(()=>{}, ()=>{}) }
+
+// ---------- Barcode Scanner (shared across POS + Inventory) ----------
+let _scannerHtml5Qrcode = null
+let _scannerOnSuccess = null
+
+function _scannerEnsureModal() {
+  if(document.getElementById('barcode-scanner-overlay')) return
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { title:'Imbas Kod Bar', cancel:'Batal', manualLabel:'Atau taip kod secara manual', manualPh:'Taip kod di sini...', use:'Guna', upload:'Muat Naik Imej' }
+    : { title:'Scan Barcode', cancel:'Cancel', manualLabel:'Or type the code manually', manualPh:'Type code here...', use:'Use', upload:'Upload Image' }
+  const wrap = document.createElement('div')
+  wrap.innerHTML = `
+  <div class="modal-overlay" id="barcode-scanner-overlay">
+    <div class="modal-box" style="max-width:420px">
+      <div class="modal-box-header" id="scanner-title">${t.title}</div>
+      <div class="modal-box-body">
+        <div id="scanner-region" style="width:100%;min-height:250px;background:#000;border-radius:8px;overflow:hidden"></div>
+        <div id="scanner-error" style="display:none;margin-top:12px;color:var(--danger);font-size:13px"></div>
+        <div style="margin-top:12px;text-align:center">
+          <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px" id="scanner-upload-label">
+            <i class="ti ti-upload"></i> <span id="scanner-upload-text">${t.upload}</span>
+            <input type="file" accept="image/*" id="scanner-file-input" style="display:none" onchange="_scannerFileSelected(event)">
+          </label>
+        </div>
+        <div class="form-group" style="margin-top:12px;margin-bottom:0">
+          <label class="form-label" id="scanner-manual-label">${t.manualLabel}</label>
+          <div style="display:flex;gap:8px">
+            <input id="scanner-manual-input" type="text" class="form-input" placeholder="${t.manualPh}" onkeydown="if(event.key==='Enter')_scannerManualSubmit()">
+            <button class="btn btn-primary" id="scanner-manual-btn" onclick="_scannerManualSubmit()">${t.use}</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" style="width:100%" id="scanner-cancel-btn" onclick="closeBarcodeScanner()">${t.cancel}</button>
+      </div>
+    </div>
+  </div>`
+  document.body.appendChild(wrap.firstElementChild)
+}
+
+function _scannerShowError(msg) {
+  const errEl = document.getElementById('scanner-error')
+  const regionEl = document.getElementById('scanner-region')
+  if(errEl) { errEl.textContent = msg; errEl.style.display = 'block' }
+  if(regionEl) regionEl.style.display = 'none'
+}
+
+function openBarcodeScanner(onScanSuccess) {
+  const isBm = APP.language==='bm'
+  _scannerEnsureModal()
+  _scannerOnSuccess = onScanSuccess
+
+  const overlay = document.getElementById('barcode-scanner-overlay')
+  const errEl = document.getElementById('scanner-error')
+  const regionEl = document.getElementById('scanner-region')
+  const manualInput = document.getElementById('scanner-manual-input')
+  errEl.style.display = 'none'
+  regionEl.style.display = 'block'
+  regionEl.innerHTML = ''
+  if(manualInput) manualInput.value = ''
+  overlay.classList.add('active')
+
+  if(typeof Html5Qrcode === 'undefined') {
+    _scannerShowError(isBm ? 'Kamera tidak tersedia, sila taip manual.' : 'Camera not available, please type manually.')
+    return
+  }
+
+  _scannerHtml5Qrcode = new Html5Qrcode('scanner-region')
+  _scannerHtml5Qrcode.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: 220 },
+    (decodedText) => { _scannerHandleSuccess(decodedText) },
+    () => { /* per-frame scan miss — ignore, keep scanning */ }
+  ).catch(err => {
+    console.error('Barcode scanner start error:', err)
+    _scannerShowError(isBm ? 'Kamera tidak tersedia, sila taip manual.' : 'Camera not available, please type manually.')
+  })
+}
+
+function _scannerFileSelected(event) {
+  const isBm = APP.language==='bm'
+  const file = event.target.files && event.target.files[0]
+  event.target.value = ''
+  if(!file) return
+  if(typeof Html5Qrcode === 'undefined') {
+    _scannerShowError(isBm ? 'Kamera tidak tersedia, sila taip manual.' : 'Camera not available, please type manually.')
+    return
+  }
+  const scanner = _scannerHtml5Qrcode || new Html5Qrcode('scanner-region')
+  scanner.scanFile(file, true).then(decodedText => {
+    _scannerHandleSuccess(decodedText)
+  }).catch(err => {
+    console.error('Barcode file scan error:', err)
+    showToast(isBm ? 'Tidak dapat imbas imej ini.' : 'Could not scan this image.', 'error')
+  })
+}
+
+function _scannerManualSubmit() {
+  const input = document.getElementById('scanner-manual-input')
+  const val = input ? input.value.trim() : ''
+  if(!val) return
+  _scannerHandleSuccess(val)
+}
+
+function _scannerHandleSuccess(decodedText) {
+  const cb = _scannerOnSuccess
+  closeBarcodeScanner()
+  if(cb) cb(decodedText)
+}
+
+function closeBarcodeScanner() {
+  const overlay = document.getElementById('barcode-scanner-overlay')
+  if(overlay) overlay.classList.remove('active')
+  if(_scannerHtml5Qrcode) {
+    const instance = _scannerHtml5Qrcode
+    _scannerHtml5Qrcode = null
+    instance.stop().then(()=>instance.clear()).catch(()=>{})
+  }
+}
 
 // Fallback ref-no generator used only when the next_ref_no() RPC returns null/fails
 // (eg. a doc_type it doesn't recognize yet). Looks at this tenant's own existing rows
@@ -3444,11 +3565,11 @@ async function renderProductList() {
   const t = APP.language==='bm' ? {
     title:'Inventori', add:'Tambah Produk', search:'Cari SKU atau nama produk...',
     sku:'SKU', name:'Nama Produk', price:'Harga Jual', cost:'Kos', stock:'Stok', noData:'Tiada produk lagi',
-    edit:'Edit', del:'Padam', low:'Stok Rendah'
+    edit:'Edit', del:'Padam', low:'Stok Rendah', scan:'Imbas'
   } : {
     title:'Inventory', add:'Add Product', search:'Search SKU or product name...',
     sku:'SKU', name:'Product Name', price:'Sell Price', cost:'Cost', stock:'Stock', noData:'No products yet',
-    edit:'Edit', del:'Delete', low:'Low Stock'
+    edit:'Edit', del:'Delete', low:'Low Stock', scan:'Scan'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
@@ -3456,10 +3577,11 @@ async function renderProductList() {
   ${_invTabs('products')}
   <div id="inv-lowstock-wrap" style="margin-bottom:16px"></div>
   <div class="card" style="margin-bottom:0">
-    <div style="padding:16px;border-bottom:1px solid var(--border)">
-      <div class="input-group"><i class="ti ti-search input-icon"></i>
+    <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+      <div class="input-group" style="flex:1"><i class="ti ti-search input-icon"></i>
         <input id="inv-search" type="text" class="form-input" placeholder="${t.search}" value="${_invState.search}" oninput="_invSearch(this.value)">
       </div>
+      <button class="btn btn-outline" onclick="_invScanBarcode()"><i class="ti ti-barcode"></i> ${t.scan}</button>
     </div>
     <div id="inv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
   </div>
@@ -3483,13 +3605,22 @@ async function renderProductList() {
 let _invSearchTimer = null
 function _invSearch(val) { _invState.search = val; clearTimeout(_invSearchTimer); _invSearchTimer = setTimeout(_invLoad, 350) }
 
+function _invScanBarcode() {
+  openBarcodeScanner((code) => {
+    _invState.search = code
+    const input = document.getElementById('inv-search')
+    if(input) input.value = code
+    _invLoad()
+  })
+}
+
 async function _invLoad() {
   const t = APP.language==='bm' ? { sku:'SKU', name:'Nama Produk', price:'Harga Jual', cost:'Kos', stock:'Stok', noData:'Tiada produk lagi', noResult:'Tiada hasil', edit:'Edit', del:'Padam' }
     : { sku:'SKU', name:'Product Name', price:'Sell Price', cost:'Cost', stock:'Stock', noData:'No products yet', noResult:'No results', edit:'Edit', del:'Delete' }
   const wrap = document.getElementById('inv-table-wrap')
   let q = sb.from('products').select('id,code,name_en,name_bm,unit_price,unit_cost,stock_qty,unit,reorder_point')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name_en')
-  if(_invState.search) { const s=_invState.search.trim(); q = q.or(`code.ilike.%${s}%,name_en.ilike.%${s}%`) }
+  if(_invState.search) { const s=_invState.search.trim(); q = q.or(`code.ilike.%${s}%,name_en.ilike.%${s}%,barcode.ilike.%${s}%`) }
   const {data, error} = await q
   _invState.data = data || []
   if(!wrap) return
@@ -3596,12 +3727,12 @@ async function renderProductForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Tambah Produk', editTitle:'Edit Produk', back:'Inventori',
     sku:'SKU', name:'Nama Produk *', nameBm:'Nama Produk (BM, pilihan)', price:'Harga Jual (RM) *', cost:'Kos (RM)', stock:'Kuantiti Stok', unit:'Unit',
-    reorderPoint:'Titik Pesan Semula (pilihan, lalai 5)',
+    reorderPoint:'Titik Pesan Semula (pilihan, lalai 5)', barcode:'Kod Bar (pilihan)',
     save:'Simpan', cancel:'Batal', required:'Nama dan harga jual diperlukan.'
   } : {
     addTitle:'Add Product', editTitle:'Edit Product', back:'Inventory',
     sku:'SKU', name:'Product Name *', nameBm:'Product Name (BM, optional)', price:'Sell Price (RM) *', cost:'Cost (RM)', stock:'Stock Quantity', unit:'Unit',
-    reorderPoint:'Reorder Point (optional, default 5)',
+    reorderPoint:'Reorder Point (optional, default 5)', barcode:'Barcode (optional)',
     save:'Save', cancel:'Cancel', required:'Name and sell price are required.'
   }
   let prod = { unit:'pcs' }
@@ -3614,6 +3745,7 @@ async function renderProductForm(id=null) {
     <div id="pf-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.sku}</label><input id="pf-sku" type="text" class="form-input" value="${prod.code||''}"></div>
+      <div class="form-group"><label class="form-label">${t.barcode}</label><input id="pf-barcode" type="text" class="form-input" value="${prod.barcode||''}"></div>
       <div class="form-group"><label class="form-label">${t.unit}</label><input id="pf-unit" type="text" class="form-input" value="${prod.unit||'pcs'}"></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="pf-name" type="text" class="form-input" value="${prod.name_en||''}"></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.nameBm}</label><input id="pf-name-bm" type="text" class="form-input" value="${prod.name_bm||''}"></div>
@@ -3640,6 +3772,7 @@ async function _prodSave(id) {
   const payload = {
     tenant_id: APP.tenant.id, code: document.getElementById('pf-sku').value.trim()||null, name_en: name,
     name_bm: document.getElementById('pf-name-bm').value.trim()||null,
+    barcode: document.getElementById('pf-barcode').value.trim()||null,
     unit_price: Number(price), unit_cost: Number(document.getElementById('pf-cost').value||0),
     stock_qty: Number(document.getElementById('pf-stock').value||0), unit: document.getElementById('pf-unit').value.trim()||'pcs',
     reorder_point: reorderPointRaw.trim()==='' ? 5 : Number(reorderPointRaw),
@@ -5543,13 +5676,13 @@ async function renderPOS() {
     total:'Jumlah Besar', checkout:'Bayar', clear:'Kosongkan', method:'Kaedah Bayaran',
     confirm:'Sahkan Pembayaran', cancel:'Batal', noProducts:'Tiada produk',
     shiftOpen:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift',
-    notes:'Nota (pilihan)'
+    notes:'Nota (pilihan)', scan:'Imbas', notFound:'Produk tidak dijumpai untuk kod: '
   } : {
     title:'Point of Sale', search:'Search products...', cart:'Cart', empty:'Cart is empty',
     total:'Grand Total', checkout:'Checkout', clear:'Clear', method:'Payment Method',
     confirm:'Confirm Payment', cancel:'Cancel', noProducts:'No products',
     shiftOpen:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift',
-    notes:'Notes (optional)'
+    notes:'Notes (optional)', scan:'Scan', notFound:'Product not found for code: '
   }
   const {data} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = data || []
@@ -5563,8 +5696,11 @@ async function renderPOS() {
   <div id="pos-other-shifts" style="margin-bottom:16px"></div>
   <div style="display:flex;gap:16px;align-items:flex-start">
     <div class="card" style="flex:1.4;padding:16px">
-      <div class="input-group" style="margin-bottom:12px"><i class="ti ti-search input-icon"></i>
-        <input id="pos-search" type="text" class="form-input" placeholder="${t.search}" oninput="_posFilterProducts(this.value)">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div class="input-group" style="flex:1"><i class="ti ti-search input-icon"></i>
+          <input id="pos-search" type="text" class="form-input" placeholder="${t.search}" oninput="_posFilterProducts(this.value)">
+        </div>
+        <button class="btn btn-outline" onclick="_posScanBarcode()"><i class="ti ti-barcode"></i> ${t.scan}</button>
       </div>
       <div id="pos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:calc(100vh - 260px);overflow-y:auto"></div>
     </div>
@@ -5916,6 +6052,19 @@ function _posAddToCart(productId) {
   if(existing) existing.qty++
   else _posCart.push({product_id:p.id, name:prodName(p), unit_price:p.unit_price, qty:1})
   _posRenderCart()
+}
+
+function _posScanBarcode() {
+  const isBm = APP.language==='bm'
+  openBarcodeScanner(async (code) => {
+    const {data, error} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,barcode')
+      .eq('tenant_id',APP.tenant.id).is('deleted_at',null).or(`barcode.eq.${code},code.eq.${code}`).limit(1)
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    const product = data && data[0]
+    if(!product) { showToast((isBm?'Produk tidak dijumpai untuk kod: ':'Product not found for code: ')+code, 'error'); return }
+    if(!_posProducts.find(p=>p.id===product.id)) _posProducts.push(product)
+    _posAddToCart(product.id)
+  })
 }
 
 function _posRenderCart() {
