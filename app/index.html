@@ -725,6 +725,7 @@ const NAV_ITEMS = [
   { id:'pos',        icon:'ti-device-desktop',    label_en:'POS',         label_bm:'POS',          module:'pos' },
   { id:'inventory',  icon:'ti-box',               label_en:'Inventory',   label_bm:'Inventori',    module:'inventory' },
   { id:'logistics',  icon:'ti-truck-delivery',    label_en:'Logistics',   label_bm:'Logistik',     module:'logistics' },
+  { id:'purchasing', icon:'ti-shopping-cart',     label_en:'Purchasing',  label_bm:'Perolehan',    module:'purchasing' },
   { id:'production', icon:'ti-tools',             label_en:'Production',  label_bm:'Pengeluaran',  module:'production' },
   { section:'People' },
   { id:'hr',         icon:'ti-id-badge-2',        label_en:'HR & Payroll', label_bm:'SDM & Gaji',   module:'hr' },
@@ -762,6 +763,7 @@ function openPage(page, params={}) {
       case 'pos':        renderPOS(); break
       case 'inventory':  renderInventory(params); break
       case 'logistics':  renderLogistics(params); break
+      case 'purchasing': renderPurchasing(params); break
       case 'production': renderProduction(params); break
       case 'hr':         renderHR(params); break
       case 'accounting': renderAccounting(params); break
@@ -1846,6 +1848,7 @@ const RP_MODULES = [
   { id:'inventory',  en:'Inventory', bm:'Inventori' },
   { id:'accounting', en:'Accounting',bm:'Perakaunan' },
   { id:'logistics',  en:'Logistics', bm:'Logistik' },
+  { id:'purchasing', en:'Purchasing',bm:'Perolehan' },
   { id:'production', en:'Production',bm:'Pengeluaran' },
   { id:'hr',         en:'HR',        bm:'Sumber Manusia' },
 ]
@@ -4512,6 +4515,717 @@ async function _doLoadSuggestion(id) {
     if(out) out.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
   }
   if(btn) btn.disabled = false
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PURCHASING MODULE (Suppliers, Purchase Orders, GRN, Supplier Bills — pure
+// tracking, NOT integrated with Chart of Accounts/journal_entries)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function renderPurchasing(params={}) {
+  if(params.view==='suppliers') { renderSuppliers(); return }
+  if(params.view==='supplier-form') { renderSupplierForm(params.id||null); return }
+  if(params.view==='po-form') { renderPOForm(params.id||null); return }
+  if(params.view==='po-detail') { renderPODetail(params.id); return }
+  if(params.view==='grn-form') { renderGRNForm(params.poId); return }
+  if(params.view==='bills') { renderSupplierBills(); return }
+  if(params.view==='bill-form') { renderSupplierBillForm(params.id||null); return }
+  if(params.view==='bill-detail') { renderSupplierBillDetail(params.id); return }
+  renderPOList()
+}
+
+function _purchTabs(active) {
+  const t = APP.language==='bm' ? { po:'Pesanan Belian', suppliers:'Pembekal', bills:'Bil Pembekal' }
+    : { po:'Purchase Orders', suppliers:'Suppliers', bills:'Supplier Bills' }
+  return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
+    <button class="btn btn-sm ${active==='po'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('purchasing',{})"><i class="ti ti-shopping-cart"></i> ${t.po}</button>
+    <button class="btn btn-sm ${active==='suppliers'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('purchasing',{view:'suppliers'})"><i class="ti ti-truck"></i> ${t.suppliers}</button>
+    <button class="btn btn-sm ${active==='bills'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('purchasing',{view:'bills'})"><i class="ti ti-receipt"></i> ${t.bills}</button>
+  </div>`
+}
+
+// ─── Suppliers ──────────────────────────────────────────────────────────────
+let _suppState = { search:'', data:[] }
+
+async function renderSuppliers() {
+  const t = APP.language==='bm' ? {
+    title:'Pembekal', add:'Tambah Pembekal', search:'Cari nama pembekal...'
+  } : {
+    title:'Suppliers', add:'Add Supplier', search:'Search supplier name...'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'supplier-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
+  ${_purchTabs('suppliers')}
+  <div class="card" style="margin-bottom:0">
+    <div style="padding:16px;border-bottom:1px solid var(--border)">
+      <div class="input-group"><i class="ti ti-search input-icon"></i>
+        <input id="supp-search" type="text" class="form-input" placeholder="${t.search}" value="${_suppState.search}" oninput="_suppSearch(this.value)">
+      </div>
+    </div>
+    <div id="supp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>`
+  await _suppLoad()
+}
+
+let _suppSearchTimer = null
+function _suppSearch(val) { _suppState.search = val; clearTimeout(_suppSearchTimer); _suppSearchTimer = setTimeout(_suppLoad, 350) }
+
+async function _suppLoad() {
+  const t = APP.language==='bm' ? { name:'Nama', phone:'Telefon', email:'Emel', noData:'Tiada pembekal lagi', noResult:'Tiada hasil carian' }
+    : { name:'Name', phone:'Phone', email:'Email', noData:'No suppliers yet', noResult:'No results found' }
+  const wrap = document.getElementById('supp-table-wrap')
+  let q = sb.from('suppliers').select('id,name,phone,email').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  if(_suppState.search) { const s=_suppState.search.trim(); q = q.ilike('name', `%${s}%`) }
+  const {data, error} = await q
+  _suppState.data = data || []
+  if(!wrap) return
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_suppState.search?t.noResult:t.noData}</p></div>`; return }
+  wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.phone}</th><th>${t.email}</th><th style="width:100px"></th></tr></thead>
+  <tbody>${data.map(s=>`<tr>
+    <td><strong>${_aiEscapeHtml(s.name)}</strong></td>
+    <td>${s.phone||'-'}</td>
+    <td>${s.email||'-'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('purchasing',{view:'supplier-form',id:'${s.id}'})"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_suppDelete('${s.id}','${s.name.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function _suppDelete(id, name) {
+  const isBm = APP.language==='bm'
+  if(!confirm((isBm?'Padam pembekal ':'Delete supplier ')+`"${name}"?`)) return
+  const {error} = await sb.from('suppliers').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('delete','suppliers', id)
+  showToast(isBm?'Pembekal dipadam':'Supplier deleted', 'success')
+  _suppLoad()
+}
+
+async function renderSupplierForm(id=null) {
+  const t = APP.language==='bm' ? {
+    addTitle:'Tambah Pembekal', editTitle:'Edit Pembekal', back:'Pembekal',
+    name:'Nama *', phone:'Telefon', email:'Emel', address:'Alamat',
+    save:'Simpan', cancel:'Batal', required:'Nama diperlukan.'
+  } : {
+    addTitle:'Add Supplier', editTitle:'Edit Supplier', back:'Suppliers',
+    name:'Name *', phone:'Phone', email:'Email', address:'Address',
+    save:'Save', cancel:'Cancel', required:'Name is required.'
+  }
+  let supp = {}
+  if(id) { const {data} = await sb.from('suppliers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(); if(data) supp = data }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'suppliers'})">← ${t.back}</div></div></div>
+  <div class="card" style="max-width:600px">
+    <div id="supp-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="sf-name" type="text" class="form-input" value="${supp.name?_aiEscapeHtml(supp.name):''}"></div>
+      <div class="form-group"><label class="form-label">${t.phone}</label><input id="sf-phone" type="text" class="form-input" value="${supp.phone||''}" placeholder="+601X-XXXXXXX"></div>
+      <div class="form-group"><label class="form-label">${t.email}</label><input id="sf-email" type="email" class="form-input" value="${supp.email||''}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.address}</label><textarea id="sf-address" class="form-input" rows="2">${supp.address||''}</textarea></div>
+    </div>
+    <div style="padding:0 20px 20px;display:flex;gap:12px">
+      <button id="sf-save" class="btn btn-primary" onclick="_suppSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('purchasing',{view:'suppliers'})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _suppSave(id) {
+  const isBm = APP.language==='bm'
+  const name = document.getElementById('sf-name').value.trim()
+  const errEl = document.getElementById('supp-form-err')
+  errEl.style.display='none'
+  if(!name) { errEl.textContent = isBm?'Nama diperlukan.':'Name is required.'; errEl.style.display='block'; return }
+  const payload = {
+    tenant_id: APP.tenant.id, name,
+    phone: document.getElementById('sf-phone').value.trim()||null,
+    email: document.getElementById('sf-email').value.trim()||null,
+    address: document.getElementById('sf-address').value.trim()||null,
+  }
+  let error
+  if(id) { ({error} = await sb.from('suppliers').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)) }
+  else { ({error} = await sb.from('suppliers').insert(payload)) }
+  if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+  auditLog(id?'update':'create','suppliers', id||null)
+  showToast(isBm?'Pembekal disimpan!':'Supplier saved!', 'success')
+  openPage('purchasing',{view:'suppliers'})
+}
+
+// ─── Purchase Orders: List ──────────────────────────────────────────────────
+async function renderPOList() {
+  const t = APP.language==='bm' ? {
+    title:'Pesanan Belian', add:'PO Baru', poNo:'No. PO', supplier:'Pembekal', date:'Tarikh', status:'Status', total:'Jumlah',
+    draft:'Draf', sent:'Dihantar', partial:'Sebahagian', received:'Diterima', cancelled:'Dibatalkan', noData:'Tiada PO lagi'
+  } : {
+    title:'Purchase Orders', add:'New PO', poNo:'PO No.', supplier:'Supplier', date:'Date', status:'Status', total:'Total',
+    draft:'Draft', sent:'Sent', partial:'Partial', received:'Received', cancelled:'Cancelled', noData:'No purchase orders yet'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'po-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
+  ${_purchTabs('po')}
+  <div class="card"><div id="po-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('po-list-wrap')
+  const {data, error} = await sb.from('purchase_orders').select('id,po_no,order_date,status,total,suppliers(name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('order_date',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const statusColor = s => s==='received'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--danger)':'var(--text-3)'
+  const statusLabel = s => t[s]||s
+  wrap.innerHTML = `<table><thead><tr><th>${t.poNo}</th><th>${t.supplier}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(p=>`<tr onclick="openPage('purchasing',{view:'po-detail',id:'${p.id}'})" style="cursor:pointer">
+    <td><strong>${p.po_no}</strong></td><td>${p.suppliers?.name||'-'}</td><td>${formatDate(p.order_date)}</td>
+    <td style="text-align:right">${formatRM(p.total)}</td>
+    <td><span style="color:${statusColor(p.status)};font-weight:600">${statusLabel(p.status)}</span></td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+// ─── Purchase Orders: Form (line items — dedicated _po* state, separate from
+// the shared _sl* state used by sales invoice/quotation) ───────────────────
+let _poItems = []
+let _poProducts = []
+async function _poLoadProducts() {
+  const {data} = await sb.from('products').select('id,code,name_en,name_bm,unit_cost').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
+  _poProducts = data || []
+}
+async function _poLoadSuppliers() {
+  const {data} = await sb.from('suppliers').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name')
+  return data || []
+}
+function _poAddItem() { _poItems.push({product_id:'',description:'',qty:1,unit_cost:0}); _poRenderItems() }
+function _poRemoveItem(i) { _poItems.splice(i,1); _poRenderItems() }
+function _poPickProduct(i, productId) {
+  const p = _poProducts.find(x=>x.id===productId)
+  _poItems[i].product_id = productId
+  if(p) { _poItems[i].description = prodName(p); _poItems[i].unit_cost = p.unit_cost }
+  _poRenderItems()
+}
+function _poRenderItems() {
+  const body = document.getElementById('po-items-body')
+  if(!body) return
+  body.innerHTML = _poItems.map((it,i) => `<tr>
+    <td style="min-width:160px">
+      <select class="form-select" onchange="_poPickProduct(${i},this.value)">
+        <option value="">-- ${APP.language==='bm'?'Tersendiri':'Custom'} --</option>
+        ${_poProducts.map(p=>`<option value="${p.id}" ${it.product_id===p.id?'selected':''}>${prodName(p)}</option>`).join('')}
+      </select>
+    </td>
+    <td><input type="text" class="form-input" value="${it.description||''}" oninput="_poItems[${i}].description=this.value"></td>
+    <td style="width:80px"><input type="number" class="form-input" style="text-align:right" value="${it.qty}" oninput="_poItems[${i}].qty=this.value;_poUpdateTotal()"></td>
+    <td style="width:110px"><input type="number" step="0.01" class="form-input" style="text-align:right" value="${it.unit_cost}" oninput="_poItems[${i}].unit_cost=this.value;_poUpdateTotal()"></td>
+    <td style="width:110px;text-align:right">${formatRM(Number(it.qty||0)*Number(it.unit_cost||0))}</td>
+    <td style="width:36px"><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_poRemoveItem(${i})"><i class="ti ti-x"></i></button></td>
+  </tr>`).join('')
+  _poUpdateTotal()
+}
+function _poUpdateTotal() {
+  const label = APP.language==='bm' ? 'Jumlah Besar' : 'Grand Total'
+  const total = _poItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_cost||0),0)
+  const el = document.getElementById('po-grand-total')
+  if(el) el.textContent = `${label}: ${formatRM(total)}`
+  return total
+}
+function _poItemsTableHead() {
+  const t = APP.language==='bm' ? { product:'Produk', desc:'Keterangan', qty:'Kuantiti', cost:'Kos Unit', amount:'Jumlah' }
+    : { product:'Product', desc:'Description', qty:'Qty', cost:'Unit Cost', amount:'Amount' }
+  return `<thead><tr><th>${t.product}</th><th>${t.desc}</th><th>${t.qty}</th><th>${t.cost}</th><th>${t.amount}</th><th></th></tr></thead>`
+}
+
+async function renderPOForm(id=null) {
+  const t = APP.language==='bm' ? {
+    addTitle:'PO Baru', editTitle:'Edit PO', back:'Pesanan Belian',
+    supplier:'Pembekal *', orderDate:'Tarikh Pesanan *', expectedDate:'Tarikh Dijangka', addLine:'Tambah Item',
+    notes:'Nota', save:'Simpan', cancel:'Batal', required:'Pembekal dan sekurang-kurangnya satu item diperlukan.'
+  } : {
+    addTitle:'New PO', editTitle:'Edit PO', back:'Purchase Orders',
+    supplier:'Supplier *', orderDate:'Order Date *', expectedDate:'Expected Date', addLine:'Add Item',
+    notes:'Notes', save:'Save', cancel:'Cancel', required:'Supplier and at least one item are required.'
+  }
+  await _poLoadProducts()
+  const suppliers = await _poLoadSuppliers()
+  let po = { order_date: new Date().toISOString().slice(0,10) }
+  _poItems = [{product_id:'',description:'',qty:1,unit_cost:0}]
+  if(id) {
+    const {data} = await sb.from('purchase_orders').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(data) po = data
+    const {data: items} = await sb.from('purchase_order_items').select('*').eq('po_id',id)
+    if(items && items.length) _poItems = items.map(it=>({product_id:it.product_id||'',description:it.description,qty:it.qty,unit_cost:it.unit_cost}))
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{})">← ${t.back}</div></div></div>
+  <div class="card" style="max-width:900px">
+    <div id="po-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.supplier}</label>
+        <select id="pf-supplier" class="form-select">
+          <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
+          ${suppliers.map(s=>`<option value="${s.id}" ${po.supplier_id===s.id?'selected':''}>${s.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.orderDate}</label><input id="pf-order-date" type="date" class="form-input" value="${po.order_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.expectedDate}</label><input id="pf-expected-date" type="date" class="form-input" value="${po.expected_date||''}"></div>
+    </div>
+    <div style="padding:0 20px">
+      <table>${_poItemsTableHead()}<tbody id="po-items-body"></tbody></table>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_poAddItem()"><i class="ti ti-plus"></i> ${t.addLine}</button>
+      <div style="text-align:right;margin-top:12px;font-weight:700;font-size:16px" id="po-grand-total"></div>
+    </div>
+    <div style="padding:20px"><div class="form-group"><label class="form-label">${t.notes}</label><textarea id="pf-notes" class="form-input" rows="2">${po.notes||''}</textarea></div></div>
+    <div style="padding:0 20px 20px;display:flex;gap:12px">
+      <button id="pf-save" class="btn btn-primary" onclick="_poSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('purchasing',{})">${t.cancel}</button>
+    </div>
+  </div>`
+  _poRenderItems()
+}
+
+async function _poSave(id) {
+  const isBm = APP.language==='bm'
+  const supplierId = document.getElementById('pf-supplier').value
+  const errEl = document.getElementById('po-form-err')
+  errEl.style.display='none'
+  const validItems = _poItems.filter(it=>it.description && Number(it.qty)>0)
+  if(!supplierId || validItems.length===0) {
+    errEl.textContent = isBm?'Pembekal dan sekurang-kurangnya satu item diperlukan.':'Supplier and at least one item are required.'
+    errEl.style.display='block'
+    return
+  }
+  const total = validItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_cost||0),0)
+
+  const payload = {
+    tenant_id: APP.tenant.id, supplier_id: supplierId,
+    order_date: document.getElementById('pf-order-date').value,
+    expected_date: document.getElementById('pf-expected-date').value||null,
+    notes: document.getElementById('pf-notes').value.trim()||null,
+    total,
+  }
+
+  let poId = id
+  if(id) {
+    const {error} = await sb.from('purchase_orders').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+    await sb.from('purchase_order_items').delete().eq('po_id', id)
+  } else {
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'PO'}).then(r=>r, ()=>({data:null}))
+    payload.po_no = refData || await _genFallbackRefNo('purchase_orders','po_no','PO')
+    payload.status = 'draft'
+    const {data, error} = await sb.from('purchase_orders').insert(payload).select('id').single()
+    if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+    poId = data.id
+  }
+
+  const itemsPayload = validItems.map(it => ({
+    po_id: poId, product_id: it.product_id||null, description: it.description,
+    qty: Number(it.qty), unit_cost: Number(it.unit_cost||0), line_total: Number(it.qty)*Number(it.unit_cost||0), qty_received: 0
+  }))
+  const {error: itemsErr} = await sb.from('purchase_order_items').insert(itemsPayload)
+  if(itemsErr) { errEl.textContent='Error: '+itemsErr.message; errEl.style.display='block'; return }
+
+  auditLog(id?'update':'create','purchase_orders', poId)
+  showToast(isBm?'PO disimpan!':'PO saved!', 'success')
+  openPage('purchasing',{view:'po-detail',id:poId})
+}
+
+// ─── Purchase Orders: Detail ────────────────────────────────────────────────
+async function renderPODetail(id) {
+  const t = APP.language==='bm' ? {
+    back:'Pesanan Belian', edit:'Edit', supplier:'Pembekal', orderDate:'Tarikh Pesanan', expectedDate:'Tarikh Dijangka',
+    items:'Item', qty:'Kuantiti', qtyReceived:'Diterima', cost:'Kos Unit', amount:'Jumlah', total:'Jumlah Besar',
+    status:'Status', notes:'Nota', receiveGoods:'Terima Barang',
+    draft:'Draf', sent:'Dihantar', partial:'Sebahagian', received:'Diterima', cancelled:'Dibatalkan',
+    grnHistory:'Sejarah Penerimaan', noGrn:'Tiada penerimaan lagi', notFound:'PO tidak dijumpai.', grnNo:'No. GRN', date:'Tarikh'
+  } : {
+    back:'Purchase Orders', edit:'Edit', supplier:'Supplier', orderDate:'Order Date', expectedDate:'Expected Date',
+    items:'Items', qty:'Qty', qtyReceived:'Received', cost:'Unit Cost', amount:'Amount', total:'Grand Total',
+    status:'Status', notes:'Notes', receiveGoods:'Receive Goods',
+    draft:'Draft', sent:'Sent', partial:'Partial', received:'Received', cancelled:'Cancelled',
+    grnHistory:'Receiving History', noGrn:'No receipts yet', notFound:'PO not found.', grnNo:'GRN No.', date:'Date'
+  }
+  const {data: po} = await sb.from('purchase_orders').select('*,suppliers(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!po) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const {data: items} = await sb.from('purchase_order_items').select('*,products(name_en,name_bm)').eq('po_id',id)
+  const {data: grns} = await sb.from('goods_received_notes').select('id,grn_no,received_date').eq('po_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('received_date',{ascending:false})
+
+  const statusColor = s => s==='received'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--danger)':'var(--text-3)'
+  const statusLabel = s => t[s]||s
+  const canReceive = ['draft','sent','partial'].includes(po.status)
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${po.po_no}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{})">← ${t.back}</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    ${po.status==='draft' ? `<button class="btn btn-outline btn-sm" onclick="openPage('purchasing',{view:'po-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>` : ''}
+    ${canReceive ? `<button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'grn-form',poId:'${id}'})"><i class="ti ti-truck-delivery"></i> ${t.receiveGoods}</button>` : ''}
+  </div></div>
+  <div class="card" style="max-width:900px;padding:20px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
+      <div><div style="color:var(--text-3);font-size:12px">${t.supplier}</div><strong>${po.suppliers?.name||'-'}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.orderDate}</div>${formatDate(po.order_date)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.expectedDate}</div>${formatDate(po.expected_date)}</div>
+      <div><span style="color:${statusColor(po.status)};font-weight:700">${statusLabel(po.status)}</span></div>
+    </div>
+    <table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.qtyReceived}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.amount}</th></tr></thead>
+    <tbody>${(items||[]).map(it=>`<tr>
+      <td>${it.description||prodName(it.products)||'-'}</td>
+      <td style="text-align:right">${it.qty}</td>
+      <td style="text-align:right;${Number(it.qty_received)>=Number(it.qty)?'color:var(--success);font-weight:600':''}">${it.qty_received}</td>
+      <td style="text-align:right">${formatRM(it.unit_cost)}</td>
+      <td style="text-align:right">${formatRM(it.line_total)}</td>
+    </tr>`).join('')}</tbody></table>
+    <div style="text-align:right;margin-top:16px;font-weight:700;font-size:16px">${t.total}: ${formatRM(po.total)}</div>
+    ${po.notes ? `<div style="margin-top:12px;color:var(--text-2);font-size:13px">${t.notes}: ${_aiEscapeHtml(po.notes)}</div>` : ''}
+  </div>
+  <div class="card" style="max-width:900px;margin-top:16px">
+    <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.grnHistory}</div>
+    ${(!grns||grns.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noGrn}</p></div>` :
+    `<table><thead><tr><th>${t.grnNo}</th><th>${t.date}</th></tr></thead>
+    <tbody>${grns.map(g=>`<tr><td>${g.grn_no}</td><td>${formatDate(g.received_date)}</td></tr>`).join('')}</tbody></table>`}
+  </div>`
+}
+
+// ─── Goods Received Note (GRN) ──────────────────────────────────────────────
+let _grnItems = []
+
+async function renderGRNForm(poId) {
+  const t = APP.language==='bm' ? {
+    title:'Terima Barang (GRN)', back:'Kembali ke PO', product:'Produk', qtyOrdered:'Kuantiti Dipesan',
+    qtyReceivedSoFar:'Diterima Setakat Ini', qtyReceiveNow:'Kuantiti Diterima Sekarang',
+    receivedDate:'Tarikh Terima', notes:'Nota', save:'Simpan Penerimaan', cancel:'Batal', notFound:'PO tidak dijumpai.'
+  } : {
+    title:'Receive Goods (GRN)', back:'Back to PO', product:'Product', qtyOrdered:'Qty Ordered',
+    qtyReceivedSoFar:'Received So Far', qtyReceiveNow:'Qty Receiving Now',
+    receivedDate:'Received Date', notes:'Notes', save:'Save Receipt', cancel:'Cancel', notFound:'PO not found.'
+  }
+  const {data: po} = await sb.from('purchase_orders').select('*,suppliers(name)').eq('id',poId).eq('tenant_id',APP.tenant.id).single()
+  if(!po) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const {data: items} = await sb.from('purchase_order_items').select('*,products(name_en,name_bm)').eq('po_id',poId)
+  _grnItems = (items||[]).map(it=>({
+    po_item_id: it.id, product_id: it.product_id, description: it.description||prodName(it.products),
+    qty: it.qty, qty_received: it.qty_received, unit_cost: it.unit_cost, receive_now: 0
+  }))
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title} — ${po.po_no}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'po-detail',id:'${poId}'})">← ${t.back}</div></div></div>
+  <div class="card" style="max-width:900px">
+    <div id="grn-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.receivedDate}</label><input id="grn-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div style="padding:0 20px">
+      <table><thead><tr><th>${t.product}</th><th style="text-align:right">${t.qtyOrdered}</th><th style="text-align:right">${t.qtyReceivedSoFar}</th><th style="text-align:right">${t.qtyReceiveNow}</th></tr></thead>
+      <tbody id="grn-items-body">${_grnItems.map((it,i)=>{
+        const remaining = Number(it.qty) - Number(it.qty_received)
+        return `<tr>
+          <td>${_aiEscapeHtml(it.description||'-')}</td>
+          <td style="text-align:right">${it.qty}</td>
+          <td style="text-align:right">${it.qty_received}</td>
+          <td style="width:110px"><input type="number" min="0" max="${remaining}" class="form-input" style="text-align:right" value="0" oninput="_grnItems[${i}].receive_now=this.value" ${remaining<=0?'disabled':''}></td>
+        </tr>`
+      }).join('')}</tbody></table>
+    </div>
+    <div style="padding:20px"><div class="form-group"><label class="form-label">${t.notes}</label><textarea id="grn-notes" class="form-input" rows="2"></textarea></div></div>
+    <div style="padding:0 20px 20px;display:flex;gap:12px">
+      <button id="grn-save" class="btn btn-primary" onclick="_grnSave('${poId}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('purchasing',{view:'po-detail',id:'${poId}'})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _grnSave(poId) {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('grn-form-err')
+  errEl.style.display='none'
+  const toReceive = _grnItems.filter(it=>Number(it.receive_now)>0)
+  if(toReceive.length===0) {
+    errEl.textContent = isBm?'Sila masukkan sekurang-kurangnya satu kuantiti penerimaan.':'Please enter at least one receiving quantity.'
+    errEl.style.display='block'
+    return
+  }
+  for(const it of toReceive) {
+    const remaining = Number(it.qty) - Number(it.qty_received)
+    if(Number(it.receive_now) > remaining) {
+      errEl.textContent = isBm?'Kuantiti diterima tak boleh melebihi baki dipesan.':'Received quantity cannot exceed remaining ordered quantity.'
+      errEl.style.display='block'
+      return
+    }
+  }
+
+  const {data: po} = await sb.from('purchase_orders').select('supplier_id').eq('id',poId).eq('tenant_id',APP.tenant.id).single()
+  if(!po) { errEl.textContent='PO not found.'; errEl.style.display='block'; return }
+
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'GRN'}).then(r=>r, ()=>({data:null}))
+  const grnNo = refData || await _genFallbackRefNo('goods_received_notes','grn_no','GRN')
+  const receivedDate = document.getElementById('grn-date').value
+  const notes = document.getElementById('grn-notes').value.trim()||null
+
+  const {data: grn, error} = await sb.from('goods_received_notes').insert({
+    tenant_id: APP.tenant.id, grn_no: grnNo, po_id: poId, supplier_id: po.supplier_id,
+    received_date: receivedDate, notes
+  }).select('id').single()
+  if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+
+  const grnItemsPayload = toReceive.map(it => ({
+    grn_id: grn.id, po_item_id: it.po_item_id, product_id: it.product_id||null,
+    qty_received: Number(it.receive_now), unit_cost: Number(it.unit_cost||0)
+  }))
+  await sb.from('goods_received_items').insert(grnItemsPayload)
+
+  for(const it of toReceive) {
+    const newQtyReceived = Number(it.qty_received) + Number(it.receive_now)
+    await sb.from('purchase_order_items').update({qty_received:newQtyReceived}).eq('id', it.po_item_id)
+    if(it.product_id) {
+      const {data: p} = await sb.from('products').select('stock_qty').eq('id',it.product_id).eq('tenant_id',APP.tenant.id).single()
+      const newStock = Number(p?.stock_qty||0) + Number(it.receive_now)
+      await sb.from('products').update({stock_qty:newStock}).eq('id',it.product_id).eq('tenant_id',APP.tenant.id)
+      await sb.from('stock_movements').insert({tenant_id:APP.tenant.id, product_id: it.product_id, type:'in', qty: Number(it.receive_now), note: 'GRN '+grnNo})
+    }
+  }
+
+  const {data: allItems} = await sb.from('purchase_order_items').select('qty,qty_received').eq('po_id',poId)
+  const allReceived = (allItems||[]).every(x=>Number(x.qty_received) >= Number(x.qty))
+  const newStatus = allReceived ? 'received' : 'partial'
+  await sb.from('purchase_orders').update({status:newStatus}).eq('id',poId).eq('tenant_id',APP.tenant.id)
+
+  auditLog('create','goods_received_notes', grn.id)
+  showToast(isBm?'Penerimaan barang disimpan!':'Goods receipt saved!', 'success')
+  openPage('purchasing',{view:'po-detail',id:poId})
+}
+
+// ─── Supplier Bills: List ───────────────────────────────────────────────────
+async function renderSupplierBills() {
+  const t = APP.language==='bm' ? {
+    title:'Bil Pembekal', add:'Bil Baru', billNo:'No. Bil', supplier:'Pembekal', billDate:'Tarikh Bil', dueDate:'Tarikh Akhir',
+    total:'Jumlah', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paid:'Selesai', noData:'Tiada bil lagi'
+  } : {
+    title:'Supplier Bills', add:'New Bill', billNo:'Bill No.', supplier:'Supplier', billDate:'Bill Date', dueDate:'Due Date',
+    total:'Total', status:'Status', unpaid:'Unpaid', partial:'Partial', paid:'Paid', noData:'No bills yet'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'bill-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
+  ${_purchTabs('bills')}
+  <div class="card"><div id="bill-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('bill-list-wrap')
+  const {data, error} = await sb.from('supplier_bills').select('id,bill_no,bill_date,due_date,total,status,suppliers(name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('bill_date',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
+  const statusLabel = s => s==='paid'?t.paid:s==='partial'?t.partial:t.unpaid
+  wrap.innerHTML = `<table><thead><tr><th>${t.billNo}</th><th>${t.supplier}</th><th>${t.billDate}</th><th>${t.dueDate}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(b=>`<tr onclick="openPage('purchasing',{view:'bill-detail',id:'${b.id}'})" style="cursor:pointer">
+    <td><strong>${b.bill_no}</strong></td><td>${b.suppliers?.name||'-'}</td><td>${formatDate(b.bill_date)}</td><td>${formatDate(b.due_date)}</td>
+    <td style="text-align:right">${formatRM(b.total)}</td>
+    <td><span style="color:${statusColor(b.status)};font-weight:600">${statusLabel(b.status)}</span></td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+// ─── Supplier Bills: Form ───────────────────────────────────────────────────
+async function renderSupplierBillForm(id=null) {
+  const t = APP.language==='bm' ? {
+    addTitle:'Bil Baru', editTitle:'Edit Bil', back:'Bil Pembekal',
+    supplier:'Pembekal *', po:'Pesanan Belian (pilihan)', grn:'Penerimaan Barang / GRN (pilihan)',
+    billDate:'Tarikh Bil *', dueDate:'Tarikh Akhir', total:'Jumlah (RM) *',
+    save:'Simpan', cancel:'Batal', required:'Pembekal dan jumlah diperlukan.', none:'-- Tiada --'
+  } : {
+    addTitle:'New Bill', editTitle:'Edit Bill', back:'Supplier Bills',
+    supplier:'Supplier *', po:'Purchase Order (optional)', grn:'Goods Received Note (optional)',
+    billDate:'Bill Date *', dueDate:'Due Date', total:'Total (RM) *',
+    save:'Save', cancel:'Cancel', required:'Supplier and total are required.', none:'-- None --'
+  }
+  const {data: suppliers} = await sb.from('suppliers').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name')
+  let bill = { bill_date: new Date().toISOString().slice(0,10) }
+  if(id) { const {data} = await sb.from('supplier_bills').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(); if(data) bill = data }
+
+  let pos = [], grns = []
+  if(bill.supplier_id) {
+    const [{data:p}, {data:g}] = await Promise.all([
+      sb.from('purchase_orders').select('id,po_no,total').eq('tenant_id',APP.tenant.id).eq('supplier_id',bill.supplier_id).is('deleted_at',null).order('order_date',{ascending:false}),
+      sb.from('goods_received_notes').select('id,grn_no').eq('tenant_id',APP.tenant.id).eq('supplier_id',bill.supplier_id).is('deleted_at',null).order('received_date',{ascending:false}),
+    ])
+    pos = p||[]; grns = g||[]
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'bills'})">← ${t.back}</div></div></div>
+  <div class="card" style="max-width:700px">
+    <div id="bill-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.supplier}</label>
+        <select id="bf-supplier" class="form-select" onchange="_billSupplierChanged(this.value)">
+          <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
+          ${(suppliers||[]).map(s=>`<option value="${s.id}" ${bill.supplier_id===s.id?'selected':''}>${s.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.po}</label>
+        <select id="bf-po" class="form-select" onchange="_billPOChanged(this.value)">
+          <option value="">${t.none}</option>
+          ${pos.map(p=>`<option value="${p.id}" data-total="${p.total}" ${bill.po_id===p.id?'selected':''}>${p.po_no}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.grn}</label>
+        <select id="bf-grn" class="form-select">
+          <option value="">${t.none}</option>
+          ${grns.map(g=>`<option value="${g.id}" ${bill.grn_id===g.id?'selected':''}>${g.grn_no}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.billDate}</label><input id="bf-bill-date" type="date" class="form-input" value="${bill.bill_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.dueDate}</label><input id="bf-due-date" type="date" class="form-input" value="${bill.due_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.total}</label><input id="bf-total" type="number" step="0.01" class="form-input" value="${bill.total||''}"></div>
+    </div>
+    <div style="padding:0 20px 20px;display:flex;gap:12px">
+      <button id="bf-save" class="btn btn-primary" onclick="_billSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('purchasing',{view:'bills'})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _billSupplierChanged(supplierId) {
+  const [{data:pos}, {data:grns}] = await Promise.all([
+    supplierId ? sb.from('purchase_orders').select('id,po_no,total').eq('tenant_id',APP.tenant.id).eq('supplier_id',supplierId).is('deleted_at',null).order('order_date',{ascending:false}) : Promise.resolve({data:[]}),
+    supplierId ? sb.from('goods_received_notes').select('id,grn_no').eq('tenant_id',APP.tenant.id).eq('supplier_id',supplierId).is('deleted_at',null).order('received_date',{ascending:false}) : Promise.resolve({data:[]}),
+  ])
+  const isBm = APP.language==='bm'
+  const noneLabel = isBm?'-- Tiada --':'-- None --'
+  const poSelect = document.getElementById('bf-po')
+  const grnSelect = document.getElementById('bf-grn')
+  if(poSelect) poSelect.innerHTML = `<option value="">${noneLabel}</option>${(pos||[]).map(p=>`<option value="${p.id}" data-total="${p.total}">${p.po_no}</option>`).join('')}`
+  if(grnSelect) grnSelect.innerHTML = `<option value="">${noneLabel}</option>${(grns||[]).map(g=>`<option value="${g.id}">${g.grn_no}</option>`).join('')}`
+}
+
+function _billPOChanged(poId) {
+  const select = document.getElementById('bf-po')
+  const option = select.selectedOptions[0]
+  const total = option ? option.dataset.total : ''
+  if(total) document.getElementById('bf-total').value = total
+}
+
+async function _billSave(id) {
+  const isBm = APP.language==='bm'
+  const supplierId = document.getElementById('bf-supplier').value
+  const total = document.getElementById('bf-total').value
+  const errEl = document.getElementById('bill-form-err')
+  errEl.style.display='none'
+  if(!supplierId || !total) {
+    errEl.textContent = isBm?'Pembekal dan jumlah diperlukan.':'Supplier and total are required.'
+    errEl.style.display='block'
+    return
+  }
+  const payload = {
+    tenant_id: APP.tenant.id, supplier_id: supplierId,
+    po_id: document.getElementById('bf-po').value||null,
+    grn_id: document.getElementById('bf-grn').value||null,
+    bill_date: document.getElementById('bf-bill-date').value,
+    due_date: document.getElementById('bf-due-date').value||null,
+    total: Number(total),
+  }
+  let error
+  if(id) {
+    ({error} = await sb.from('supplier_bills').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+  } else {
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'BILL'}).then(r=>r, ()=>({data:null}))
+    payload.bill_no = refData || await _genFallbackRefNo('supplier_bills','bill_no','BILL')
+    payload.status = 'unpaid'
+    payload.paid_amt = 0
+    ;({error} = await sb.from('supplier_bills').insert(payload))
+  }
+  if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+  auditLog(id?'update':'create','supplier_bills', id||null)
+  showToast(isBm?'Bil disimpan!':'Bill saved!', 'success')
+  openPage('purchasing',{view:'bills'})
+}
+
+// ─── Supplier Bills: Detail + Payment ───────────────────────────────────────
+async function renderSupplierBillDetail(id) {
+  const t = APP.language==='bm' ? {
+    back:'Bil Pembekal', edit:'Edit', supplier:'Pembekal', billDate:'Tarikh Bil', dueDate:'Tarikh Akhir',
+    total:'Jumlah', paid:'Dibayar', balance:'Baki', recordPayment:'Rekod Bayaran', payDate:'Tarikh Bayaran', payAmount:'Jumlah Bayaran', payMethod:'Kaedah', save:'Simpan',
+    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi', notFound:'Bil tidak dijumpai.'
+  } : {
+    back:'Supplier Bills', edit:'Edit', supplier:'Supplier', billDate:'Bill Date', dueDate:'Due Date',
+    total:'Total', paid:'Paid', balance:'Balance', recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
+    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet', notFound:'Bill not found.'
+  }
+  const {data: bill} = await sb.from('supplier_bills').select('*,suppliers(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!bill) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const {data: payments} = await sb.from('supplier_payments').select('*').eq('bill_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
+  const balance = Number(bill.total||0) - Number(bill.paid_amt||0)
+  const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
+  const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${bill.bill_no}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'bills'})">← ${t.back}</div>
+  </div>
+  <button class="btn btn-outline btn-sm" onclick="openPage('purchasing',{view:'bill-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button></div>
+  <div class="card" style="max-width:900px;padding:20px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
+      <div><div style="color:var(--text-3);font-size:12px">${t.supplier}</div><strong>${bill.suppliers?.name||'-'}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.billDate}</div>${formatDate(bill.bill_date)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.dueDate}</div>${formatDate(bill.due_date)}</div>
+      <div><span style="color:${statusColor(bill.status)};font-weight:700">${statusLabel(bill.status)}</span></div>
+    </div>
+    <div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+      <div>${t.total}: <strong>${formatRM(bill.total)}</strong></div>
+      <div style="color:var(--warning)">${t.paid}: ${formatRM(bill.paid_amt)}</div>
+      <div style="color:${balance>0?'var(--danger)':'var(--text-2)'}">${t.balance}: <strong>${formatRM(balance)}</strong></div>
+    </div>
+  </div>
+  ${balance>0 ? `
+  <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
+    <div style="font-weight:600;margin-bottom:12px">${t.recordPayment}</div>
+    <div id="bill-pay-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:flex-end">
+      <div class="form-group"><label class="form-label">${t.payDate}</label><input id="bill-pay-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="form-label">${t.payAmount}</label><input id="bill-pay-amount" type="number" step="0.01" class="form-input" value="${balance.toFixed(2)}"></div>
+      <div class="form-group"><label class="form-label">${t.payMethod}</label>
+        <select id="bill-pay-method" class="form-select"><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="online_banking">Online Banking</option><option value="card">Card</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="_billPaySave('${id}', ${balance})">${t.save}</button>
+    </div>
+  </div>` : ''}
+  <div class="card" style="max-width:900px;margin-top:16px">
+    <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
+    ${(!payments||payments.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
+    `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th></tr></thead>
+    <tbody>${payments.map(p=>`<tr><td>${formatDate(p.payment_date)}</td><td style="text-align:right">${formatRM(p.amount)}</td><td>${p.method||'-'}</td></tr>`).join('')}</tbody></table>`}
+  </div>`
+}
+
+async function _billPaySave(billId, balance) {
+  const isBm = APP.language==='bm'
+  const amount = Number(document.getElementById('bill-pay-amount').value||0)
+  const errEl = document.getElementById('bill-pay-form-err')
+  errEl.style.display='none'
+  if(amount<=0 || amount>balance+0.005) { errEl.textContent = isBm?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
+
+  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
+  if(!bill) { errEl.textContent='Bill not found.'; errEl.style.display='block'; return }
+
+  const {error} = await sb.from('supplier_payments').insert({
+    tenant_id: APP.tenant.id, bill_id: billId,
+    payment_date: document.getElementById('bill-pay-date').value,
+    amount, method: document.getElementById('bill-pay-method').value,
+  })
+  if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+
+  const newPaid = Number(bill.paid_amt||0) + amount
+  const newStatus = newPaid >= Number(bill.total) - 0.005 ? 'paid' : 'partial'
+  await sb.from('supplier_bills').update({paid_amt:newPaid, status:newStatus}).eq('id',billId).eq('tenant_id',APP.tenant.id)
+
+  auditLog('create','supplier_payments', billId)
+  showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
+  renderSupplierBillDetail(billId)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
