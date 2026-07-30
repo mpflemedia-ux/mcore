@@ -3761,7 +3761,77 @@ async function renderProductForm(id=null) {
       <button id="pf-save" class="btn btn-primary" onclick="_prodSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
       <button class="btn btn-outline" onclick="openPage('inventory',{})">${t.cancel}</button>
     </div>
+  </div>
+  <div id="bom-card-wrap"></div>`
+
+  if(id) { await _bomLoad(id); _bomRefresh(id) }
+}
+
+// ─── Product Form: Bill of Materials (BOM) management — separate card, only
+// for existing products; add/remove saves immediately (independent of the
+// main product Save button), mirroring the _po* line-item pattern ─────────
+let _bomItems = []
+let _bomProducts = []
+async function _bomLoad(productId) {
+  const {data} = await sb.from('bom_items').select('id,component_id,qty_per_unit,products!bom_items_component_id_fkey(name_en,name_bm)')
+    .eq('product_id',productId).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at')
+  _bomItems = data || []
+  const {data: prods} = await sb.from('products').select('id,name_en,name_bm').eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('id',productId).order('name_en')
+  _bomProducts = prods || []
+}
+function _bomCard(productId) {
+  const t = APP.language==='bm' ? {
+    title:'Senarai Bahan (BOM)', component:'Komponen', qty:'Kuantiti/Unit', add:'Tambah',
+    noData:'Tiada komponen ditambah lagi.', selectPh:'-- Pilih Produk --'
+  } : {
+    title:'Bill of Materials', component:'Component', qty:'Qty/Unit', add:'Add',
+    noData:'No components added yet.', selectPh:'-- Select Product --'
+  }
+  return `
+  <div class="card" style="max-width:600px;margin-top:16px">
+    <div class="card-header"><div class="card-title"><i class="ti ti-list-details"></i> ${t.title}</div></div>
+    <div style="padding:0 20px 8px">
+      <table><thead><tr><th>${t.component}</th><th style="width:100px">${t.qty}</th><th style="width:36px"></th></tr></thead>
+      <tbody>${_bomItems.length ? _bomItems.map(it=>`<tr>
+        <td>${prodName(it.products)}</td>
+        <td>${it.qty_per_unit}</td>
+        <td><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_bomRemove('${it.id}','${productId}')"><i class="ti ti-x"></i></button></td>
+      </tr>`).join('') : `<tr><td colspan="3" style="color:var(--text-3)">${t.noData}</td></tr>`}</tbody></table>
+    </div>
+    <div style="padding:0 20px 20px;display:flex;gap:8px;align-items:flex-end">
+      <div class="form-group" style="flex:1;margin:0">
+        <select id="bom-add-component" class="form-select">
+          <option value="">${t.selectPh}</option>
+          ${_bomProducts.map(p=>`<option value="${p.id}">${prodName(p)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="width:100px;margin:0">
+        <input id="bom-add-qty" type="number" step="0.01" min="0.01" class="form-input" value="1">
+      </div>
+      <button class="btn btn-outline" onclick="_bomAdd('${productId}')"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div>
   </div>`
+}
+function _bomRefresh(productId) {
+  const wrap = document.getElementById('bom-card-wrap')
+  if(wrap) wrap.innerHTML = _bomCard(productId)
+}
+async function _bomAdd(productId) {
+  const isBm = APP.language==='bm'
+  const componentId = document.getElementById('bom-add-component').value
+  const qty = Number(document.getElementById('bom-add-qty').value)
+  if(!componentId || !qty || qty<=0) { showToast(isBm?'Pilih komponen dan kuantiti yang sah.':'Select a component and a valid quantity.', 'error'); return }
+  const {error} = await sb.from('bom_items').insert({ tenant_id: APP.tenant.id, product_id: productId, component_id: componentId, qty_per_unit: qty })
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  showToast(isBm?'Komponen ditambah!':'Component added!', 'success')
+  await _bomLoad(productId)
+  _bomRefresh(productId)
+}
+async function _bomRemove(id, productId) {
+  const {error} = await sb.from('bom_items').update({deleted_at: new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  await _bomLoad(productId)
+  _bomRefresh(productId)
 }
 
 async function _prodSave(id) {
@@ -5239,25 +5309,37 @@ function renderProduction(params={}) {
   renderWOList()
 }
 
+let _woBomItems = []
 async function renderWOForm(productId) {
   const t = APP.language==='bm' ? {
     title:'Work Order Baru', product:'Produk', qty:'Kuantiti Untuk Dikeluarkan', materials:'Bahan Diperlukan (nota bebas)',
     materialsPh:'cth: 10kg tepung, 5L minyak masak...', assignedTo:'Ditugaskan Kepada', none:'Tiada',
-    create:'Cipta Work Order', cancel:'Batal', notFound:'Produk tidak dijumpai.', qtyRequired:'Kuantiti mesti lebih daripada 0'
+    create:'Cipta Work Order', cancel:'Batal', notFound:'Produk tidak dijumpai.', qtyRequired:'Kuantiti mesti lebih daripada 0',
+    materialsReq:'Keperluan Bahan', component:'Komponen', required:'Diperlukan', currentStock:'Stok Semasa', status:'Status'
   } : {
     title:'New Work Order', product:'Product', qty:'Quantity To Produce', materials:'Materials Needed (free text notes)',
     materialsPh:'e.g. 10kg flour, 5L cooking oil...', assignedTo:'Assigned To', none:'None',
-    create:'Create Work Order', cancel:'Cancel', notFound:'Product not found.', qtyRequired:'Quantity must be greater than 0'
+    create:'Create Work Order', cancel:'Cancel', notFound:'Product not found.', qtyRequired:'Quantity must be greater than 0',
+    materialsReq:'Materials Required', component:'Component', required:'Required', currentStock:'Current Stock', status:'Status'
   }
   const {data: product} = await sb.from('products').select('id,name_en,name_bm,stock_qty').eq('id',productId).eq('tenant_id',APP.tenant.id).single()
   if(!product) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const {data: staff} = await sb.from('user_profiles').select('id,full_name').eq('tenant_id',APP.tenant.id)
+  const {data: bomItems} = await sb.from('bom_items').select('component_id,qty_per_unit,products!bom_items_component_id_fkey(name_en,name_bm,stock_qty)')
+    .eq('product_id',productId).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+  _woBomItems = bomItems || []
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   <div class="card" style="max-width:600px;padding:20px">
     <div class="form-group"><label class="form-label">${t.product}</label><input class="form-input" value="${prodName(product)}" disabled></div>
-    <div class="form-group"><label class="form-label">${t.qty}</label><input type="number" id="wo-qty" class="form-input" min="1" value="1"></div>
+    <div class="form-group"><label class="form-label">${t.qty}</label><input type="number" id="wo-qty" class="form-input" min="1" value="1" oninput="_woRenderMaterials()"></div>
+    ${_woBomItems.length>0 ? `
+    <div class="form-group">
+      <label class="form-label">${t.materialsReq}</label>
+      <table><thead><tr><th>${t.component}</th><th style="text-align:right">${t.required}</th><th style="text-align:right">${t.currentStock}</th><th>${t.status}</th></tr></thead>
+      <tbody id="wo-materials-body"></tbody></table>
+    </div>` : ''}
     <div class="form-group"><label class="form-label">${t.materials}</label><textarea id="wo-materials" class="form-input" rows="3" placeholder="${t.materialsPh}"></textarea></div>
     <div class="form-group">
       <label class="form-label">${t.assignedTo}</label>
@@ -5272,12 +5354,32 @@ async function renderWOForm(productId) {
       <button class="btn btn-outline" onclick="openPage('inventory',{})">${t.cancel}</button>
     </div>
   </div>`
+  if(_woBomItems.length>0) _woRenderMaterials()
+}
+
+function _woRenderMaterials() {
+  const body = document.getElementById('wo-materials-body')
+  if(!body) return
+  const isBm = APP.language==='bm'
+  const qty = Number(document.getElementById('wo-qty').value)||0
+  body.innerHTML = _woBomItems.map(it=>{
+    const required = Number(it.qty_per_unit)*qty
+    const stock = Number(it.products?.stock_qty||0)
+    const sufficient = stock >= required
+    return `<tr>
+      <td>${prodName(it.products)}</td>
+      <td style="text-align:right">${required}</td>
+      <td style="text-align:right">${stock}</td>
+      <td><span style="color:${sufficient?'var(--success)':'var(--danger)'};font-weight:600">${sufficient ? (isBm?'Cukup':'Sufficient') : (isBm?'Tak Cukup':'Insufficient')}</span></td>
+    </tr>`
+  }).join('')
 }
 
 async function _woCreate(productId) {
   const isBm = APP.language==='bm'
   const qty = Number(document.getElementById('wo-qty').value)
   if(!qty || qty <= 0) { showToast(isBm?'Kuantiti mesti lebih daripada 0':'Quantity must be greater than 0', 'error'); return }
+  const bomSnapshot = _woBomItems.length>0 ? _woBomItems.map(it=>({component_id: it.component_id, qty_needed: Number(it.qty_per_unit)*qty})) : null
   const payload = {
     tenant_id: APP.tenant.id,
     product_id: productId,
@@ -5285,6 +5387,7 @@ async function _woCreate(productId) {
     materials_needed: document.getElementById('wo-materials').value || null,
     assigned_to: document.getElementById('wo-assigned').value || null,
     notes: document.getElementById('wo-notes').value || null,
+    bom_snapshot: bomSnapshot,
     status: 'pending'
   }
   const {data, error} = await sb.from('work_orders').insert(payload).select().single()
@@ -5372,10 +5475,35 @@ async function renderWODetail(id, justCreated) {
 
 async function _woUpdateStatus(id, status) {
   const isBm = APP.language==='bm'
+  const {data: wo} = await sb.from('work_orders').select('status,bom_snapshot,qty_to_produce,product_id').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!wo) { showToast('Error: work order not found', 'error'); return }
+  const oldStatus = wo.status
+
   const payload = { status }
   if(status==='completed') payload.completed_at = new Date().toISOString()
   const {error} = await sb.from('work_orders').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
+
+  // Idempotency guard: only run stock movement on a genuine not-completed -> completed
+  // transition, so toggling status back and forth never double-deducts/produces stock.
+  if(oldStatus !== 'completed' && status === 'completed') {
+    if(wo.bom_snapshot && wo.bom_snapshot.length) {
+      for(const comp of wo.bom_snapshot) {
+        const {data: compProd} = await sb.from('products').select('stock_qty').eq('id',comp.component_id).eq('tenant_id',APP.tenant.id).single()
+        const newStock = Number(compProd?.stock_qty||0) - Number(comp.qty_needed)
+        await sb.from('products').update({stock_qty:newStock}).eq('id',comp.component_id).eq('tenant_id',APP.tenant.id)
+        await sb.from('stock_movements').insert({tenant_id:APP.tenant.id, product_id: comp.component_id, type:'out', qty: comp.qty_needed, note: 'WO consumption - '+id})
+      }
+    }
+    const {data: finishedProd} = await sb.from('products').select('stock_qty').eq('id',wo.product_id).eq('tenant_id',APP.tenant.id).single()
+    const newFinishedStock = Number(finishedProd?.stock_qty||0) + Number(wo.qty_to_produce)
+    await sb.from('products').update({stock_qty:newFinishedStock}).eq('id',wo.product_id).eq('tenant_id',APP.tenant.id)
+    await sb.from('stock_movements').insert({tenant_id:APP.tenant.id, product_id: wo.product_id, type:'in', qty: wo.qty_to_produce, note: 'WO production - '+id})
+  } else if(oldStatus === 'completed' && status !== 'completed') {
+    // Deliberately do NOT auto-reverse stock — too risky for MVP; admin handles manual adjustment.
+    showToast(isBm?'Menukar status dari Selesai tidak akan reverse stock automatik':'Changing status from Completed will not automatically reverse stock', 'warning')
+  }
+
   showToast(isBm?'Status dikemaskini!':'Status updated!', 'success')
   auditLog('update','work_orders', id)
 }
