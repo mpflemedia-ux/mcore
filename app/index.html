@@ -5446,27 +5446,35 @@ async function _leaveLoadTable() {
   const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
   const t = isBm ? {
     employee:'Pekerja', leaveType:'Jenis Cuti', annual:'Tahunan', medical:'Sakit', emergency:'Kecemasan', unpaid:'Tanpa Gaji',
-    startDate:'Tarikh Mula', endDate:'Tarikh Tamat', days:'Hari', status:'Status',
+    startDate:'Tarikh Mula', endDate:'Tarikh Tamat', days:'Hari', status:'Status', actionedBy:'Diluluskan/Ditolak Oleh',
     pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak', approve:'Lulus', reject:'Tolak',
     noData:'Tiada permohonan cuti lagi'
   } : {
     employee:'Employee', leaveType:'Leave Type', annual:'Annual', medical:'Medical', emergency:'Emergency', unpaid:'Unpaid',
-    startDate:'Start Date', endDate:'End Date', days:'Days', status:'Status',
+    startDate:'Start Date', endDate:'End Date', days:'Days', status:'Status', actionedBy:'Approved/Rejected By',
     pending:'Pending', approved:'Approved', rejected:'Rejected', approve:'Approve', reject:'Reject',
     noData:'No leave requests yet'
   }
   const wrap = document.getElementById('lv-table-wrap')
-  const {data, error} = await sb.from('leave_requests').select('id,leave_type,start_date,end_date,days_count,status,employees(name)')
+  const {data, error} = await sb.from('leave_requests').select('id,leave_type,start_date,end_date,days_count,status,approved_by,employees(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _leaveRequests = data || []
   if(_leaveRequests.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+
+  const approverIds = [...new Set(_leaveRequests.map(l=>l.approved_by).filter(Boolean))]
+  const {data: approvers} = approverIds.length
+    ? await sb.from('user_profiles').select('id,full_name').in('id', approverIds)
+    : {data:[]}
+  const approverMap = {}
+  ;(approvers||[]).forEach(p=>{ approverMap[p.id] = p.full_name })
+
   const typeLabel = ty => ty==='annual'?t.annual:ty==='medical'?t.medical:ty==='emergency'?t.emergency:t.unpaid
   const statusColor = s => s==='approved'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
   const statusLabel = s => s==='approved'?t.approved:s==='rejected'?t.rejected:t.pending
   wrap.innerHTML = `<table><thead><tr>
     <th>${t.employee}</th><th>${t.leaveType}</th><th>${t.startDate}</th><th>${t.endDate}</th>
-    <th style="text-align:right">${t.days}</th><th>${t.status}</th><th></th>
+    <th style="text-align:right">${t.days}</th><th>${t.status}</th><th>${t.actionedBy}</th><th></th>
   </tr></thead>
   <tbody>${_leaveRequests.map(l=>`<tr>
     <td>${_aiEscapeHtml(l.employees?.name||'-')}</td>
@@ -5475,6 +5483,7 @@ async function _leaveLoadTable() {
     <td>${formatDate(l.end_date)}</td>
     <td style="text-align:right">${l.days_count}</td>
     <td><span style="color:${statusColor(l.status)};font-weight:600">${statusLabel(l.status)}</span></td>
+    <td>${l.approved_by ? _aiEscapeHtml(approverMap[l.approved_by]||'-') : '-'}</td>
     <td style="white-space:nowrap">${(isAdminOwner && l.status==='pending') ? `
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px;color:var(--success);border-color:var(--success)" onclick="_leaveApprove('${l.id}')"><i class="ti ti-check"></i> ${t.approve}</button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_leaveReject('${l.id}')"><i class="ti ti-x"></i> ${t.reject}</button>
@@ -5506,7 +5515,7 @@ async function _leaveSetStatus(id, status) {
   const isBm = APP.language==='bm'
   const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
   if(!isAdminOwner) { showToast(isBm?'Tiada kebenaran':'Not permitted', 'error'); return }
-  const {error} = await sb.from('leave_requests').update({status}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  const {error} = await sb.from('leave_requests').update({status, approved_by:APP.user.id}).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('update', 'leave_requests', id)
   showToast(status==='approved' ? (isBm?'Cuti diluluskan!':'Leave approved!') : (isBm?'Cuti ditolak.':'Leave rejected.'), 'success')

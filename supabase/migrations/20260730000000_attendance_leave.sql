@@ -46,7 +46,7 @@ create table leave_requests (
   days_count numeric not null,
   reason text,
   status text not null default 'pending' check (status in ('pending','approved','rejected')),
-  approved_by uuid references employees(id),
+  approved_by uuid references user_profiles(id),
   created_at timestamptz default now(),
   deleted_at timestamptz
 );
@@ -67,3 +67,14 @@ create policy "leave_requests_update_own_tenant" on leave_requests
 
 create policy "leave_requests_delete_own_tenant" on leave_requests
   for delete using (tenant_id = (select tenant_id from user_profiles where id = auth.uid()));
+
+-- ============================================================================
+-- IF YOU ALREADY RAN THE ORIGINAL VERSION OF THIS MIGRATION (approved_by
+-- referencing employees(id)): run ONLY the block below instead of the
+-- CREATE TABLE statements above, to swap the FK to user_profiles(id).
+-- Skip this block on a fresh run — the leave_requests table above already
+-- has the corrected FK.
+-- ============================================================================
+-- alter table leave_requests drop constraint leave_requests_approved_by_fkey;
+-- alter table leave_requests add constraint leave_requests_approved_by_fkey
+--   foreign key (approved_by) references user_profiles(id);
