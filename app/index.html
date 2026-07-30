@@ -1138,7 +1138,7 @@ async function doRegister() {
   try {
     // Step 1: Create auth user
     localStorage.setItem('pendingEmail', email)
-    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,company_name:company}}})
+    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,company_name:company},emailRedirectTo:'https://mpflemedia-ux.github.io/nexerp/app/'}})
     if(error) throw error
     if(!data.user) throw new Error('User creation failed.')
 
