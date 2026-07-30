@@ -4079,20 +4079,25 @@ async function renderInvDetail(id) {
     paid:'Dibayar', balance:'Baki', recordPayment:'Rekod Bayaran', payDate:'Tarikh Bayaran', payAmount:'Jumlah Bayaran', payMethod:'Kaedah', save:'Simpan',
     unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi',
     createDO:'Cipta Delivery Order', createDOBtn:'Cipta DO', driverName:'Nama Pemandu', vehicleNo:'No. Kenderaan', deliveryAddress:'Alamat Penghantaran *', notes:'Nota',
-    doTitle:'Delivery Order', viewDO:'Lihat DO', addressRequired:'Alamat penghantaran diperlukan.'
+    doTitle:'Delivery Order', viewDO:'Lihat DO', addressRequired:'Alamat penghantaran diperlukan.',
+    print:'Cetak', whatsapp:'WhatsApp'
   } : {
     back:'Invoices', edit:'Edit', customer:'Customer', date:'Date', due:'Due Date',
     items:'Items', qty:'Qty', price:'Price', amount:'Amount', total:'Grand Total',
     paid:'Paid', balance:'Balance', recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
     unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet',
     createDO:'Create Delivery Order', createDOBtn:'Create DO', driverName:'Driver Name', vehicleNo:'Vehicle No.', deliveryAddress:'Delivery Address *', notes:'Notes',
-    doTitle:'Delivery Order', viewDO:'View DO', addressRequired:'Delivery address is required.'
+    doTitle:'Delivery Order', viewDO:'View DO', addressRequired:'Delivery address is required.',
+    print:'Print', whatsapp:'WhatsApp'
   }
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
   const {data: allocations} = await sb.from('payment_allocations').select('amount,payments(payment_date,payment_method)').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
   const {data: existingDO} = await sb.from('delivery_orders').select('id,do_no,status').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false}).limit(1).maybeSingle()
+  const {data: custPhone} = inv.customer_id
+    ? await sb.from('customers').select('phone').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
+    : {data:null}
   let doCustomerAddr = ''
   if(!existingDO && inv.customer_id) {
     const {data: cust} = await sb.from('customers').select('address_line1,city,postcode,state').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
@@ -4108,7 +4113,11 @@ async function renderInvDetail(id) {
     <div class="page-title">${inv.ref_no}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{})">← ${t.back}</div>
   </div>
-  <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button></div>
+  <div class="no-print" style="display:flex;gap:8px">
+    <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
+    <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    ${custPhone?.phone ? `<button class="btn btn-outline btn-sm" onclick="_sendInvWhatsApp('${custPhone.phone.replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'})"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>` : ''}
+  </div></div>
   <div class="card" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
       <div><div style="color:var(--text-3);font-size:12px">${t.customer}</div><strong>${inv.customer_name||'-'}</strong></div>
@@ -4218,6 +4227,15 @@ async function _paySave(invoiceId, balance) {
   renderInvDetail(invoiceId)
 }
 
+function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm) {
+  const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/,'60')
+  const finalPhone = cleanPhone.startsWith('60') ? cleanPhone : '60'+cleanPhone
+  const msg = isBm
+    ? `Hai! Ini invois ${refNo} berjumlah ${total} (tarikh akhir: ${dueDate}). Terima kasih!`
+    : `Hi! Here's invoice ${refNo} for ${total} (due: ${dueDate}). Thank you!`
+  window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank')
+}
+
 // ─── Quotations: List + Form (mirrors invoice, converts to invoice) ────────────
 async function renderQuoList() {
   const t = APP.language==='bm' ? {
@@ -4249,27 +4267,38 @@ async function renderQuoForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Sebut Harga Baru', editTitle:'Edit Sebut Harga', back:'Sebut Harga',
     customer:'Pelanggan *', date:'Tarikh *', valid:'Sah Sehingga', addLine:'Tambah Item',
-    save:'Simpan', cancel:'Batal', convert:'Tukar kepada Invois', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.'
+    save:'Simpan', cancel:'Batal', convert:'Tukar kepada Invois', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.',
+    print:'Cetak', whatsapp:'WhatsApp'
   } : {
     addTitle:'New Quotation', editTitle:'Edit Quotation', back:'Quotations',
     customer:'Customer *', date:'Date *', valid:'Valid Until', addLine:'Add Item',
-    save:'Save', cancel:'Cancel', convert:'Convert to Invoice', required:'Customer and at least one item are required.'
+    save:'Save', cancel:'Cancel', convert:'Convert to Invoice', required:'Customer and at least one item are required.',
+    print:'Print', whatsapp:'WhatsApp'
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
   let quo = { issue_date: new Date().toISOString().slice(0,10) }
   _slItems = [{product_id:'',description:'',qty:1,unit_price:0}]
+  let custPhone = null
   if(id) {
     const {data} = await sb.from('quotations').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
     if(data) quo = data
     const {data: items} = await sb.from('quotation_items').select('*').eq('quotation_id',id)
     if(items && items.length) _slItems = items.map(it=>({product_id:it.product_id||'',description:it.description,qty:it.qty,unit_price:it.unit_price}))
+    if(quo.customer_id) {
+      const {data: cp} = await sb.from('customers').select('phone').eq('id',quo.customer_id).eq('tenant_id',APP.tenant.id).single()
+      custPhone = cp
+    }
   }
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{view:'quo'})">← ${t.back}</div></div>
-    ${id?`<button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>`:''}</div>
+    ${id?`<div class="no-print" style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>
+      <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      ${custPhone?.phone ? `<button class="btn btn-outline btn-sm" onclick="_sendQuoWhatsApp('${custPhone.phone.replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'})"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>` : ''}
+    </div>`:''}</div>
   <div class="card" style="max-width:900px">
     <div id="quo-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
@@ -4355,6 +4384,16 @@ async function _quoConvert(quoId) {
 
   showToast(APP.language==='bm'?'Ditukar kepada invois!':'Converted to invoice!', 'success')
   openPage('sales',{view:'inv-detail',id:newInv.id})
+}
+
+function _sendQuoWhatsApp(phone, refNo, total, validUntil, isBm) {
+  const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/,'60')
+  const finalPhone = cleanPhone.startsWith('60') ? cleanPhone : '60'+cleanPhone
+  const validPart = validUntil ? (isBm ? ` (sah sehingga: ${validUntil})` : ` (valid until: ${validUntil})`) : ''
+  const msg = isBm
+    ? `Hai! Ini sebut harga ${refNo} berjumlah ${total}${validPart}. Terima kasih!`
+    : `Hi! Here's quotation ${refNo} for ${total}${validPart}. Thank you!`
+  window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank')
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
