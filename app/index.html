@@ -1310,7 +1310,7 @@ function applyTheme(t) {
     openPage('dashboard')
   }
 }
-function toggleLang() {
+async function toggleLang() {
   APP.language=APP.language==='en'?'bm':'en'
   const tagline = LANG[APP.language].tagline
   const authTag = document.getElementById('auth-tagline')
@@ -1318,6 +1318,10 @@ function toggleLang() {
   buildSidebar()
   openPage(APP.currentPage||'dashboard')
   showToast(APP.language==='bm'?'Bahasa ditukar ke Melayu':'Language changed to English','info')
+
+  if(APP.user?.id) {
+    await sb.from('user_profiles').update({language: APP.language}).eq('id', APP.user.id)
+  }
 }
 function toggleUserDropdown() { document.getElementById('user-dropdown').classList.toggle('open') }
 
