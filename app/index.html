@@ -5475,7 +5475,7 @@ async function renderWODetail(id, justCreated) {
 
 async function _woUpdateStatus(id, status) {
   const isBm = APP.language==='bm'
-  const {data: wo} = await sb.from('work_orders').select('status,bom_snapshot,qty_to_produce,product_id').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: wo} = await sb.from('work_orders').select('status,bom_snapshot,qty_to_produce,product_id,stock_applied').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!wo) { showToast('Error: work order not found', 'error'); return }
   const oldStatus = wo.status
 
@@ -5484,9 +5484,14 @@ async function _woUpdateStatus(id, status) {
   const {error} = await sb.from('work_orders').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
-  // Idempotency guard: only run stock movement on a genuine not-completed -> completed
-  // transition, so toggling status back and forth never double-deducts/produces stock.
-  if(oldStatus !== 'completed' && status === 'completed') {
+  // "Once ever" guard: stock_applied tracks whether this WO's stock movement has
+  // EVER been run, not just the immediate previous status. Comparing only
+  // oldStatus!=='completed' would re-run the deduction on every genuine
+  // pending->completed re-entry (e.g. completed -> pending -> completed toggled
+  // repeatedly), double/triple-deducting the same production run. Since stock is
+  // deliberately never auto-reversed when leaving 'completed', the movement must
+  // fire at most once per WO, ever.
+  if(status === 'completed' && !wo.stock_applied) {
     if(wo.bom_snapshot && wo.bom_snapshot.length) {
       for(const comp of wo.bom_snapshot) {
         const {data: compProd} = await sb.from('products').select('stock_qty').eq('id',comp.component_id).eq('tenant_id',APP.tenant.id).single()
@@ -5499,9 +5504,11 @@ async function _woUpdateStatus(id, status) {
     const newFinishedStock = Number(finishedProd?.stock_qty||0) + Number(wo.qty_to_produce)
     await sb.from('products').update({stock_qty:newFinishedStock}).eq('id',wo.product_id).eq('tenant_id',APP.tenant.id)
     await sb.from('stock_movements').insert({tenant_id:APP.tenant.id, product_id: wo.product_id, type:'in', qty: wo.qty_to_produce, note: 'WO production - '+id})
+    await sb.from('work_orders').update({stock_applied:true}).eq('id',id).eq('tenant_id',APP.tenant.id)
   } else if(oldStatus === 'completed' && status !== 'completed') {
     // Deliberately do NOT auto-reverse stock — too risky for MVP; admin handles manual adjustment.
-    showToast(isBm?'Menukar status dari Selesai tidak akan reverse stock automatik':'Changing status from Completed will not automatically reverse stock', 'warning')
+    // stock_applied stays true, so re-completing this WO later will NOT deduct/produce stock again.
+    showToast(isBm?'Menukar status dari Selesai tidak akan reverse stock automatik. Stock sudah dikira (locked) — tukar balik ke Selesai kemudian TIDAK akan deduct stock lagi.':'Changing status from Completed will not automatically reverse stock. Stock has already been applied (locked) — re-completing later will NOT deduct stock again.', 'warning')
   }
 
   showToast(isBm?'Status dikemaskini!':'Status updated!', 'success')

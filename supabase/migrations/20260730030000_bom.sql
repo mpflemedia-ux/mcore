@@ -34,3 +34,11 @@ create policy "bom_items_delete_own_tenant" on bom_items
 -- that completing the WO later consumes the snapshot instead of re-querying
 -- the (possibly since-changed) live BOM.
 alter table work_orders add column bom_snapshot jsonb;
+
+-- ---------- work_orders.stock_applied ----------
+-- "Once ever" guard: whether stock has already been deducted/incremented for
+-- this WO's completion. Prevents double-deduction if a user toggles status
+-- completed -> pending -> completed repeatedly (checking only the immediate
+-- previous status is not enough, since a genuine pending->completed
+-- transition would otherwise re-run the stock movement every time).
+alter table work_orders add column stock_applied boolean not null default false;
