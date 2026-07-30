@@ -4600,6 +4600,8 @@ function renderHR(params={}) {
   if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year); return }
   if(params.view==='payslips-print' && params.month && params.year) { renderPayslipsPrint(params.month, params.year); return }
   if(params.view==='payslip' && params.id) { renderPayslipDetail(params.id); return }
+  if(params.view==='attendance') { renderAttendance(params); return }
+  if(params.view==='leave') { renderLeave(params); return }
   renderEmployeeList()
 }
 
@@ -4608,17 +4610,21 @@ async function renderEmployeeList() {
   const t = isBm ? {
     title:'SDM & Gaji', addEmployee:'Tambah Pekerja', runPayroll:'Jalankan Payroll', noData:'Tiada rekod pekerja lagi',
     name:'Nama', position:'Jawatan', salary:'Gaji Pokok', ic:'No. IC', payrollHistory:'Sejarah Payroll',
-    period:'Tempoh', netPay:'Gaji Bersih', noPayroll:'Tiada payroll dijana lagi', salaryDisbursement:'Penyaluran Gaji'
+    period:'Tempoh', netPay:'Gaji Bersih', noPayroll:'Tiada payroll dijana lagi', salaryDisbursement:'Penyaluran Gaji',
+    attendance:'Kehadiran', leave:'Cuti'
   } : {
     title:'HR & Payroll', addEmployee:'Add Employee', runPayroll:'Run Payroll', noData:'No employee records yet',
     name:'Name', position:'Position', salary:'Basic Salary', ic:'IC No.', payrollHistory:'Payroll History',
-    period:'Period', netPay:'Net Pay', noPayroll:'No payroll generated yet', salaryDisbursement:'Salary Disbursement'
+    period:'Period', netPay:'Net Pay', noPayroll:'No payroll generated yet', salaryDisbursement:'Salary Disbursement',
+    attendance:'Attendance', leave:'Leave'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline" onclick="openPage('hr',{view:'salary-disbursement'})"><i class="ti ti-report-money"></i> ${t.salaryDisbursement}</button>
       <button class="btn btn-outline" onclick="openPage('hr',{view:'payroll-run'})"><i class="ti ti-cash"></i> ${t.runPayroll}</button>
+      <button class="btn btn-outline" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.attendance}</button>
+      <button class="btn btn-outline" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.leave}</button>
       <button class="btn btn-primary" onclick="openPage('hr',{view:'employee-form'})"><i class="ti ti-plus"></i> ${t.addEmployee}</button>
     </div>
   </div>
@@ -5155,6 +5161,370 @@ async function renderPayslipsPrint(month, year) {
     </div>
   </div>`).join('')}`
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATTENDANCE & LEAVE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ANNUAL_LEAVE_ENTITLEMENT = 14
+let _attendanceRecords = []
+let _leaveRequests = []
+
+async function renderAttendance(params={}) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Kehadiran', back:'SDM & Gaji', month:'Bulan', year:'Tahun',
+    logTitle:'Log Kehadiran', employee:'Pekerja', date:'Tarikh', status:'Status',
+    present:'Hadir', absent:'Tidak Hadir', late:'Lewat', halfDay:'Setengah Hari', onLeave:'Bercuti',
+    clockIn:'Masuk', clockOut:'Keluar', notes:'Catatan',
+    save:'Simpan', cancel:'Batal', selectEmployee:'-- Pilih Pekerja --',
+    empRequired:'Sila pilih pekerja', dateRequired:'Sila pilih tarikh', saved:'Kehadiran disimpan!'
+  } : {
+    title:'Attendance', back:'HR & Payroll', month:'Month', year:'Year',
+    logTitle:'Log Attendance', employee:'Employee', date:'Date', status:'Status',
+    present:'Present', absent:'Absent', late:'Late', halfDay:'Half Day', onLeave:'On Leave',
+    clockIn:'Clock In', clockOut:'Clock Out', notes:'Notes',
+    save:'Save', cancel:'Cancel', selectEmployee:'-- Select Employee --',
+    empRequired:'Please select an employee', dateRequired:'Please select a date', saved:'Attendance saved!'
+  }
+
+  const now = new Date()
+  const month = params.month || now.getMonth()+1
+  const year = params.year || now.getFullYear()
+  const reload = "openPage('hr',{view:'attendance',month:Number(document.getElementById('att-month').value),year:Number(document.getElementById('att-year').value)})"
+
+  const {data: employees} = await sb.from('employees').select('id,name')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:700px;padding:20px;margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:12px">${t.logTitle}</div>
+    <input type="hidden" id="att-edit-id" value="">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.employee}</label>
+        <select id="att-employee" class="form-select">
+          <option value="">${t.selectEmployee}</option>
+          ${(employees||[]).map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.date}</label><input id="att-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.status}</label>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="present" checked> ${t.present}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="absent"> ${t.absent}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="late"> ${t.late}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="half_day"> ${t.halfDay}</label>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">${t.clockIn}</label><input id="att-clock-in" type="time" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${t.clockOut}</label><input id="att-clock-out" type="time" class="form-input"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.notes}</label><textarea id="att-notes" class="form-input" rows="2"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="_attendanceSave()"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="_attendanceResetForm()">${t.cancel}</button>
+    </div>
+  </div>
+  <div class="card" style="max-width:320px;padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:16px">
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">${t.month}</label>
+        <select id="att-month" class="form-select" onchange="${reload}">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===month?'selected':''}>${i+1}</option>`).join('')}</select>
+      </div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">${t.year}</label>
+        <input id="att-year" type="number" class="form-input" style="width:100px" value="${year}" onchange="${reload}">
+      </div>
+    </div>
+  </div>
+  <div class="card"><div id="att-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  await _attendanceLoadTable(month, year)
+}
+
+function _attendanceResetForm() {
+  document.getElementById('att-edit-id').value = ''
+  document.getElementById('att-employee').value = ''
+  document.getElementById('att-date').value = new Date().toISOString().slice(0,10)
+  document.querySelectorAll('input[name="att-status"]').forEach(r=>{ r.checked = r.value==='present' })
+  document.getElementById('att-clock-in').value = ''
+  document.getElementById('att-clock-out').value = ''
+  document.getElementById('att-notes').value = ''
+}
+
+async function _attendanceLoadTable(month, year) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    employee:'Pekerja', date:'Tarikh', status:'Status', notes:'Catatan',
+    present:'Hadir', absent:'Tidak Hadir', late:'Lewat', halfDay:'Setengah Hari', onLeave:'Bercuti',
+    noData:'Tiada rekod kehadiran untuk bulan ini', delConfirm:'Padam rekod kehadiran ini?', deleted:'Rekod kehadiran dipadam.'
+  } : {
+    employee:'Employee', date:'Date', status:'Status', notes:'Notes',
+    present:'Present', absent:'Absent', late:'Late', halfDay:'Half Day', onLeave:'On Leave',
+    noData:'No attendance records for this month', delConfirm:'Delete this attendance record?', deleted:'Attendance record deleted.'
+  }
+  const wrap = document.getElementById('att-table-wrap')
+  const from = `${year}-${String(month).padStart(2,'0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
+  const {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,employees(name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  _attendanceRecords = data || []
+  if(_attendanceRecords.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const statusColor = s => s==='present'?'var(--success)':s==='absent'?'var(--danger)':s==='late'?'var(--warning)':'var(--text-3)'
+  const statusLabel = s => s==='present'?t.present:s==='absent'?t.absent:s==='late'?t.late:s==='half_day'?t.halfDay:t.onLeave
+  wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.employee}</th><th>${t.status}</th><th>${t.notes}</th><th></th></tr></thead>
+  <tbody>${_attendanceRecords.map(a=>`<tr>
+    <td>${formatDate(a.date)}</td>
+    <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
+    <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
+    <td style="color:var(--text-2)">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_attendanceEdit('${a.id}')"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_attendanceDelete('${a.id}')"><i class="ti ti-trash"></i></button>
+    </td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+function _attendanceEdit(id) {
+  const rec = _attendanceRecords.find(a=>String(a.id)===String(id))
+  if(!rec) return
+  document.getElementById('att-edit-id').value = rec.id
+  document.getElementById('att-employee').value = rec.employee_id
+  document.getElementById('att-date').value = rec.date
+  document.querySelectorAll('input[name="att-status"]').forEach(r=>{ r.checked = r.value===rec.status })
+  document.getElementById('att-clock-in').value = rec.clock_in || ''
+  document.getElementById('att-clock-out').value = rec.clock_out || ''
+  document.getElementById('att-notes').value = rec.notes || ''
+  window.scrollTo({top:0, behavior:'smooth'})
+}
+
+async function _attendanceSave() {
+  const isBm = APP.language==='bm'
+  const id = document.getElementById('att-edit-id').value
+  const employeeId = document.getElementById('att-employee').value
+  const date = document.getElementById('att-date').value
+  const statusEl = document.querySelector('input[name="att-status"]:checked')
+  if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
+  if(!date) { showToast(isBm?'Sila pilih tarikh':'Please select a date', 'error'); return }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    employee_id: employeeId,
+    date,
+    status: statusEl ? statusEl.value : 'present',
+    clock_in: document.getElementById('att-clock-in').value || null,
+    clock_out: document.getElementById('att-clock-out').value || null,
+    notes: document.getElementById('att-notes').value.trim() || null,
+  }
+  let error
+  if(id) {
+    ({error} = await sb.from('attendance').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+  } else {
+    ({error} = await sb.from('attendance').insert(payload))
+  }
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog(id?'update':'create', 'attendance', id||null)
+  showToast(isBm?'Kehadiran disimpan!':'Attendance saved!', 'success')
+  _attendanceResetForm()
+  const month = Number(document.getElementById('att-month').value)
+  const year = Number(document.getElementById('att-year').value)
+  await _attendanceLoadTable(month, year)
+}
+
+async function _attendanceDelete(id) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm?'Padam rekod kehadiran ini?':'Delete this attendance record?')) return
+  const {error} = await sb.from('attendance').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('delete', 'attendance', id)
+  showToast(isBm?'Rekod kehadiran dipadam.':'Attendance record deleted.', 'success')
+  const month = Number(document.getElementById('att-month').value)
+  const year = Number(document.getElementById('att-year').value)
+  await _attendanceLoadTable(month, year)
+}
+
+async function renderLeave(params={}) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Cuti', back:'SDM & Gaji', applyTitle:'Mohon Cuti', employee:'Pekerja', leaveType:'Jenis Cuti',
+    annual:'Tahunan', medical:'Sakit', emergency:'Kecemasan', unpaid:'Tanpa Gaji',
+    startDate:'Tarikh Mula', endDate:'Tarikh Tamat', days:'Bilangan Hari', reason:'Sebab',
+    save:'Hantar Permohonan', selectEmployee:'-- Pilih Pekerja --', balance:'Baki Cuti Tahunan'
+  } : {
+    title:'Leave', back:'HR & Payroll', applyTitle:'Apply Leave', employee:'Employee', leaveType:'Leave Type',
+    annual:'Annual', medical:'Medical', emergency:'Emergency', unpaid:'Unpaid',
+    startDate:'Start Date', endDate:'End Date', days:'Days', reason:'Reason',
+    save:'Submit Request', selectEmployee:'-- Select Employee --', balance:'Annual Leave Balance'
+  }
+
+  const {data: employees} = await sb.from('employees').select('id,name')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:700px;padding:20px;margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:12px">${t.applyTitle}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.employee}</label>
+        <select id="lv-employee" class="form-select">
+          <option value="">${t.selectEmployee}</option>
+          ${(employees||[]).map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.leaveType}</label>
+        <select id="lv-type" class="form-select">
+          <option value="annual">${t.annual}</option>
+          <option value="medical">${t.medical}</option>
+          <option value="emergency">${t.emergency}</option>
+          <option value="unpaid">${t.unpaid}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.startDate}</label><input id="lv-start" type="date" class="form-input" onchange="_leaveCalcDays()"></div>
+      <div class="form-group"><label class="form-label">${t.endDate}</label><input id="lv-end" type="date" class="form-input" onchange="_leaveCalcDays()"></div>
+      <div class="form-group"><label class="form-label">${t.days}</label><input id="lv-days" type="number" class="form-input" readonly value="0"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.reason}</label><textarea id="lv-reason" class="form-input" rows="2"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="_leaveSave()"><i class="ti ti-check"></i> ${t.save}</button>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><div class="card-title">${t.balance}</div></div>
+    <div id="lv-balance-wrap" style="overflow-x:auto;padding:16px"><div class="spinner"></div></div>
+  </div>
+  <div class="card"><div id="lv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  await _leaveLoadTable()
+  await _leaveLoadBalances(employees||[])
+}
+
+function _leaveCalcDays() {
+  const start = document.getElementById('lv-start').value
+  const end = document.getElementById('lv-end').value
+  const daysEl = document.getElementById('lv-days')
+  if(!start || !end) { daysEl.value = 0; return }
+  const diff = Math.round((new Date(end) - new Date(start)) / 86400000) + 1
+  daysEl.value = diff > 0 ? diff : 0
+}
+
+async function _leaveSave() {
+  const isBm = APP.language==='bm'
+  const employeeId = document.getElementById('lv-employee').value
+  const leaveType = document.getElementById('lv-type').value
+  const start = document.getElementById('lv-start').value
+  const end = document.getElementById('lv-end').value
+  const days = Number(document.getElementById('lv-days').value)
+  const reason = document.getElementById('lv-reason').value.trim()
+  if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
+  if(!start || !end) { showToast(isBm?'Tarikh mula dan tamat diperlukan':'Start and end date are required', 'error'); return }
+  if(days <= 0) { showToast(isBm?'Tarikh tamat mesti selepas atau sama dengan tarikh mula':'End date must be on or after start date', 'error'); return }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    employee_id: employeeId,
+    leave_type: leaveType,
+    start_date: start,
+    end_date: end,
+    days_count: days,
+    reason: reason || null,
+    status: 'pending',
+  }
+  const {error} = await sb.from('leave_requests').insert(payload)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('create', 'leave_requests', null)
+  showToast(isBm?'Permohonan cuti dihantar!':'Leave request submitted!', 'success')
+  openPage('hr',{view:'leave'})
+}
+
+async function _leaveLoadTable() {
+  const isBm = APP.language==='bm'
+  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  const t = isBm ? {
+    employee:'Pekerja', leaveType:'Jenis Cuti', annual:'Tahunan', medical:'Sakit', emergency:'Kecemasan', unpaid:'Tanpa Gaji',
+    startDate:'Tarikh Mula', endDate:'Tarikh Tamat', days:'Hari', status:'Status', actionedBy:'Diluluskan/Ditolak Oleh',
+    pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak', approve:'Lulus', reject:'Tolak',
+    noData:'Tiada permohonan cuti lagi'
+  } : {
+    employee:'Employee', leaveType:'Leave Type', annual:'Annual', medical:'Medical', emergency:'Emergency', unpaid:'Unpaid',
+    startDate:'Start Date', endDate:'End Date', days:'Days', status:'Status', actionedBy:'Approved/Rejected By',
+    pending:'Pending', approved:'Approved', rejected:'Rejected', approve:'Approve', reject:'Reject',
+    noData:'No leave requests yet'
+  }
+  const wrap = document.getElementById('lv-table-wrap')
+  const {data, error} = await sb.from('leave_requests').select('id,leave_type,start_date,end_date,days_count,status,approved_by,employees(name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  _leaveRequests = data || []
+  if(_leaveRequests.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+
+  const approverIds = [...new Set(_leaveRequests.map(l=>l.approved_by).filter(Boolean))]
+  const {data: approvers} = approverIds.length
+    ? await sb.from('user_profiles').select('id,full_name').in('id', approverIds)
+    : {data:[]}
+  const approverMap = {}
+  ;(approvers||[]).forEach(p=>{ approverMap[p.id] = p.full_name })
+
+  const typeLabel = ty => ty==='annual'?t.annual:ty==='medical'?t.medical:ty==='emergency'?t.emergency:t.unpaid
+  const statusColor = s => s==='approved'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
+  const statusLabel = s => s==='approved'?t.approved:s==='rejected'?t.rejected:t.pending
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.employee}</th><th>${t.leaveType}</th><th>${t.startDate}</th><th>${t.endDate}</th>
+    <th style="text-align:right">${t.days}</th><th>${t.status}</th><th>${t.actionedBy}</th><th></th>
+  </tr></thead>
+  <tbody>${_leaveRequests.map(l=>`<tr>
+    <td>${_aiEscapeHtml(l.employees?.name||'-')}</td>
+    <td>${typeLabel(l.leave_type)}</td>
+    <td>${formatDate(l.start_date)}</td>
+    <td>${formatDate(l.end_date)}</td>
+    <td style="text-align:right">${l.days_count}</td>
+    <td><span style="color:${statusColor(l.status)};font-weight:600">${statusLabel(l.status)}</span></td>
+    <td>${l.approved_by ? _aiEscapeHtml(approverMap[l.approved_by]||'-') : '-'}</td>
+    <td style="white-space:nowrap">${(isAdminOwner && l.status==='pending') ? `
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px;color:var(--success);border-color:var(--success)" onclick="_leaveApprove('${l.id}')"><i class="ti ti-check"></i> ${t.approve}</button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_leaveReject('${l.id}')"><i class="ti ti-x"></i> ${t.reject}</button>
+    ` : ''}</td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function _leaveLoadBalances(employees) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { employee:'Pekerja', balance:'Baki', usedOf:'hari digunakan' } : { employee:'Employee', balance:'Balance', usedOf:'days used' }
+  const wrap = document.getElementById('lv-balance-wrap')
+  if(!employees || employees.length===0) { wrap.innerHTML = `<p style="color:var(--text-3);font-size:13px">-</p>`; return }
+  const currentYear = new Date().getFullYear()
+  const {data: approvedAnnual} = await sb.from('leave_requests').select('employee_id,days_count,start_date')
+    .eq('tenant_id',APP.tenant.id).eq('status','approved').eq('leave_type','annual').is('deleted_at',null)
+  const usedMap = {}
+  ;(approvedAnnual||[]).forEach(l=>{
+    if(new Date(l.start_date).getFullYear() !== currentYear) return
+    usedMap[l.employee_id] = (usedMap[l.employee_id]||0) + Number(l.days_count||0)
+  })
+  wrap.innerHTML = `<table><thead><tr><th>${t.employee}</th><th style="text-align:right">${t.balance}</th></tr></thead>
+  <tbody>${employees.map(e=>{
+    const used = usedMap[e.id] || 0
+    return `<tr><td>${_aiEscapeHtml(e.name)}</td><td style="text-align:right">${used}/${ANNUAL_LEAVE_ENTITLEMENT} ${t.usedOf}</td></tr>`
+  }).join('')}</tbody></table>`
+}
+
+async function _leaveSetStatus(id, status) {
+  const isBm = APP.language==='bm'
+  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  if(!isAdminOwner) { showToast(isBm?'Tiada kebenaran':'Not permitted', 'error'); return }
+  const {error} = await sb.from('leave_requests').update({status, approved_by:APP.user.id}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('update', 'leave_requests', id)
+  showToast(status==='approved' ? (isBm?'Cuti diluluskan!':'Leave approved!') : (isBm?'Cuti ditolak.':'Leave rejected.'), 'success')
+  await _leaveLoadTable()
+  const {data: employees} = await sb.from('employees').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  await _leaveLoadBalances(employees||[])
+}
+async function _leaveApprove(id) { await _leaveSetStatus(id, 'approved') }
+async function _leaveReject(id) { await _leaveSetStatus(id, 'rejected') }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POS MODULE
