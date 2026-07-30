@@ -7036,16 +7036,18 @@ async function _posCheckout() {
 function renderReports(params={}) {
   if(params.view==='balance-sheet') { renderBalanceSheet(); return }
   if(params.view==='sales') { renderSalesReport(); return }
+  if(params.view==='custom') { renderCustomReport(); return }
   renderPnL()
 }
 
 function _repTabs(active) {
-  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', sales:'Laporan Jualan' }
-    : { pnl:'Income Statement', bs:'Balance Sheet', sales:'Sales Report' }
+  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', sales:'Laporan Jualan', custom:'Laporan Tersendiri' }
+    : { pnl:'Income Statement', bs:'Balance Sheet', sales:'Sales Report', custom:'Custom Report' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='pnl'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{})"><i class="ti ti-report-money"></i> ${t.pnl}</button>
     <button class="btn btn-sm ${active==='bs'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'balance-sheet'})"><i class="ti ti-scale"></i> ${t.bs}</button>
     <button class="btn btn-sm ${active==='sales'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sales'})"><i class="ti ti-chart-bar"></i> ${t.sales}</button>
+    <button class="btn btn-sm ${active==='custom'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'custom'})"><i class="ti ti-table"></i> ${t.custom}</button>
   </div>`
 }
 
@@ -7247,6 +7249,218 @@ async function _salesRepLoad() {
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.outstanding}</div><div style="font-size:22px;font-weight:700;color:var(--danger)">${formatRM(totalInv-totalPaid)}</div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.count}</div><div style="font-size:22px;font-weight:700">${data.length}</div></div>
   </div>`
+}
+
+// ─── Custom Report Builder ───────────────────────────────────────────────────
+const _repCustomSources = {
+  invoices: {
+    table: 'invoices', dateCol: 'issue_date',
+    columns: [
+      {key:'ref_no', en:'Ref No', bm:'No Rujukan'},
+      {key:'customer_name', en:'Customer', bm:'Pelanggan'},
+      {key:'issue_date', en:'Issue Date', bm:'Tarikh Keluar', type:'date'},
+      {key:'due_date', en:'Due Date', bm:'Tarikh Akhir', type:'date'},
+      {key:'total', en:'Total', bm:'Jumlah', type:'currency'},
+      {key:'paid_amt', en:'Paid', bm:'Dibayar', type:'currency'},
+      {key:'status', en:'Status', bm:'Status'},
+    ]
+  },
+  products: {
+    table: 'products', searchCols: ['code','name_en'],
+    columns: [
+      {key:'code', en:'SKU', bm:'SKU'},
+      {key:'name_en', en:'Name', bm:'Nama'},
+      {key:'unit_price', en:'Sell Price', bm:'Harga Jual', type:'currency'},
+      {key:'unit_cost', en:'Cost', bm:'Kos', type:'currency'},
+      {key:'stock_qty', en:'Stock Qty', bm:'Kuantiti Stok'},
+      {key:'reorder_point', en:'Reorder Point', bm:'Titik Pesan Semula'},
+    ]
+  },
+  customers: {
+    table: 'customers', searchCols: ['name'],
+    columns: [
+      {key:'name', en:'Name', bm:'Nama'},
+      {key:'email', en:'Email', bm:'Emel'},
+      {key:'phone', en:'Phone', bm:'Telefon'},
+      {key:'city', en:'City', bm:'Bandar'},
+      {key:'created_at', en:'Created At', bm:'Tarikh Cipta', type:'date'},
+    ]
+  },
+  purchase_orders: {
+    table: 'purchase_orders', dateCol: 'order_date',
+    columns: [
+      {key:'po_no', en:'PO No', bm:'No PO'},
+      {key:'supplier_name', en:'Supplier', bm:'Pembekal'},
+      {key:'order_date', en:'Order Date', bm:'Tarikh Pesanan', type:'date'},
+      {key:'status', en:'Status', bm:'Status'},
+      {key:'total', en:'Total', bm:'Jumlah', type:'currency'},
+    ]
+  },
+}
+let _repCustomSource = 'invoices'
+let _repCustomSelectedCols = _repCustomSources.invoices.columns.map(c=>c.key)
+let _repCustomRows = []
+let _repCustomResultCols = []
+
+function _repCustomSourceLabel(key) {
+  const t = APP.language==='bm' ? { invoices:'Invois', products:'Produk', customers:'Pelanggan', purchase_orders:'Purchase Orders' }
+    : { invoices:'Invoices', products:'Products', customers:'Customers', purchase_orders:'Purchase Orders' }
+  return t[key]
+}
+
+function _repCustomFmtVal(row, col) {
+  const v = row[col.key]
+  if(col.type==='currency') return formatRM(v||0)
+  if(col.type==='date') return formatDate(v)
+  return v ?? ''
+}
+
+function renderCustomReport() {
+  const t = APP.language==='bm' ? {
+    title:'Laporan Tersendiri', selectSource:'Pilih Sumber Data', selectCols:'Pilih Column', generate:'Jana Laporan'
+  } : {
+    title:'Custom Report', selectSource:'Select Data Source', selectCols:'Select Columns', generate:'Generate Report'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_repTabs('custom')}
+  <div class="card" style="max-width:900px;padding:20px">
+    <div style="font-weight:600;margin-bottom:8px">${t.selectSource}</div>
+    <div id="rc-source-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:20px">${_repCustomSourceTabsHtml()}</div>
+
+    <div style="font-weight:600;margin-bottom:8px">${t.selectCols}</div>
+    <div id="rc-col-picker" style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:20px">${_repCustomColPickerHtml()}</div>
+
+    <div id="rc-filter-area" style="margin-bottom:16px">${_repCustomFilterHtml()}</div>
+
+    <button class="btn btn-primary" onclick="_repCustomGenerate()"><i class="ti ti-table"></i> ${t.generate}</button>
+  </div>
+  <div id="rc-result" style="max-width:900px;margin-top:16px"></div>`
+}
+
+function _repCustomSourceTabsHtml() {
+  return Object.keys(_repCustomSources).map(key => `
+    <button class="btn btn-sm ${_repCustomSource===key?'btn-primary':'btn-outline'}" onclick="_repCustomSelectSource('${key}')">${_repCustomSourceLabel(key)}</button>
+  `).join('')
+}
+
+function _repCustomColPickerHtml() {
+  const src = _repCustomSources[_repCustomSource]
+  return src.columns.map(c => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+      <input type="checkbox" ${_repCustomSelectedCols.includes(c.key)?'checked':''} onchange="_repCustomToggleCol('${c.key}')">
+      ${APP.language==='bm'?c.bm:c.en}
+    </label>
+  `).join('')
+}
+
+function _repCustomFilterHtml() {
+  const src = _repCustomSources[_repCustomSource]
+  const t = APP.language==='bm' ? { from:'Dari', to:'Hingga', searchPh:'Cari mengikut nama/kod...' } : { from:'From', to:'To', searchPh:'Search by name/code...' }
+  if(src.dateCol) {
+    const today = new Date().toISOString().slice(0,10)
+    const firstOfMonth = today.slice(0,8)+'01'
+    return `<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="form-group"><label class="form-label">${t.from}</label><input id="rc-filter-from" type="date" class="form-input" value="${firstOfMonth}"></div>
+      <div class="form-group"><label class="form-label">${t.to}</label><input id="rc-filter-to" type="date" class="form-input" value="${today}"></div>
+    </div>`
+  }
+  return `<div class="form-group" style="max-width:300px;margin:0"><input id="rc-filter-search" type="text" class="form-input" placeholder="${t.searchPh}"></div>`
+}
+
+function _repCustomSelectSource(key) {
+  _repCustomSource = key
+  _repCustomSelectedCols = _repCustomSources[key].columns.map(c=>c.key)
+  document.getElementById('rc-source-tabs').innerHTML = _repCustomSourceTabsHtml()
+  document.getElementById('rc-col-picker').innerHTML = _repCustomColPickerHtml()
+  document.getElementById('rc-filter-area').innerHTML = _repCustomFilterHtml()
+  document.getElementById('rc-result').innerHTML = ''
+}
+
+function _repCustomToggleCol(key) {
+  const i = _repCustomSelectedCols.indexOf(key)
+  if(i>=0) _repCustomSelectedCols.splice(i,1)
+  else _repCustomSelectedCols.push(key)
+}
+
+async function _repCustomGenerate() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { noData:'Tiada data.', exportCsv:'Export CSV' } : { noData:'No data.', exportCsv:'Export CSV' }
+  const src = _repCustomSources[_repCustomSource]
+  const result = document.getElementById('rc-result')
+  result.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+
+  let selectStr = src.columns.map(c=>c.key).filter(k=>k!=='supplier_name').join(',')
+  if(_repCustomSource==='purchase_orders') selectStr += ',suppliers(name)'
+
+  let q = sb.from(src.table).select(selectStr).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+
+  if(src.dateCol) {
+    const from = document.getElementById('rc-filter-from')?.value
+    const to = document.getElementById('rc-filter-to')?.value
+    if(from) q = q.gte(src.dateCol, from)
+    if(to) q = q.lte(src.dateCol, to)
+  } else {
+    const search = document.getElementById('rc-filter-search')?.value?.trim()
+    if(search) q = q.or(src.searchCols.map(col=>`${col}.ilike.%${search}%`).join(','))
+  }
+
+  const {data, error} = await q
+  if(error) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div></div>`; return }
+
+  const rows = (data||[]).map(r => {
+    const row = Object.assign({}, r)
+    if(_repCustomSource==='purchase_orders') row.supplier_name = r.suppliers?.name || ''
+    return row
+  })
+
+  const selectedCols = src.columns.filter(c=>_repCustomSelectedCols.includes(c.key))
+  _repCustomRows = rows
+  _repCustomResultCols = selectedCols
+
+  if(!rows.length || !selectedCols.length) {
+    result.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><p>${t.noData}</p></div></div>`
+    return
+  }
+
+  result.innerHTML = `<div class="card">
+    <div style="padding:12px 20px;display:flex;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="_repCustomExportCsv()"><i class="ti ti-download"></i> ${t.exportCsv}</button>
+    </div>
+    <div style="overflow-x:auto"><table><thead><tr>${selectedCols.map(c=>`<th>${isBm?c.bm:c.en}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(row=>`<tr>${selectedCols.map(c=>`<td>${_repCustomFmtVal(row,c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+  </div>`
+}
+
+function _repCustomExportCsv() {
+  if(!_repCustomRows.length || !_repCustomResultCols.length) return
+  const columns = _repCustomResultCols.map(c => ({key:c.key, label: APP.language==='bm'?c.bm:c.en}))
+  const exportRows = _repCustomRows.map(row => {
+    const o = {}
+    _repCustomResultCols.forEach(c => { o[c.key] = _repCustomFmtVal(row, c) })
+    return o
+  })
+  const d = new Date()
+  const dd = String(d.getDate()).padStart(2,'0')
+  const mm = String(d.getMonth()+1).padStart(2,'0')
+  const yyyy = d.getFullYear()
+  const filename = `CustomReport-${_repCustomSource}-${dd}${mm}${yyyy}.csv`
+  _exportTableToCsv(exportRows, columns, filename)
+}
+
+function _exportTableToCsv(rows, columns, filename) {
+  const header = columns.map(c=>c.label).join(',')
+  const body = rows.map(r => columns.map(c => {
+    let val = r[c.key] ?? ''
+    val = String(val).replace(/"/g,'""')
+    return /[",\n]/.test(val) ? `"${val}"` : val
+  }).join(',')).join('\n')
+  const csv = header + '\n' + body
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'})
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ─── ONBOARDING WIZARD ───────────────────────────────────────────────────────
