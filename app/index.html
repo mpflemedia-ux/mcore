@@ -2649,10 +2649,10 @@ async function _faLoadList() {
   wrap.innerHTML = `<table><thead><tr><th>${t.assetNo}</th><th>${t.name}</th><th>${t.category}</th><th>${t.purchaseDate}</th>
     <th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.accumDep}</th><th style="text-align:right">${t.nbv}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(a=>{
-    const nbv = Number(a.cost) - Number(a.accumulated_depreciation||0)
+    const nbv = Number(a.purchase_price) - Number(a.accumulated_dep||0)
     return `<tr onclick="openPage('accounting',{view:'fa-detail',id:'${a.id}'})" style="cursor:pointer">
       <td><strong>${a.asset_no}</strong></td><td>${a.name}</td><td>${a.category||'-'}</td><td>${formatDate(a.purchase_date)}</td>
-      <td style="text-align:right">${formatRM(a.cost)}</td><td style="text-align:right">${formatRM(a.accumulated_depreciation||0)}</td>
+      <td style="text-align:right">${formatRM(a.purchase_price)}</td><td style="text-align:right">${formatRM(a.accumulated_dep||0)}</td>
       <td style="text-align:right">${formatRM(nbv)}</td>
       <td><span style="color:${a.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${a.status==='active'?t.active:t.disposed}</span></td>
     </tr>`
@@ -2708,10 +2708,10 @@ async function _faSave() {
     tenant_id: APP.tenant.id,
     asset_no: refData || await _genFallbackRefNo('fixed_assets','asset_no','FA'),
     name, category: document.getElementById('fa-category').value.trim()||null,
-    purchase_date: purchaseDate, cost: Number(cost),
+    purchase_date: purchaseDate, purchase_price: Number(cost),
     residual_value: Number(document.getElementById('fa-residual').value||0),
     useful_life_years: Number(usefulLife),
-    accumulated_depreciation: 0, status: 'active'
+    accumulated_dep: 0, status: 'active'
   }
   const {data, error} = await sb.from('fixed_assets').insert(payload).select('id').single()
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
@@ -2740,8 +2740,8 @@ async function renderFADetail(id) {
   const {data: asset} = await sb.from('fixed_assets').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!asset) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
 
-  const nbv = Number(asset.cost) - Number(asset.accumulated_depreciation||0)
-  const depreciableAmt = Number(asset.cost) - Number(asset.residual_value||0)
+  const nbv = Number(asset.purchase_price) - Number(asset.accumulated_dep||0)
+  const depreciableAmt = Number(asset.purchase_price) - Number(asset.residual_value||0)
   const monthly = depreciableAmt / Number(asset.useful_life_years) / 12
   const totalMonths = Math.round(Number(asset.useful_life_years) * 12)
   const purchaseDate = new Date(asset.purchase_date)
@@ -2750,7 +2750,7 @@ async function renderFADetail(id) {
   for(let i=1;i<=totalMonths;i++) {
     const monthDate = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth()+i, 1)
     accum = Math.min(accum + monthly, depreciableAmt)
-    scheduleRows.push({ month: monthDate, amount: monthly, accum, nbv: Number(asset.cost)-accum })
+    scheduleRows.push({ month: monthDate, amount: monthly, accum, nbv: Number(asset.purchase_price)-accum })
   }
 
   const {data: runs} = await sb.from('depreciation_runs').select('period,amount,journal_entries(ref_no)').eq('asset_id',id).eq('tenant_id',APP.tenant.id).order('period')
@@ -2765,17 +2765,17 @@ async function renderFADetail(id) {
       <div><div style="color:var(--text-3);font-size:12px">${t.category}</div>${asset.category||'-'}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.purchaseDate}</div>${formatDate(asset.purchase_date)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.status}</div><span style="color:${asset.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${asset.status==='active'?t.active:t.disposed}</span></div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.cost}</div>${formatRM(asset.cost)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.cost}</div>${formatRM(asset.purchase_price)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.residual}</div>${formatRM(asset.residual_value||0)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.usefulLife}</div>${asset.useful_life_years}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.accumDep}</div>${formatRM(asset.accumulated_depreciation||0)}</div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.accumDep}</div>${formatRM(asset.accumulated_dep||0)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.nbv}</div><strong>${formatRM(nbv)}</strong></div>
     </div>
     ${asset.status==='active' ? `<div style="margin-top:16px"><button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_faShowDisposeForm()"><i class="ti ti-trash"></i> ${t.dispose}</button></div>
     <div id="fa-dispose-form" style="display:none;margin-top:16px;padding:16px;border:1px solid var(--border);border-radius:var(--radius-sm)">
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group"><label class="form-label">${t.disposalDate}</label><input id="fa-disposal-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="form-group"><label class="form-label">${t.proceeds}</label><input id="fa-disposal-proceeds" type="number" step="0.01" class="form-input" value="0"></div>
+        <div class="form-group"><label class="form-label">${t.proceeds}</label><input id="fa-disposal-value" type="number" step="0.01" class="form-input" value="0"></div>
         <button class="btn btn-primary" onclick="_faDispose('${id}')">${t.save}</button>
         <button class="btn btn-outline" onclick="document.getElementById('fa-dispose-form').style.display='none'">${t.cancel}</button>
       </div>
@@ -2804,8 +2804,8 @@ function _faShowDisposeForm() {
 async function _faDispose(id) {
   const isBm = APP.language==='bm'
   const disposalDate = document.getElementById('fa-disposal-date').value
-  const proceeds = Number(document.getElementById('fa-disposal-proceeds').value||0)
-  const {error} = await sb.from('fixed_assets').update({ status:'disposed', disposal_date: disposalDate, disposal_proceeds: proceeds }).eq('id',id).eq('tenant_id',APP.tenant.id)
+  const proceeds = Number(document.getElementById('fa-disposal-value').value||0)
+  const {error} = await sb.from('fixed_assets').update({ status:'disposed', disposal_date: disposalDate, disposal_value: proceeds }).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('update','fixed_assets', id)
   showToast(isBm?'Aset dilupuskan.':'Asset disposed.', 'success')
@@ -2875,7 +2875,7 @@ async function _faRunDepreciation() {
   const btn = document.getElementById('fa-run-btn')
   btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>'
 
-  const {data: candidates} = await sb.from('fixed_assets').select('id,cost,residual_value,useful_life_years,accumulated_depreciation')
+  const {data: candidates} = await sb.from('fixed_assets').select('id,purchase_price,residual_value,useful_life_years,accumulated_dep')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('status','active').lte('purchase_date', periodEnd)
   const {data: existingRuns} = await sb.from('depreciation_runs').select('asset_id').eq('tenant_id',APP.tenant.id).eq('period', period)
   const alreadyRun = new Set((existingRuns||[]).map(r=>r.asset_id))
@@ -2883,8 +2883,8 @@ async function _faRunDepreciation() {
   const toProcess = []
   ;(candidates||[]).forEach(a => {
     if(alreadyRun.has(a.id)) return
-    const depreciableAmt = Number(a.cost) - Number(a.residual_value||0)
-    const remaining = depreciableAmt - Number(a.accumulated_depreciation||0)
+    const depreciableAmt = Number(a.purchase_price) - Number(a.residual_value||0)
+    const remaining = depreciableAmt - Number(a.accumulated_dep||0)
     if(remaining <= 0) return
     const monthly = depreciableAmt / Number(a.useful_life_years) / 12
     const amount = Math.round(Math.min(monthly, remaining) * 100) / 100
@@ -2928,8 +2928,8 @@ async function _faRunDepreciation() {
   await sb.from('depreciation_runs').insert(runsPayload)
 
   for(const p of toProcess) {
-    const newAccum = Number(p.asset.accumulated_depreciation||0) + p.amount
-    await sb.from('fixed_assets').update({ accumulated_depreciation: newAccum }).eq('id', p.asset.id).eq('tenant_id',APP.tenant.id)
+    const newAccum = Number(p.asset.accumulated_dep||0) + p.amount
+    await sb.from('fixed_assets').update({ accumulated_dep: newAccum }).eq('id', p.asset.id).eq('tenant_id',APP.tenant.id)
   }
 
   auditLog('create','journal_entries', entry.id)
