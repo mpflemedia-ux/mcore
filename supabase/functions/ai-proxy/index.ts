@@ -199,88 +199,160 @@ async function handleReceipt(body: Record<string, unknown>) {
   }
 }
 
+// FLAT field list — no nested arrays/objects. The original schema nested
+// education/employment_history as arrays-of-objects and language_proficiency
+// as a nested object; qwen/qwen3.6-27b (currently the ONLY vision-capable
+// model on Groq — Llama 4 Scout/Maverick vision was deprecated, gpt-oss is
+// text-only) reliably fails to produce valid JSON for that shape in one shot
+// (Groq 400 json_validate_failed, empty failed_generation). A flat key-per-field
+// schema is far more likely to parse; the nested shape the frontend expects is
+// reconstructed here server-side from the flat fields, so no client change needed.
+const APP_FORM_FLAT_FIELDS = [
+  'position_applied', 'expected_salary', 'available_date',
+  'full_name', 'ic_no', 'dob', 'gender', 'nationality', 'marital_status',
+  'mobile_no', 'email', 'home_address',
+  'education_1_qualification', 'education_1_institution', 'education_1_year',
+  'education_2_qualification', 'education_2_institution', 'education_2_year',
+  'education_3_qualification', 'education_3_institution', 'education_3_year',
+  'employment_1_company', 'employment_1_position_duration', 'employment_1_reason',
+  'employment_2_company', 'employment_2_position_duration', 'employment_2_reason',
+  'lang_bm_spoken', 'lang_bm_written', 'lang_en_spoken', 'lang_en_written',
+  'lang_others_name', 'lang_others_spoken', 'lang_others_written',
+  'emergency_name', 'emergency_relationship', 'emergency_mobile', 'emergency_address',
+] as const
+
+const APP_FORM_MINIMAL_FIELDS = [
+  'position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address',
+] as const
+
+function appFormJsonSchema(fields: readonly string[]) {
+  const properties: Record<string, unknown> = {}
+  for (const f of fields) {
+    properties[f] = f === 'expected_salary' ? { type: ['number', 'null'] } : { type: ['string', 'null'] }
+  }
+  return {
+    type: 'json_schema' as const,
+    json_schema: {
+      name: 'application_form_extract',
+      schema: { type: 'object', properties, required: [] },
+    },
+  }
+}
+
+function appFormPrompt(fields: readonly string[]) {
+  return (
+    'Extract structured data from this Malaysian Employment Application Form image. Return ONLY ' +
+    `valid JSON with EXACTLY these flat keys (no nesting): ${fields.join(', ')}. ` +
+    'Dates as YYYY-MM-DD. gender is "male" or "female". marital_status is "single", "married", ' +
+    '"divorced", or "widowed". Kalau field tak dapat dibaca/kosong dalam gambar, guna null. Untuk ' +
+    'checkbox/tick (Gender, Marital Status, Language rating), kenal pasti mana yang ditandakan ' +
+    '(☑/✓/tick) dan return value tu, BUKAN semua option.'
+  )
+}
+
+async function callAppFormVision(imageUrl: string, visionModel: string, fields: readonly string[], useJsonSchema: boolean) {
+  const raw = await callGroq(
+    [
+      { role: 'system', content: appFormPrompt(fields) },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Extract the application form details from this image.' },
+          { type: 'image_url', image_url: { url: imageUrl } },
+        ],
+      },
+    ],
+    visionModel,
+    { response_format: useJsonSchema ? appFormJsonSchema(fields) : { type: 'json_object' } },
+  )
+  return JSON.parse(raw) as Record<string, unknown>
+}
+
 async function handleScanApplicationForm(body: Record<string, unknown>) {
   const imageBase64 = body.image_base64
   const mimeType = typeof body.mime_type === 'string' && body.mime_type ? body.mime_type : 'image/jpeg'
   if (!imageBase64 || typeof imageBase64 !== 'string') throw new Error('image_base64 is required')
 
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+  const imageUrl = `data:${mimeType};base64,${imageBase64}`
 
-  const systemPrompt =
-    'Extract structured data from this Malaysian Employment Application Form image. Return ONLY ' +
-    'valid JSON, no markdown, no explanation, with this exact structure:\n' +
-    '{\n' +
-    '  position_applied, expected_salary (number), available_date (YYYY-MM-DD),\n' +
-    "  full_name, ic_no, dob (YYYY-MM-DD), gender ('male'/'female'),\n" +
-    "  nationality, marital_status ('single'/'married'/'divorced'/'widowed'),\n" +
-    '  mobile_no, email, home_address,\n' +
-    '  education: [{qualification, institution, year_completed}],\n' +
-    '  employment_history: [{company, position_duration, reason_leaving}],\n' +
-    '  language_proficiency: {\n' +
-    '    bm: {spoken, written}, en: {spoken, written},\n' +
-    '    others: {name, spoken, written}\n' +
-    '  },\n' +
-    '  emergency_name, emergency_relationship, emergency_mobile, emergency_address\n' +
-    '}\n' +
-    'Kalau field tak dapat dibaca/kosong dalam gambar, guna null. Untuk checkbox/tick (Gender, ' +
-    'Marital Status, Language rating), kenal pasti mana yang ditandakan (☑/✓/tick) dan return ' +
-    'value tu, BUKAN semua option.'
+  // Three attempts, each simpler than the last, so a hard failure on the full
+  // extraction still leaves the user with SOME auto-filled fields instead of
+  // nothing: (1) full flat field set via Structured Outputs (json_schema —
+  // gives the model an explicit shape instead of just a text description),
+  // (2) same full field set via the older json_object mode (in case this Groq
+  // account/model combo doesn't like json_schema), (3) a minimal core-fields-only
+  // extraction as a last resort.
+  let flat: Record<string, unknown> | null = null
+  let extractionLevel: 'full' | 'minimal' = 'full'
+  const errors: string[] = []
 
-  let raw: string
-  try {
-    raw = await callGroq(
-      [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Extract the application form details from this image.' },
-            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-          ],
-        },
-      ],
-      visionModel,
-      { response_format: { type: 'json_object' } },
-    )
-  } catch (err) {
-    // Re-thrown with the resolved model + payload size so the caller can see in the
-    // error body whether GROQ_VISION_MODEL was actually picked up, and rule out truncation.
-    const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(`Application form vision call failed (model=${visionModel}, base64_len=${imageBase64.length}): ${msg}`)
+  for (const attempt of [
+    { fields: APP_FORM_FLAT_FIELDS, useJsonSchema: true, level: 'full' as const },
+    { fields: APP_FORM_FLAT_FIELDS, useJsonSchema: false, level: 'full' as const },
+    { fields: APP_FORM_MINIMAL_FIELDS, useJsonSchema: false, level: 'minimal' as const },
+  ]) {
+    try {
+      flat = await callAppFormVision(imageUrl, visionModel, attempt.fields, attempt.useJsonSchema)
+      extractionLevel = attempt.level
+      break
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err))
+    }
   }
 
-  let parsed: Record<string, unknown>
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+  if (!flat) {
+    throw new Error(
+      `Application form vision call failed after ${errors.length} attempts (model=${visionModel}, base64_len=${imageBase64.length}): ${errors.join(' | ')}`,
+    )
   }
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
   const num = (v: unknown) => (typeof v === 'number' ? v : null)
-  const arr = (v: unknown) => (Array.isArray(v) ? v : [])
-  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {})
+
+  const education = [1, 2, 3]
+    .map((i) => ({
+      qualification: str(flat![`education_${i}_qualification`]),
+      institution: str(flat![`education_${i}_institution`]),
+      year_completed: str(flat![`education_${i}_year`]),
+    }))
+    .filter((e) => e.qualification || e.institution || e.year_completed)
+
+  const employment_history = [1, 2]
+    .map((i) => ({
+      company: str(flat![`employment_${i}_company`]),
+      position_duration: str(flat![`employment_${i}_position_duration`]),
+      reason_leaving: str(flat![`employment_${i}_reason`]),
+    }))
+    .filter((e) => e.company || e.position_duration || e.reason_leaving)
+
+  const language_proficiency = {
+    bm: { spoken: str(flat.lang_bm_spoken), written: str(flat.lang_bm_written) },
+    en: { spoken: str(flat.lang_en_spoken), written: str(flat.lang_en_written) },
+    others: { name: str(flat.lang_others_name), spoken: str(flat.lang_others_spoken), written: str(flat.lang_others_written) },
+  }
 
   return {
-    position_applied: str(parsed.position_applied),
-    expected_salary: num(parsed.expected_salary),
-    available_date: str(parsed.available_date),
-    full_name: str(parsed.full_name),
-    ic_no: str(parsed.ic_no),
-    dob: str(parsed.dob),
-    gender: str(parsed.gender),
-    nationality: str(parsed.nationality),
-    marital_status: str(parsed.marital_status),
-    mobile_no: str(parsed.mobile_no),
-    email: str(parsed.email),
-    home_address: str(parsed.home_address),
-    education: arr(parsed.education),
-    employment_history: arr(parsed.employment_history),
-    language_proficiency: obj(parsed.language_proficiency),
-    emergency_name: str(parsed.emergency_name),
-    emergency_relationship: str(parsed.emergency_relationship),
-    emergency_mobile: str(parsed.emergency_mobile),
-    emergency_address: str(parsed.emergency_address),
+    position_applied: str(flat.position_applied),
+    expected_salary: num(flat.expected_salary),
+    available_date: str(flat.available_date),
+    full_name: str(flat.full_name),
+    ic_no: str(flat.ic_no),
+    dob: str(flat.dob),
+    gender: str(flat.gender),
+    nationality: str(flat.nationality),
+    marital_status: str(flat.marital_status),
+    mobile_no: str(flat.mobile_no),
+    email: str(flat.email),
+    home_address: str(flat.home_address),
+    education,
+    employment_history,
+    language_proficiency,
+    emergency_name: str(flat.emergency_name),
+    emergency_relationship: str(flat.emergency_relationship),
+    emergency_mobile: str(flat.emergency_mobile),
+    emergency_address: str(flat.emergency_address),
+    _partial: extractionLevel === 'minimal',
   }
 }
 

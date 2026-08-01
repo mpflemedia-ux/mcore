@@ -6133,8 +6133,8 @@ async function _appScanForm(event) {
   if(!file) return
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { scanning:'Mengimbas borang...', converting:'Menukar PDF ke imej...', done:'Borang diimbas — sila semak field di bawah.', err:'Ralat imbas borang: ', badFile:'Sila pilih fail imej atau PDF.' }
-    : { scanning:'Scanning form...', converting:'Converting PDF to image...', done:'Form scanned — please review the fields below.', err:'Form scan error: ', badFile:'Please select an image or PDF file.' }
+    ? { scanning:'Mengimbas borang...', converting:'Menukar PDF ke imej...', done:'Borang diimbas — sila semak field di bawah.', partial:'Imbasan sebahagian sahaja — hanya beberapa field asas diisi automatik, sila lengkapkan selebihnya secara manual.', err:'Ralat imbas borang: ', badFile:'Sila pilih fail imej atau PDF.' }
+    : { scanning:'Scanning form...', converting:'Converting PDF to image...', done:'Form scanned — please review the fields below.', partial:'Partial scan only — a few core fields were auto-filled, please fill in the rest manually.', err:'Form scan error: ', badFile:'Please select an image or PDF file.' }
 
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
   const isImage = file.type.startsWith('image/')
@@ -6186,7 +6186,10 @@ async function _appScanForm(event) {
     setVal('app-lang-others-spoken', lp.others?.spoken)
     setVal('app-lang-others-written', lp.others?.written)
 
-    if(statusEl) statusEl.innerHTML = `<span style="color:var(--success)"><i class="ti ti-check"></i> ${t.done}</span>`
+    if(statusEl) {
+      if(r._partial) statusEl.innerHTML = `<span style="color:var(--warning)"><i class="ti ti-alert-triangle"></i> ${t.partial}</span>`
+      else statusEl.innerHTML = `<span style="color:var(--success)"><i class="ti ti-check"></i> ${t.done}</span>`
+    }
   } catch(err) {
     console.error('Application form scan error:', err)
     if(statusEl) statusEl.innerHTML = `<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`
