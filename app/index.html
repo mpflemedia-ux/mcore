@@ -749,6 +749,11 @@ function canAccess(module) {
 function openPage(page, params={}) {
   const item = NAV_ITEMS.find(n=>n.id===page)
   if(item && !canAccess(item.module)) { renderAccessDenied(); return }
+  // Drop any page-specific global listeners (eg. Salary Disbursement's
+  // beforeprint/afterprint) before rendering whatever page we're navigating
+  // to next — renderSalaryDisbursement() re-registers its own if we're
+  // headed back there.
+  _sdUnregisterPrintListeners()
   localStorage.setItem('nexerp_last_page', page)
   APP.currentPage = page
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page))
@@ -6016,7 +6021,7 @@ async function renderSalaryDisbursement(month, year) {
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
   </div>
-    <button class="btn btn-outline" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <button class="btn btn-outline" onclick="_sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
@@ -6101,10 +6106,10 @@ async function renderSalaryDisbursement(month, year) {
   </div>
   <div class="card" style="margin-top:16px;max-width:700px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 16px">
-      <div class="form-group"><label class="form-label">${t.preparedBy}</label><input class="form-input" value="${_aiEscapeHtml(APP.user.name||'')}"></div>
-      <div class="form-group"><label class="form-label">${t.checkedBy}</label><input class="form-input"></div>
-      <div class="form-group"><label class="form-label">${t.firstApproval}</label><input class="form-input"></div>
-      <div class="form-group"><label class="form-label">${t.secondApproval}</label><input class="form-input"></div>
+      <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(APP.user.name||'')}"></div>
+      <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input"></div>
+      <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input"></div>
+      <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input"></div>
     </div>
   </div>
   <div class="card no-print" style="margin-top:16px">
@@ -6115,6 +6120,44 @@ async function renderSalaryDisbursement(month, year) {
       ${data.map(r=>`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'payslip',id:'${r.id}'})"><i class="ti ti-receipt"></i> ${_aiEscapeHtml(r.employees?.name||'-')}</button>`).join('')}
     </div>
   </div>`
+
+  _sdRegisterPrintListeners()
+}
+
+// Hides signature fields the staff never filled in so print/PDF output
+// doesn't show empty boxes for them; only the boxes with a typed name print.
+function _sdPreparePrint() {
+  ['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
+    const input = document.getElementById('sig-input-'+k)
+    const wrapper = document.getElementById('sig-'+k)
+    if(input && wrapper) {
+      wrapper.style.display = input.value.trim() ? '' : 'none'
+    }
+  })
+}
+function _sdRestoreAfterPrint() {
+  ['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
+    const wrapper = document.getElementById('sig-'+k)
+    if(wrapper) wrapper.style.display = ''
+  })
+}
+
+// The beforeprint/afterprint listeners are page-specific (Salary
+// Disbursement only) — registered when this page renders and unregistered
+// on the next navigation via openPage(), so they never linger and interfere
+// with print on other pages (eg. Invoice/Quotation's own print button).
+let _sdPrintListenersActive = false
+function _sdRegisterPrintListeners() {
+  if(_sdPrintListenersActive) return
+  window.addEventListener('beforeprint', _sdPreparePrint)
+  window.addEventListener('afterprint', _sdRestoreAfterPrint)
+  _sdPrintListenersActive = true
+}
+function _sdUnregisterPrintListeners() {
+  if(!_sdPrintListenersActive) return
+  window.removeEventListener('beforeprint', _sdPreparePrint)
+  window.removeEventListener('afterprint', _sdRestoreAfterPrint)
+  _sdPrintListenersActive = false
 }
 
 function _sdRowValues(r) {
