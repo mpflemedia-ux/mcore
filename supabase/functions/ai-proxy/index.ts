@@ -332,17 +332,26 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   let extractionLevel: 'full' | 'minimal' = 'full'
   const errors: string[] = []
 
-  for (const attempt of [
-    { defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: true, level: 'full' as const },
-    { defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: false, level: 'full' as const },
-    { defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', useJsonSchema: false, level: 'minimal' as const },
-  ]) {
+  const attempts = [
+    { label: 'attempt 1: full fields, json_schema', defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: true, level: 'full' as const },
+    { label: 'attempt 2: full fields, json_object', defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: false, level: 'full' as const },
+    { label: 'attempt 3: minimal fields, json_object', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', useJsonSchema: false, level: 'minimal' as const },
+  ]
+  // Every attempt is logged on its own outcome — success AND failure — not
+  // just the one that ultimately wins. Without this, a later attempt
+  // succeeding silently swallows WHY the earlier (richer) attempts failed,
+  // which is exactly the information needed to diagnose an incomplete
+  // extraction that fell back to a leaner attempt.
+  for (const attempt of attempts) {
     try {
       flat = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs, attempt.useJsonSchema)
       extractionLevel = attempt.level
+      console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(flat)}`)
       break
     } catch (err) {
-      errors.push(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[scan_application_form] ${attempt.label} FAILED: ${msg}`)
+      errors.push(`${attempt.label}: ${msg}`)
     }
   }
 
@@ -351,7 +360,6 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
       `Application form vision call failed after ${errors.length} attempts (model=${visionModel}, base64_len=${imageBase64.length}): ${errors.join(' | ')}`,
     )
   }
-  console.log(`[scan_application_form] extraction level=${extractionLevel} raw=${JSON.stringify(flat)}`)
 
   // Known failure mode: the broad single-call extraction succeeds and fills
   // the simpler personal fields, but silently comes back empty for the whole
@@ -381,6 +389,22 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
   const num = (v: unknown) => (typeof v === 'number' ? v : null)
+
+  // Not a hard reject — Malaysian 011-prefixed mobiles legitimately use an
+  // 8-digit subscriber number (11 digits total including the leading 0),
+  // one more than the 7-digit standard for 012/013/etc, so digit count alone
+  // can't safely distinguish a real number from a misread one. This only
+  // flags genuinely implausible lengths (garbled/merged digits) in the logs
+  // for review — it does not modify or drop the extracted value.
+  const logIfImplausiblePhone = (fieldName: string, v: unknown) => {
+    if (typeof v !== 'string' || !v) return
+    const digits = v.replace(/\D/g, '')
+    if (digits.length < 9 || digits.length > 11) {
+      console.error(`[scan_application_form] ${fieldName} looks implausible for a Malaysian phone number (${digits.length} digits): "${v}" — kept as-is, please verify manually`)
+    }
+  }
+  logIfImplausiblePhone('mobile_no', flat.mobile_no)
+  logIfImplausiblePhone('emergency_mobile', flat.emergency_mobile)
 
   const education = [1, 2, 3]
     .map((i) => ({
