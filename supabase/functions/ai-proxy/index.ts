@@ -207,53 +207,96 @@ async function handleReceipt(body: Record<string, unknown>) {
 // (Groq 400 json_validate_failed, empty failed_generation). A flat key-per-field
 // schema is far more likely to parse; the nested shape the frontend expects is
 // reconstructed here server-side from the flat fields, so no client change needed.
-const APP_FORM_FLAT_FIELDS = [
-  'position_applied', 'expected_salary', 'available_date',
-  'full_name', 'ic_no', 'dob', 'gender', 'nationality', 'marital_status',
-  'mobile_no', 'email', 'home_address',
-  'education_1_qualification', 'education_1_institution', 'education_1_year',
-  'education_2_qualification', 'education_2_institution', 'education_2_year',
-  'education_3_qualification', 'education_3_institution', 'education_3_year',
-  'employment_1_company', 'employment_1_position_duration', 'employment_1_reason',
-  'employment_2_company', 'employment_2_position_duration', 'employment_2_reason',
-  'lang_bm_spoken', 'lang_bm_written', 'lang_en_spoken', 'lang_en_written',
-  'lang_others_name', 'lang_others_spoken', 'lang_others_written',
-  'emergency_name', 'emergency_relationship', 'emergency_mobile', 'emergency_address',
-] as const
+//
+// Each field carries a description (and enum where the value is a fixed set,
+// eg language ratings use the SAME vocabulary as the frontend's <select>
+// options) — the original one-line comma-separated field list gave the model
+// no per-field context, which correlated with it silently dropping the
+// busier/later fields (education/employment/language) while still filling
+// the simpler, earlier-listed personal fields.
+type FieldDef = { key: string; type: 'string' | 'number'; description: string; enum?: string[] }
 
-const APP_FORM_MINIMAL_FIELDS = [
-  'position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address',
-] as const
+const PERSONAL_FIELD_DEFS: FieldDef[] = [
+  { key: 'position_applied', type: 'string', description: 'Position/job applied for' },
+  { key: 'expected_salary', type: 'number', description: 'Expected monthly salary in RM, numeric only, no currency symbol' },
+  { key: 'available_date', type: 'string', description: 'Date available to start work, format YYYY-MM-DD' },
+  { key: 'full_name', type: 'string', description: 'Applicant full name' },
+  { key: 'ic_no', type: 'string', description: 'Malaysian IC number, format XXXXXX-XX-XXXX' },
+  { key: 'dob', type: 'string', description: 'Date of birth, format YYYY-MM-DD' },
+  { key: 'gender', type: 'string', description: 'Which ONE checkbox is ticked for gender — only null if truly no tick visible', enum: ['male', 'female'] },
+  { key: 'nationality', type: 'string', description: 'Nationality/citizenship' },
+  { key: 'marital_status', type: 'string', description: 'Which ONE checkbox is ticked for marital status — only null if truly no tick visible', enum: ['single', 'married', 'divorced', 'widowed'] },
+  { key: 'mobile_no', type: 'string', description: 'Mobile phone number' },
+  { key: 'email', type: 'string', description: 'Email address' },
+  { key: 'home_address', type: 'string', description: 'Home address' },
+  { key: 'emergency_name', type: 'string', description: 'Emergency contact name' },
+  { key: 'emergency_relationship', type: 'string', description: 'Emergency contact relationship to applicant' },
+  { key: 'emergency_mobile', type: 'string', description: 'Emergency contact mobile number' },
+  { key: 'emergency_address', type: 'string', description: 'Emergency contact address' },
+]
 
-function appFormJsonSchema(fields: readonly string[]) {
+const LANG_RATING_ENUM = ['good', 'average', 'basic']
+
+const TABLE_FIELD_DEFS: FieldDef[] = [
+  { key: 'education_1_qualification', type: 'string', description: 'Education table row 1: qualification (eg SPM, Diploma, Degree)' },
+  { key: 'education_1_institution', type: 'string', description: 'Education table row 1: institution/school name' },
+  { key: 'education_1_year', type: 'string', description: 'Education table row 1: year completed' },
+  { key: 'education_2_qualification', type: 'string', description: 'Education table row 2: qualification' },
+  { key: 'education_2_institution', type: 'string', description: 'Education table row 2: institution/school name' },
+  { key: 'education_2_year', type: 'string', description: 'Education table row 2: year completed' },
+  { key: 'education_3_qualification', type: 'string', description: 'Education table row 3: qualification' },
+  { key: 'education_3_institution', type: 'string', description: 'Education table row 3: institution/school name' },
+  { key: 'education_3_year', type: 'string', description: 'Education table row 3: year completed' },
+  { key: 'employment_1_company', type: 'string', description: 'Employment history table row 1: company name' },
+  { key: 'employment_1_position_duration', type: 'string', description: 'Employment history table row 1: position held and duration' },
+  { key: 'employment_1_reason', type: 'string', description: 'Employment history table row 1: reason for leaving' },
+  { key: 'employment_2_company', type: 'string', description: 'Employment history table row 2: company name' },
+  { key: 'employment_2_position_duration', type: 'string', description: 'Employment history table row 2: position held and duration' },
+  { key: 'employment_2_reason', type: 'string', description: 'Employment history table row 2: reason for leaving' },
+  { key: 'lang_bm_spoken', type: 'string', description: 'Bahasa Malaysia row: spoken proficiency rating ticked', enum: LANG_RATING_ENUM },
+  { key: 'lang_bm_written', type: 'string', description: 'Bahasa Malaysia row: written proficiency rating ticked', enum: LANG_RATING_ENUM },
+  { key: 'lang_en_spoken', type: 'string', description: 'English row: spoken proficiency rating ticked', enum: LANG_RATING_ENUM },
+  { key: 'lang_en_written', type: 'string', description: 'English row: written proficiency rating ticked', enum: LANG_RATING_ENUM },
+  { key: 'lang_others_name', type: 'string', description: 'Name of any other language listed in the "Others" row' },
+  { key: 'lang_others_spoken', type: 'string', description: 'Other language row: spoken proficiency rating ticked', enum: LANG_RATING_ENUM },
+  { key: 'lang_others_written', type: 'string', description: 'Other language row: written proficiency rating ticked', enum: LANG_RATING_ENUM },
+]
+
+const MINIMAL_KEYS = ['position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address']
+const MINIMAL_FIELD_DEFS = PERSONAL_FIELD_DEFS.filter((d) => MINIMAL_KEYS.includes(d.key))
+
+function fieldsJsonSchema(defs: FieldDef[]) {
   const properties: Record<string, unknown> = {}
-  for (const f of fields) {
-    properties[f] = f === 'expected_salary' ? { type: ['number', 'null'] } : { type: ['string', 'null'] }
+  for (const d of defs) {
+    const prop: Record<string, unknown> = { type: [d.type, 'null'], description: d.description }
+    if (d.enum) prop.enum = [...d.enum, null]
+    properties[d.key] = prop
   }
   return {
     type: 'json_schema' as const,
-    json_schema: {
-      name: 'application_form_extract',
-      schema: { type: 'object', properties, required: [] },
-    },
+    json_schema: { name: 'application_form_extract', schema: { type: 'object', properties, required: [] } },
   }
 }
 
-function appFormPrompt(fields: readonly string[]) {
+function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
+  const lines = defs
+    .map((d) => `- ${d.key}: ${d.description}${d.enum ? ` (must be exactly one of: ${d.enum.join(', ')}, or null)` : ''}`)
+    .join('\n')
   return (
-    'Extract structured data from this Malaysian Employment Application Form image. Return ONLY ' +
-    `valid JSON with EXACTLY these flat keys (no nesting): ${fields.join(', ')}. ` +
-    'Dates as YYYY-MM-DD. gender is "male" or "female". marital_status is "single", "married", ' +
-    '"divorced", or "widowed". Kalau field tak dapat dibaca/kosong dalam gambar, guna null. Untuk ' +
-    'checkbox/tick (Gender, Marital Status, Language rating), kenal pasti mana yang ditandakan ' +
-    '(☑/✓/tick) dan return value tu, BUKAN semua option.'
+    `Extract these fields from the ${sectionTitle} of this Malaysian Employment Application Form ` +
+    `image. Return ONLY valid JSON with EXACTLY these flat keys (no nesting):\n${lines}\n` +
+    'You MUST attempt EVERY field listed above — only use null if that specific field is genuinely ' +
+    'absent or not legible in the image; do not skip a field just because it is further down this ' +
+    'list or in a busier part of the form. Dates as YYYY-MM-DD. Untuk checkbox/tick, kenal pasti ' +
+    'dengan teliti mana SATU option yang betul-betul ditandakan (☑/✓/tick/silang) — jangan teka atau ' +
+    'pilih option lain kalau tak pasti, biar null sahaja.'
   )
 }
 
-async function callAppFormVision(imageUrl: string, visionModel: string, fields: readonly string[], useJsonSchema: boolean) {
+async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[], useJsonSchema: boolean) {
   const raw = await callGroq(
     [
-      { role: 'system', content: appFormPrompt(fields) },
+      { role: 'system', content: fieldsPrompt(sectionTitle, defs) },
       {
         role: 'user',
         content: [
@@ -263,7 +306,7 @@ async function callAppFormVision(imageUrl: string, visionModel: string, fields: 
       },
     ],
     visionModel,
-    { response_format: useJsonSchema ? appFormJsonSchema(fields) : { type: 'json_object' } },
+    { response_format: useJsonSchema ? fieldsJsonSchema(defs) : { type: 'json_object' } },
   )
   return JSON.parse(raw) as Record<string, unknown>
 }
@@ -275,6 +318,8 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
 
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
   const imageUrl = `data:${mimeType};base64,${imageBase64}`
+  const ALL_FIELD_DEFS = [...PERSONAL_FIELD_DEFS, ...TABLE_FIELD_DEFS]
+  const FULL_SECTION_TITLE = 'entire form (personal particulars, education, employment history, language proficiency, emergency contact)'
 
   // Three attempts, each simpler than the last, so a hard failure on the full
   // extraction still leaves the user with SOME auto-filled fields instead of
@@ -288,12 +333,12 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   const errors: string[] = []
 
   for (const attempt of [
-    { fields: APP_FORM_FLAT_FIELDS, useJsonSchema: true, level: 'full' as const },
-    { fields: APP_FORM_FLAT_FIELDS, useJsonSchema: false, level: 'full' as const },
-    { fields: APP_FORM_MINIMAL_FIELDS, useJsonSchema: false, level: 'minimal' as const },
+    { defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: true, level: 'full' as const },
+    { defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: false, level: 'full' as const },
+    { defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', useJsonSchema: false, level: 'minimal' as const },
   ]) {
     try {
-      flat = await callAppFormVision(imageUrl, visionModel, attempt.fields, attempt.useJsonSchema)
+      flat = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs, attempt.useJsonSchema)
       extractionLevel = attempt.level
       break
     } catch (err) {
@@ -305,6 +350,33 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     throw new Error(
       `Application form vision call failed after ${errors.length} attempts (model=${visionModel}, base64_len=${imageBase64.length}): ${errors.join(' | ')}`,
     )
+  }
+  console.log(`[scan_application_form] extraction level=${extractionLevel} raw=${JSON.stringify(flat)}`)
+
+  // Known failure mode: the broad single-call extraction succeeds and fills
+  // the simpler personal fields, but silently comes back empty for the whole
+  // education/employment/language table group (a busier, more visually
+  // complex part of the form). When that happens, run ONE focused follow-up
+  // call scoped ONLY to those fields — a narrower task the model handles far
+  // more reliably — and merge whatever it finds into the result.
+  if (extractionLevel === 'full') {
+    const tableGroupEmpty = TABLE_FIELD_DEFS.every((d) => {
+      const v = flat![d.key]
+      return v == null || v === ''
+    })
+    if (tableGroupEmpty) {
+      try {
+        const tableFlat = await callAppFormVision(
+          imageUrl, visionModel,
+          'Education table / Employment History table / Language Proficiency table',
+          TABLE_FIELD_DEFS, true,
+        )
+        console.log(`[scan_application_form] supplementary table extraction raw=${JSON.stringify(tableFlat)}`)
+        flat = { ...flat, ...tableFlat }
+      } catch (err) {
+        console.error('[scan_application_form] supplementary table extraction failed:', err instanceof Error ? err.message : String(err))
+      }
+    }
   }
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
@@ -332,7 +404,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     others: { name: str(flat.lang_others_name), spoken: str(flat.lang_others_spoken), written: str(flat.lang_others_written) },
   }
 
-  return {
+  const result = {
     position_applied: str(flat.position_applied),
     expected_salary: num(flat.expected_salary),
     available_date: str(flat.available_date),
@@ -354,6 +426,8 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     emergency_address: str(flat.emergency_address),
     _partial: extractionLevel === 'minimal',
   }
+  console.log(`[scan_application_form] rebuilt result=${JSON.stringify(result)}`)
+  return result
 }
 
 async function handleNarrateReport(body: Record<string, unknown>) {
