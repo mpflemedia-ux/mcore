@@ -5,12 +5,13 @@
 // Request:  POST { action: '...', language: 'en'|'bm', ...action-specific fields }
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
-// Actions: chat, categorize, receipt (vision), narrate_report, business_insight,
-// draft_reminder, follow_up_suggestion. 'receipt' uses a vision-capable model read
-// from the GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of
-// code so it can be swapped without a redeploy if Groq deprecates it, which has
-// happened to every prior Groq vision model on a roughly 3-4 month cadence. Every
-// other action uses CHAT_MODEL (text-only).
+// Actions: chat, categorize, receipt (vision), scan_application_form (vision),
+// narrate_report, business_insight, draft_reminder, follow_up_suggestion.
+// 'receipt' and 'scan_application_form' use a vision-capable model read from the
+// GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of code so
+// it can be swapped without a redeploy if Groq deprecates it, which has happened
+// to every prior Groq vision model on a roughly 3-4 month cadence. Every other
+// action uses CHAT_MODEL (text-only).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -195,6 +196,91 @@ async function handleReceipt(body: Record<string, unknown>) {
     date: typeof parsed.date === 'string' ? parsed.date : null,
     description: typeof parsed.description === 'string' ? parsed.description : '',
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+  }
+}
+
+async function handleScanApplicationForm(body: Record<string, unknown>) {
+  const imageBase64 = body.image_base64
+  const mimeType = typeof body.mime_type === 'string' && body.mime_type ? body.mime_type : 'image/jpeg'
+  if (!imageBase64 || typeof imageBase64 !== 'string') throw new Error('image_base64 is required')
+
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  const systemPrompt =
+    'Extract structured data from this Malaysian Employment Application Form image. Return ONLY ' +
+    'valid JSON, no markdown, no explanation, with this exact structure:\n' +
+    '{\n' +
+    '  position_applied, expected_salary (number), available_date (YYYY-MM-DD),\n' +
+    "  full_name, ic_no, dob (YYYY-MM-DD), gender ('male'/'female'),\n" +
+    "  nationality, marital_status ('single'/'married'/'divorced'/'widowed'),\n" +
+    '  mobile_no, email, home_address,\n' +
+    '  education: [{qualification, institution, year_completed}],\n' +
+    '  employment_history: [{company, position_duration, reason_leaving}],\n' +
+    '  language_proficiency: {\n' +
+    '    bm: {spoken, written}, en: {spoken, written},\n' +
+    '    others: {name, spoken, written}\n' +
+    '  },\n' +
+    '  emergency_name, emergency_relationship, emergency_mobile, emergency_address\n' +
+    '}\n' +
+    'Kalau field tak dapat dibaca/kosong dalam gambar, guna null. Untuk checkbox/tick (Gender, ' +
+    'Marital Status, Language rating), kenal pasti mana yang ditandakan (☑/✓/tick) dan return ' +
+    'value tu, BUKAN semua option.'
+
+  let raw: string
+  try {
+    raw = await callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract the application form details from this image.' },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        },
+      ],
+      visionModel,
+      { response_format: { type: 'json_object' } },
+    )
+  } catch (err) {
+    // Re-thrown with the resolved model + payload size so the caller can see in the
+    // error body whether GROQ_VISION_MODEL was actually picked up, and rule out truncation.
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Application form vision call failed (model=${visionModel}, base64_len=${imageBase64.length}): ${msg}`)
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+  }
+
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
+  const num = (v: unknown) => (typeof v === 'number' ? v : null)
+  const arr = (v: unknown) => (Array.isArray(v) ? v : [])
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {})
+
+  return {
+    position_applied: str(parsed.position_applied),
+    expected_salary: num(parsed.expected_salary),
+    available_date: str(parsed.available_date),
+    full_name: str(parsed.full_name),
+    ic_no: str(parsed.ic_no),
+    dob: str(parsed.dob),
+    gender: str(parsed.gender),
+    nationality: str(parsed.nationality),
+    marital_status: str(parsed.marital_status),
+    mobile_no: str(parsed.mobile_no),
+    email: str(parsed.email),
+    home_address: str(parsed.home_address),
+    education: arr(parsed.education),
+    employment_history: arr(parsed.employment_history),
+    language_proficiency: obj(parsed.language_proficiency),
+    emergency_name: str(parsed.emergency_name),
+    emergency_relationship: str(parsed.emergency_relationship),
+    emergency_mobile: str(parsed.emergency_mobile),
+    emergency_address: str(parsed.emergency_address),
   }
 }
 
@@ -695,6 +781,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'receipt':
         data = await handleReceipt(body)
+        break
+      case 'scan_application_form':
+        data = await handleScanApplicationForm(body)
         break
       case 'narrate_report':
         data = await handleNarrateReport(body)
