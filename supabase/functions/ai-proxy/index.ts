@@ -265,19 +265,6 @@ const TABLE_FIELD_DEFS: FieldDef[] = [
 const MINIMAL_KEYS = ['position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address']
 const MINIMAL_FIELD_DEFS = PERSONAL_FIELD_DEFS.filter((d) => MINIMAL_KEYS.includes(d.key))
 
-function fieldsJsonSchema(defs: FieldDef[]) {
-  const properties: Record<string, unknown> = {}
-  for (const d of defs) {
-    const prop: Record<string, unknown> = { type: [d.type, 'null'], description: d.description }
-    if (d.enum) prop.enum = [...d.enum, null]
-    properties[d.key] = prop
-  }
-  return {
-    type: 'json_schema' as const,
-    json_schema: { name: 'application_form_extract', schema: { type: 'object', properties, required: [] } },
-  }
-}
-
 function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
   const lines = defs
     .map((d) => `- ${d.key}: ${d.description}${d.enum ? ` (must be exactly one of: ${d.enum.join(', ')}, or null)` : ''}`)
@@ -293,7 +280,12 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
   )
 }
 
-async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[], useJsonSchema: boolean) {
+// json_object only — Groq confirmed via live 400 response that qwen/qwen3.6-27b
+// (the vision model) does not support response_format: json_schema at all
+// ("This model does not support response format `json_schema`"), so that mode
+// is not attempted here. json_schema/strict structured outputs on Groq are
+// currently limited to the openai/gpt-oss-* text models, which don't do vision.
+async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[]) {
   const raw = await callGroq(
     [
       { role: 'system', content: fieldsPrompt(sectionTitle, defs) },
@@ -306,7 +298,7 @@ async function callAppFormVision(imageUrl: string, visionModel: string, sectionT
       },
     ],
     visionModel,
-    { response_format: useJsonSchema ? fieldsJsonSchema(defs) : { type: 'json_object' } },
+    { response_format: { type: 'json_object' } },
   )
   return JSON.parse(raw) as Record<string, unknown>
 }
@@ -321,21 +313,20 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   const ALL_FIELD_DEFS = [...PERSONAL_FIELD_DEFS, ...TABLE_FIELD_DEFS]
   const FULL_SECTION_TITLE = 'entire form (personal particulars, education, employment history, language proficiency, emergency contact)'
 
-  // Three attempts, each simpler than the last, so a hard failure on the full
+  // Two attempts, simpler on the second, so a hard failure on the full
   // extraction still leaves the user with SOME auto-filled fields instead of
-  // nothing: (1) full flat field set via Structured Outputs (json_schema —
-  // gives the model an explicit shape instead of just a text description),
-  // (2) same full field set via the older json_object mode (in case this Groq
-  // account/model combo doesn't like json_schema), (3) a minimal core-fields-only
-  // extraction as a last resort.
+  // nothing: (1) full flat field set, (2) a minimal core-fields-only
+  // extraction as a last resort. Both use json_object — json_schema was
+  // tried and dropped (see callAppFormVision comment above): Groq rejects it
+  // outright for this vision model with a 400, so every scan was silently
+  // burning a guaranteed-failed call before falling through.
   let flat: Record<string, unknown> | null = null
   let extractionLevel: 'full' | 'minimal' = 'full'
   const errors: string[] = []
 
   const attempts = [
-    { label: 'attempt 1: full fields, json_schema', defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: true, level: 'full' as const },
-    { label: 'attempt 2: full fields, json_object', defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, useJsonSchema: false, level: 'full' as const },
-    { label: 'attempt 3: minimal fields, json_object', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', useJsonSchema: false, level: 'minimal' as const },
+    { label: 'attempt 1: full fields', defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, level: 'full' as const },
+    { label: 'attempt 2: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
   ]
   // Every attempt is logged on its own outcome — success AND failure — not
   // just the one that ultimately wins. Without this, a later attempt
@@ -344,7 +335,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   // extraction that fell back to a leaner attempt.
   for (const attempt of attempts) {
     try {
-      flat = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs, attempt.useJsonSchema)
+      flat = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs)
       extractionLevel = attempt.level
       console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(flat)}`)
       break
@@ -377,7 +368,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
         const tableFlat = await callAppFormVision(
           imageUrl, visionModel,
           'Education table / Employment History table / Language Proficiency table',
-          TABLE_FIELD_DEFS, true,
+          TABLE_FIELD_DEFS,
         )
         console.log(`[scan_application_form] supplementary table extraction raw=${JSON.stringify(tableFlat)}`)
         flat = { ...flat, ...tableFlat }
