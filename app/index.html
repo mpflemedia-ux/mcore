@@ -3347,6 +3347,38 @@ async function _expSave(id) {
   openPage('accounting',{view:'expense'})
 }
 
+let _pdfJsLoadPromise = null
+function _loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib)
+  if (_pdfJsLoadPromise) return _pdfJsLoadPromise
+  _pdfJsLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+      resolve(window.pdfjsLib)
+    }
+    script.onerror = () => reject(new Error('Failed to load PDF library'))
+    document.head.appendChild(script)
+  })
+  return _pdfJsLoadPromise
+}
+
+async function _pdfFirstPageToImageBlob(file) {
+  const pdfjsLib = await _loadPdfJs()
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const page = await pdf.getPage(1)
+  const viewport = page.getViewport({ scale: 2 })
+  const canvas = document.createElement('canvas')
+  canvas.width = viewport.width
+  canvas.height = viewport.height
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Failed to convert PDF page to image')), 'image/png')
+  })
+}
+
 function _compressImageToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -5994,7 +6026,7 @@ async function renderApplicantForm(id) {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('applicants',{})">← ${t.back}</div></div></div>
   <div class="card" style="max-width:900px;padding:20px">
     <label class="form-label">${t.scanForm}</label>
-    <input type="file" accept="image/*" id="app-scan-input" onchange="_appScanForm(event)" style="display:block;margin-top:6px">
+    <input type="file" accept="image/*,application/pdf" id="app-scan-input" onchange="_appScanForm(event)" style="display:block;margin-top:6px">
     <div id="app-scan-status" style="margin-top:8px;font-size:13px;color:var(--text-3)"></div>
   </div>
 
@@ -6101,16 +6133,24 @@ async function _appScanForm(event) {
   if(!file) return
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { scanning:'Mengimbas borang...', done:'Borang diimbas — sila semak field di bawah.', err:'Ralat imbas borang: ', badFile:'Sila pilih fail imej.' }
-    : { scanning:'Scanning form...', done:'Form scanned — please review the fields below.', err:'Form scan error: ', badFile:'Please select an image file.' }
+    ? { scanning:'Mengimbas borang...', converting:'Menukar PDF ke imej...', done:'Borang diimbas — sila semak field di bawah.', err:'Ralat imbas borang: ', badFile:'Sila pilih fail imej atau PDF.' }
+    : { scanning:'Scanning form...', converting:'Converting PDF to image...', done:'Form scanned — please review the fields below.', err:'Form scan error: ', badFile:'Please select an image or PDF file.' }
 
-  if(!file.type.startsWith('image/')) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  const isImage = file.type.startsWith('image/')
+  if(!isPdf && !isImage) { showToast(t.badFile, 'warning'); event.target.value=''; return }
 
   const statusEl = document.getElementById('app-scan-status')
   if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
 
   try {
-    const {base64, mimeType} = await _compressImageToBase64(file)
+    let imageSource = file
+    if(isPdf) {
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.converting}`
+      imageSource = await _pdfFirstPageToImageBlob(file)
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+    }
+    const {base64, mimeType} = await _compressImageToBase64(imageSource)
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_application_form', image_base64: base64, mime_type: mimeType } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
