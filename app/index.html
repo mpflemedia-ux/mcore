@@ -401,12 +401,14 @@ tbody tr:hover{background:var(--bg)}
     background: rgba(0,0,0,.4); z-index: 150;
   }
 }
+.print-only { display:none; }
 @media print {
   #sidebar, #header, .no-print { display:none !important; }
   #main-area { margin:0 !important; }
   #main { padding:0 !important; }
   body, html { background:#fff !important; }
   .card { box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
+  .print-only { display:inline !important; }
 }
 </style>
 </head>
@@ -5974,6 +5976,12 @@ function _sdTypeLabel(list, key) {
   return found ? (APP.language==='bm'?found.bm:found.en) : (key||'-')
 }
 
+// Print-only plain-text companions for the editable no-print inputs/selects —
+// "-" instead of "RM 0.00" when a field isn't actually in use, consistent
+// with _sdBreakdownRows() only surfacing amounts > 0.
+function _sdPrintAmt(v) { return Number(v)>0 ? formatRM(v) : '-' }
+function _sdPrintType(list, type, amt) { return Number(amt)>0 ? _sdTypeLabel(list, type) : '-' }
+
 function _sdBreakdownRows(rec, t) {
   const rows = []
   ;[[rec.allowance_type_1, rec.allowance_1], [rec.allowance_type_2, rec.allowance_2], [rec.allowance_type_3, rec.allowance_3]].forEach(([type, amt]) => {
@@ -6077,21 +6085,21 @@ async function renderSalaryDisbursement(month, year) {
       <td>${_aiEscapeHtml(r.employees?.name||'-')}</td>
       <td>${r.employees?.bank_name?`${_aiEscapeHtml(r.employees.bank_name)} - ${_aiEscapeHtml(r.employees.bank_account_no||'-')}`:'-'}</td>
       <td style="text-align:right">${formatRM(r.basic_salary)}</td>
-      <td><select class="form-select no-print" id="sd-atype1-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_1)}</select></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a1-${r.id}" style="width:80px;text-align:right" value="${r.allowance_1||0}" oninput="_sdRecalc()"></td>
-      <td><select class="form-select no-print" id="sd-atype2-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_2)}</select></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a2-${r.id}" style="width:80px;text-align:right" value="${r.allowance_2||0}" oninput="_sdRecalc()"></td>
-      <td><select class="form-select no-print" id="sd-atype3-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a3-${r.id}" style="width:80px;text-align:right" value="${r.allowance_3||0}" oninput="_sdRecalc()"></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-epf-${r.id}" style="width:80px;text-align:right" value="${r.epf_employee||0}" oninput="_sdRecalc()"></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-${r.id}" style="width:80px;text-align:right" value="${r.socso_employee||0}" oninput="_sdRecalc()"></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" style="width:80px;text-align:right" value="${r.eis_employee||0}" oninput="_sdRecalc()"></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" style="width:80px;text-align:right" value="${r.pcb||0}" oninput="_sdRecalc()"></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" style="width:80px;text-align:right" value="${r.advance||0}" oninput="_sdRecalc()"></td>
-      <td><select class="form-select no-print" id="sd-dtype1-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d1-${r.id}" style="width:80px;text-align:right" value="${r.deduction_1||0}" oninput="_sdRecalc()"></td>
-      <td><select class="form-select no-print" id="sd-dtype2-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_2)}</select></td>
-      <td style="text-align:right"><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d2-${r.id}" style="width:80px;text-align:right" value="${r.deduction_2||0}" oninput="_sdRecalc()"></td>
+      <td><span class="print-only" id="sd-print-atype1-${r.id}">${_sdPrintType(SD_ALLOWANCE_TYPES, r.allowance_type_1, r.allowance_1)}</span><select class="form-select no-print" id="sd-atype1-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_1)}</select></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-a1-${r.id}">${_sdPrintAmt(r.allowance_1)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a1-${r.id}" style="width:80px;text-align:right" value="${r.allowance_1||0}" oninput="_sdRecalc()"></td>
+      <td><span class="print-only" id="sd-print-atype2-${r.id}">${_sdPrintType(SD_ALLOWANCE_TYPES, r.allowance_type_2, r.allowance_2)}</span><select class="form-select no-print" id="sd-atype2-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_2)}</select></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-a2-${r.id}">${_sdPrintAmt(r.allowance_2)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a2-${r.id}" style="width:80px;text-align:right" value="${r.allowance_2||0}" oninput="_sdRecalc()"></td>
+      <td><span class="print-only" id="sd-print-atype3-${r.id}">${_sdPrintType(SD_ALLOWANCE_TYPES, r.allowance_type_3, r.allowance_3)}</span><select class="form-select no-print" id="sd-atype3-${r.id}" style="min-width:130px" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-a3-${r.id}">${_sdPrintAmt(r.allowance_3)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a3-${r.id}" style="width:80px;text-align:right" value="${r.allowance_3||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-epf-${r.id}">${_sdPrintAmt(r.epf_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-epf-${r.id}" style="width:80px;text-align:right" value="${r.epf_employee||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-socso-${r.id}">${_sdPrintAmt(r.socso_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-${r.id}" style="width:80px;text-align:right" value="${r.socso_employee||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-eis-${r.id}">${_sdPrintAmt(r.eis_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" style="width:80px;text-align:right" value="${r.eis_employee||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-pcb-${r.id}">${_sdPrintAmt(r.pcb)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" style="width:80px;text-align:right" value="${r.pcb||0}" oninput="_sdRecalc()"></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-adv-${r.id}">${_sdPrintAmt(r.advance)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" style="width:80px;text-align:right" value="${r.advance||0}" oninput="_sdRecalc()"></td>
+      <td><span class="print-only" id="sd-print-dtype1-${r.id}">${_sdPrintType(SD_DEDUCTION_TYPES, r.deduction_type_1, r.deduction_1)}</span><select class="form-select no-print" id="sd-dtype1-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-d1-${r.id}">${_sdPrintAmt(r.deduction_1)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d1-${r.id}" style="width:80px;text-align:right" value="${r.deduction_1||0}" oninput="_sdRecalc()"></td>
+      <td><span class="print-only" id="sd-print-dtype2-${r.id}">${_sdPrintType(SD_DEDUCTION_TYPES, r.deduction_type_2, r.deduction_2)}</span><select class="form-select no-print" id="sd-dtype2-${r.id}" style="min-width:150px" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_2)}</select></td>
+      <td style="text-align:right"><span class="print-only" id="sd-print-d2-${r.id}">${_sdPrintAmt(r.deduction_2)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d2-${r.id}" style="width:80px;text-align:right" value="${r.deduction_2||0}" oninput="_sdRecalc()"></td>
       <td style="text-align:right"><strong id="sd-net-${r.id}">${formatRM(r.net_pay)}</strong></td>
     </tr>`).join('')}</tbody>
     <tfoot><tr><td colspan="19" style="text-align:right;font-weight:600">${t.grandTotal}</td><td style="text-align:right;font-weight:700" id="sd-grand-total">${formatRM(grandTotal)}</td></tr></tfoot>
@@ -6126,6 +6134,9 @@ async function renderSalaryDisbursement(month, year) {
 
 // Hides signature fields the staff never filled in so print/PDF output
 // doesn't show empty boxes for them; only the boxes with a typed name print.
+// Also refreshes each row's print-only allowance/deduction/statutory spans
+// from the CURRENT on-screen input values (not just what was in the DB at
+// render time) — a user may edit a value and print before hitting Save.
 function _sdPreparePrint() {
   ['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
     const input = document.getElementById('sig-input-'+k)
@@ -6133,6 +6144,25 @@ function _sdPreparePrint() {
     if(input && wrapper) {
       wrapper.style.display = input.value.trim() ? '' : 'none'
     }
+  })
+  ;(_sdRecords||[]).forEach(r => {
+    const v = _sdRowValues(r)
+    const set = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text }
+    set(`sd-print-atype1-${r.id}`, _sdPrintType(SD_ALLOWANCE_TYPES, v.allowance_type_1, v.allowance_1))
+    set(`sd-print-a1-${r.id}`, _sdPrintAmt(v.allowance_1))
+    set(`sd-print-atype2-${r.id}`, _sdPrintType(SD_ALLOWANCE_TYPES, v.allowance_type_2, v.allowance_2))
+    set(`sd-print-a2-${r.id}`, _sdPrintAmt(v.allowance_2))
+    set(`sd-print-atype3-${r.id}`, _sdPrintType(SD_ALLOWANCE_TYPES, v.allowance_type_3, v.allowance_3))
+    set(`sd-print-a3-${r.id}`, _sdPrintAmt(v.allowance_3))
+    set(`sd-print-epf-${r.id}`, _sdPrintAmt(v.epf_employee))
+    set(`sd-print-socso-${r.id}`, _sdPrintAmt(v.socso_employee))
+    set(`sd-print-eis-${r.id}`, _sdPrintAmt(v.eis_employee))
+    set(`sd-print-pcb-${r.id}`, _sdPrintAmt(v.pcb))
+    set(`sd-print-adv-${r.id}`, _sdPrintAmt(v.advance))
+    set(`sd-print-dtype1-${r.id}`, _sdPrintType(SD_DEDUCTION_TYPES, v.deduction_type_1, v.deduction_1))
+    set(`sd-print-d1-${r.id}`, _sdPrintAmt(v.deduction_1))
+    set(`sd-print-dtype2-${r.id}`, _sdPrintType(SD_DEDUCTION_TYPES, v.deduction_type_2, v.deduction_2))
+    set(`sd-print-d2-${r.id}`, _sdPrintAmt(v.deduction_2))
   })
 }
 function _sdRestoreAfterPrint() {
