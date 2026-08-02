@@ -334,9 +334,16 @@ const PERSONAL_MAX_TOKENS = 2048 // proven sufficient — do not change without 
 const COMPLEX_MAX_TOKENS = 4096 // Call B needs headroom Call A doesn't
 
 async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[], maxTokens: number) {
+  const systemPrompt = fieldsPrompt(sectionTitle, defs)
+  // Logged on EVERY call (not just on failure) so the exact prompt text can
+  // be inspected regardless of outcome — a call that "succeeds" but returns
+  // all-null values for a field group needs the prompt visible just as much
+  // as an outright failure does, since the two look identical from the
+  // rebuilt result alone.
+  console.log(`[scan_application_form] prompt for "${sectionTitle}": ${systemPrompt}`)
   const raw = await callGroq(
     [
-      { role: 'system', content: fieldsPrompt(sectionTitle, defs) },
+      { role: 'system', content: systemPrompt },
       {
         role: 'user',
         content: [
