@@ -216,7 +216,15 @@ async function handleReceipt(body: Record<string, unknown>) {
 // the simpler, earlier-listed personal fields.
 type FieldDef = { key: string; type: 'string' | 'number'; description: string; enum?: string[] }
 
-const PERSONAL_FIELD_DEFS: FieldDef[] = [
+// Split into a "personal core" group (the fields that have reliably
+// extracted correctly in every test so far — this is also exactly the
+// MINIMAL fallback set) and a separate "complex" group (education/employment
+// arrays, language proficiency, emergency contact) that a live test showed
+// consistently failing/empty when requested together with everything else
+// in one 38-field call (json_validate_failed, empty failed_generation, even
+// with max_tokens raised to 2048 — ruling out output-length as the cause).
+// Two independent, narrower calls give the model a much smaller task each.
+const PERSONAL_CORE_FIELD_DEFS: FieldDef[] = [
   { key: 'position_applied', type: 'string', description: 'Position/job applied for' },
   { key: 'expected_salary', type: 'number', description: 'Expected monthly salary in RM, numeric only, no currency symbol' },
   { key: 'available_date', type: 'string', description: 'Date available to start work, format YYYY-MM-DD' },
@@ -229,6 +237,9 @@ const PERSONAL_FIELD_DEFS: FieldDef[] = [
   { key: 'mobile_no', type: 'string', description: 'Mobile phone number' },
   { key: 'email', type: 'string', description: 'Email address' },
   { key: 'home_address', type: 'string', description: 'Home address' },
+]
+
+const EMERGENCY_FIELD_DEFS: FieldDef[] = [
   { key: 'emergency_name', type: 'string', description: 'Emergency contact name' },
   { key: 'emergency_relationship', type: 'string', description: 'Emergency contact relationship to applicant' },
   { key: 'emergency_mobile', type: 'string', description: 'Emergency contact mobile number' },
@@ -263,7 +274,8 @@ const TABLE_FIELD_DEFS: FieldDef[] = [
 ]
 
 const MINIMAL_KEYS = ['position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address']
-const MINIMAL_FIELD_DEFS = PERSONAL_FIELD_DEFS.filter((d) => MINIMAL_KEYS.includes(d.key))
+const MINIMAL_FIELD_DEFS = PERSONAL_CORE_FIELD_DEFS.filter((d) => MINIMAL_KEYS.includes(d.key))
+const COMPLEX_FIELD_DEFS = [...TABLE_FIELD_DEFS, ...EMERGENCY_FIELD_DEFS]
 
 function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
   const lines = defs
@@ -321,73 +333,55 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
 
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
   const imageUrl = `data:${mimeType};base64,${imageBase64}`
-  const ALL_FIELD_DEFS = [...PERSONAL_FIELD_DEFS, ...TABLE_FIELD_DEFS]
-  const FULL_SECTION_TITLE = 'entire form (personal particulars, education, employment history, language proficiency, emergency contact)'
 
-  // Two attempts, simpler on the second, so a hard failure on the full
-  // extraction still leaves the user with SOME auto-filled fields instead of
-  // nothing: (1) full flat field set, (2) a minimal core-fields-only
-  // extraction as a last resort. Both use json_object — json_schema was
-  // tried and dropped (see callAppFormVision comment above): Groq rejects it
-  // outright for this vision model with a 400, so every scan was silently
-  // burning a guaranteed-failed call before falling through.
-  let flat: Record<string, unknown> | null = null
-  let extractionLevel: 'full' | 'minimal' = 'full'
-  const errors: string[] = []
-
-  const attempts = [
-    { label: 'attempt 1: full fields', defs: ALL_FIELD_DEFS, title: FULL_SECTION_TITLE, level: 'full' as const },
-    { label: 'attempt 2: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
-  ]
-  // Every attempt is logged on its own outcome — success AND failure — not
-  // just the one that ultimately wins. Without this, a later attempt
-  // succeeding silently swallows WHY the earlier (richer) attempts failed,
-  // which is exactly the information needed to diagnose an incomplete
-  // extraction that fell back to a leaner attempt.
-  for (const attempt of attempts) {
+  // Call A: personal core fields (the set that has reliably succeeded in
+  // every test so far). Falls back to an even smaller minimal set if it
+  // fails outright — this mirrors the old two-level fallback, just scoped to
+  // a field group that's already proven itself instead of the full 38 fields.
+  let personal: Record<string, unknown> | null = null
+  let personalLevel: 'full' | 'minimal' = 'full'
+  const personalErrors: string[] = []
+  for (const attempt of [
+    { label: 'call A: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
+    { label: 'call A fallback: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
+  ]) {
     try {
-      flat = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs)
-      extractionLevel = attempt.level
-      console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(flat)}`)
+      personal = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs)
+      personalLevel = attempt.level
+      console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(personal)}`)
       break
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`[scan_application_form] ${attempt.label} FAILED: ${msg}`)
-      errors.push(`${attempt.label}: ${msg}`)
+      personalErrors.push(`${attempt.label}: ${msg}`)
     }
   }
-
-  if (!flat) {
+  if (!personal) {
     throw new Error(
-      `Application form vision call failed after ${errors.length} attempts (model=${visionModel}, base64_len=${imageBase64.length}): ${errors.join(' | ')}`,
+      `Application form vision call failed after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64.length}): ${personalErrors.join(' | ')}`,
     )
   }
 
-  // Known failure mode: the broad single-call extraction succeeds and fills
-  // the simpler personal fields, but silently comes back empty for the whole
-  // education/employment/language table group (a busier, more visually
-  // complex part of the form). When that happens, run ONE focused follow-up
-  // call scoped ONLY to those fields — a narrower task the model handles far
-  // more reliably — and merge whatever it finds into the result.
-  if (extractionLevel === 'full') {
-    const tableGroupEmpty = TABLE_FIELD_DEFS.every((d) => {
-      const v = flat![d.key]
-      return v == null || v === ''
-    })
-    if (tableGroupEmpty) {
-      try {
-        const tableFlat = await callAppFormVision(
-          imageUrl, visionModel,
-          'Education table / Employment History table / Language Proficiency table',
-          TABLE_FIELD_DEFS,
-        )
-        console.log(`[scan_application_form] supplementary table extraction raw=${JSON.stringify(tableFlat)}`)
-        flat = { ...flat, ...tableFlat }
-      } catch (err) {
-        console.error('[scan_application_form] supplementary table extraction failed:', err instanceof Error ? err.message : String(err))
-      }
-    }
+  // Call B: education/employment/language/emergency contact — the group
+  // that consistently came back empty when bundled into one 38-field call.
+  // Independent of Call A's outcome: even if this fails, the personal fields
+  // from Call A are still returned rather than throwing everything away.
+  let complexFlat: Record<string, unknown> = {}
+  let complexSucceeded = false
+  try {
+    complexFlat = await callAppFormVision(
+      imageUrl, visionModel,
+      'Education table, Employment History table, Language Proficiency table, and Emergency Contact sections',
+      COMPLEX_FIELD_DEFS,
+    )
+    complexSucceeded = true
+    console.log(`[scan_application_form] call B: complex fields SUCCEEDED raw=${JSON.stringify(complexFlat)}`)
+  } catch (err) {
+    console.error(`[scan_application_form] call B: complex fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
   }
+
+  const flat: Record<string, unknown> = { ...personal, ...complexFlat }
+  const extractionPartial = personalLevel === 'minimal' || !complexSucceeded
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
   const num = (v: unknown) => (typeof v === 'number' ? v : null)
@@ -410,17 +404,17 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
 
   const education = [1, 2, 3]
     .map((i) => ({
-      qualification: str(flat![`education_${i}_qualification`]),
-      institution: str(flat![`education_${i}_institution`]),
-      year_completed: str(flat![`education_${i}_year`]),
+      qualification: str(flat[`education_${i}_qualification`]),
+      institution: str(flat[`education_${i}_institution`]),
+      year_completed: str(flat[`education_${i}_year`]),
     }))
     .filter((e) => e.qualification || e.institution || e.year_completed)
 
   const employment_history = [1, 2]
     .map((i) => ({
-      company: str(flat![`employment_${i}_company`]),
-      position_duration: str(flat![`employment_${i}_position_duration`]),
-      reason_leaving: str(flat![`employment_${i}_reason`]),
+      company: str(flat[`employment_${i}_company`]),
+      position_duration: str(flat[`employment_${i}_position_duration`]),
+      reason_leaving: str(flat[`employment_${i}_reason`]),
     }))
     .filter((e) => e.company || e.position_duration || e.reason_leaving)
 
@@ -450,7 +444,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     emergency_relationship: str(flat.emergency_relationship),
     emergency_mobile: str(flat.emergency_mobile),
     emergency_address: str(flat.emergency_address),
-    _partial: extractionLevel === 'minimal',
+    _partial: extractionPartial,
   }
   console.log(`[scan_application_form] rebuilt result=${JSON.stringify(result)}`)
   return result
