@@ -420,22 +420,41 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   // Call B's fields succeeding perfectly in the same combined call. A
   // narrower, dedicated call plus richer per-field descriptions (see
   // LANGUAGE_FIELD_DEFS/EMERGENCY_FIELD_DEFS above) target that specifically.
+  //
+  // This group can fail two different ways: an outright exception (handled
+  // like Call B below), or — the specific case that was actually observed
+  // live — the call succeeds with a 200 but every single field comes back
+  // null. That second case throws nothing, so Call A's "retry on exception"
+  // pattern doesn't catch it; it needs its own explicit content check.
+  const isAllEmpty = (obj: Record<string, unknown>, defs: FieldDef[]) =>
+    defs.every((d) => { const v = obj[d.key]; return v == null || v === '' })
+  const LANG_EMERGENCY_TITLE = 'Language Proficiency checkbox grid and Emergency Contact sections (near the bottom of the form)'
+
   let langEmergencyFlat: Record<string, unknown> = {}
   let langEmergencySucceeded = false
   try {
-    langEmergencyFlat = await callAppFormVision(
-      imageUrl, visionModel,
-      'Language Proficiency checkbox grid and Emergency Contact sections (near the bottom of the form)',
-      LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS,
-    )
+    langEmergencyFlat = await callAppFormVision(imageUrl, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
     langEmergencySucceeded = true
     console.log(`[scan_application_form] call C: language/emergency fields SUCCEEDED raw=${JSON.stringify(langEmergencyFlat)}`)
+
+    if (isAllEmpty(langEmergencyFlat, LANG_EMERGENCY_FIELD_DEFS)) {
+      console.error('[scan_application_form] call C succeeded with HTTP 200 but every field was null — no exception was thrown, so this is NOT the same failure Call A retries on; retrying once with the identical fields/prompt anyway, since a live test showed this exact all-null pattern on the same input')
+      try {
+        const retryFlat = await callAppFormVision(imageUrl, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
+        console.log(`[scan_application_form] call C retry (all-null trigger) raw=${JSON.stringify(retryFlat)}`)
+        langEmergencyFlat = retryFlat
+      } catch (err) {
+        console.error(`[scan_application_form] call C retry (all-null trigger) FAILED: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
   } catch (err) {
     console.error(`[scan_application_form] call C: language/emergency fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
   }
 
+  const langEmergencyStillEmpty = isAllEmpty(langEmergencyFlat, LANG_EMERGENCY_FIELD_DEFS)
   const flat: Record<string, unknown> = { ...personal, ...eduEmploymentFlat, ...langEmergencyFlat }
-  const extractionPartial = personalLevel === 'minimal' || !eduEmploymentSucceeded || !langEmergencySucceeded
+  const extractionPartial =
+    personalLevel === 'minimal' || !eduEmploymentSucceeded || !langEmergencySucceeded || langEmergencyStillEmpty
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
   const num = (v: unknown) => (typeof v === 'number' ? v : null)
