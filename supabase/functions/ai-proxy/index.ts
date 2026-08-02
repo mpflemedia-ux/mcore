@@ -336,14 +336,17 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   const imageUrl = `data:${mimeType};base64,${imageBase64}`
 
   // Call A: personal core fields (the set that has reliably succeeded in
-  // every test so far). Falls back to an even smaller minimal set if it
-  // fails outright — this mirrors the old two-level fallback, just scoped to
-  // a field group that's already proven itself instead of the full 38 fields.
+  // every test so far). A live test showed Call A occasionally hits the same
+  // transient json_validate_failed/empty-failed_generation error even on
+  // this proven-simple field set — ordinary LLM API flakiness, not a
+  // too-hard-a-task problem like the original Call B issue, so it gets one
+  // retry with the SAME fields before dropping to the smaller minimal set.
   let personal: Record<string, unknown> | null = null
   let personalLevel: 'full' | 'minimal' = 'full'
   const personalErrors: string[] = []
   for (const attempt of [
     { label: 'call A: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
+    { label: 'call A retry: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
     { label: 'call A fallback: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
   ]) {
     try {
