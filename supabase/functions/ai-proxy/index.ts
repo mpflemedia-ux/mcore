@@ -246,11 +246,17 @@ const PERSONAL_CORE_FIELD_DEFS: FieldDef[] = [
 // WHOSE details it is (a live test's ground-truth PDF explicitly listed the
 // emergency contact's address as "same as applicant" — a plausible way for
 // a model to end up returning null instead of copying the value across).
+// A live test showed emergency_mobile extracting correctly while
+// emergency_name/emergency_address on the SAME row came back null — since
+// all 4 fields sit on one row/section, each description now explicitly
+// anchors itself to emergency_mobile as a reference point, on the theory
+// that if the model can locate one field in this row it should locate the
+// others the same way, rather than each field description standing alone.
 const EMERGENCY_FIELD_DEFS: FieldDef[] = [
-  { key: 'emergency_name', type: 'string', description: 'Emergency Contact section (near the bottom of the form, before the Declaration/Signature): the NAME of the applicant\'s emergency contact person — a different person from the applicant' },
-  { key: 'emergency_relationship', type: 'string', description: 'Emergency Contact section: relationship of that person to the applicant (eg spouse, parent, sibling, friend)' },
+  { key: 'emergency_name', type: 'string', description: 'Emergency Contact section (near the bottom of the form, before the Declaration/Signature), same row as this person\'s mobile number: the NAME of the applicant\'s emergency contact person — a different person from the applicant' },
+  { key: 'emergency_relationship', type: 'string', description: 'Emergency Contact section, same row as the emergency contact\'s name and mobile number: relationship of that person to the applicant (eg spouse, parent, sibling, friend)' },
   { key: 'emergency_mobile', type: 'string', description: 'Emergency Contact section: that person\'s mobile number' },
-  { key: 'emergency_address', type: 'string', description: 'Emergency Contact section: that person\'s address. If the form says something like "same as above"/"same as applicant" instead of writing it out again, copy the applicant\'s own home address value here rather than returning null' },
+  { key: 'emergency_address', type: 'string', description: 'Emergency Contact section, same row as the emergency contact\'s name and mobile number: that person\'s address. If the form says something like "same as above"/"same as applicant" instead of writing it out again, copy the applicant\'s own home address value here rather than returning null' },
 ]
 
 const LANG_RATING_ENUM = ['good', 'average', 'basic']
@@ -381,8 +387,13 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   // every test so far). A live test showed Call A occasionally hits the same
   // transient json_validate_failed/empty-failed_generation error even on
   // this proven-simple field set — ordinary LLM API flakiness, not a
-  // too-hard-a-task problem like the original Call B issue, so it gets one
-  // retry with the SAME fields before dropping to the smaller minimal set.
+  // too-hard-a-task problem like the original Call B issue. The minimal
+  // fallback trades away DOB/nationality/marital_status/available_date/
+  // expected_salary just to guarantee SOMETHING comes back, so a live test
+  // asked for one more full-field shot AFTER the minimal fallback, before
+  // fully giving up — cheap (one extra call, only on the already-rare path
+  // where both earlier full attempts and the fallback all failed) and worth
+  // it if it recovers the richer field set instead of settling for minimal.
   let personal: Record<string, unknown> | null = null
   let personalLevel: 'full' | 'minimal' | 'failed' = 'full'
   const personalErrors: string[] = []
@@ -390,6 +401,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     { label: 'call A: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
     { label: 'call A retry: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
     { label: 'call A fallback: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
+    { label: 'call A final retry: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
   ]) {
     try {
       personal = await callAppFormVision(imageUrls, visionModel, attempt.title, attempt.defs, PERSONAL_MAX_TOKENS)
