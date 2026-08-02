@@ -8854,25 +8854,31 @@ function obGoToDashboard() {
 // ─── END ONBOARDING ───────────────────────────────────────────────────────────
 
 // ─── Scroll-to-top FAB ────────────────────────────────────────────────────────
-// Wired once here at shell level (not per-page) — #main is the persistent
-// scrollable container whose innerHTML every openPage() render swaps, so a
-// single listener on #main automatically covers every page without needing
-// to be added to each render function individually.
+// Wired once here at shell level (not per-page) so it automatically covers
+// every page without needing to be added to each render function
+// individually. Listens on window/document, NOT #main: despite #main having
+// overflow-y:auto in CSS, it never actually gets a bounded height to clip
+// against — #shell (its ancestor, the real app-shell wrapper) only has
+// flex:1/overflow:hidden with no explicit height, because the CSS rule that
+// was clearly meant to size it (`#app{height:100vh;overflow:hidden}`)
+// targets an id that doesn't exist in the DOM (the actual element is
+// #shell, not #app) — a pre-existing mismatch, not introduced here. The
+// practical effect: the page scrolls at the window/body level, #main.scrollTop
+// stays 0 forever, and the sidebar visibly scrolls out of view along with
+// everything else. Confirmed live before writing this fix.
 function _scrollTopBtnCheck() {
-  const main = document.getElementById('main')
   const btn = document.getElementById('scroll-top-btn')
-  if(!main || !btn) return
-  if(main.scrollTop > 320) btn.classList.add('visible')
+  if(!btn) return
+  if((window.scrollY || document.documentElement.scrollTop) > 320) btn.classList.add('visible')
   else btn.classList.remove('visible')
 }
 function scrollMainToTop() {
-  const main = document.getElementById('main')
-  if(main) main.scrollTo({top:0, behavior:'smooth'})
+  window.scrollTo({top:0, behavior:'smooth'})
 }
 
 // INIT
 async function init() {
-  document.getElementById('main')?.addEventListener('scroll', _scrollTopBtnCheck, {passive:true})
+  window.addEventListener('scroll', _scrollTopBtnCheck, {passive:true})
 
   // Load saved theme immediately to avoid flash
   const savedTheme = localStorage.getItem('nexerp_theme') || 'light'
