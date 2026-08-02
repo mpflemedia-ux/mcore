@@ -240,6 +240,14 @@ body.dark .form-input{background:rgba(255,255,255,0.08);border-color:rgba(255,25
 #ai-chat-fab:hover{background:var(--primary-dark)}
 #ai-chat-panel{position:fixed;right:24px;bottom:88px;width:340px;height:460px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);z-index:1000;display:none;flex-direction:column;overflow:hidden}
 #ai-chat-panel.active{display:flex}
+#scroll-top-btn{position:fixed;right:24px;bottom:88px;width:44px;height:44px;border-radius:50%;background:var(--primary);color:var(--on-primary);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:var(--shadow-lg);cursor:pointer;z-index:999;border:none;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease,background .15s ease}
+#scroll-top-btn.visible{opacity:1;pointer-events:auto;transform:translateY(0)}
+#scroll-top-btn:hover{background:var(--primary-dark)}
+/* Hidden while the AI chat panel is open — both occupy the same bottom-right
+   corner footprint (right:24px, stacked above the chat FAB), so showing both
+   at once would visually collide. Requires this element to come AFTER
+   #ai-chat-panel in the DOM for the sibling selector to apply. */
+#ai-chat-panel.active ~ #scroll-top-btn{opacity:0 !important;pointer-events:none !important}
 .ai-chat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--primary);color:var(--on-primary);flex-shrink:0}
 .ai-chat-header-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
 .ai-chat-close{cursor:pointer;font-size:18px;opacity:.85}
@@ -665,6 +673,7 @@ tbody tr:hover{background:var(--bg)}
       <button class="ai-chat-send" id="ai-chat-send-btn" onclick="sendAIChatMessage()"><i class="ti ti-send"></i></button>
     </div>
   </div>
+  <button id="scroll-top-btn" onclick="scrollMainToTop()" title="Scroll to top"><i class="ti ti-chevron-up"></i></button>
 </div>
 
 <script>
@@ -8844,8 +8853,33 @@ function obGoToDashboard() {
 
 // ─── END ONBOARDING ───────────────────────────────────────────────────────────
 
+// ─── Scroll-to-top FAB ────────────────────────────────────────────────────────
+// Wired once here at shell level (not per-page) so it automatically covers
+// every page without needing to be added to each render function
+// individually. Listens on window/document, NOT #main: despite #main having
+// overflow-y:auto in CSS, it never actually gets a bounded height to clip
+// against — #shell (its ancestor, the real app-shell wrapper) only has
+// flex:1/overflow:hidden with no explicit height, because the CSS rule that
+// was clearly meant to size it (`#app{height:100vh;overflow:hidden}`)
+// targets an id that doesn't exist in the DOM (the actual element is
+// #shell, not #app) — a pre-existing mismatch, not introduced here. The
+// practical effect: the page scrolls at the window/body level, #main.scrollTop
+// stays 0 forever, and the sidebar visibly scrolls out of view along with
+// everything else. Confirmed live before writing this fix.
+function _scrollTopBtnCheck() {
+  const btn = document.getElementById('scroll-top-btn')
+  if(!btn) return
+  if((window.scrollY || document.documentElement.scrollTop) > 320) btn.classList.add('visible')
+  else btn.classList.remove('visible')
+}
+function scrollMainToTop() {
+  window.scrollTo({top:0, behavior:'smooth'})
+}
+
 // INIT
 async function init() {
+  window.addEventListener('scroll', _scrollTopBtnCheck, {passive:true})
+
   // Load saved theme immediately to avoid flash
   const savedTheme = localStorage.getItem('nexerp_theme') || 'light'
   applyTheme(savedTheme)
