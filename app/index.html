@@ -5919,11 +5919,11 @@ async function renderApplicantList() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Permohonan Kerja', add:'Tambah Permohonan', name:'Nama', position:'Jawatan Dipohon', appliedDate:'Tarikh Mohon',
-    status:'Status', interviewDate:'Tarikh Temuduga', noData:'Tiada permohonan kerja lagi',
+    status:'Status', interviewDate:'Tarikh Temuduga', noData:'Tiada permohonan kerja lagi', del:'Padam',
     pending:'Menunggu', interviewed:'Ditemuduga', approved:'Diluluskan', rejected:'Ditolak'
   } : {
     title:'Job Applicants', add:'Add Applicant', name:'Name', position:'Position Applied', appliedDate:'Applied Date',
-    status:'Status', interviewDate:'Interview Date', noData:'No job applicants yet',
+    status:'Status', interviewDate:'Interview Date', noData:'No job applicants yet', del:'Delete',
     pending:'Pending', interviewed:'Interviewed', approved:'Approved', rejected:'Rejected'
   }
   document.getElementById('main').innerHTML = `
@@ -5938,14 +5938,27 @@ async function renderApplicantList() {
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
   const statusColor = s => s==='approved'?'var(--success)':s==='interviewed'?'#3B82F6':s==='rejected'?'var(--danger)':'var(--warning)'
   const statusLabel = s => t[s]||s
-  wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.position}</th><th>${t.appliedDate}</th><th>${t.status}</th><th>${t.interviewDate}</th></tr></thead>
+  wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.position}</th><th>${t.appliedDate}</th><th>${t.status}</th><th>${t.interviewDate}</th><th style="width:60px"></th></tr></thead>
   <tbody>${data.map(a=>`<tr onclick="openPage('applicants',{view:'applicant-form',id:'${a.id}'})" style="cursor:pointer">
     <td><strong>${_aiEscapeHtml(a.full_name)}</strong></td>
     <td>${_aiEscapeHtml(a.position_applied||'-')}</td>
     <td>${formatDate(a.created_at)}</td>
     <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
     <td>${a.interview_date?formatDate(a.interview_date):'-'}</td>
+    <td onclick="event.stopPropagation()">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_appDelete('${a.id}','${(a.full_name||'').replace(/'/g,"\\'")}')" title="${t.del}"><i class="ti ti-trash"></i></button>
+    </td>
   </tr>`).join('')}</tbody></table>`
+}
+
+async function _appDelete(id, name) {
+  const isBm = APP.language==='bm'
+  if(!confirm((isBm?'Padam permohonan ':'Delete application ')+`"${name}"?`)) return
+  const {error} = await sb.from('job_applicants').update({deleted_at: new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('delete','job_applicants',id)
+  showToast(isBm?'Permohonan dipadam':'Application deleted', 'success')
+  renderApplicantList()
 }
 
 // Dynamic add/remove rows for Education & Employment History — mirrors the
