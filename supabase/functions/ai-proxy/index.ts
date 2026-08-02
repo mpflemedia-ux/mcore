@@ -239,16 +239,42 @@ const PERSONAL_CORE_FIELD_DEFS: FieldDef[] = [
   { key: 'home_address', type: 'string', description: 'Home address' },
 ]
 
+// Emergency contact is plain text (no checkbox difficulty), yet a live test
+// showed it still coming back 100% null in the same call where
+// education/employment extracted perfectly. The descriptions below add the
+// context that was missing before: WHERE it typically sits on the form and
+// WHOSE details it is (a live test's ground-truth PDF explicitly listed the
+// emergency contact's address as "same as applicant" — a plausible way for
+// a model to end up returning null instead of copying the value across).
 const EMERGENCY_FIELD_DEFS: FieldDef[] = [
-  { key: 'emergency_name', type: 'string', description: 'Emergency contact name' },
-  { key: 'emergency_relationship', type: 'string', description: 'Emergency contact relationship to applicant' },
-  { key: 'emergency_mobile', type: 'string', description: 'Emergency contact mobile number' },
-  { key: 'emergency_address', type: 'string', description: 'Emergency contact address' },
+  { key: 'emergency_name', type: 'string', description: 'Emergency Contact section (near the bottom of the form, before the Declaration/Signature): the NAME of the applicant\'s emergency contact person — a different person from the applicant' },
+  { key: 'emergency_relationship', type: 'string', description: 'Emergency Contact section: relationship of that person to the applicant (eg spouse, parent, sibling, friend)' },
+  { key: 'emergency_mobile', type: 'string', description: 'Emergency Contact section: that person\'s mobile number' },
+  { key: 'emergency_address', type: 'string', description: 'Emergency Contact section: that person\'s address. If the form says something like "same as above"/"same as applicant" instead of writing it out again, copy the applicant\'s own home address value here rather than returning null' },
 ]
 
 const LANG_RATING_ENUM = ['good', 'average', 'basic']
 
-const TABLE_FIELD_DEFS: FieldDef[] = [
+// Language Proficiency is a CHECKBOX GRID (one of the harder layouts for a
+// vision model to read correctly): 3 language rows (Bahasa Malaysia,
+// English, Others) x 2 categories (Spoken, Written), each cell being 3
+// checkbox options (Good/Average/Basic). A live test showed this whole
+// group coming back null even when Education/Employment (free-text tables,
+// same call) extracted perfectly — the per-field descriptions here now spell
+// out the grid explicitly and use the same "which ONE checkbox is ticked"
+// phrasing that already worked for the single gender/marital_status
+// checkboxes, instead of relying on the field name alone to convey the format.
+const LANGUAGE_FIELD_DEFS: FieldDef[] = [
+  { key: 'lang_bm_spoken', type: 'string', description: 'Language Proficiency checkbox grid, Bahasa Malaysia row, SPOKEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_bm_written', type: 'string', description: 'Language Proficiency checkbox grid, Bahasa Malaysia row, WRITTEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_en_spoken', type: 'string', description: 'Language Proficiency checkbox grid, English row, SPOKEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_en_written', type: 'string', description: 'Language Proficiency checkbox grid, English row, WRITTEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_others_name', type: 'string', description: 'Language Proficiency checkbox grid, "Others" row: the name of the other language WRITTEN IN by the applicant (this one is free text, not a checkbox)' },
+  { key: 'lang_others_spoken', type: 'string', description: 'Language Proficiency checkbox grid, "Others" row, SPOKEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_others_written', type: 'string', description: 'Language Proficiency checkbox grid, "Others" row, WRITTEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+]
+
+const EDU_EMPLOYMENT_FIELD_DEFS: FieldDef[] = [
   { key: 'education_1_qualification', type: 'string', description: 'Education table row 1: qualification (eg SPM, Diploma, Degree)' },
   { key: 'education_1_institution', type: 'string', description: 'Education table row 1: institution/school name' },
   { key: 'education_1_year', type: 'string', description: 'Education table row 1: year completed' },
@@ -264,18 +290,16 @@ const TABLE_FIELD_DEFS: FieldDef[] = [
   { key: 'employment_2_company', type: 'string', description: 'Employment history table row 2: company name' },
   { key: 'employment_2_position_duration', type: 'string', description: 'Employment history table row 2: position held and duration' },
   { key: 'employment_2_reason', type: 'string', description: 'Employment history table row 2: reason for leaving' },
-  { key: 'lang_bm_spoken', type: 'string', description: 'Bahasa Malaysia row: spoken proficiency rating ticked', enum: LANG_RATING_ENUM },
-  { key: 'lang_bm_written', type: 'string', description: 'Bahasa Malaysia row: written proficiency rating ticked', enum: LANG_RATING_ENUM },
-  { key: 'lang_en_spoken', type: 'string', description: 'English row: spoken proficiency rating ticked', enum: LANG_RATING_ENUM },
-  { key: 'lang_en_written', type: 'string', description: 'English row: written proficiency rating ticked', enum: LANG_RATING_ENUM },
-  { key: 'lang_others_name', type: 'string', description: 'Name of any other language listed in the "Others" row' },
-  { key: 'lang_others_spoken', type: 'string', description: 'Other language row: spoken proficiency rating ticked', enum: LANG_RATING_ENUM },
-  { key: 'lang_others_written', type: 'string', description: 'Other language row: written proficiency rating ticked', enum: LANG_RATING_ENUM },
 ]
 
 const MINIMAL_KEYS = ['position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address']
 const MINIMAL_FIELD_DEFS = PERSONAL_CORE_FIELD_DEFS.filter((d) => MINIMAL_KEYS.includes(d.key))
-const COMPLEX_FIELD_DEFS = [...TABLE_FIELD_DEFS, ...EMERGENCY_FIELD_DEFS]
+// Language + emergency contact split out of the tables call into their own
+// call (below) since a live test showed them consistently coming back null
+// even alongside education/employment succeeding perfectly in the same call
+// — a narrower, more focused call for just this harder group, same strategy
+// that already fixed the original Call A/B split.
+const LANG_EMERGENCY_FIELD_DEFS = [...LANGUAGE_FIELD_DEFS, ...EMERGENCY_FIELD_DEFS]
 
 function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
   const lines = defs
@@ -286,9 +310,9 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
     `image. Return ONLY valid JSON with EXACTLY these flat keys (no nesting):\n${lines}\n` +
     'You MUST attempt EVERY field listed above — only use null if that specific field is genuinely ' +
     'absent or not legible in the image; do not skip a field just because it is further down this ' +
-    'list or in a busier part of the form. Dates as YYYY-MM-DD. Untuk checkbox/tick, kenal pasti ' +
-    'dengan teliti mana SATU option yang betul-betul ditandakan (☑/✓/tick/silang) — jangan teka atau ' +
-    'pilih option lain kalau tak pasti, biar null sahaja.'
+    'list or in a busier/different-looking part of the form. Dates as YYYY-MM-DD. Untuk checkbox/tick, ' +
+    'kenal pasti dengan teliti mana SATU option yang betul-betul ditandakan (☑/✓/tick/silang) — jangan ' +
+    'teka atau pilih option lain kalau tak pasti, biar null sahaja.'
   )
 }
 
@@ -366,26 +390,45 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     )
   }
 
-  // Call B: education/employment/language/emergency contact — the group
-  // that consistently came back empty when bundled into one 38-field call.
-  // Independent of Call A's outcome: even if this fails, the personal fields
-  // from Call A are still returned rather than throwing everything away.
-  let complexFlat: Record<string, unknown> = {}
-  let complexSucceeded = false
+  // Call B: education/employment — free-text tables, proven reliable
+  // (extracted perfectly even when Call C's fields, in the same combined
+  // call, came back 100% null). Independent of Call A's outcome.
+  let eduEmploymentFlat: Record<string, unknown> = {}
+  let eduEmploymentSucceeded = false
   try {
-    complexFlat = await callAppFormVision(
+    eduEmploymentFlat = await callAppFormVision(
       imageUrl, visionModel,
-      'Education table, Employment History table, Language Proficiency table, and Emergency Contact sections',
-      COMPLEX_FIELD_DEFS, COMPLEX_MAX_TOKENS,
+      'Education table and Employment History table sections',
+      EDU_EMPLOYMENT_FIELD_DEFS, COMPLEX_MAX_TOKENS,
     )
-    complexSucceeded = true
-    console.log(`[scan_application_form] call B: complex fields SUCCEEDED raw=${JSON.stringify(complexFlat)}`)
+    eduEmploymentSucceeded = true
+    console.log(`[scan_application_form] call B: education/employment fields SUCCEEDED raw=${JSON.stringify(eduEmploymentFlat)}`)
   } catch (err) {
-    console.error(`[scan_application_form] call B: complex fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`[scan_application_form] call B: education/employment fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  const flat: Record<string, unknown> = { ...personal, ...complexFlat }
-  const extractionPartial = personalLevel === 'minimal' || !complexSucceeded
+  // Call C: language proficiency (checkbox grid) + emergency contact (plain
+  // text near the bottom of the form) — split out into its own call because
+  // a live test showed this whole group coming back null even alongside
+  // Call B's fields succeeding perfectly in the same combined call. A
+  // narrower, dedicated call plus richer per-field descriptions (see
+  // LANGUAGE_FIELD_DEFS/EMERGENCY_FIELD_DEFS above) target that specifically.
+  let langEmergencyFlat: Record<string, unknown> = {}
+  let langEmergencySucceeded = false
+  try {
+    langEmergencyFlat = await callAppFormVision(
+      imageUrl, visionModel,
+      'Language Proficiency checkbox grid and Emergency Contact sections (near the bottom of the form)',
+      LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS,
+    )
+    langEmergencySucceeded = true
+    console.log(`[scan_application_form] call C: language/emergency fields SUCCEEDED raw=${JSON.stringify(langEmergencyFlat)}`)
+  } catch (err) {
+    console.error(`[scan_application_form] call C: language/emergency fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  const flat: Record<string, unknown> = { ...personal, ...eduEmploymentFlat, ...langEmergencyFlat }
+  const extractionPartial = personalLevel === 'minimal' || !eduEmploymentSucceeded || !langEmergencySucceeded
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
   const num = (v: unknown) => (typeof v === 'number' ? v : null)
