@@ -731,6 +731,7 @@ const NAV_ITEMS = [
   { id:'production', icon:'ti-tools',             label_en:'Production',  label_bm:'Pengeluaran',  module:'production' },
   { section:'People' },
   { id:'hr',         icon:'ti-id-badge-2',        label_en:'HR & Payroll', label_bm:'SDM & Gaji',   module:'hr' },
+  { id:'applicants', icon:'ti-user-search',       label_en:'Job Applicants', label_bm:'Permohonan Kerja', module:'hr' },
   { section:'Finance' },
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
   { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'core' },
@@ -773,6 +774,7 @@ function openPage(page, params={}) {
       case 'purchasing': renderPurchasing(params); break
       case 'production': renderProduction(params); break
       case 'hr':         renderHR(params); break
+      case 'applicants': renderJobApplicants(params); break
       case 'accounting': renderAccounting(params); break
       case 'reports':    renderReports(params); break
       case 'settings':   renderSettings(); break
@@ -3686,6 +3688,46 @@ async function _expSave(id) {
   openPage('accounting',{view:'expense'})
 }
 
+let _pdfJsLoadPromise = null
+function _loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib)
+  if (_pdfJsLoadPromise) return _pdfJsLoadPromise
+  _pdfJsLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+      resolve(window.pdfjsLib)
+    }
+    script.onerror = () => reject(new Error('Failed to load PDF library'))
+    document.head.appendChild(script)
+  })
+  return _pdfJsLoadPromise
+}
+
+const PDF_MAX_PAGES = 5 // sane cap for a short intake form — protects against an oversized upload, not a real limit for this use case
+
+async function _pdfPagesToImageBlobs(file) {
+  const pdfjsLib = await _loadPdfJs()
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const pageCount = Math.min(pdf.numPages, PDF_MAX_PAGES)
+  const blobs = []
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await pdf.getPage(i)
+    const viewport = page.getViewport({ scale: 2 })
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => b ? resolve(b) : reject(new Error(`Failed to convert PDF page ${i} to image`)), 'image/png')
+    })
+    blobs.push(blob)
+  }
+  return blobs
+}
+
 function _compressImageToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -5998,7 +6040,7 @@ function _calcPayroll(employee) {
 }
 
 function renderHR(params={}) {
-  if(params.view==='employee-form') { renderEmployeeForm(params.id); return }
+  if(params.view==='employee-form') { renderEmployeeForm(params.id, params.fromApplicantId); return }
   if(params.view==='payroll-run') { renderPayrollRun(); return }
   if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year); return }
   if(params.view==='payslips-print' && params.month && params.year) { renderPayslipsPrint(params.month, params.year); return }
@@ -6068,40 +6110,93 @@ async function renderEmployeeList() {
   </div>`)
 }
 
-async function renderEmployeeForm(id) {
+async function renderEmployeeForm(id, fromApplicantId) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     titleAdd:'Tambah Pekerja', titleEdit:'Kemaskini Pekerja', name:'Nama', ic:'No. IC', icPh:'XXXXXX-XX-XXXX',
     position:'Jawatan', salary:'Gaji Pokok (RM)', epfNo:'No. EPF', socsoNo:'No. SOCSO', save:'Simpan', cancel:'Batal',
-    nameRequired:'Nama diperlukan', icInvalid:'Format IC tidak sah (XXXXXX-XX-XXXX)', notFound:'Pekerja tidak dijumpai.'
+    nameRequired:'Nama diperlukan', icInvalid:'Format IC tidak sah (XXXXXX-XX-XXXX)', notFound:'Pekerja tidak dijumpai.',
+    fromApplicant:'Pekerja baru ini akan pautkan balik ke permohonan kerja asal.',
+    phone:'Telefon', email:'Emel', address:'Alamat', dob:'Tarikh Lahir', gender:'Jantina', male:'Lelaki', female:'Perempuan',
+    nationality:'Warganegara', maritalStatus:'Status Perkahwinan', single:'Bujang', married:'Berkahwin', divorced:'Bercerai', widowed:'Balu/Duda',
+    emergencyName:'Nama Kenalan Kecemasan', emergencyRel:'Hubungan', emergencyMobile:'No. Telefon Kecemasan', emergencyAddress:'Alamat Kecemasan'
   } : {
     titleAdd:'Add Employee', titleEdit:'Edit Employee', name:'Name', ic:'IC No.', icPh:'XXXXXX-XX-XXXX',
     position:'Position', salary:'Basic Salary (RM)', epfNo:'EPF No.', socsoNo:'SOCSO No.', save:'Save', cancel:'Cancel',
-    nameRequired:'Name is required', icInvalid:'Invalid IC format (XXXXXX-XX-XXXX)', notFound:'Employee not found.'
+    nameRequired:'Name is required', icInvalid:'Invalid IC format (XXXXXX-XX-XXXX)', notFound:'Employee not found.',
+    fromApplicant:'This new employee will be linked back to the original job application.',
+    phone:'Phone', email:'Email', address:'Address', dob:'Date of Birth', gender:'Gender', male:'Male', female:'Female',
+    nationality:'Nationality', maritalStatus:'Marital Status', single:'Single', married:'Married', divorced:'Divorced', widowed:'Widowed',
+    emergencyName:'Emergency Contact Name', emergencyRel:'Relationship', emergencyMobile:'Emergency Mobile No.', emergencyAddress:'Emergency Address'
   }
   let emp = null
+  let applicant = null
   if(id) {
     const {data} = await sb.from('employees').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
     if(!data) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
     emp = data
+  } else if(fromApplicantId) {
+    const {data} = await sb.from('job_applicants').select('*').eq('id',fromApplicantId).eq('tenant_id',APP.tenant.id).single()
+    applicant = data
   }
+  // Prefill source: existing employee row (edit) takes priority, then a
+  // converting applicant (new employee via Convert to Employee), else blank.
+  const src = emp || (applicant ? {
+    name: applicant.full_name, ic_no: applicant.ic_no, position: applicant.position_applied,
+    basic_salary: applicant.expected_salary, phone: applicant.mobile_no, email: applicant.email,
+    address: applicant.home_address, dob: applicant.dob, gender: applicant.gender,
+    nationality: applicant.nationality, marital_status: applicant.marital_status,
+    emergency_name: applicant.emergency_name, emergency_relationship: applicant.emergency_relationship,
+    emergency_mobile: applicant.emergency_mobile, emergency_address: applicant.emergency_address,
+  } : {})
+
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${emp?t.titleEdit:t.titleAdd}</div></div></div>
+  ${applicant ? `<div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
+    <i class="ti ti-info-circle" style="color:var(--warning)"></i> ${t.fromApplicant}
+  </div>` : ''}
   <div class="card" style="max-width:600px;padding:20px">
-    <div class="form-group"><label class="form-label">${t.name}</label><input id="emp-name" class="form-input" value="${emp?_aiEscapeHtml(emp.name):''}"></div>
-    <div class="form-group"><label class="form-label">${t.ic}</label><input id="emp-ic" class="form-input" placeholder="${t.icPh}" value="${emp?.ic_no||''}"></div>
-    <div class="form-group"><label class="form-label">${t.position}</label><input id="emp-position" class="form-input" value="${emp?_aiEscapeHtml(emp.position||''):''}"></div>
-    <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${emp?.basic_salary??''}"></div>
-    <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
-    <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="emp-name" class="form-input" value="${_aiEscapeHtml(src.name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.ic}</label><input id="emp-ic" class="form-input" placeholder="${t.icPh}" value="${src.ic_no||''}"></div>
+      <div class="form-group"><label class="form-label">${t.position}</label><input id="emp-position" class="form-input" value="${_aiEscapeHtml(src.position||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${src.basic_salary??''}"></div>
+      <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
+      <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
+      <div class="form-group"><label class="form-label">${t.phone}</label><input id="emp-phone" class="form-input" value="${src.phone||''}"></div>
+      <div class="form-group"><label class="form-label">${t.email}</label><input id="emp-email" type="email" class="form-input" value="${src.email||''}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.address}</label><input id="emp-address" class="form-input" value="${_aiEscapeHtml(src.address||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.dob}</label><input id="emp-dob" type="date" class="form-input" value="${src.dob||''}"></div>
+      <div class="form-group"><label class="form-label">${t.gender}</label>
+        <select id="emp-gender" class="form-select">
+          <option value="">-</option>
+          <option value="male" ${src.gender==='male'?'selected':''}>${t.male}</option>
+          <option value="female" ${src.gender==='female'?'selected':''}>${t.female}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.nationality}</label><input id="emp-nationality" class="form-input" value="${_aiEscapeHtml(src.nationality||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.maritalStatus}</label>
+        <select id="emp-marital" class="form-select">
+          <option value="">-</option>
+          <option value="single" ${src.marital_status==='single'?'selected':''}>${t.single}</option>
+          <option value="married" ${src.marital_status==='married'?'selected':''}>${t.married}</option>
+          <option value="divorced" ${src.marital_status==='divorced'?'selected':''}>${t.divorced}</option>
+          <option value="widowed" ${src.marital_status==='widowed'?'selected':''}>${t.widowed}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.emergencyName}</label><input id="emp-emergency-name" class="form-input" value="${_aiEscapeHtml(src.emergency_name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.emergencyRel}</label><input id="emp-emergency-rel" class="form-input" value="${_aiEscapeHtml(src.emergency_relationship||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.emergencyMobile}</label><input id="emp-emergency-mobile" class="form-input" value="${src.emergency_mobile||''}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.emergencyAddress}</label><input id="emp-emergency-address" class="form-input" value="${_aiEscapeHtml(src.emergency_address||'')}"></div>
+    </div>
     <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn btn-primary" onclick="_employeeSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-primary" onclick="_employeeSave('${id||''}','${fromApplicantId||''}')"><i class="ti ti-check"></i> ${t.save}</button>
       <button class="btn btn-outline" onclick="openPage('hr',{})">${t.cancel}</button>
     </div>
   </div>`
 }
 
-async function _employeeSave(id) {
+async function _employeeSave(id, fromApplicantId) {
   const isBm = APP.language==='bm'
   const name = document.getElementById('emp-name').value.trim()
   const ic = document.getElementById('emp-ic').value.trim()
@@ -6115,15 +6210,32 @@ async function _employeeSave(id) {
     basic_salary: Number(document.getElementById('emp-salary').value) || 0,
     epf_no: document.getElementById('emp-epf').value.trim() || null,
     socso_no: document.getElementById('emp-socso').value.trim() || null,
+    phone: document.getElementById('emp-phone').value.trim() || null,
+    email: document.getElementById('emp-email').value.trim() || null,
+    address: document.getElementById('emp-address').value.trim() || null,
+    dob: document.getElementById('emp-dob').value || null,
+    gender: document.getElementById('emp-gender').value || null,
+    nationality: document.getElementById('emp-nationality').value.trim() || null,
+    marital_status: document.getElementById('emp-marital').value || null,
+    emergency_name: document.getElementById('emp-emergency-name').value.trim() || null,
+    emergency_relationship: document.getElementById('emp-emergency-rel').value.trim() || null,
+    emergency_mobile: document.getElementById('emp-emergency-mobile').value.trim() || null,
+    emergency_address: document.getElementById('emp-emergency-address').value.trim() || null,
   }
-  let error
+  if(fromApplicantId) payload.original_applicant_id = fromApplicantId
+  let error, newId = id
   if(id) {
     ({error} = await sb.from('employees').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
   } else {
-    ({error} = await sb.from('employees').insert(payload))
+    const {data, error: insErr} = await sb.from('employees').insert(payload).select('id').single()
+    error = insErr
+    if(data) newId = data.id
   }
   if(error) { showToast('Error: '+error.message, 'error'); return }
-  auditLog(id?'update':'create','employees', id||null)
+  if(!id && fromApplicantId) {
+    await sb.from('job_applicants').update({converted_employee_id: newId}).eq('id',fromApplicantId).eq('tenant_id',APP.tenant.id)
+  }
+  auditLog(id?'update':'create','employees', id||newId)
   showToast(isBm?'Pekerja disimpan!':'Employee saved!', 'success')
   openPage('hr',{})
 }
@@ -6136,6 +6248,384 @@ async function _employeeDelete(id, name) {
   auditLog('delete','employees', id)
   showToast(isBm?'Pekerja dipadam.':'Employee deleted.', 'success')
   renderEmployeeList()
+}
+
+// ─── Job Applicants (Recruitment) ────────────────────────────────────────────
+function renderJobApplicants(params={}) {
+  if(params.view==='applicant-form') { renderApplicantForm(params.id); return }
+  renderApplicantList()
+}
+
+async function renderApplicantList() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Permohonan Kerja', add:'Tambah Permohonan', name:'Nama', position:'Jawatan Dipohon', appliedDate:'Tarikh Mohon',
+    status:'Status', interviewDate:'Tarikh Temuduga', noData:'Tiada permohonan kerja lagi', del:'Padam',
+    pending:'Menunggu', interviewed:'Ditemuduga', approved:'Diluluskan', rejected:'Ditolak'
+  } : {
+    title:'Job Applicants', add:'Add Applicant', name:'Name', position:'Position Applied', appliedDate:'Applied Date',
+    status:'Status', interviewDate:'Interview Date', noData:'No job applicants yet', del:'Delete',
+    pending:'Pending', interviewed:'Interviewed', approved:'Approved', rejected:'Rejected'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-primary" onclick="openPage('applicants',{view:'applicant-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+  </div>
+  <div class="card"><div id="app-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('app-list-wrap')
+  const {data, error} = await sb.from('job_applicants').select('id,full_name,position_applied,created_at,status,interview_date')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const statusColor = s => s==='approved'?'var(--success)':s==='interviewed'?'#3B82F6':s==='rejected'?'var(--danger)':'var(--warning)'
+  const statusLabel = s => t[s]||s
+  wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.position}</th><th>${t.appliedDate}</th><th>${t.status}</th><th>${t.interviewDate}</th><th style="width:60px"></th></tr></thead>
+  <tbody>${data.map(a=>`<tr onclick="openPage('applicants',{view:'applicant-form',id:'${a.id}'})" style="cursor:pointer">
+    <td><strong>${_aiEscapeHtml(a.full_name)}</strong></td>
+    <td>${_aiEscapeHtml(a.position_applied||'-')}</td>
+    <td>${formatDate(a.created_at)}</td>
+    <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
+    <td>${a.interview_date?formatDate(a.interview_date):'-'}</td>
+    <td onclick="event.stopPropagation()">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_appDelete('${a.id}','${(a.full_name||'').replace(/'/g,"\\'")}')" title="${t.del}"><i class="ti ti-trash"></i></button>
+    </td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function _appDelete(id, name) {
+  const isBm = APP.language==='bm'
+  if(!confirm((isBm?'Padam permohonan ':'Delete application ')+`"${name}"?`)) return
+  const {error} = await sb.from('job_applicants').update({deleted_at: new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('delete','job_applicants',id)
+  showToast(isBm?'Permohonan dipadam':'Application deleted', 'success')
+  renderApplicantList()
+}
+
+// Dynamic add/remove rows for Education & Employment History — mirrors the
+// _po* Purchase Order line-item pattern.
+let _appEducation = []
+let _appEmployment = []
+function _appAddEduRow() { _appEducation.push({qualification:'',institution:'',year_completed:''}); _appRenderEduRows() }
+function _appRemoveEduRow(i) { _appEducation.splice(i,1); _appRenderEduRows() }
+function _appRenderEduRows() {
+  const body = document.getElementById('app-edu-body')
+  if(!body) return
+  body.innerHTML = _appEducation.map((r,i)=>`<tr>
+    <td><input class="form-input" value="${_aiEscapeHtml(r.qualification||'')}" oninput="_appEducation[${i}].qualification=this.value"></td>
+    <td><input class="form-input" value="${_aiEscapeHtml(r.institution||'')}" oninput="_appEducation[${i}].institution=this.value"></td>
+    <td><input class="form-input" style="width:100px" value="${_aiEscapeHtml(String(r.year_completed||''))}" oninput="_appEducation[${i}].year_completed=this.value"></td>
+    <td style="width:36px"><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_appRemoveEduRow(${i})"><i class="ti ti-x"></i></button></td>
+  </tr>`).join('')
+}
+function _appAddEmpRow() { _appEmployment.push({company:'',position_duration:'',reason_leaving:''}); _appRenderEmpRows() }
+function _appRemoveEmpRow(i) { _appEmployment.splice(i,1); _appRenderEmpRows() }
+function _appRenderEmpRows() {
+  const body = document.getElementById('app-emp-body')
+  if(!body) return
+  body.innerHTML = _appEmployment.map((r,i)=>`<tr>
+    <td><input class="form-input" value="${_aiEscapeHtml(r.company||'')}" oninput="_appEmployment[${i}].company=this.value"></td>
+    <td><input class="form-input" value="${_aiEscapeHtml(r.position_duration||'')}" oninput="_appEmployment[${i}].position_duration=this.value"></td>
+    <td><input class="form-input" value="${_aiEscapeHtml(r.reason_leaving||'')}" oninput="_appEmployment[${i}].reason_leaving=this.value"></td>
+    <td style="width:36px"><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_appRemoveEmpRow(${i})"><i class="ti ti-x"></i></button></td>
+  </tr>`).join('')
+}
+
+function _appProficiencyOptions(selected) {
+  const t = APP.language==='bm' ? {good:'Baik', average:'Sederhana', basic:'Asas'} : {good:'Good', average:'Average', basic:'Basic'}
+  return ['','good','average','basic'].map(k=>`<option value="${k}" ${String(selected||'')===k?'selected':''}>${k?t[k]:'-'}</option>`).join('')
+}
+
+async function renderApplicantForm(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    titleAdd:'Permohonan Baru', titleEdit:'Kemaskini Permohonan', back:'Permohonan Kerja',
+    scanForm:'Imbas Borang Permohonan', scanning:'Mengimbas borang...', scanDone:'Borang diimbas — sila semak field di bawah.',
+    scanErr:'Ralat imbas borang: ', badFile:'Sila pilih fail imej.',
+    sec1:'Jawatan Dipohon', positionApplied:'Jawatan Dipohon *', expectedSalary:'Gaji Dijangka (RM)', availableDate:'Tarikh Boleh Mula Kerja',
+    sec2:'Butiran Peribadi', fullName:'Nama Penuh *', ic:'No. IC', dob:'Tarikh Lahir', gender:'Jantina', male:'Lelaki', female:'Perempuan',
+    nationality:'Warganegara', maritalStatus:'Status Perkahwinan', single:'Bujang', married:'Berkahwin', divorced:'Bercerai', widowed:'Balu/Duda',
+    mobile:'No. Telefon Bimbit', email:'Emel', address:'Alamat Rumah',
+    sec3:'Pendidikan', qualification:'Kelayakan', institution:'Institusi', yearCompleted:'Tahun Tamat', addRow:'Tambah Baris',
+    sec4:'Sejarah Pekerjaan', company:'Syarikat', positionDuration:'Jawatan & Tempoh', reasonLeaving:'Sebab Berhenti',
+    sec5:'Kemahiran Bahasa', spoken:'Lisan', written:'Bertulis', bm:'Bahasa Malaysia', en:'Bahasa Inggeris', others:'Lain-lain', langName:'Nama Bahasa',
+    sec6:'Kenalan Kecemasan', emergencyName:'Nama', emergencyRel:'Hubungan', emergencyMobile:'No. Telefon', emergencyAddress:'Alamat',
+    secOffice:'Untuk Kegunaan Pejabat', interviewDate:'Tarikh Temuduga', interviewedBy:'Ditemuduga Oleh', status:'Status', remarks:'Catatan',
+    pending:'Menunggu', interviewed:'Ditemuduga', approved:'Diluluskan', rejected:'Ditolak',
+    save:'Simpan', cancel:'Batal', convertToEmployee:'Tukar Kepada Pekerja', alreadyConverted:'Sudah ditukar kepada pekerja.',
+    required:'Nama penuh dan jawatan dipohon diperlukan.', notFound:'Permohonan tidak dijumpai.'
+  } : {
+    titleAdd:'New Application', titleEdit:'Edit Application', back:'Job Applicants',
+    scanForm:'Scan Application Form', scanning:'Scanning form...', scanDone:'Form scanned — please review the fields below.',
+    scanErr:'Form scan error: ', badFile:'Please select an image file.',
+    sec1:'Position Applied', positionApplied:'Position Applied *', expectedSalary:'Expected Salary (RM)', availableDate:'Available Date',
+    sec2:'Personal Particulars', fullName:'Full Name *', ic:'IC No.', dob:'Date of Birth', gender:'Gender', male:'Male', female:'Female',
+    nationality:'Nationality', maritalStatus:'Marital Status', single:'Single', married:'Married', divorced:'Divorced', widowed:'Widowed',
+    mobile:'Mobile No.', email:'Email', address:'Home Address',
+    sec3:'Education', qualification:'Qualification', institution:'Institution', yearCompleted:'Year Completed', addRow:'Add Row',
+    sec4:'Employment History', company:'Company', positionDuration:'Position & Duration', reasonLeaving:'Reason for Leaving',
+    sec5:'Language Proficiency', spoken:'Spoken', written:'Written', bm:'Bahasa Malaysia', en:'English', others:'Others', langName:'Language Name',
+    sec6:'Emergency Contact', emergencyName:'Name', emergencyRel:'Relationship', emergencyMobile:'Mobile No.', emergencyAddress:'Address',
+    secOffice:'For Office Use', interviewDate:'Interview Date', interviewedBy:'Interviewed By', status:'Status', remarks:'Remarks',
+    pending:'Pending', interviewed:'Interviewed', approved:'Approved', rejected:'Rejected',
+    save:'Save', cancel:'Cancel', convertToEmployee:'Convert to Employee', alreadyConverted:'Already converted to employee.',
+    required:'Full name and position applied are required.', notFound:'Applicant not found.'
+  }
+
+  let app = {}
+  if(id) {
+    const {data} = await sb.from('job_applicants').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(!data) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+    app = data
+  }
+  _appEducation = (app.education && app.education.length) ? app.education.map(r=>({...r})) : []
+  _appEmployment = (app.employment_history && app.employment_history.length) ? app.employment_history.map(r=>({...r})) : []
+  const lang = app.language_proficiency || {}
+  const canConvert = id && app.status==='approved' && !app.converted_employee_id
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${id?t.titleEdit:t.titleAdd}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('applicants',{})">← ${t.back}</div></div></div>
+  <div class="card" style="max-width:900px;padding:20px">
+    <label class="form-label">${t.scanForm}</label>
+    <input type="file" accept="image/*,application/pdf" id="app-scan-input" onchange="_appScanForm(event)" style="display:block;margin-top:6px">
+    <div id="app-scan-status" style="margin-top:8px;font-size:13px;color:var(--text-3)"></div>
+  </div>
+
+  <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
+    <div style="font-weight:700;margin-bottom:12px">${t.sec1}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.positionApplied}</label><input id="app-position" class="form-input" value="${_aiEscapeHtml(app.position_applied||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.expectedSalary}</label><input id="app-salary" type="number" step="0.01" min="0" class="form-input" value="${app.expected_salary??''}"></div>
+      <div class="form-group"><label class="form-label">${t.availableDate}</label><input id="app-available-date" type="date" class="form-input" value="${app.available_date||''}"></div>
+    </div>
+
+    <div style="font-weight:700;margin:20px 0 12px">${t.sec2}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.fullName}</label><input id="app-name" class="form-input" value="${_aiEscapeHtml(app.full_name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.ic}</label><input id="app-ic" class="form-input" placeholder="XXXXXX-XX-XXXX" value="${app.ic_no||''}"></div>
+      <div class="form-group"><label class="form-label">${t.dob}</label><input id="app-dob" type="date" class="form-input" value="${app.dob||''}"></div>
+      <div class="form-group"><label class="form-label">${t.gender}</label>
+        <select id="app-gender" class="form-select">
+          <option value="">-</option>
+          <option value="male" ${app.gender==='male'?'selected':''}>${t.male}</option>
+          <option value="female" ${app.gender==='female'?'selected':''}>${t.female}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.nationality}</label><input id="app-nationality" class="form-input" value="${_aiEscapeHtml(app.nationality||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.maritalStatus}</label>
+        <select id="app-marital" class="form-select">
+          <option value="">-</option>
+          <option value="single" ${app.marital_status==='single'?'selected':''}>${t.single}</option>
+          <option value="married" ${app.marital_status==='married'?'selected':''}>${t.married}</option>
+          <option value="divorced" ${app.marital_status==='divorced'?'selected':''}>${t.divorced}</option>
+          <option value="widowed" ${app.marital_status==='widowed'?'selected':''}>${t.widowed}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.mobile}</label><input id="app-mobile" class="form-input" value="${app.mobile_no||''}"></div>
+      <div class="form-group"><label class="form-label">${t.email}</label><input id="app-email" type="email" class="form-input" value="${app.email||''}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.address}</label><input id="app-address" class="form-input" value="${_aiEscapeHtml(app.home_address||'')}"></div>
+    </div>
+
+    <div style="font-weight:700;margin:20px 0 12px">${t.sec3}</div>
+    <table><thead><tr><th>${t.qualification}</th><th>${t.institution}</th><th>${t.yearCompleted}</th><th></th></tr></thead>
+    <tbody id="app-edu-body"></tbody></table>
+    <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_appAddEduRow()"><i class="ti ti-plus"></i> ${t.addRow}</button>
+
+    <div style="font-weight:700;margin:20px 0 12px">${t.sec4}</div>
+    <table><thead><tr><th>${t.company}</th><th>${t.positionDuration}</th><th>${t.reasonLeaving}</th><th></th></tr></thead>
+    <tbody id="app-emp-body"></tbody></table>
+    <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_appAddEmpRow()"><i class="ti ti-plus"></i> ${t.addRow}</button>
+
+    <div style="font-weight:700;margin:20px 0 12px">${t.sec5}</div>
+    <table><thead><tr><th></th><th>${t.spoken}</th><th>${t.written}</th></tr></thead>
+    <tbody>
+      <tr><td>${t.bm}</td>
+        <td><select id="app-lang-bm-spoken" class="form-select">${_appProficiencyOptions(lang.bm?.spoken)}</select></td>
+        <td><select id="app-lang-bm-written" class="form-select">${_appProficiencyOptions(lang.bm?.written)}</select></td>
+      </tr>
+      <tr><td>${t.en}</td>
+        <td><select id="app-lang-en-spoken" class="form-select">${_appProficiencyOptions(lang.en?.spoken)}</select></td>
+        <td><select id="app-lang-en-written" class="form-select">${_appProficiencyOptions(lang.en?.written)}</select></td>
+      </tr>
+      <tr><td><input id="app-lang-others-name" class="form-input" placeholder="${t.langName}" value="${_aiEscapeHtml(lang.others?.name||'')}"></td>
+        <td><select id="app-lang-others-spoken" class="form-select">${_appProficiencyOptions(lang.others?.spoken)}</select></td>
+        <td><select id="app-lang-others-written" class="form-select">${_appProficiencyOptions(lang.others?.written)}</select></td>
+      </tr>
+    </tbody></table>
+
+    <div style="font-weight:700;margin:20px 0 12px">${t.sec6}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.emergencyName}</label><input id="app-emergency-name" class="form-input" value="${_aiEscapeHtml(app.emergency_name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.emergencyRel}</label><input id="app-emergency-rel" class="form-input" value="${_aiEscapeHtml(app.emergency_relationship||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.emergencyMobile}</label><input id="app-emergency-mobile" class="form-input" value="${app.emergency_mobile||''}"></div>
+      <div class="form-group"><label class="form-label">${t.emergencyAddress}</label><input id="app-emergency-address" class="form-input" value="${_aiEscapeHtml(app.emergency_address||'')}"></div>
+    </div>
+
+    <div style="font-weight:700;margin:20px 0 12px">${t.secOffice}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.interviewDate}</label><input id="app-interview-date" type="date" class="form-input" value="${app.interview_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.interviewedBy}</label><input id="app-interviewed-by" class="form-input" value="${_aiEscapeHtml(app.interviewed_by||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.status}</label>
+        <select id="app-status" class="form-select">
+          <option value="pending" ${app.status==='pending'||!app.status?'selected':''}>${t.pending}</option>
+          <option value="interviewed" ${app.status==='interviewed'?'selected':''}>${t.interviewed}</option>
+          <option value="approved" ${app.status==='approved'?'selected':''}>${t.approved}</option>
+          <option value="rejected" ${app.status==='rejected'?'selected':''}>${t.rejected}</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.remarks}</label><textarea id="app-remarks" class="form-input" rows="2">${app.remarks||''}</textarea></div>
+    </div>
+
+    <div id="app-form-err" class="auth-error" style="display:none;margin-top:12px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="_appSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('applicants',{})">${t.cancel}</button>
+      ${canConvert ? `<button class="btn btn-outline" style="margin-left:auto" onclick="openPage('hr',{view:'employee-form',fromApplicantId:'${id}'})"><i class="ti ti-user-plus"></i> ${t.convertToEmployee}</button>` : ''}
+      ${(id && app.converted_employee_id) ? `<span style="margin-left:auto;align-self:center;color:var(--success);font-size:13px"><i class="ti ti-check"></i> ${t.alreadyConverted}</span>` : ''}
+    </div>
+  </div>`
+
+  _appRenderEduRows()
+  _appRenderEmpRows()
+}
+
+async function _appScanForm(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { scanning:'Mengimbas borang...', converting:'Menukar PDF ke imej...', done:'Borang diimbas — sila semak field di bawah.', partial:'Imbasan sebahagian sahaja — hanya beberapa field asas diisi automatik, sila lengkapkan selebihnya secara manual.', err:'Ralat imbas borang: ', badFile:'Sila pilih fail imej atau PDF.' }
+    : { scanning:'Scanning form...', converting:'Converting PDF to image...', done:'Form scanned — please review the fields below.', partial:'Partial scan only — a few core fields were auto-filled, please fill in the rest manually.', err:'Form scan error: ', badFile:'Please select an image or PDF file.' }
+
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  const isImage = file.type.startsWith('image/')
+  if(!isPdf && !isImage) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+
+  const statusEl = document.getElementById('app-scan-status')
+  if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+
+  try {
+    let pageBlobs = [file]
+    if(isPdf) {
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.converting}`
+      pageBlobs = await _pdfPagesToImageBlobs(file)
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+    }
+    // Every page is sent as its OWN image (not stitched into one composite) so
+    // a multi-page form doesn't get squeezed into an odd aspect ratio that
+    // could hurt legibility — a 2-page Employment Application Form has
+    // Language Proficiency/Emergency Contact on page 2, which a single
+    // getPage(1)-only conversion was silently never sending to the AI at all.
+    const images = await Promise.all(pageBlobs.map((blob) => _compressImageToBase64(blob)))
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_application_form', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const r = data.data
+
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el && v!=null) el.value = v }
+    setVal('app-position', r.position_applied)
+    setVal('app-salary', r.expected_salary)
+    setVal('app-available-date', r.available_date)
+    setVal('app-name', r.full_name)
+    setVal('app-ic', r.ic_no)
+    setVal('app-dob', r.dob)
+    setVal('app-gender', r.gender)
+    setVal('app-nationality', r.nationality)
+    setVal('app-marital', r.marital_status)
+    setVal('app-mobile', r.mobile_no)
+    setVal('app-email', r.email)
+    setVal('app-address', r.home_address)
+    setVal('app-emergency-name', r.emergency_name)
+    setVal('app-emergency-rel', r.emergency_relationship)
+    setVal('app-emergency-mobile', r.emergency_mobile)
+    setVal('app-emergency-address', r.emergency_address)
+
+    if(Array.isArray(r.education) && r.education.length) { _appEducation = r.education.map(e=>({qualification:e.qualification||'',institution:e.institution||'',year_completed:e.year_completed||''})); _appRenderEduRows() }
+    if(Array.isArray(r.employment_history) && r.employment_history.length) { _appEmployment = r.employment_history.map(e=>({company:e.company||'',position_duration:e.position_duration||'',reason_leaving:e.reason_leaving||''})); _appRenderEmpRows() }
+
+    const lp = r.language_proficiency || {}
+    setVal('app-lang-bm-spoken', lp.bm?.spoken)
+    setVal('app-lang-bm-written', lp.bm?.written)
+    setVal('app-lang-en-spoken', lp.en?.spoken)
+    setVal('app-lang-en-written', lp.en?.written)
+    setVal('app-lang-others-name', lp.others?.name)
+    setVal('app-lang-others-spoken', lp.others?.spoken)
+    setVal('app-lang-others-written', lp.others?.written)
+
+    if(statusEl) {
+      if(r._partial) statusEl.innerHTML = `<span style="color:var(--warning)"><i class="ti ti-alert-triangle"></i> ${t.partial}</span>`
+      else statusEl.innerHTML = `<span style="color:var(--success)"><i class="ti ti-check"></i> ${t.done}</span>`
+    }
+  } catch(err) {
+    console.error('Application form scan error:', err)
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`
+  }
+}
+
+async function _appSave(id) {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('app-form-err')
+  errEl.style.display='none'
+  const fullName = document.getElementById('app-name').value.trim()
+  const positionApplied = document.getElementById('app-position').value.trim()
+  if(!fullName || !positionApplied) {
+    errEl.textContent = isBm?'Nama penuh dan jawatan dipohon diperlukan.':'Full name and position applied are required.'
+    errEl.style.display='block'
+    return
+  }
+
+  const validEducation = _appEducation.filter(r=>r.qualification||r.institution||r.year_completed)
+  const validEmployment = _appEmployment.filter(r=>r.company||r.position_duration||r.reason_leaving)
+  const langProficiency = {
+    bm: { spoken: document.getElementById('app-lang-bm-spoken').value||null, written: document.getElementById('app-lang-bm-written').value||null },
+    en: { spoken: document.getElementById('app-lang-en-spoken').value||null, written: document.getElementById('app-lang-en-written').value||null },
+    others: {
+      name: document.getElementById('app-lang-others-name').value.trim()||null,
+      spoken: document.getElementById('app-lang-others-spoken').value||null,
+      written: document.getElementById('app-lang-others-written').value||null,
+    },
+  }
+
+  const payload = {
+    tenant_id: APP.tenant.id,
+    position_applied: positionApplied,
+    expected_salary: document.getElementById('app-salary').value ? Number(document.getElementById('app-salary').value) : null,
+    available_date: document.getElementById('app-available-date').value || null,
+    full_name: fullName,
+    ic_no: document.getElementById('app-ic').value.trim() || null,
+    dob: document.getElementById('app-dob').value || null,
+    gender: document.getElementById('app-gender').value || null,
+    nationality: document.getElementById('app-nationality').value.trim() || null,
+    marital_status: document.getElementById('app-marital').value || null,
+    mobile_no: document.getElementById('app-mobile').value.trim() || null,
+    email: document.getElementById('app-email').value.trim() || null,
+    home_address: document.getElementById('app-address').value.trim() || null,
+    education: validEducation,
+    employment_history: validEmployment,
+    language_proficiency: langProficiency,
+    emergency_name: document.getElementById('app-emergency-name').value.trim() || null,
+    emergency_relationship: document.getElementById('app-emergency-rel').value.trim() || null,
+    emergency_mobile: document.getElementById('app-emergency-mobile').value.trim() || null,
+    emergency_address: document.getElementById('app-emergency-address').value.trim() || null,
+    interview_date: document.getElementById('app-interview-date').value || null,
+    interviewed_by: document.getElementById('app-interviewed-by').value.trim() || null,
+    status: document.getElementById('app-status').value,
+    remarks: document.getElementById('app-remarks').value.trim() || null,
+  }
+
+  let error
+  if(id) {
+    ({error} = await sb.from('job_applicants').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+  } else {
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'APP'}).then(r=>r, ()=>({data:null}))
+    payload.ref_no = refData || await _genFallbackRefNo('job_applicants','ref_no','APP')
+    ;({error} = await sb.from('job_applicants').insert(payload))
+  }
+  if(error) { errEl.textContent = 'Error: '+error.message; errEl.style.display='block'; return }
+  auditLog(id?'update':'create','job_applicants', id||null)
+  showToast(isBm?'Permohonan disimpan!':'Application saved!', 'success')
+  openPage('applicants',{})
 }
 
 async function renderPayrollRun() {

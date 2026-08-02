@@ -5,12 +5,13 @@
 // Request:  POST { action: '...', language: 'en'|'bm', ...action-specific fields }
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
-// Actions: chat, categorize, receipt (vision), narrate_report, business_insight,
-// draft_reminder, follow_up_suggestion. 'receipt' uses a vision-capable model read
-// from the GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of
-// code so it can be swapped without a redeploy if Groq deprecates it, which has
-// happened to every prior Groq vision model on a roughly 3-4 month cadence. Every
-// other action uses CHAT_MODEL (text-only).
+// Actions: chat, categorize, receipt (vision), scan_application_form (vision),
+// narrate_report, business_insight, draft_reminder, follow_up_suggestion.
+// 'receipt' and 'scan_application_form' use a vision-capable model read from the
+// GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of code so
+// it can be swapped without a redeploy if Groq deprecates it, which has happened
+// to every prior Groq vision model on a roughly 3-4 month cadence. Every other
+// action uses CHAT_MODEL (text-only).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -196,6 +197,383 @@ async function handleReceipt(body: Record<string, unknown>) {
     description: typeof parsed.description === 'string' ? parsed.description : '',
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
   }
+}
+
+// FLAT field list — no nested arrays/objects. The original schema nested
+// education/employment_history as arrays-of-objects and language_proficiency
+// as a nested object; qwen/qwen3.6-27b (currently the ONLY vision-capable
+// model on Groq — Llama 4 Scout/Maverick vision was deprecated, gpt-oss is
+// text-only) reliably fails to produce valid JSON for that shape in one shot
+// (Groq 400 json_validate_failed, empty failed_generation). A flat key-per-field
+// schema is far more likely to parse; the nested shape the frontend expects is
+// reconstructed here server-side from the flat fields, so no client change needed.
+//
+// Each field carries a description (and enum where the value is a fixed set,
+// eg language ratings use the SAME vocabulary as the frontend's <select>
+// options) — the original one-line comma-separated field list gave the model
+// no per-field context, which correlated with it silently dropping the
+// busier/later fields (education/employment/language) while still filling
+// the simpler, earlier-listed personal fields.
+type FieldDef = { key: string; type: 'string' | 'number'; description: string; enum?: string[] }
+
+// Split into a "personal core" group (the fields that have reliably
+// extracted correctly in every test so far — this is also exactly the
+// MINIMAL fallback set) and a separate "complex" group (education/employment
+// arrays, language proficiency, emergency contact) that a live test showed
+// consistently failing/empty when requested together with everything else
+// in one 38-field call (json_validate_failed, empty failed_generation, even
+// with max_tokens raised to 2048 — ruling out output-length as the cause).
+// Two independent, narrower calls give the model a much smaller task each.
+const PERSONAL_CORE_FIELD_DEFS: FieldDef[] = [
+  { key: 'position_applied', type: 'string', description: 'Position/job applied for' },
+  { key: 'expected_salary', type: 'number', description: 'Expected monthly salary in RM, numeric only, no currency symbol' },
+  { key: 'available_date', type: 'string', description: 'Date available to start work, format YYYY-MM-DD' },
+  { key: 'full_name', type: 'string', description: 'Applicant full name' },
+  { key: 'ic_no', type: 'string', description: 'Malaysian IC number, format XXXXXX-XX-XXXX' },
+  { key: 'dob', type: 'string', description: 'Date of birth, format YYYY-MM-DD' },
+  { key: 'gender', type: 'string', description: 'Which ONE checkbox is ticked for gender — only null if truly no tick visible', enum: ['male', 'female'] },
+  { key: 'nationality', type: 'string', description: 'Nationality/citizenship' },
+  { key: 'marital_status', type: 'string', description: 'Which ONE checkbox is ticked for marital status — only null if truly no tick visible', enum: ['single', 'married', 'divorced', 'widowed'] },
+  { key: 'mobile_no', type: 'string', description: 'Mobile phone number' },
+  { key: 'email', type: 'string', description: 'Email address' },
+  { key: 'home_address', type: 'string', description: 'Home address' },
+]
+
+// Emergency contact is plain text (no checkbox difficulty), yet a live test
+// showed it still coming back 100% null in the same call where
+// education/employment extracted perfectly. The descriptions below add the
+// context that was missing before: WHERE it typically sits on the form and
+// WHOSE details it is (a live test's ground-truth PDF explicitly listed the
+// emergency contact's address as "same as applicant" — a plausible way for
+// a model to end up returning null instead of copying the value across).
+// A live test showed emergency_mobile extracting correctly while
+// emergency_name/emergency_address on the SAME row came back null — since
+// all 4 fields sit on one row/section, each description now explicitly
+// anchors itself to emergency_mobile as a reference point, on the theory
+// that if the model can locate one field in this row it should locate the
+// others the same way, rather than each field description standing alone.
+const EMERGENCY_FIELD_DEFS: FieldDef[] = [
+  { key: 'emergency_name', type: 'string', description: 'Emergency Contact section (near the bottom of the form, before the Declaration/Signature), same row as this person\'s mobile number: the NAME of the applicant\'s emergency contact person — a different person from the applicant' },
+  { key: 'emergency_relationship', type: 'string', description: 'Emergency Contact section, same row as the emergency contact\'s name and mobile number: relationship of that person to the applicant (eg spouse, parent, sibling, friend)' },
+  { key: 'emergency_mobile', type: 'string', description: 'Emergency Contact section: that person\'s mobile number' },
+  { key: 'emergency_address', type: 'string', description: 'Emergency Contact section, same row as the emergency contact\'s name and mobile number: that person\'s address. If the form says something like "same as above"/"same as applicant" instead of writing it out again, copy the applicant\'s own home address value here rather than returning null' },
+]
+
+const LANG_RATING_ENUM = ['good', 'average', 'basic']
+
+// Language Proficiency is a CHECKBOX GRID (one of the harder layouts for a
+// vision model to read correctly): 3 language rows (Bahasa Malaysia,
+// English, Others) x 2 categories (Spoken, Written), each cell being 3
+// checkbox options (Good/Average/Basic). A live test showed this whole
+// group coming back null even when Education/Employment (free-text tables,
+// same call) extracted perfectly — the per-field descriptions here now spell
+// out the grid explicitly and use the same "which ONE checkbox is ticked"
+// phrasing that already worked for the single gender/marital_status
+// checkboxes, instead of relying on the field name alone to convey the format.
+const LANGUAGE_FIELD_DEFS: FieldDef[] = [
+  { key: 'lang_bm_spoken', type: 'string', description: 'Language Proficiency checkbox grid, Bahasa Malaysia row, SPOKEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_bm_written', type: 'string', description: 'Language Proficiency checkbox grid, Bahasa Malaysia row, WRITTEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_en_spoken', type: 'string', description: 'Language Proficiency checkbox grid, English row, SPOKEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_en_written', type: 'string', description: 'Language Proficiency checkbox grid, English row, WRITTEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_others_name', type: 'string', description: 'Language Proficiency checkbox grid, "Others" row: the name of the other language WRITTEN IN by the applicant (this one is free text, not a checkbox)' },
+  { key: 'lang_others_spoken', type: 'string', description: 'Language Proficiency checkbox grid, "Others" row, SPOKEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+  { key: 'lang_others_written', type: 'string', description: 'Language Proficiency checkbox grid, "Others" row, WRITTEN column: which ONE of the 3 checkboxes (Good/Average/Basic) is ticked — only null if truly no tick visible', enum: LANG_RATING_ENUM },
+]
+
+const EDU_EMPLOYMENT_FIELD_DEFS: FieldDef[] = [
+  { key: 'education_1_qualification', type: 'string', description: 'Education table row 1: qualification (eg SPM, Diploma, Degree)' },
+  { key: 'education_1_institution', type: 'string', description: 'Education table row 1: institution/school name' },
+  { key: 'education_1_year', type: 'string', description: 'Education table row 1: year completed' },
+  { key: 'education_2_qualification', type: 'string', description: 'Education table row 2: qualification' },
+  { key: 'education_2_institution', type: 'string', description: 'Education table row 2: institution/school name' },
+  { key: 'education_2_year', type: 'string', description: 'Education table row 2: year completed' },
+  { key: 'education_3_qualification', type: 'string', description: 'Education table row 3: qualification' },
+  { key: 'education_3_institution', type: 'string', description: 'Education table row 3: institution/school name' },
+  { key: 'education_3_year', type: 'string', description: 'Education table row 3: year completed' },
+  { key: 'employment_1_company', type: 'string', description: 'Employment history table row 1: company name' },
+  { key: 'employment_1_position_duration', type: 'string', description: 'Employment history table row 1: position held and duration' },
+  { key: 'employment_1_reason', type: 'string', description: 'Employment history table row 1: reason for leaving' },
+  { key: 'employment_2_company', type: 'string', description: 'Employment history table row 2: company name' },
+  { key: 'employment_2_position_duration', type: 'string', description: 'Employment history table row 2: position held and duration' },
+  { key: 'employment_2_reason', type: 'string', description: 'Employment history table row 2: reason for leaving' },
+]
+
+const MINIMAL_KEYS = ['position_applied', 'full_name', 'ic_no', 'dob', 'gender', 'mobile_no', 'email', 'home_address']
+const MINIMAL_FIELD_DEFS = PERSONAL_CORE_FIELD_DEFS.filter((d) => MINIMAL_KEYS.includes(d.key))
+// Language + emergency contact split out of the tables call into their own
+// call (below) since a live test showed them consistently coming back null
+// even alongside education/employment succeeding perfectly in the same call
+// — a narrower, more focused call for just this harder group, same strategy
+// that already fixed the original Call A/B split.
+const LANG_EMERGENCY_FIELD_DEFS = [...LANGUAGE_FIELD_DEFS, ...EMERGENCY_FIELD_DEFS]
+
+function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
+  const lines = defs
+    .map((d) => `- ${d.key}: ${d.description}${d.enum ? ` (must be exactly one of: ${d.enum.join(', ')}, or null)` : ''}`)
+    .join('\n')
+  return (
+    `Extract these fields from the ${sectionTitle} of this Malaysian Employment Application Form ` +
+    `image. Return ONLY valid JSON with EXACTLY these flat keys (no nesting):\n${lines}\n` +
+    'You MUST attempt EVERY field listed above — only use null if that specific field is genuinely ' +
+    'absent or not legible in the image; do not skip a field just because it is further down this ' +
+    'list or in a busier/different-looking part of the form. Dates as YYYY-MM-DD. Untuk checkbox/tick, ' +
+    'kenal pasti dengan teliti mana SATU option yang betul-betul ditandakan (☑/✓/tick/silang) — jangan ' +
+    'teka atau pilih option lain kalau tak pasti, biar null sahaja.'
+  )
+}
+
+// json_object only — Groq confirmed via live 400 response that qwen/qwen3.6-27b
+// (the vision model) does not support response_format: json_schema at all
+// ("This model does not support response format `json_schema`"), so that mode
+// is not attempted here. json_schema/strict structured outputs on Groq are
+// currently limited to the openai/gpt-oss-* text models, which don't do vision.
+//
+// max_tokens: callGroq previously left this unset everywhere in this file,
+// so it ran on whatever default Groq applies. A live test confirmed this
+// directly: Call B (education/employment/language/emergency — longer key
+// names, longer typical values, JSON structure overhead) failed with
+// failed_generation: "max completion tokens reached before generating a
+// valid document" at 2048. Raising Call A to the same 4096 as Call B/C was
+// tried as a fix for a DIFFERENT, still-unresolved issue below (see the
+// "KNOWN LIMITATION" note on the Call A attempts loop) — it did not resolve
+// that one, but is kept since it's still a correct fix for the token-limit
+// failure mode it was originally raised for.
+const PERSONAL_MAX_TOKENS = 4096
+const COMPLEX_MAX_TOKENS = 4096
+
+async function callAppFormVision(imageUrls: string[], visionModel: string, sectionTitle: string, defs: FieldDef[], maxTokens: number) {
+  const systemPrompt = fieldsPrompt(sectionTitle, defs)
+  // Logged on EVERY call (not just on failure) so the exact prompt text can
+  // be inspected regardless of outcome — a call that "succeeds" but returns
+  // all-null values for a field group needs the prompt visible just as much
+  // as an outright failure does, since the two look identical from the
+  // rebuilt result alone.
+  console.log(`[scan_application_form] prompt for "${sectionTitle}" (${imageUrls.length} page image(s)): ${systemPrompt}`)
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Extract the application form details from these page images (in page order).' },
+          ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+        ],
+      },
+    ],
+    visionModel,
+    { response_format: { type: 'json_object' }, max_tokens: maxTokens },
+  )
+  return JSON.parse(raw) as Record<string, unknown>
+}
+
+async function handleScanApplicationForm(body: Record<string, unknown>) {
+  // images: array of { image_base64, mime_type }, one per page. A 2-page
+  // Employment Application Form has Language Proficiency/Emergency Contact
+  // on page 2 — a prior single-image version of this action only ever sent
+  // page 1 (pdf.getPage(1) hardcoded on the frontend), so those fields were
+  // never visible to the model at all, not merely hard to read.
+  const images = body.images
+  if (!Array.isArray(images) || images.length === 0) throw new Error('images is required and must be a non-empty array')
+  const imageUrls = images.map((img, i) => {
+    const rec = img as Record<string, unknown>
+    const base64 = rec.image_base64
+    if (!base64 || typeof base64 !== 'string') throw new Error(`images[${i}].image_base64 is required`)
+    const mimeType = typeof rec.mime_type === 'string' && rec.mime_type ? rec.mime_type : 'image/jpeg'
+    return `data:${mimeType};base64,${base64}`
+  })
+  const perPageLengths = images.map((img) => String((img as Record<string, unknown>).image_base64 || '').length)
+  const imageBase64Len = perPageLengths.reduce((sum, len) => sum + len, 0)
+  // Per-page, not just combined, so a single oversized/complex page can be
+  // isolated instead of only seeing one aggregate number — asked for after a
+  // 2-page PDF showed Call A failing 100% consistently (not flaky) across
+  // many separate scans while Call B/C on the same image always succeeded.
+  console.log(`[scan_application_form] page sizes (base64 chars): [${perPageLengths.join(', ')}], total=${imageBase64Len}`)
+
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  // Call A: personal core fields (the set that has reliably succeeded in
+  // every test so far). A live test showed Call A occasionally hits the same
+  // transient json_validate_failed/empty-failed_generation error even on
+  // this proven-simple field set — ordinary LLM API flakiness, not a
+  // too-hard-a-task problem like the original Call B issue. The minimal
+  // fallback trades away DOB/nationality/marital_status/available_date/
+  // expected_salary just to guarantee SOMETHING comes back, so a live test
+  // asked for one more full-field shot AFTER the minimal fallback, before
+  // fully giving up — cheap (one extra call, only on the already-rare path
+  // where both earlier full attempts and the fallback all failed) and worth
+  // it if it recovers the richer field set instead of settling for minimal.
+  let personal: Record<string, unknown> | null = null
+  let personalLevel: 'full' | 'minimal' | 'failed' = 'full'
+  const personalErrors: string[] = []
+  for (const attempt of [
+    { label: 'call A: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
+    { label: 'call A retry: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
+    { label: 'call A fallback: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
+    { label: 'call A final retry: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
+  ]) {
+    try {
+      personal = await callAppFormVision(imageUrls, visionModel, attempt.title, attempt.defs, PERSONAL_MAX_TOKENS)
+      personalLevel = attempt.level
+      console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(personal)}`)
+      break
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[scan_application_form] ${attempt.label} FAILED: ${msg}`)
+      personalErrors.push(`${attempt.label}: ${msg}`)
+    }
+  }
+  // KNOWN LIMITATION (accepted, not yet resolved): Call A (personal fields)
+  // sometimes fails ALL 4 attempts, 100% consistently, for a specific
+  // applicant's PDF/image — not the ordinary Groq flakiness the retry/
+  // fallback ladder above was built for (that PDF failed the same way every
+  // time it was rescanned, while Call B/C on the IDENTICAL image always
+  // succeeded). Investigated and ruled out: payload size (well under Groq's
+  // 20MB limit — see the per-page size log below), multi-image support
+  // (qwen supports up to the 5-page cap this action already uses), and
+  // completion token limit (raised Call A to 4096 to match Call B/C — did
+  // NOT fix this specific case). True root cause is still undiagnosed for
+  // this failure mode specifically.
+  //
+  // Accepted for now rather than chased further: the system already
+  // degrades gracefully — education/employment/language/emergency contact
+  // still get extracted via Call B/C regardless, the user sees a clear
+  // _partial warning in the UI, and can fill personal fields in manually.
+  // Every other tested PDF has had Call A succeed normally. If this recurs
+  // across MANY different PDFs (not just this one applicant's), revisit by
+  // splitting Call A into smaller sub-calls (eg 6 fields each) — the same
+  // strategy that already fixed the original Call B/C all-null issue.
+  if (!personal) {
+    console.error(
+      `[scan_application_form] call A fully exhausted after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64Len}): ${personalErrors.join(' | ')} — proceeding to Call B/C anyway instead of failing the whole scan`,
+    )
+    personal = {}
+    personalLevel = 'failed'
+  }
+
+  // Call B: education/employment — free-text tables, proven reliable
+  // (extracted perfectly even when Call C's fields, in the same combined
+  // call, came back 100% null). Independent of Call A's outcome.
+  let eduEmploymentFlat: Record<string, unknown> = {}
+  let eduEmploymentSucceeded = false
+  try {
+    eduEmploymentFlat = await callAppFormVision(
+      imageUrls, visionModel,
+      'Education table and Employment History table sections',
+      EDU_EMPLOYMENT_FIELD_DEFS, COMPLEX_MAX_TOKENS,
+    )
+    eduEmploymentSucceeded = true
+    console.log(`[scan_application_form] call B: education/employment fields SUCCEEDED raw=${JSON.stringify(eduEmploymentFlat)}`)
+  } catch (err) {
+    console.error(`[scan_application_form] call B: education/employment fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  // Call C: language proficiency (checkbox grid) + emergency contact (plain
+  // text near the bottom of the form) — split out into its own call because
+  // a live test showed this whole group coming back null even alongside
+  // Call B's fields succeeding perfectly in the same combined call. A
+  // narrower, dedicated call plus richer per-field descriptions (see
+  // LANGUAGE_FIELD_DEFS/EMERGENCY_FIELD_DEFS above) target that specifically.
+  //
+  // This group can fail two different ways: an outright exception (handled
+  // like Call B below), or — the specific case that was actually observed
+  // live — the call succeeds with a 200 but every single field comes back
+  // null. That second case throws nothing, so Call A's "retry on exception"
+  // pattern doesn't catch it; it needs its own explicit content check.
+  const isAllEmpty = (obj: Record<string, unknown>, defs: FieldDef[]) =>
+    defs.every((d) => { const v = obj[d.key]; return v == null || v === '' })
+  const LANG_EMERGENCY_TITLE = 'Language Proficiency checkbox grid and Emergency Contact sections (near the bottom of the form)'
+
+  let langEmergencyFlat: Record<string, unknown> = {}
+  let langEmergencySucceeded = false
+  try {
+    langEmergencyFlat = await callAppFormVision(imageUrls, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
+    langEmergencySucceeded = true
+    console.log(`[scan_application_form] call C: language/emergency fields SUCCEEDED raw=${JSON.stringify(langEmergencyFlat)}`)
+
+    if (isAllEmpty(langEmergencyFlat, LANG_EMERGENCY_FIELD_DEFS)) {
+      console.error('[scan_application_form] call C succeeded with HTTP 200 but every field was null — no exception was thrown, so this is NOT the same failure Call A retries on; retrying once with the identical fields/prompt anyway, since a live test showed this exact all-null pattern on the same input')
+      try {
+        const retryFlat = await callAppFormVision(imageUrls, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
+        console.log(`[scan_application_form] call C retry (all-null trigger) raw=${JSON.stringify(retryFlat)}`)
+        langEmergencyFlat = retryFlat
+      } catch (err) {
+        console.error(`[scan_application_form] call C retry (all-null trigger) FAILED: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  } catch (err) {
+    console.error(`[scan_application_form] call C: language/emergency fields FAILED: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  const langEmergencyStillEmpty = isAllEmpty(langEmergencyFlat, LANG_EMERGENCY_FIELD_DEFS)
+  const flat: Record<string, unknown> = { ...personal, ...eduEmploymentFlat, ...langEmergencyFlat }
+  const extractionPartial =
+    personalLevel !== 'full' || !eduEmploymentSucceeded || !langEmergencySucceeded || langEmergencyStillEmpty
+
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
+  const num = (v: unknown) => (typeof v === 'number' ? v : null)
+
+  // Not a hard reject — Malaysian 011-prefixed mobiles legitimately use an
+  // 8-digit subscriber number (11 digits total including the leading 0),
+  // one more than the 7-digit standard for 012/013/etc, so digit count alone
+  // can't safely distinguish a real number from a misread one. This only
+  // flags genuinely implausible lengths (garbled/merged digits) in the logs
+  // for review — it does not modify or drop the extracted value.
+  const logIfImplausiblePhone = (fieldName: string, v: unknown) => {
+    if (typeof v !== 'string' || !v) return
+    const digits = v.replace(/\D/g, '')
+    if (digits.length < 9 || digits.length > 11) {
+      console.error(`[scan_application_form] ${fieldName} looks implausible for a Malaysian phone number (${digits.length} digits): "${v}" — kept as-is, please verify manually`)
+    }
+  }
+  logIfImplausiblePhone('mobile_no', flat.mobile_no)
+  logIfImplausiblePhone('emergency_mobile', flat.emergency_mobile)
+
+  const education = [1, 2, 3]
+    .map((i) => ({
+      qualification: str(flat[`education_${i}_qualification`]),
+      institution: str(flat[`education_${i}_institution`]),
+      year_completed: str(flat[`education_${i}_year`]),
+    }))
+    .filter((e) => e.qualification || e.institution || e.year_completed)
+
+  const employment_history = [1, 2]
+    .map((i) => ({
+      company: str(flat[`employment_${i}_company`]),
+      position_duration: str(flat[`employment_${i}_position_duration`]),
+      reason_leaving: str(flat[`employment_${i}_reason`]),
+    }))
+    .filter((e) => e.company || e.position_duration || e.reason_leaving)
+
+  const language_proficiency = {
+    bm: { spoken: str(flat.lang_bm_spoken), written: str(flat.lang_bm_written) },
+    en: { spoken: str(flat.lang_en_spoken), written: str(flat.lang_en_written) },
+    others: { name: str(flat.lang_others_name), spoken: str(flat.lang_others_spoken), written: str(flat.lang_others_written) },
+  }
+
+  const result = {
+    position_applied: str(flat.position_applied),
+    expected_salary: num(flat.expected_salary),
+    available_date: str(flat.available_date),
+    full_name: str(flat.full_name),
+    ic_no: str(flat.ic_no),
+    dob: str(flat.dob),
+    gender: str(flat.gender),
+    nationality: str(flat.nationality),
+    marital_status: str(flat.marital_status),
+    mobile_no: str(flat.mobile_no),
+    email: str(flat.email),
+    home_address: str(flat.home_address),
+    education,
+    employment_history,
+    language_proficiency,
+    emergency_name: str(flat.emergency_name),
+    emergency_relationship: str(flat.emergency_relationship),
+    emergency_mobile: str(flat.emergency_mobile),
+    emergency_address: str(flat.emergency_address),
+    _partial: extractionPartial,
+  }
+  console.log(`[scan_application_form] rebuilt result=${JSON.stringify(result)}`)
+  return result
 }
 
 async function handleNarrateReport(body: Record<string, unknown>) {
@@ -696,6 +1074,9 @@ Deno.serve(async (req: Request) => {
       case 'receipt':
         data = await handleReceipt(body)
         break
+      case 'scan_application_form':
+        data = await handleScanApplicationForm(body)
+        break
       case 'narrate_report':
         data = await handleNarrateReport(body)
         break
@@ -757,6 +1138,12 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ success: true, data })
   } catch (err) {
     console.error('ai-proxy error:', err)
+    // 200, not 500: every frontend caller already unwraps errors via
+    // `data.success`/`data.error` (not HTTP status), but supabase-js only
+    // surfaces that body on a 2xx response — a non-2xx status instead gives
+    // the caller a generic FunctionsHttpError ("Edge Function returned a
+    // non-2xx status code"), swallowing the actual message set here and
+    // forcing users to check Function Logs for what actually failed.
     return jsonResponse({
       success: false,
       error: err instanceof Error ? err.message : String(err),
@@ -765,6 +1152,6 @@ Deno.serve(async (req: Request) => {
         groq_api_key_set: !!Deno.env.get('GROQ_API_KEY'),
         groq_vision_model_secret: Deno.env.get('GROQ_VISION_MODEL') || `(not set — using default: ${DEFAULT_VISION_MODEL})`,
       },
-    }, 500)
+    }, 200)
   }
 })
