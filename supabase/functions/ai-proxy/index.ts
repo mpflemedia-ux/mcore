@@ -334,10 +334,18 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
 // names, longer typical values, JSON structure overhead) failed with
 // failed_generation: "max completion tokens reached before generating a
 // valid document" at 2048, while Call A (shorter personal-field keys/values)
-// succeeds fully at the same 2048. Rather than raise both indiscriminately,
-// each call gets a limit sized to what it actually needs.
-const PERSONAL_MAX_TOKENS = 2048 // proven sufficient — do not change without a reason to
-const COMPLEX_MAX_TOKENS = 4096 // Call B needs headroom Call A doesn't
+// succeeded fully at the same 2048 for one applicant's PDF. A second
+// applicant's PDF then showed Call A failing the SAME way (json_validate_failed,
+// empty failed_generation) 100% consistently across many separate scans —
+// deterministic, not flaky, while Call B/C on the IDENTICAL image (both
+// already at 4096) always succeeded. Groq's docs note multi-image requests
+// (we send every PDF page, up to 5, in one call — see PDF_MAX_PAGES) need
+// more work per call than a single image; 2048 completion tokens was
+// "proven sufficient" only against applicants whose Call A output apparently
+// fit comfortably under that specific ceiling. Raised to match Call B/C
+// rather than keep a smaller limit that only some inputs happen to fit in.
+const PERSONAL_MAX_TOKENS = 4096
+const COMPLEX_MAX_TOKENS = 4096
 
 async function callAppFormVision(imageUrls: string[], visionModel: string, sectionTitle: string, defs: FieldDef[], maxTokens: number) {
   const systemPrompt = fieldsPrompt(sectionTitle, defs)
@@ -379,7 +387,13 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     const mimeType = typeof rec.mime_type === 'string' && rec.mime_type ? rec.mime_type : 'image/jpeg'
     return `data:${mimeType};base64,${base64}`
   })
-  const imageBase64Len = images.reduce((sum, img) => sum + String((img as Record<string, unknown>).image_base64 || '').length, 0)
+  const perPageLengths = images.map((img) => String((img as Record<string, unknown>).image_base64 || '').length)
+  const imageBase64Len = perPageLengths.reduce((sum, len) => sum + len, 0)
+  // Per-page, not just combined, so a single oversized/complex page can be
+  // isolated instead of only seeing one aggregate number — asked for after a
+  // 2-page PDF showed Call A failing 100% consistently (not flaky) across
+  // many separate scans while Call B/C on the same image always succeeded.
+  console.log(`[scan_application_form] page sizes (base64 chars): [${perPageLengths.join(', ')}], total=${imageBase64Len}`)
 
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
 
