@@ -429,6 +429,7 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-logo-fallback { width:44px; height:44px; border-radius:8px; background:var(--pdoc-accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; font-family:'Space Grotesk',sans-serif; flex-shrink:0; }
 .pdoc-company-name { font-weight:700; font-size:15px; color:var(--pdoc-accent); font-family:'Space Grotesk',sans-serif; line-height:1.3; }
 .pdoc-company-sub { font-size:10.5px; color:var(--text-3); margin-top:2px; line-height:1.5; }
+.pdoc-payslip-subtitle { font-size:11px; color:var(--text-2); font-weight:600; letter-spacing:.02em; margin-top:2px; text-transform:uppercase; }
 .pdoc-meta { text-align:right; font-size:11px; color:var(--text-3); line-height:1.7; white-space:nowrap; }
 .pdoc-title-bar { background:var(--pdoc-accent); color:#fff; font-weight:700; text-align:center; padding:9px; font-size:13px; letter-spacing:.04em; text-transform:uppercase; }
 .pdoc-band { background:var(--bg); padding:12px 24px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
@@ -461,6 +462,14 @@ tbody tr:hover{background:var(--bg)}
   .pdoc-title-bar, .pdoc-net-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid .form-label { font-weight:700; font-size:11px; color:#000 !important; margin-bottom:30px; display:block; }
   .pdoc-sig-grid .form-input { border:none; border-top:1.5px solid #94A3B8; border-radius:0; padding:6px 0 0; text-align:center; background:transparent !important; font-weight:600; color:#000 !important; box-shadow:none !important; }
+  /* The horizontal-scroll wrapper around the wide Salary Disbursement table
+     clips its content in print (overflow:auto doesn't reflow for paged
+     media) — force it visible so the table's natural width shows and
+     Chrome's print "shrink to fit" scales the whole thing onto the page,
+     instead of cutting columns off past the screen viewport width. */
+  .pdoc-sd-scroll { overflow:visible !important; }
+  .pdoc-sd-table { font-size:9.5px !important; }
+  .pdoc-sd-table th, .pdoc-sd-table td { padding:4px 3px !important; }
 }
 </style>
 </head>
@@ -857,13 +866,13 @@ function _pdocLogoHtml(tn) {
     ? `<img src="${tn.logo_url}" alt="logo">`
     : `<div class="pdoc-logo-fallback">${_aiEscapeHtml((tn.name||'?').charAt(0).toUpperCase())}</div>`
 }
-function _pdocHeaderHtml(tn, metaLinesHtml) {
+function _pdocHeaderHtml(tn, metaLinesHtml, subtitleHtml, subtitleClass) {
   return `<div class="pdoc-header">
     <div class="pdoc-logo-row">
       ${_pdocLogoHtml(tn)}
       <div>
         <div class="pdoc-company-name">${_aiEscapeHtml(tn.name||'-')}</div>
-        ${_pdocAddressLine(tn) ? `<div class="pdoc-company-sub">${_aiEscapeHtml(_pdocAddressLine(tn))}</div>` : ''}
+        ${subtitleHtml ? `<div class="${subtitleClass||'pdoc-company-sub'}">${subtitleHtml}</div>` : ''}
       </div>
     </div>
     <div class="pdoc-meta">${metaLinesHtml}</div>
@@ -946,11 +955,15 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
 
   return `
   <div class="pdoc" style="--pdoc-accent:${accent};max-width:640px;margin:0 auto 24px">
-    ${_pdocHeaderHtml(tn, `${isBm?'Tarikh Bayaran':'Pay Date'}: ${_pdocPayDate(rec)}<br>${isBm?'Ruj.':'Ref'}: ${_pdocPayslipRef(rec)}`)}
-    <div class="pdoc-title-bar">${isBm?'SLIP GAJI':'PAYSLIP'} — ${_pdocMonthYearLabel(rec.month, rec.year, isBm)}</div>
+    ${_pdocHeaderHtml(tn,
+      `${isBm?'Tarikh Bayaran':'Pay Date'}: ${_pdocPayDate(rec)}<br>${isBm?'Ruj.':'Ref'}: ${_pdocPayslipRef(rec)}`,
+      `${isBm?'SLIP GAJI':'PAYSLIP'} — ${_pdocMonthYearLabel(rec.month, rec.year, isBm)}`,
+      'pdoc-payslip-subtitle')}
     <div class="pdoc-band">
       <div class="pdoc-band-name">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
       ${bankLine ? `<div class="pdoc-band-sub">${isBm?'Bank':'Bank'}: ${_aiEscapeHtml(bankLine)}</div>` : ''}
+      ${rec.employees?.epf_no ? `<div class="pdoc-band-sub">${isBm?'No. EPF':'EPF No.'}: ${_aiEscapeHtml(rec.employees.epf_no)}</div>` : ''}
+      ${rec.employees?.socso_no ? `<div class="pdoc-band-sub">${isBm?'No. SOCSO':'SOCSO No.'}: ${_aiEscapeHtml(rec.employees.socso_no)}</div>` : ''}
     </div>
     <div class="pdoc-section-title">${isBm?'PENDAPATAN':'EARNINGS'}</div>
     <table class="pdoc-table"><tbody>
@@ -7200,7 +7213,7 @@ async function renderPayslipDetail(id) {
     aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print',
     pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).', advance:'Advance'
   }
-  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no,epf_no,socso_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
@@ -7357,7 +7370,7 @@ async function renderSalaryDisbursement(month, year) {
     </div>
   </div>
   <div class="pdoc" id="sd-pdoc" style="--pdoc-accent:${accent}">
-    ${_pdocHeaderHtml(tn, `${isBm?'Dijana':'Generated'}: ${new Date().toISOString().slice(0,10)}`)}
+    ${_pdocHeaderHtml(tn, `${isBm?'Dijana':'Generated'}: ${new Date().toISOString().slice(0,10)}`, _pdocAddressLine(tn) ? _aiEscapeHtml(_pdocAddressLine(tn)) : '')}
     <div class="pdoc-title-bar">${t.title} — ${_pdocMonthYearLabel(month, year, isBm)}</div>
     <div id="sd-content"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
   </div>`
@@ -7383,7 +7396,7 @@ async function renderSalaryDisbursement(month, year) {
   }, 0)
 
   wrap.innerHTML = `
-  <div style="overflow-x:auto">
+  <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
       <th>${t.no}</th><th>${t.payee}</th><th>${t.bank}</th><th style="text-align:right">${t.salary}</th>
       <th>${t.allowType} 1</th><th style="text-align:right">${t.allowAmt} 1</th>
@@ -7573,7 +7586,7 @@ async function renderPayslipsPrint(month, year) {
     back:'Salary Disbursement', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
     eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', print:'Print All', noData:'No payroll records for this period.', advance:'Advance'
   }
-  const {data, error} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no)')
+  const {data, error} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no,epf_no,socso_no)')
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error || !data || data.length===0) {
     document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
