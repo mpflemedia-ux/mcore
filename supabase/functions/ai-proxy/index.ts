@@ -333,17 +333,11 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
 // directly: Call B (education/employment/language/emergency — longer key
 // names, longer typical values, JSON structure overhead) failed with
 // failed_generation: "max completion tokens reached before generating a
-// valid document" at 2048, while Call A (shorter personal-field keys/values)
-// succeeded fully at the same 2048 for one applicant's PDF. A second
-// applicant's PDF then showed Call A failing the SAME way (json_validate_failed,
-// empty failed_generation) 100% consistently across many separate scans —
-// deterministic, not flaky, while Call B/C on the IDENTICAL image (both
-// already at 4096) always succeeded. Groq's docs note multi-image requests
-// (we send every PDF page, up to 5, in one call — see PDF_MAX_PAGES) need
-// more work per call than a single image; 2048 completion tokens was
-// "proven sufficient" only against applicants whose Call A output apparently
-// fit comfortably under that specific ceiling. Raised to match Call B/C
-// rather than keep a smaller limit that only some inputs happen to fit in.
+// valid document" at 2048. Raising Call A to the same 4096 as Call B/C was
+// tried as a fix for a DIFFERENT, still-unresolved issue below (see the
+// "KNOWN LIMITATION" note on the Call A attempts loop) — it did not resolve
+// that one, but is kept since it's still a correct fix for the token-limit
+// failure mode it was originally raised for.
 const PERSONAL_MAX_TOKENS = 4096
 const COMPLEX_MAX_TOKENS = 4096
 
@@ -428,13 +422,26 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
       personalErrors.push(`${attempt.label}: ${msg}`)
     }
   }
-  // A live test showed all 3 Call A attempts fail on a PDF that had scanned
-  // successfully twice before — Groq flakiness, not a real incompatibility.
-  // Previously this threw and discarded the ENTIRE scan (education,
-  // employment, language, emergency contact all lost too) even though
-  // Call B/C are completely independent and might well succeed. Now it just
-  // proceeds with empty personal fields instead of failing the whole action —
-  // same principle already applied to Call B/C failures, extended to Call A.
+  // KNOWN LIMITATION (accepted, not yet resolved): Call A (personal fields)
+  // sometimes fails ALL 4 attempts, 100% consistently, for a specific
+  // applicant's PDF/image — not the ordinary Groq flakiness the retry/
+  // fallback ladder above was built for (that PDF failed the same way every
+  // time it was rescanned, while Call B/C on the IDENTICAL image always
+  // succeeded). Investigated and ruled out: payload size (well under Groq's
+  // 20MB limit — see the per-page size log below), multi-image support
+  // (qwen supports up to the 5-page cap this action already uses), and
+  // completion token limit (raised Call A to 4096 to match Call B/C — did
+  // NOT fix this specific case). True root cause is still undiagnosed for
+  // this failure mode specifically.
+  //
+  // Accepted for now rather than chased further: the system already
+  // degrades gracefully — education/employment/language/emergency contact
+  // still get extracted via Call B/C regardless, the user sees a clear
+  // _partial warning in the UI, and can fill personal fields in manually.
+  // Every other tested PDF has had Call A succeed normally. If this recurs
+  // across MANY different PDFs (not just this one applicant's), revisit by
+  // splitting Call A into smaller sub-calls (eg 6 fields each) — the same
+  // strategy that already fixed the original Call B/C all-null issue.
   if (!personal) {
     console.error(
       `[scan_application_form] call A fully exhausted after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64Len}): ${personalErrors.join(' | ')} — proceeding to Call B/C anyway instead of failing the whole scan`,
