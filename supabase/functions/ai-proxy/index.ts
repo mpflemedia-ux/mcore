@@ -285,6 +285,17 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
 // ("This model does not support response format `json_schema`"), so that mode
 // is not attempted here. json_schema/strict structured outputs on Groq are
 // currently limited to the openai/gpt-oss-* text models, which don't do vision.
+//
+// max_tokens: callGroq previously left this unset everywhere in this file,
+// so it ran on whatever default Groq applies. A live test on the full
+// 38-field extraction hit "json_validate_failed" with an EMPTY
+// failed_generation (no partial content at all) — consistent with the
+// completion being cut off before any valid JSON could be produced, given
+// how much longer the full-field prompt is than eg handleReceipt's. 2048 is
+// comfortably above what ~38 short-to-medium field values need, at
+// negligible extra cost, and rules max_tokens in or out as the cause.
+const APP_FORM_MAX_TOKENS = 2048
+
 async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[]) {
   const raw = await callGroq(
     [
@@ -298,7 +309,7 @@ async function callAppFormVision(imageUrl: string, visionModel: string, sectionT
       },
     ],
     visionModel,
-    { response_format: { type: 'json_object' } },
+    { response_format: { type: 'json_object' }, max_tokens: APP_FORM_MAX_TOKENS },
   )
   return JSON.parse(raw) as Record<string, unknown>
 }
