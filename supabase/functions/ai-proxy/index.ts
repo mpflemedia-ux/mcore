@@ -384,7 +384,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   // too-hard-a-task problem like the original Call B issue, so it gets one
   // retry with the SAME fields before dropping to the smaller minimal set.
   let personal: Record<string, unknown> | null = null
-  let personalLevel: 'full' | 'minimal' = 'full'
+  let personalLevel: 'full' | 'minimal' | 'failed' = 'full'
   const personalErrors: string[] = []
   for (const attempt of [
     { label: 'call A: personal fields', defs: PERSONAL_CORE_FIELD_DEFS, title: 'Position Applied and Personal Particulars sections', level: 'full' as const },
@@ -402,10 +402,19 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
       personalErrors.push(`${attempt.label}: ${msg}`)
     }
   }
+  // A live test showed all 3 Call A attempts fail on a PDF that had scanned
+  // successfully twice before — Groq flakiness, not a real incompatibility.
+  // Previously this threw and discarded the ENTIRE scan (education,
+  // employment, language, emergency contact all lost too) even though
+  // Call B/C are completely independent and might well succeed. Now it just
+  // proceeds with empty personal fields instead of failing the whole action —
+  // same principle already applied to Call B/C failures, extended to Call A.
   if (!personal) {
-    throw new Error(
-      `Application form vision call failed after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64Len}): ${personalErrors.join(' | ')}`,
+    console.error(
+      `[scan_application_form] call A fully exhausted after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64Len}): ${personalErrors.join(' | ')} — proceeding to Call B/C anyway instead of failing the whole scan`,
     )
+    personal = {}
+    personalLevel = 'failed'
   }
 
   // Call B: education/employment — free-text tables, proven reliable
@@ -465,7 +474,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   const langEmergencyStillEmpty = isAllEmpty(langEmergencyFlat, LANG_EMERGENCY_FIELD_DEFS)
   const flat: Record<string, unknown> = { ...personal, ...eduEmploymentFlat, ...langEmergencyFlat }
   const extractionPartial =
-    personalLevel === 'minimal' || !eduEmploymentSucceeded || !langEmergencySucceeded || langEmergencyStillEmpty
+    personalLevel !== 'full' || !eduEmploymentSucceeded || !langEmergencySucceeded || langEmergencyStillEmpty
 
   const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
   const num = (v: unknown) => (typeof v === 'number' ? v : null)
@@ -1096,6 +1105,12 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ success: true, data })
   } catch (err) {
     console.error('ai-proxy error:', err)
+    // 200, not 500: every frontend caller already unwraps errors via
+    // `data.success`/`data.error` (not HTTP status), but supabase-js only
+    // surfaces that body on a 2xx response — a non-2xx status instead gives
+    // the caller a generic FunctionsHttpError ("Edge Function returned a
+    // non-2xx status code"), swallowing the actual message set here and
+    // forcing users to check Function Logs for what actually failed.
     return jsonResponse({
       success: false,
       error: err instanceof Error ? err.message : String(err),
@@ -1104,6 +1119,6 @@ Deno.serve(async (req: Request) => {
         groq_api_key_set: !!Deno.env.get('GROQ_API_KEY'),
         groq_vision_model_secret: Deno.env.get('GROQ_VISION_MODEL') || `(not set — using default: ${DEFAULT_VISION_MODEL})`,
       },
-    }, 500)
+    }, 200)
   }
 })
