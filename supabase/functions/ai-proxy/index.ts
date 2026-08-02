@@ -299,16 +299,17 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
 // currently limited to the openai/gpt-oss-* text models, which don't do vision.
 //
 // max_tokens: callGroq previously left this unset everywhere in this file,
-// so it ran on whatever default Groq applies. A live test on the full
-// 38-field extraction hit "json_validate_failed" with an EMPTY
-// failed_generation (no partial content at all) — consistent with the
-// completion being cut off before any valid JSON could be produced, given
-// how much longer the full-field prompt is than eg handleReceipt's. 2048 is
-// comfortably above what ~38 short-to-medium field values need, at
-// negligible extra cost, and rules max_tokens in or out as the cause.
-const APP_FORM_MAX_TOKENS = 2048
+// so it ran on whatever default Groq applies. A live test confirmed this
+// directly: Call B (education/employment/language/emergency — longer key
+// names, longer typical values, JSON structure overhead) failed with
+// failed_generation: "max completion tokens reached before generating a
+// valid document" at 2048, while Call A (shorter personal-field keys/values)
+// succeeds fully at the same 2048. Rather than raise both indiscriminately,
+// each call gets a limit sized to what it actually needs.
+const PERSONAL_MAX_TOKENS = 2048 // proven sufficient — do not change without a reason to
+const COMPLEX_MAX_TOKENS = 4096 // Call B needs headroom Call A doesn't
 
-async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[]) {
+async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[], maxTokens: number) {
   const raw = await callGroq(
     [
       { role: 'system', content: fieldsPrompt(sectionTitle, defs) },
@@ -321,7 +322,7 @@ async function callAppFormVision(imageUrl: string, visionModel: string, sectionT
       },
     ],
     visionModel,
-    { response_format: { type: 'json_object' }, max_tokens: APP_FORM_MAX_TOKENS },
+    { response_format: { type: 'json_object' }, max_tokens: maxTokens },
   )
   return JSON.parse(raw) as Record<string, unknown>
 }
@@ -346,7 +347,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     { label: 'call A fallback: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
   ]) {
     try {
-      personal = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs)
+      personal = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs, PERSONAL_MAX_TOKENS)
       personalLevel = attempt.level
       console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(personal)}`)
       break
@@ -372,7 +373,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     complexFlat = await callAppFormVision(
       imageUrl, visionModel,
       'Education table, Employment History table, Language Proficiency table, and Emergency Contact sections',
-      COMPLEX_FIELD_DEFS,
+      COMPLEX_FIELD_DEFS, COMPLEX_MAX_TOKENS,
     )
     complexSucceeded = true
     console.log(`[scan_application_form] call B: complex fields SUCCEEDED raw=${JSON.stringify(complexFlat)}`)
