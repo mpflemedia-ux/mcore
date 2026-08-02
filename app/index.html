@@ -1906,7 +1906,7 @@ const RP_MODULES = [
 ]
 let _rolePermsState = {}
 
-function renderSettings() {
+async function renderSettings() {
   const t = LANG[APP.language].settings
   const c = LANG[APP.language].common
   const isAdmin = APP.user.role==='owner' || APP.user.role==='admin'
@@ -1918,6 +1918,36 @@ function renderSettings() {
     title:'Role Permissions', note:'Owner and admin always have full access. Set modules for other roles below.',
     newRole:'New role name (e.g. staff)', addRole:'Add Role', noRoles:'No custom roles yet.',
     exists:'This role already has full access by default.', saved:'Role permissions saved!'
+  }
+  // Company Profile carries bank account / tax details — gated behind isAdmin
+  // like Role Permissions below, and fetched fresh here since APP.tenant only
+  // holds id/code/name/config in memory (see loadUserSession), not the fuller
+  // set of tenants columns this section reads/writes.
+  const cp = APP.language==='bm' ? {
+    title:'Profil Syarikat', uploadLogo:'Muat Naik Logo',
+    scanSsm:'Imbas Sijil SSM', scanBank:'Imbas Penyata Bank',
+    secCompany:'Maklumat Syarikat', companyName:'Nama Syarikat', registrationNo:'No. Pendaftaran (SSM)', incorpDate:'Tarikh Diperbadankan',
+    secAddress:'Alamat', address1:'Alamat Baris 1', address2:'Alamat Baris 2', city:'Bandar', postcode:'Poskod', state:'Negeri', selectState:'-- Pilih Negeri --', country:'Negara',
+    secContact:'Hubungan', email:'Emel', phone:'No. Telefon', fax:'No. Faks', website:'Laman Web',
+    secBanking:'Perbankan', bankName:'Nama Bank', accountNumber:'No. Akaun', accountName:'Nama Akaun',
+    secTax:'Cukai', sstGstNo:'No. SST/GST', taxType:'Jenis Cukai', taxNotRegistered:'Tidak Berdaftar', taxSstRegistered:'Berdaftar SST', taxExempt:'Dikecualikan',
+    secInvoicing:'Invois', currency:'Mata Wang', invoiceTerms:'Terma Invois', invoiceTermsPlaceholder:'cth: Bayaran perlu dijelaskan dalam 30 hari dari tarikh invois.',
+    nameRequired:'Nama syarikat diperlukan.', saved:'Profil syarikat disimpan!',
+  } : {
+    title:'Company Profile', uploadLogo:'Upload Logo',
+    scanSsm:'Scan SSM Certificate', scanBank:'Scan Bank Statement',
+    secCompany:'Company Information', companyName:'Company Name', registrationNo:'Registration No. (SSM)', incorpDate:'Incorporation Date',
+    secAddress:'Address', address1:'Address Line 1', address2:'Address Line 2', city:'City', postcode:'Postcode', state:'State', selectState:'-- Select State --', country:'Country',
+    secContact:'Contact', email:'Email', phone:'Phone No.', fax:'Fax No.', website:'Website',
+    secBanking:'Banking', bankName:'Bank Name', accountNumber:'Account No.', accountName:'Account Name',
+    secTax:'Tax', sstGstNo:'SST/GST No.', taxType:'Tax Type', taxNotRegistered:'Not Registered', taxSstRegistered:'SST Registered', taxExempt:'Exempt',
+    secInvoicing:'Invoicing', currency:'Currency', invoiceTerms:'Invoice Terms', invoiceTermsPlaceholder:'e.g. Payment is due within 30 days of invoice date.',
+    nameRequired:'Company name is required.', saved:'Company profile saved!',
+  }
+  let tenantRow = {}
+  if(isAdmin) {
+    const {data} = await sb.from('tenants').select('*').eq('id',APP.tenant.id).single()
+    tenantRow = data || {}
   }
   document.getElementById('main').innerHTML=`
   <div class="page-header"><div class="page-title">${t.title}</div></div>
@@ -1931,6 +1961,104 @@ function renderSettings() {
       <button class="btn btn-danger" style="width:fit-content" onclick="doLogout()"><i class="ti ti-logout"></i> ${c.signOut}</button>
     </div>
   </div>
+  ${isAdmin ? `
+  <div class="card" style="max-width:900px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${cp.title}</div></div>
+    <div style="padding:16px">
+      <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <img id="cp-logo-preview" src="${tenantRow.logo_url||''}" style="width:100px;height:100px;border-radius:8px;object-fit:contain;background:var(--bg);border:1px solid var(--border);${tenantRow.logo_url?'':'display:none'}">
+          <div id="cp-logo-placeholder" style="width:100px;height:100px;border-radius:8px;background:var(--bg);border:1px dashed var(--border-2);display:flex;align-items:center;justify-content:center;color:var(--text-3);${tenantRow.logo_url?'display:none':''}"><i class="ti ti-building-skyscraper" style="font-size:32px"></i></div>
+          <input type="hidden" id="cp-logo-url" value="${tenantRow.logo_url||''}">
+          <label class="btn btn-outline btn-sm" style="cursor:pointer">
+            <i class="ti ti-upload"></i> ${cp.uploadLogo}
+            <input type="file" accept="image/*" id="cp-logo-input" onchange="_cpUploadLogo(event)" style="display:none">
+          </label>
+          <div id="cp-logo-status" style="font-size:11px;color:var(--text-3);text-align:center;max-width:120px"></div>
+        </div>
+        <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label class="form-label">${cp.scanSsm}</label>
+            <input type="file" accept="image/*,application/pdf" id="cp-scan-ssm-input" onchange="_cpScanSSM(event)" style="display:block;margin-top:4px">
+            <div id="cp-scan-ssm-status" style="margin-top:4px;font-size:12px;color:var(--text-3)"></div>
+          </div>
+          <div>
+            <label class="form-label">${cp.scanBank}</label>
+            <input type="file" accept="image/*,application/pdf" id="cp-scan-bank-input" onchange="_cpScanBank(event)" style="display:block;margin-top:4px">
+            <div id="cp-scan-bank-status" style="margin-top:4px;font-size:12px;color:var(--text-3)"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-weight:700;margin-bottom:12px">${cp.secCompany}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:20px">
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">${cp.companyName} *</label><input id="cp-name" class="form-input" value="${_aiEscapeHtml(tenantRow.name||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.registrationNo}</label><input id="cp-ssm" class="form-input" value="${_aiEscapeHtml(tenantRow.ssm_no||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.incorpDate}</label><input id="cp-incorp-date" type="date" class="form-input" value="${tenantRow.incorporation_date||''}"></div>
+      </div>
+
+      <div style="font-weight:700;margin-bottom:12px">${cp.secAddress}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">${cp.address1}</label><input id="cp-address1" class="form-input" value="${_aiEscapeHtml(tenantRow.address||'')}"></div>
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">${cp.address2}</label><input id="cp-address2" class="form-input" value="${_aiEscapeHtml(tenantRow.address_line2||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.city}</label><input id="cp-city" class="form-input" value="${_aiEscapeHtml(tenantRow.city||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.postcode}</label><input id="cp-postcode" class="form-input" maxlength="5" value="${_aiEscapeHtml(tenantRow.postcode||'')}"></div>
+        <div class="form-group">
+          <label class="form-label">${cp.state}</label>
+          <select id="cp-state" class="form-select">
+            <option value="">${cp.selectState}</option>
+            ${MY_STATES.map(s=>`<option value="${s}" ${tenantRow.state===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">${cp.country}</label><input id="cp-country" class="form-input" value="${_aiEscapeHtml(tenantRow.country||'Malaysia')}"></div>
+      </div>
+
+      <div style="font-weight:700;margin-bottom:12px">${cp.secContact}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+        <div class="form-group"><label class="form-label">${cp.email}</label><input id="cp-email" type="email" class="form-input" value="${_aiEscapeHtml(tenantRow.email||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.phone}</label><input id="cp-phone" class="form-input" value="${_aiEscapeHtml(tenantRow.phone||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.fax}</label><input id="cp-fax" class="form-input" value="${_aiEscapeHtml(tenantRow.fax||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.website}</label><input id="cp-website" class="form-input" value="${_aiEscapeHtml(tenantRow.website||'')}"></div>
+      </div>
+
+      <div style="font-weight:700;margin-bottom:12px">${cp.secBanking}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:20px">
+        <div class="form-group"><label class="form-label">${cp.bankName}</label><input id="cp-bank-name" class="form-input" value="${_aiEscapeHtml(tenantRow.bank_name||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.accountNumber}</label><input id="cp-account-number" class="form-input" value="${_aiEscapeHtml(tenantRow.account_number||'')}"></div>
+        <div class="form-group"><label class="form-label">${cp.accountName}</label><input id="cp-account-name" class="form-input" value="${_aiEscapeHtml(tenantRow.account_name||'')}"></div>
+      </div>
+
+      <div style="font-weight:700;margin-bottom:12px">${cp.secTax}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+        <div class="form-group"><label class="form-label">${cp.sstGstNo}</label><input id="cp-sst-gst" class="form-input" value="${_aiEscapeHtml(tenantRow.sst_gst_no||'')}"></div>
+        <div class="form-group">
+          <label class="form-label">${cp.taxType}</label>
+          <select id="cp-tax-type" class="form-select">
+            <option value="">-</option>
+            <option value="not_registered" ${tenantRow.tax_type==='not_registered'?'selected':''}>${cp.taxNotRegistered}</option>
+            <option value="sst_registered" ${tenantRow.tax_type==='sst_registered'?'selected':''}>${cp.taxSstRegistered}</option>
+            <option value="exempt" ${tenantRow.tax_type==='exempt'?'selected':''}>${cp.taxExempt}</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="font-weight:700;margin-bottom:12px">${cp.secInvoicing}</div>
+      <div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:16px">
+        <div class="form-group" style="max-width:220px">
+          <label class="form-label">${cp.currency}</label>
+          <select id="cp-currency" class="form-select">
+            <option value="MYR" ${(!tenantRow.currency||tenantRow.currency==='MYR')?'selected':''}>MYR — Malaysian Ringgit</option>
+            <option value="USD" ${tenantRow.currency==='USD'?'selected':''}>USD — US Dollar</option>
+            <option value="SGD" ${tenantRow.currency==='SGD'?'selected':''}>SGD — Singapore Dollar</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">${cp.invoiceTerms}</label><textarea id="cp-invoice-terms" class="form-input" rows="3" placeholder="${cp.invoiceTermsPlaceholder}">${_aiEscapeHtml(tenantRow.invoice_terms||'')}</textarea></div>
+      </div>
+
+      <button class="btn btn-primary" onclick="_cpSave()"><i class="ti ti-check"></i> ${c.save}</button>
+      <div id="cp-save-msg" style="margin-top:8px;font-size:12px"></div>
+    </div>
+  </div>` : ''}
   <div class="card" style="max-width:500px;margin-top:16px">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Peringatan Pematuhan':'Compliance Reminders'}</div></div>
     <div id="compliance-reminders-wrap" style="padding:16px"></div>
@@ -2236,6 +2364,179 @@ async function _rpSave() {
   APP.tenant.config = newConfig
   APP.tenantConfig.roles = _rolePermsState
   buildSidebar()
+  msgEl.style.color='var(--success)'
+  msgEl.textContent = t.saved
+  showToast(t.saved, 'success')
+}
+
+// ─── Company Profile (Settings → tenants table) ────────────────────────────────
+function _compressImageToPngBlob(file, maxW=600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Failed to load image'))
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Failed to convert image')), 'image/png')
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function _cpUploadLogo(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const t = APP.language==='bm'
+    ? { uploading:'Memuat naik logo...', done:'Logo dimuat naik.', err:'Ralat muat naik logo: ', badFile:'Sila pilih fail imej.' }
+    : { uploading:'Uploading logo...', done:'Logo uploaded.', err:'Logo upload error: ', badFile:'Please select an image file.' }
+  if(!file.type.startsWith('image/')) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+
+  const statusEl = document.getElementById('cp-logo-status')
+  if(statusEl) statusEl.textContent = t.uploading
+
+  try {
+    const blob = await _compressImageToPngBlob(file, 300)
+    const path = `${APP.tenant.id}/logo.png`
+    const {error: upErr} = await sb.storage.from('company-assets').upload(path, blob, {contentType:'image/png', upsert:true})
+    if(upErr) throw upErr
+    const {data} = sb.storage.from('company-assets').getPublicUrl(path)
+    const url = `${data.publicUrl}?t=${Date.now()}`
+    document.getElementById('cp-logo-url').value = url
+    document.getElementById('cp-logo-preview').src = url
+    document.getElementById('cp-logo-preview').style.display = ''
+    document.getElementById('cp-logo-placeholder').style.display = 'none'
+    if(statusEl) statusEl.textContent = t.done
+  } catch(err) {
+    console.error('Logo upload error:', err)
+    if(statusEl) statusEl.textContent = t.err + (err.message||'')
+  }
+}
+
+async function _cpScanSSM(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const t = APP.language==='bm'
+    ? { scanning:'Mengimbas sijil...', converting:'Menukar PDF ke imej...', done:'Sijil diimbas — sila semak field di atas.', err:'Ralat imbas sijil: ', badFile:'Sila pilih fail imej atau PDF.' }
+    : { scanning:'Scanning certificate...', converting:'Converting PDF to image...', done:'Certificate scanned — please review the fields above.', err:'Certificate scan error: ', badFile:'Please select an image or PDF file.' }
+
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  const isImage = file.type.startsWith('image/')
+  if(!isPdf && !isImage) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+
+  const statusEl = document.getElementById('cp-scan-ssm-status')
+  if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+
+  try {
+    let pageBlobs = [file]
+    if(isPdf) {
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.converting}`
+      pageBlobs = await _pdfPagesToImageBlobs(file)
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+    }
+    const images = await Promise.all(pageBlobs.map((blob) => _compressImageToBase64(blob)))
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_ssm_certificate', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const r = data.data
+
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el && v!=null) el.value = v }
+    setVal('cp-name', r.company_name)
+    setVal('cp-ssm', r.registration_no)
+    setVal('cp-incorp-date', r.incorporation_date)
+
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--success)"><i class="ti ti-check"></i> ${t.done}</span>`
+  } catch(err) {
+    console.error('SSM certificate scan error:', err)
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`
+  }
+}
+
+async function _cpScanBank(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const t = APP.language==='bm'
+    ? { scanning:'Mengimbas penyata bank...', converting:'Menukar PDF ke imej...', done:'Penyata bank diimbas — sila semak field di atas.', err:'Ralat imbas penyata bank: ', badFile:'Sila pilih fail imej atau PDF.' }
+    : { scanning:'Scanning bank statement...', converting:'Converting PDF to image...', done:'Bank statement scanned — please review the fields above.', err:'Bank statement scan error: ', badFile:'Please select an image or PDF file.' }
+
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  const isImage = file.type.startsWith('image/')
+  if(!isPdf && !isImage) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+
+  const statusEl = document.getElementById('cp-scan-bank-status')
+  if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+
+  try {
+    let pageBlobs = [file]
+    if(isPdf) {
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.converting}`
+      pageBlobs = await _pdfPagesToImageBlobs(file)
+      if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+    }
+    const images = await Promise.all(pageBlobs.map((blob) => _compressImageToBase64(blob)))
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_bank_statement', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    const r = data.data
+
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el && v!=null) el.value = v }
+    setVal('cp-bank-name', r.bank_name)
+    setVal('cp-account-number', r.account_number)
+    setVal('cp-account-name', r.account_name)
+    const addrEl = document.getElementById('cp-address1')
+    if(addrEl && !addrEl.value && r.address) addrEl.value = r.address
+
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--success)"><i class="ti ti-check"></i> ${t.done}</span>`
+  } catch(err) {
+    console.error('Bank statement scan error:', err)
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`
+  }
+}
+
+async function _cpSave() {
+  const t = APP.language==='bm'
+    ? { nameRequired:'Nama syarikat diperlukan.', saved:'Profil syarikat disimpan!' }
+    : { nameRequired:'Company name is required.', saved:'Company profile saved!' }
+  const msgEl = document.getElementById('cp-save-msg')
+  const name = document.getElementById('cp-name').value.trim()
+  if(!name) { msgEl.style.color='var(--danger)'; msgEl.textContent = t.nameRequired; return }
+
+  const payload = {
+    name,
+    logo_url: document.getElementById('cp-logo-url').value || null,
+    ssm_no: document.getElementById('cp-ssm').value.trim() || null,
+    incorporation_date: document.getElementById('cp-incorp-date').value || null,
+    address: document.getElementById('cp-address1').value.trim() || null,
+    address_line2: document.getElementById('cp-address2').value.trim() || null,
+    city: document.getElementById('cp-city').value.trim() || null,
+    postcode: document.getElementById('cp-postcode').value.trim() || null,
+    state: document.getElementById('cp-state').value || null,
+    country: document.getElementById('cp-country').value.trim() || null,
+    email: document.getElementById('cp-email').value.trim() || null,
+    phone: document.getElementById('cp-phone').value.trim() || null,
+    fax: document.getElementById('cp-fax').value.trim() || null,
+    website: document.getElementById('cp-website').value.trim() || null,
+    bank_name: document.getElementById('cp-bank-name').value.trim() || null,
+    account_number: document.getElementById('cp-account-number').value.trim() || null,
+    account_name: document.getElementById('cp-account-name').value.trim() || null,
+    sst_gst_no: document.getElementById('cp-sst-gst').value.trim() || null,
+    tax_type: document.getElementById('cp-tax-type').value || null,
+    currency: document.getElementById('cp-currency').value || 'MYR',
+    invoice_terms: document.getElementById('cp-invoice-terms').value.trim() || null,
+  }
+
+  const {error} = await sb.from('tenants').update(payload).eq('id', APP.tenant.id)
+  if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
+
+  APP.tenant.name = name
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')

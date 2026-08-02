@@ -6,8 +6,10 @@
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
 // Actions: chat, categorize, receipt (vision), scan_application_form (vision),
-// narrate_report, business_insight, draft_reminder, follow_up_suggestion.
-// 'receipt' and 'scan_application_form' use a vision-capable model read from the
+// scan_ssm_certificate (vision), scan_bank_statement (vision), narrate_report,
+// business_insight, draft_reminder, follow_up_suggestion.
+// 'receipt', 'scan_application_form', 'scan_ssm_certificate', and
+// 'scan_bank_statement' use a vision-capable model read from the
 // GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of code so
 // it can be swapped without a redeploy if Groq deprecates it, which has happened
 // to every prior Groq vision model on a roughly 3-4 month cadence. Every other
@@ -196,6 +198,125 @@ async function handleReceipt(body: Record<string, unknown>) {
     date: typeof parsed.date === 'string' ? parsed.date : null,
     description: typeof parsed.description === 'string' ? parsed.description : '',
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+  }
+}
+
+// Shared by the two Company Profile scan actions below: builds the
+// data:...;base64,... image_url list from the same images:[{image_base64,
+// mime_type}] shape the frontend already sends for scan_application_form
+// (via _pdfPagesToImageBlobs/_compressImageToBase64) — reused here since
+// these documents can occasionally be a multi-page scan too, even though a
+// single SSM certificate or bank statement page is the common case.
+function buildImageUrls(body: Record<string, unknown>): string[] {
+  const images = body.images
+  if (!Array.isArray(images) || images.length === 0) throw new Error('images is required and must be a non-empty array')
+  return images.map((img, i) => {
+    const rec = img as Record<string, unknown>
+    const base64 = rec.image_base64
+    if (!base64 || typeof base64 !== 'string') throw new Error(`images[${i}].image_base64 is required`)
+    const mimeType = typeof rec.mime_type === 'string' && rec.mime_type ? rec.mime_type : 'image/jpeg'
+    return `data:${mimeType};base64,${base64}`
+  })
+}
+
+async function handleScanSSMCertificate(body: Record<string, unknown>) {
+  const imageUrls = buildImageUrls(body)
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  const systemPrompt =
+    'Extract company registration details from this Malaysian SSM (Suruhanjaya Syarikat Malaysia) ' +
+    'Certificate of Incorporation / Business Registration Certificate image. Return ONLY a JSON ' +
+    'object, no other text, with EXACTLY these keys: {"company_name": "<registered company/business ' +
+    'name>", "registration_no": "<SSM registration number — format varies, eg 123456-A for older ' +
+    'sole proprietor/partnership registrations, or a 12-digit number like 202601012345 for newer ' +
+    'company registrations>", "incorporation_date": "<date of incorporation/registration shown on ' +
+    'the certificate, format YYYY-MM-DD>"}. Use null for any field not clearly legible in the image ' +
+    '— do not guess.'
+
+  let raw: string
+  try {
+    raw = await callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract the company registration details from this image.' },
+            ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+          ],
+        },
+      ],
+      visionModel,
+      { response_format: { type: 'json_object' }, max_tokens: 1024 },
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`SSM certificate vision call failed (model=${visionModel}): ${msg}`)
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+  }
+
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
+  return {
+    company_name: str(parsed.company_name),
+    registration_no: str(parsed.registration_no),
+    incorporation_date: str(parsed.incorporation_date),
+  }
+}
+
+async function handleScanBankStatement(body: Record<string, unknown>) {
+  const imageUrls = buildImageUrls(body)
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  const systemPrompt =
+    'Extract bank account details from the header/account-summary section of this Malaysian bank ' +
+    'statement image (not the transaction rows). Return ONLY a JSON object, no other text, with ' +
+    'EXACTLY these keys: {"bank_name": "<name of the bank, eg Maybank, CIMB, Public Bank, RHB, ' +
+    'Hong Leong Bank>", "account_number": "<bank account number shown on the statement>", ' +
+    '"account_name": "<name of the account holder — usually the company name for a business ' +
+    'account>", "address": "<the account holder\'s registered address shown on the statement, if ' +
+    'present — this is a bonus field, only fill it in if clearly legible>"}. Use null for any field ' +
+    'not clearly legible in the image — do not guess.'
+
+  let raw: string
+  try {
+    raw = await callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract the bank account details from this image.' },
+            ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+          ],
+        },
+      ],
+      visionModel,
+      { response_format: { type: 'json_object' }, max_tokens: 1024 },
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Bank statement vision call failed (model=${visionModel}): ${msg}`)
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+  }
+
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
+  return {
+    bank_name: str(parsed.bank_name),
+    account_number: str(parsed.account_number),
+    account_name: str(parsed.account_name),
+    address: str(parsed.address),
   }
 }
 
@@ -1076,6 +1197,12 @@ Deno.serve(async (req: Request) => {
         break
       case 'scan_application_form':
         data = await handleScanApplicationForm(body)
+        break
+      case 'scan_ssm_certificate':
+        data = await handleScanSSMCertificate(body)
+        break
+      case 'scan_bank_statement':
+        data = await handleScanBankStatement(body)
         break
       case 'narrate_report':
         data = await handleNarrateReport(body)
