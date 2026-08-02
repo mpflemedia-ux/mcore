@@ -418,6 +418,50 @@ tbody tr:hover{background:var(--bg)}
   .card { box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
   .print-only { display:inline !important; }
 }
+
+/* ── Printable letterhead documents (Payslip / Salary Disbursement) ──
+   Accent color is driven by --pdoc-accent, set inline per-document so the
+   person can pick a color (defaults to the NexERP theme primary). */
+.pdoc { --pdoc-accent:#0E7490; background:#fff; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.pdoc-header { display:flex; justify-content:space-between; align-items:flex-start; padding:18px 24px; gap:16px; flex-wrap:wrap; }
+.pdoc-logo-row { display:flex; align-items:center; gap:12px; }
+.pdoc-logo-row img { width:44px; height:44px; object-fit:contain; flex-shrink:0; }
+.pdoc-logo-fallback { width:44px; height:44px; border-radius:8px; background:var(--pdoc-accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; font-family:'Space Grotesk',sans-serif; flex-shrink:0; }
+.pdoc-company-name { font-weight:700; font-size:15px; color:var(--pdoc-accent); font-family:'Space Grotesk',sans-serif; line-height:1.3; }
+.pdoc-company-sub { font-size:10.5px; color:var(--text-3); margin-top:2px; line-height:1.5; }
+.pdoc-meta { text-align:right; font-size:11px; color:var(--text-3); line-height:1.7; white-space:nowrap; }
+.pdoc-title-bar { background:var(--pdoc-accent); color:#fff; font-weight:700; text-align:center; padding:9px; font-size:13px; letter-spacing:.04em; text-transform:uppercase; }
+.pdoc-band { background:var(--bg); padding:12px 24px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+.pdoc-band-name { font-weight:700; font-size:13.5px; }
+.pdoc-band-sub { font-size:11px; color:var(--text-3); margin-top:2px; }
+.pdoc-section-title { background:var(--bg); font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:7px 24px; color:var(--text-2); border-bottom:1px solid var(--border); }
+.pdoc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.pdoc-table td { padding:7px 24px; border-bottom:1px solid var(--border); }
+.pdoc-table tr:last-child td { border-bottom:none; }
+.pdoc-total-row td { font-weight:700; background:var(--bg); }
+.pdoc-net-bar { background:#0F172A; color:#fff; display:flex; justify-content:space-between; align-items:center; padding:14px 24px; }
+.pdoc-net-bar .lbl { font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
+.pdoc-net-bar .amt { font-weight:700; font-size:21px; color:var(--pdoc-accent); }
+.pdoc-footer-note { text-align:center; font-size:9.5px; color:var(--text-3); padding:10px; }
+.pdoc-amt-pos { color:var(--success); }
+.pdoc-amt-neg { color:var(--danger); }
+.pdoc-sd-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.pdoc-sd-table th { background:var(--pdoc-accent); color:#fff; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:.02em; padding:8px 6px; text-align:left; white-space:nowrap; }
+.pdoc-sd-table td { padding:6px; border-bottom:1px solid var(--border); }
+.pdoc-sd-table tfoot td { font-weight:700; background:var(--pdoc-accent); color:#fff; }
+.pdoc-sig-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:24px; }
+.pdoc-sig-line { border-top:1.5px solid var(--text-2); margin-top:34px; padding-top:6px; text-align:center; }
+.pdoc-sig-label { font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:.03em; }
+.pdoc-sig-name { font-size:12px; font-weight:600; margin-top:2px; }
+.pdoc-color-picker { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pdoc-swatch { width:20px; height:20px; border-radius:50%; cursor:pointer; border:2px solid transparent; padding:0; }
+.pdoc-swatch.active { border-color:var(--text); }
+@media print {
+  .pdoc { border:none !important; border-radius:0 !important; }
+  .pdoc-title-bar, .pdoc-net-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+  .pdoc-sig-grid .form-label { font-weight:700; font-size:11px; color:#000 !important; margin-bottom:30px; display:block; }
+  .pdoc-sig-grid .form-input { border:none; border-top:1.5px solid #94A3B8; border-radius:0; padding:6px 0 0; text-align:center; background:transparent !important; font-weight:600; color:#000 !important; box-shadow:none !important; }
+}
 </style>
 </head>
 <body>
@@ -793,6 +837,134 @@ function openPage(page, params={}) {
 }
 
 function formatRM(a) { return 'RM '+Number(a||0).toLocaleString('ms-MY',{minimumFractionDigits:2,maximumFractionDigits:2}) }
+
+// ── Printable letterhead documents: shared helpers ──────────────────────
+// Fetches the minimal set of tenants columns needed for a letterhead
+// (logo + name + address), cached per tenant so repeated payslip prints
+// don't re-hit the DB. Falls back to APP.tenant.name if the fetch fails.
+let _pdocTenantCache = null
+async function _pdocGetTenant() {
+  if(_pdocTenantCache && _pdocTenantCache.id===APP.tenant.id) return _pdocTenantCache
+  const {data} = await sb.from('tenants').select('id,name,logo_url,address,address_line2,city,postcode,state,country').eq('id',APP.tenant.id).single()
+  _pdocTenantCache = data || {id:APP.tenant.id, name:APP.tenant.name}
+  return _pdocTenantCache
+}
+function _pdocAddressLine(tn) {
+  return [tn.address, tn.address_line2, [tn.postcode,tn.city].filter(Boolean).join(' '), tn.state].filter(Boolean).join(', ')
+}
+function _pdocLogoHtml(tn) {
+  return tn.logo_url
+    ? `<img src="${tn.logo_url}" alt="logo">`
+    : `<div class="pdoc-logo-fallback">${_aiEscapeHtml((tn.name||'?').charAt(0).toUpperCase())}</div>`
+}
+function _pdocHeaderHtml(tn, metaLinesHtml) {
+  return `<div class="pdoc-header">
+    <div class="pdoc-logo-row">
+      ${_pdocLogoHtml(tn)}
+      <div>
+        <div class="pdoc-company-name">${_aiEscapeHtml(tn.name||'-')}</div>
+        ${_pdocAddressLine(tn) ? `<div class="pdoc-company-sub">${_aiEscapeHtml(_pdocAddressLine(tn))}</div>` : ''}
+      </div>
+    </div>
+    <div class="pdoc-meta">${metaLinesHtml}</div>
+  </div>`
+}
+
+// Accent color presets for printed letterhead documents — defaults to the
+// NexERP theme primary, persisted per document-type in localStorage so the
+// choice sticks across sessions without touching the app's own theme.
+const PDOC_ACCENT_COLORS = [
+  { key:'nexerp', en:'NexERP', bm:'NexERP', value:'#0E7490' },
+  { key:'navy',   en:'Navy',   bm:'Navy',   value:'#1E293B' },
+  { key:'orange', en:'Orange', bm:'Oren',   value:'#EA580C' },
+  { key:'green',  en:'Green',  bm:'Hijau',  value:'#16A34A' },
+  { key:'purple', en:'Purple', bm:'Ungu',   value:'#7C3AED' },
+  { key:'red',    en:'Red',    bm:'Merah',  value:'#DC2626' },
+]
+function _pdocAccentGet(docKey) {
+  try { return localStorage.getItem('nexerp_pdoc_accent_'+docKey) || PDOC_ACCENT_COLORS[0].value } catch(e) { return PDOC_ACCENT_COLORS[0].value }
+}
+function _pdocAccentSet(docKey, color) {
+  try { localStorage.setItem('nexerp_pdoc_accent_'+docKey, color) } catch(e) {}
+  document.querySelectorAll('.pdoc').forEach(el => el.style.setProperty('--pdoc-accent', color))
+  document.querySelectorAll(`.pdoc-swatch[data-doc="${docKey}"]`).forEach(el => el.classList.toggle('active', el.dataset.color===color))
+}
+function _pdocColorPickerHtml(docKey, current) {
+  const isBm = APP.language==='bm'
+  return `<div class="pdoc-color-picker no-print">
+    <span style="font-size:12px;color:var(--text-3)">${isBm?'Warna':'Color'}:</span>
+    ${PDOC_ACCENT_COLORS.map(c=>`<button type="button" class="pdoc-swatch${current===c.value?' active':''}" data-doc="${docKey}" data-color="${c.value}" title="${isBm?c.bm:c.en}" style="background:${c.value}" onclick="_pdocAccentSet('${docKey}','${c.value}')"></button>`).join('')}
+    <input type="color" value="${current}" title="${isBm?'Warna custom':'Custom color'}" style="width:24px;height:24px;padding:0;border:none;background:none;cursor:pointer" onchange="_pdocAccentSet('${docKey}', this.value)">
+  </div>`
+}
+
+// Injects/updates a dynamic @page rule so different printable views can use
+// different paper orientation (Payslip = portrait, Salary Disbursement =
+// landscape) without a permanent global @page declaration.
+function _pdocSetPageOrientation(orientation) {
+  let el = document.getElementById('pdoc-page-style')
+  if(!el) { el = document.createElement('style'); el.id = 'pdoc-page-style'; document.head.appendChild(el) }
+  el.textContent = `@page { size: A4 ${orientation}; margin: 10mm; }`
+}
+
+const MONTH_NAMES_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTH_NAMES_BM = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember']
+function _pdocMonthYearLabel(month, year, isBm) {
+  const names = isBm ? MONTH_NAMES_BM : MONTH_NAMES_EN
+  return `${(names[(Number(month)||1)-1]||'').toUpperCase()} ${year}`
+}
+function _pdocPayslipRef(rec) {
+  const short = String(rec.id||'').replace(/-/g,'').slice(-4).toUpperCase() || '0000'
+  return `SAL-${rec.month}-${short}`
+}
+function _pdocPayDate(rec) {
+  if(rec.generated_at) return String(rec.generated_at).slice(0,10)
+  const d = new Date(Number(rec.year), Number(rec.month), 1) // 1st of the following month
+  return d.toISOString().slice(0,10)
+}
+
+// Builds the portrait payslip letterhead document (screen preview + print
+// share the same markup — see MP Workspace's mp-workspace payslip format).
+function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
+  const earnRows = [{ label: t.basic, amount: rec.basic_salary, positive: false }]
+  ;[[rec.allowance_type_1, rec.allowance_1], [rec.allowance_type_2, rec.allowance_2], [rec.allowance_type_3, rec.allowance_3]].forEach(([type, amt]) => {
+    if(Number(amt) > 0) earnRows.push({ label: _sdTypeLabel(SD_ALLOWANCE_TYPES, type), amount: amt, positive: true })
+  })
+  const totalEarnings = Number(rec.basic_salary||0) + Number(rec.allowance_1||0) + Number(rec.allowance_2||0) + Number(rec.allowance_3||0)
+
+  const dedRows = []
+  if(Number(rec.epf_employee) > 0) dedRows.push({ label: isBm?'KWSP (Pekerja)':'KWSP (Employee)', amount: rec.epf_employee })
+  if(Number(rec.socso_employee) > 0) dedRows.push({ label: 'SOCSO', amount: rec.socso_employee })
+  if(Number(rec.eis_employee) > 0) dedRows.push({ label: 'EIS', amount: rec.eis_employee })
+  if(Number(rec.pcb) > 0) dedRows.push({ label: t.pcb, amount: rec.pcb })
+  if(Number(rec.advance) > 0) dedRows.push({ label: t.advance, amount: rec.advance })
+  ;[[rec.deduction_type_1, rec.deduction_1], [rec.deduction_type_2, rec.deduction_2]].forEach(([type, amt]) => {
+    if(Number(amt) > 0) dedRows.push({ label: _sdTypeLabel(SD_DEDUCTION_TYPES, type), amount: amt })
+  })
+
+  const bankLine = rec.employees?.bank_name ? `${rec.employees.bank_name} - ${rec.employees.bank_account_no||'-'}` : ''
+
+  return `
+  <div class="pdoc" style="--pdoc-accent:${accent};max-width:640px;margin:0 auto 24px">
+    ${_pdocHeaderHtml(tn, `${isBm?'Tarikh Bayaran':'Pay Date'}: ${_pdocPayDate(rec)}<br>${isBm?'Ruj.':'Ref'}: ${_pdocPayslipRef(rec)}`)}
+    <div class="pdoc-title-bar">${isBm?'SLIP GAJI':'PAYSLIP'} — ${_pdocMonthYearLabel(rec.month, rec.year, isBm)}</div>
+    <div class="pdoc-band">
+      <div class="pdoc-band-name">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
+      ${bankLine ? `<div class="pdoc-band-sub">${isBm?'Bank':'Bank'}: ${_aiEscapeHtml(bankLine)}</div>` : ''}
+    </div>
+    <div class="pdoc-section-title">${isBm?'PENDAPATAN':'EARNINGS'}</div>
+    <table class="pdoc-table"><tbody>
+      ${earnRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right${r.positive?';color:var(--success)':''}">${r.positive?'+ ':''}${formatRM(r.amount)}</td></tr>`).join('')}
+      <tr class="pdoc-total-row"><td>${isBm?'Jumlah Pendapatan':'Total Earnings'}</td><td style="text-align:right">${formatRM(totalEarnings)}</td></tr>
+    </tbody></table>
+    <div class="pdoc-section-title">${isBm?'POTONGAN':'DEDUCTIONS'}</div>
+    <table class="pdoc-table"><tbody>
+      ${dedRows.length ? dedRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right;color:var(--danger)">- ${formatRM(r.amount)}</td></tr>`).join('') : `<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}
+    </tbody></table>
+    <div class="pdoc-net-bar"><span class="lbl">${isBm?'GAJI BERSIH':'NET PAY'}</span><span class="amt">${formatRM(rec.net_pay)}</span></div>
+    <div class="pdoc-footer-note">${isBm?'Ini adalah slip gaji janaan komputer. Tiada tandatangan diperlukan.':'This is a computer-generated payslip. No signature required.'}</div>
+  </div>`
+}
 function formatDate(d) { if(!d)return'-'; return new Date(d).toLocaleDateString('ms-MY',{day:'2-digit',month:'2-digit',year:'numeric'}) }
 function prodName(p) { if(!p) return ''; return (APP.language==='bm' && p.name_bm) ? p.name_bm : (p.name_en||'') }
 function validateIC(ic) { return /^\d{6}-\d{2}-\d{4}$/.test(ic) }
@@ -7028,34 +7200,27 @@ async function renderPayslipDetail(id) {
     aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print',
     pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).', advance:'Advance'
   }
-  const {data: rec} = await sb.from('payroll_records').select('*,employees(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
-  const _sdRows = _sdBreakdownRows(rec, t)
+  const tn = await _pdocGetTenant()
+  const accent = _pdocAccentGet('payslip')
+  _pdocSetPageOrientation('portrait')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
     <div class="page-title">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
   </div>
-    <button class="btn btn-outline" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <div style="display:flex;align-items:center;gap:14px">
+      ${_pdocColorPickerHtml('payslip', accent)}
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
   </div>
-  <div class="card" style="max-width:600px;padding:20px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:8px">
-      <div><div style="color:var(--text-3);font-size:12px">${t.period}</div><strong>${rec.month}/${rec.year}</strong></div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.basic}</div>${formatRM(rec.basic_salary)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.epf}</div>${formatRM(rec.epf_employee)} / ${formatRM(rec.epf_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.socso}</div>${formatRM(rec.socso_employee)} / ${formatRM(rec.socso_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.eis}</div>${formatRM(rec.eis_employee)} / ${formatRM(rec.eis_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}<div style="font-size:10px;color:var(--text-3)">${t.pcbNote}</div></div>
-      ${_sdRows.map(row=>`<div><div style="color:var(--text-3);font-size:12px">${row.label}</div>${row.sign}${formatRM(row.amount)}</div>`).join('')}
-      <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><div style="color:var(--text-3);font-size:12px">${t.netPay}</div><strong style="font-size:18px">${formatRM(rec.net_pay)}</strong></div>
-    </div>
-  </div>
-  <div class="card no-print" style="max-width:600px;margin-top:16px">
+  ${_pdocPayslipHtml(rec, tn, t, isBm, accent)}
+  <div class="card no-print" style="max-width:640px;margin:0 auto 16px">
     <div class="card-header">
       <div class="card-title"><i class="ti ti-sparkles"></i> ${t.aiNoteTitle}</div>
       <button id="payslip-note-btn" class="btn btn-outline btn-sm" onclick="_payslipLoadNote('${id}')"><i class="ti ti-refresh"></i> ${t.getNote}</button>
@@ -7164,13 +7329,19 @@ async function renderSalaryDisbursement(month, year) {
   month = month || now.getMonth()+1
   year = year || now.getFullYear()
   const reload = 'renderSalaryDisbursement(Number(document.getElementById(\'sd-month\').value), Number(document.getElementById(\'sd-year\').value))'
+  const tn = await _pdocGetTenant()
+  const accent = _pdocAccentGet('sd')
+  _pdocSetPageOrientation('landscape')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
   </div>
-    <button class="btn btn-outline" onclick="_sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <div style="display:flex;align-items:center;gap:14px">
+      ${_pdocColorPickerHtml('sd', accent)}
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape'); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
@@ -7185,7 +7356,11 @@ async function renderSalaryDisbursement(month, year) {
       </div>
     </div>
   </div>
-  <div id="sd-content"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  <div class="pdoc" id="sd-pdoc" style="--pdoc-accent:${accent}">
+    ${_pdocHeaderHtml(tn, `${isBm?'Dijana':'Generated'}: ${new Date().toISOString().slice(0,10)}`)}
+    <div class="pdoc-title-bar">${t.title} — ${_pdocMonthYearLabel(month, year, isBm)}</div>
+    <div id="sd-content"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>`
 
   const wrap = document.getElementById('sd-content')
   const {data, error} = await sb.from('payroll_records')
@@ -7208,8 +7383,8 @@ async function renderSalaryDisbursement(month, year) {
   }, 0)
 
   wrap.innerHTML = `
-  <div class="card" style="overflow-x:auto">
-    <table><thead><tr>
+  <div style="overflow-x:auto">
+    <table class="pdoc-sd-table"><thead><tr>
       <th>${t.no}</th><th>${t.payee}</th><th>${t.bank}</th><th style="text-align:right">${t.salary}</th>
       <th>${t.allowType} 1</th><th style="text-align:right">${t.allowAmt} 1</th>
       <th>${t.allowType} 2</th><th style="text-align:right">${t.allowAmt} 2</th>
@@ -7243,9 +7418,9 @@ async function renderSalaryDisbursement(month, year) {
       <td style="text-align:right"><span class="print-only" id="sd-print-d2-${r.id}">${_sdPrintAmt(r.deduction_2)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d2-${r.id}" style="width:80px;text-align:right" value="${r.deduction_2||0}" oninput="_sdRecalc()"></td>
       <td style="text-align:right"><strong id="sd-net-${r.id}">${formatRM(r.net_pay)}</strong></td>
     </tr>`).join('')}</tbody>
-    <tfoot><tr><td colspan="19" style="text-align:right;font-weight:600">${t.grandTotal}</td><td style="text-align:right;font-weight:700" id="sd-grand-total">${formatRM(grandTotal)}</td></tr></tfoot>
+    <tfoot><tr><td colspan="19" style="text-align:right">${t.grandTotal}</td><td style="text-align:right" id="sd-grand-total">${formatRM(grandTotal)}</td></tr></tfoot>
     </table>
-    <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+    <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:0 24px 16px">
       <div style="font-size:11px;color:var(--text-3)">${t.sessionHint}</div>
       <div style="display:flex;align-items:center;gap:10px">
         <span id="sd-save-result" style="font-size:12px"></span>
@@ -7253,13 +7428,11 @@ async function renderSalaryDisbursement(month, year) {
       </div>
     </div>
   </div>
-  <div class="card" style="margin-top:16px;max-width:700px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 16px">
-      <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(APP.user.name||'')}"></div>
-      <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input"></div>
-      <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input"></div>
-      <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input"></div>
-    </div>
+  <div class="pdoc-sig-grid">
+    <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(APP.user.name||'')}"></div>
+    <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input"></div>
+    <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input"></div>
+    <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input"></div>
   </div>
   <div class="card no-print" style="margin-top:16px">
     <div class="card-header"><div class="card-title">${t.generatePayslip}</div>
@@ -7279,6 +7452,7 @@ async function renderSalaryDisbursement(month, year) {
 // from the CURRENT on-screen input values (not just what was in the DB at
 // render time) — a user may edit a value and print before hitting Save.
 function _sdPreparePrint() {
+  _pdocSetPageOrientation('landscape')
   ['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
     const input = document.getElementById('sig-input-'+k)
     const wrapper = document.getElementById('sig-'+k)
@@ -7399,36 +7573,30 @@ async function renderPayslipsPrint(month, year) {
     back:'Salary Disbursement', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
     eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', print:'Print All', noData:'No payroll records for this period.', advance:'Advance'
   }
-  const {data, error} = await sb.from('payroll_records').select('*,employees(name)')
+  const {data, error} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no)')
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error || !data || data.length===0) {
     document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
     return
   }
+  const tn = await _pdocGetTenant()
+  const accent = _pdocAccentGet('payslip')
+  _pdocSetPageOrientation('portrait')
+
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
     <div class="page-title">${t.period} ${month}/${year}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{view:'salary-disbursement',month:${month},year:${year}})">← ${t.back}</div>
   </div>
-    <button class="btn btn-primary" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <div style="display:flex;align-items:center;gap:14px">
+      ${_pdocColorPickerHtml('payslip', accent)}
+      <button class="btn btn-primary" onclick="_pdocSetPageOrientation('portrait');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
   </div>
-  ${data.map(rec=>`
-  <div class="card" style="max-width:600px;padding:20px;margin-bottom:16px;page-break-after:always">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div><div style="color:var(--text-3);font-size:12px">${t.period}</div><strong>${rec.month}/${rec.year}</strong></div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.basic}</div>${formatRM(rec.basic_salary)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.epf}</div>${formatRM(rec.epf_employee)} / ${formatRM(rec.epf_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.socso}</div>${formatRM(rec.socso_employee)} / ${formatRM(rec.socso_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.eis}</div>${formatRM(rec.eis_employee)} / ${formatRM(rec.eis_employer)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.pcb}</div>${formatRM(rec.pcb)}</div>
-      ${_sdBreakdownRows(rec, t).map(row=>`<div><div style="color:var(--text-3);font-size:12px">${row.label}</div>${row.sign}${formatRM(row.amount)}</div>`).join('')}
-      <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><div style="color:var(--text-3);font-size:12px">${t.netPay}</div><strong style="font-size:18px">${formatRM(rec.net_pay)}</strong></div>
-    </div>
-  </div>`).join('')}`
+  ${data.map((rec,i)=>`<div style="${i<data.length-1?'page-break-after:always':''}">${_pdocPayslipHtml(rec, tn, t, isBm, accent)}</div>`).join('')}`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
