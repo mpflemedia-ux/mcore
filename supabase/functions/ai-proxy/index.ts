@@ -333,22 +333,22 @@ function fieldsPrompt(sectionTitle: string, defs: FieldDef[]) {
 const PERSONAL_MAX_TOKENS = 2048 // proven sufficient — do not change without a reason to
 const COMPLEX_MAX_TOKENS = 4096 // Call B needs headroom Call A doesn't
 
-async function callAppFormVision(imageUrl: string, visionModel: string, sectionTitle: string, defs: FieldDef[], maxTokens: number) {
+async function callAppFormVision(imageUrls: string[], visionModel: string, sectionTitle: string, defs: FieldDef[], maxTokens: number) {
   const systemPrompt = fieldsPrompt(sectionTitle, defs)
   // Logged on EVERY call (not just on failure) so the exact prompt text can
   // be inspected regardless of outcome — a call that "succeeds" but returns
   // all-null values for a field group needs the prompt visible just as much
   // as an outright failure does, since the two look identical from the
   // rebuilt result alone.
-  console.log(`[scan_application_form] prompt for "${sectionTitle}": ${systemPrompt}`)
+  console.log(`[scan_application_form] prompt for "${sectionTitle}" (${imageUrls.length} page image(s)): ${systemPrompt}`)
   const raw = await callGroq(
     [
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'Extract the application form details from this image.' },
-          { type: 'image_url', image_url: { url: imageUrl } },
+          { type: 'text', text: 'Extract the application form details from these page images (in page order).' },
+          ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
         ],
       },
     ],
@@ -359,12 +359,23 @@ async function callAppFormVision(imageUrl: string, visionModel: string, sectionT
 }
 
 async function handleScanApplicationForm(body: Record<string, unknown>) {
-  const imageBase64 = body.image_base64
-  const mimeType = typeof body.mime_type === 'string' && body.mime_type ? body.mime_type : 'image/jpeg'
-  if (!imageBase64 || typeof imageBase64 !== 'string') throw new Error('image_base64 is required')
+  // images: array of { image_base64, mime_type }, one per page. A 2-page
+  // Employment Application Form has Language Proficiency/Emergency Contact
+  // on page 2 — a prior single-image version of this action only ever sent
+  // page 1 (pdf.getPage(1) hardcoded on the frontend), so those fields were
+  // never visible to the model at all, not merely hard to read.
+  const images = body.images
+  if (!Array.isArray(images) || images.length === 0) throw new Error('images is required and must be a non-empty array')
+  const imageUrls = images.map((img, i) => {
+    const rec = img as Record<string, unknown>
+    const base64 = rec.image_base64
+    if (!base64 || typeof base64 !== 'string') throw new Error(`images[${i}].image_base64 is required`)
+    const mimeType = typeof rec.mime_type === 'string' && rec.mime_type ? rec.mime_type : 'image/jpeg'
+    return `data:${mimeType};base64,${base64}`
+  })
+  const imageBase64Len = images.reduce((sum, img) => sum + String((img as Record<string, unknown>).image_base64 || '').length, 0)
 
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
-  const imageUrl = `data:${mimeType};base64,${imageBase64}`
 
   // Call A: personal core fields (the set that has reliably succeeded in
   // every test so far). A live test showed Call A occasionally hits the same
@@ -381,7 +392,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
     { label: 'call A fallback: minimal fields', defs: MINIMAL_FIELD_DEFS, title: 'core personal particulars only', level: 'minimal' as const },
   ]) {
     try {
-      personal = await callAppFormVision(imageUrl, visionModel, attempt.title, attempt.defs, PERSONAL_MAX_TOKENS)
+      personal = await callAppFormVision(imageUrls, visionModel, attempt.title, attempt.defs, PERSONAL_MAX_TOKENS)
       personalLevel = attempt.level
       console.log(`[scan_application_form] ${attempt.label} SUCCEEDED raw=${JSON.stringify(personal)}`)
       break
@@ -393,7 +404,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   }
   if (!personal) {
     throw new Error(
-      `Application form vision call failed after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64.length}): ${personalErrors.join(' | ')}`,
+      `Application form vision call failed after ${personalErrors.length} attempts (model=${visionModel}, base64_len=${imageBase64Len}): ${personalErrors.join(' | ')}`,
     )
   }
 
@@ -404,7 +415,7 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   let eduEmploymentSucceeded = false
   try {
     eduEmploymentFlat = await callAppFormVision(
-      imageUrl, visionModel,
+      imageUrls, visionModel,
       'Education table and Employment History table sections',
       EDU_EMPLOYMENT_FIELD_DEFS, COMPLEX_MAX_TOKENS,
     )
@@ -433,14 +444,14 @@ async function handleScanApplicationForm(body: Record<string, unknown>) {
   let langEmergencyFlat: Record<string, unknown> = {}
   let langEmergencySucceeded = false
   try {
-    langEmergencyFlat = await callAppFormVision(imageUrl, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
+    langEmergencyFlat = await callAppFormVision(imageUrls, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
     langEmergencySucceeded = true
     console.log(`[scan_application_form] call C: language/emergency fields SUCCEEDED raw=${JSON.stringify(langEmergencyFlat)}`)
 
     if (isAllEmpty(langEmergencyFlat, LANG_EMERGENCY_FIELD_DEFS)) {
       console.error('[scan_application_form] call C succeeded with HTTP 200 but every field was null — no exception was thrown, so this is NOT the same failure Call A retries on; retrying once with the identical fields/prompt anyway, since a live test showed this exact all-null pattern on the same input')
       try {
-        const retryFlat = await callAppFormVision(imageUrl, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
+        const retryFlat = await callAppFormVision(imageUrls, visionModel, LANG_EMERGENCY_TITLE, LANG_EMERGENCY_FIELD_DEFS, COMPLEX_MAX_TOKENS)
         console.log(`[scan_application_form] call C retry (all-null trigger) raw=${JSON.stringify(retryFlat)}`)
         langEmergencyFlat = retryFlat
       } catch (err) {
