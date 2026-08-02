@@ -421,38 +421,44 @@ tbody tr:hover{background:var(--bg)}
 
 /* ── Printable letterhead documents (Payslip / Salary Disbursement) ──
    Accent color is driven by --pdoc-accent, set inline per-document so the
-   person can pick a color (defaults to the NexERP theme primary). */
-.pdoc { --pdoc-accent:#0E7490; background:#fff; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+   person can pick a color (defaults to the NexERP theme primary).
+   NOTE: colors here are FIXED hex values, not the app's --text/--border/--bg
+   theme variables. A .pdoc represents printed paper — it always has a white
+   background, so it must NOT flip to the app's dark-theme text colors
+   (which are designed to sit on a dark background) or the text becomes
+   unreadable on the white paper. Values below are the light-theme :root
+   equivalents. */
+.pdoc { --pdoc-accent:#0E7490; background:#fff; color:#0F172A; border:1px solid #E2E8F0; border-radius:10px; overflow:hidden; }
 .pdoc-header { display:flex; justify-content:space-between; align-items:flex-start; padding:18px 24px; gap:16px; flex-wrap:wrap; }
 .pdoc-logo-row { display:flex; align-items:center; gap:12px; }
 .pdoc-logo-row img { width:44px; height:44px; object-fit:contain; flex-shrink:0; }
 .pdoc-logo-fallback { width:44px; height:44px; border-radius:8px; background:var(--pdoc-accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; font-family:'Space Grotesk',sans-serif; flex-shrink:0; }
 .pdoc-company-name { font-weight:700; font-size:15px; color:var(--pdoc-accent); font-family:'Space Grotesk',sans-serif; line-height:1.3; }
-.pdoc-company-sub { font-size:10.5px; color:var(--text-3); margin-top:2px; line-height:1.5; }
-.pdoc-payslip-subtitle { font-size:11px; color:var(--text-2); font-weight:600; letter-spacing:.02em; margin-top:2px; text-transform:uppercase; }
-.pdoc-meta { text-align:right; font-size:11px; color:var(--text-3); line-height:1.7; white-space:nowrap; }
+.pdoc-company-sub { font-size:10.5px; color:#64748B; margin-top:2px; line-height:1.5; }
+.pdoc-payslip-subtitle { font-size:11px; color:#334155; font-weight:600; letter-spacing:.02em; margin-top:2px; text-transform:uppercase; }
+.pdoc-meta { text-align:right; font-size:11px; color:#64748B; line-height:1.7; white-space:nowrap; }
 .pdoc-title-bar { background:var(--pdoc-accent); color:#fff; font-weight:700; text-align:center; padding:9px; font-size:13px; letter-spacing:.04em; text-transform:uppercase; }
-.pdoc-band { background:var(--bg); padding:12px 24px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+.pdoc-band { background:#F8FAFC; padding:12px 24px; border-top:1px solid #E2E8F0; border-bottom:1px solid #E2E8F0; }
 .pdoc-band-name { font-weight:700; font-size:13.5px; }
-.pdoc-band-sub { font-size:11px; color:var(--text-3); margin-top:2px; }
-.pdoc-section-title { background:var(--bg); font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:7px 24px; color:var(--text-2); border-bottom:1px solid var(--border); }
+.pdoc-band-sub { font-size:11px; color:#64748B; margin-top:2px; }
+.pdoc-section-title { background:#F8FAFC; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:7px 24px; color:#334155; border-bottom:1px solid #E2E8F0; }
 .pdoc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-.pdoc-table td { padding:7px 24px; border-bottom:1px solid var(--border); }
+.pdoc-table td { padding:7px 24px; border-bottom:1px solid #E2E8F0; }
 .pdoc-table tr:last-child td { border-bottom:none; }
-.pdoc-total-row td { font-weight:700; background:var(--bg); }
+.pdoc-total-row td { font-weight:700; background:#F8FAFC; }
 .pdoc-net-bar { background:#0F172A; color:#fff; display:flex; justify-content:space-between; align-items:center; padding:14px 24px; }
 .pdoc-net-bar .lbl { font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
 .pdoc-net-bar .amt { font-weight:700; font-size:21px; color:var(--pdoc-accent); }
-.pdoc-footer-note { text-align:center; font-size:9.5px; color:var(--text-3); padding:10px; }
+.pdoc-footer-note { text-align:center; font-size:9.5px; color:#64748B; padding:10px; }
 .pdoc-amt-pos { color:var(--success); }
 .pdoc-amt-neg { color:var(--danger); }
 .pdoc-sd-table { width:100%; border-collapse:collapse; font-size:11.5px; }
 .pdoc-sd-table th { background:var(--pdoc-accent); color:#fff; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:.02em; padding:8px 6px; text-align:left; white-space:nowrap; }
-.pdoc-sd-table td { padding:6px; border-bottom:1px solid var(--border); }
+.pdoc-sd-table td { padding:6px; border-bottom:1px solid #E2E8F0; }
 .pdoc-sd-table tfoot td { font-weight:700; background:var(--pdoc-accent); color:#fff; }
 .pdoc-sig-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:24px; }
-.pdoc-sig-line { border-top:1.5px solid var(--text-2); margin-top:34px; padding-top:6px; text-align:center; }
-.pdoc-sig-label { font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:.03em; }
+.pdoc-sig-line { border-top:1.5px solid #334155; margin-top:34px; padding-top:6px; text-align:center; }
+.pdoc-sig-label { font-size:10px; color:#64748B; text-transform:uppercase; letter-spacing:.03em; }
 .pdoc-sig-name { font-size:12px; font-weight:600; margin-top:2px; }
 .pdoc-color-picker { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .pdoc-swatch { width:20px; height:20px; border-radius:50%; cursor:pointer; border:2px solid transparent; padding:0; }
@@ -972,7 +978,7 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
     </tbody></table>
     <div class="pdoc-section-title">${isBm?'POTONGAN':'DEDUCTIONS'}</div>
     <table class="pdoc-table"><tbody>
-      ${dedRows.length ? dedRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right;color:var(--danger)">- ${formatRM(r.amount)}</td></tr>`).join('') : `<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}
+      ${dedRows.length ? dedRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right;color:var(--danger)">- ${formatRM(r.amount)}</td></tr>`).join('') : `<tr><td colspan="2" style="color:#64748B">-</td></tr>`}
     </tbody></table>
     <div class="pdoc-net-bar"><span class="lbl">${isBm?'GAJI BERSIH':'NET PAY'}</span><span class="amt">${formatRM(rec.net_pay)}</span></div>
     <div class="pdoc-footer-note">${isBm?'Ini adalah slip gaji janaan komputer. Tiada tandatangan diperlukan.':'This is a computer-generated payslip. No signature required.'}</div>
@@ -7384,7 +7390,7 @@ async function renderSalaryDisbursement(month, year) {
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) {
-    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p><p style="font-size:12px;color:var(--text-3)">${t.runPayrollFirst}</p></div>`
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p><p style="font-size:12px;color:#64748B">${t.runPayrollFirst}</p></div>`
     return
   }
   _sdRecords = data
@@ -7434,7 +7440,7 @@ async function renderSalaryDisbursement(month, year) {
     <tfoot><tr><td colspan="19" style="text-align:right">${t.grandTotal}</td><td style="text-align:right" id="sd-grand-total">${formatRM(grandTotal)}</td></tr></tfoot>
     </table>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:0 24px 16px">
-      <div style="font-size:11px;color:var(--text-3)">${t.sessionHint}</div>
+      <div style="font-size:11px;color:#64748B">${t.sessionHint}</div>
       <div style="display:flex;align-items:center;gap:10px">
         <span id="sd-save-result" style="font-size:12px"></span>
         <button class="btn btn-primary btn-sm" onclick="_sdSaveAll()"><i class="ti ti-device-floppy"></i> ${t.save}</button>
