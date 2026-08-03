@@ -376,12 +376,24 @@ tbody tr:hover{background:var(--bg)}
 .db-btn{background:var(--db-card);border:1px solid var(--db-border2);color:var(--db-text2);padding:8px 14px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
 .db-btn:hover{filter:brightness(1.15)}
 .db-btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
-.db-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px}
-.db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:16px 16px 36px;position:relative;overflow:hidden}
-.db-kpi-label{font-size:12px;color:var(--db-text4);margin-bottom:8px}
-.db-kpi-value{font-size:22px;font-weight:700;color:var(--db-text);margin-bottom:4px}
-.db-kpi-delta{font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px}
-.db-kpi-spark{position:absolute;right:12px;bottom:8px;width:72px!important;height:28px!important;max-width:72px;max-height:28px;opacity:.85;pointer-events:none;display:block}
+.db-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+@media (max-width:900px){.db-kpi-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.db-kpi-grid{grid-template-columns:1fr}}
+.db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:18px 18px 16px 20px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s}
+.db-kpi-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--primary);opacity:.85;border-radius:14px 0 0 14px}
+.db-kpi-card:hover{border-color:var(--primary);box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 25%,transparent),0 8px 24px -12px color-mix(in srgb,var(--primary) 35%,transparent)}
+.db-kpi-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.db-kpi-icon{width:28px;height:28px;border-radius:8px;background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.db-kpi-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--db-text4);line-height:1.2}
+.db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:10px}
+.db-kpi-footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.db-kpi-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;line-height:1.3}
+.db-kpi-pill.up{background:rgba(22,163,74,.12);color:#16A34A}
+.db-kpi-pill.down{background:rgba(220,38,38,.12);color:#DC2626}
+.db-kpi-pill.neutral{background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--primary)}
+.db-kpi-pill.warn{background:rgba(217,119,6,.12);color:#D97706}
+.db-kpi-sub{font-size:11px;color:var(--db-text4)}
+.db-kpi-spark{display:none!important}
 .db-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 .db-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:18px}
 .db-card-title{font-size:14px;font-weight:600;color:var(--db-text2);display:flex;align-items:center;gap:6px}
@@ -1625,12 +1637,21 @@ function renderDashboard() {
     </div>
 
     <div class="db-kpi-grid" id="db-kpi-grid">
-      ${['sales','grossProfit','collected','rate','avg','count'].map(k=>`
+      ${[
+        {k:'sales', icon:'ti-currency-dollar'},
+        {k:'grossProfit', icon:'ti-chart-arrows-vertical'},
+        {k:'collected', icon:'ti-cash'},
+        {k:'rate', icon:'ti-percentage'},
+        {k:'avg', icon:'ti-receipt'},
+        {k:'count', icon:'ti-file-invoice'}
+      ].map(({k,icon})=>`
       <div class="db-kpi-card">
-        <div class="db-kpi-label" id="db-lbl-${k}">-</div>
+        <div class="db-kpi-head">
+          <div class="db-kpi-icon"><i class="ti ${icon}"></i></div>
+          <div class="db-kpi-label" id="db-lbl-${k}">-</div>
+        </div>
         <div class="db-kpi-value" id="db-val-${k}">-</div>
-        <div class="db-kpi-delta" id="db-delta-${k}">-</div>
-        <canvas class="db-kpi-spark" id="db-spark-${k}"></canvas>
+        <div class="db-kpi-footer" id="db-delta-${k}"></div>
       </div>`).join('')}
     </div>
 
@@ -1831,20 +1852,24 @@ async function loadDashboardData() {
   }
 
   Object.entries(kpis).forEach(([k,v]) => {
-    const lbl = document.getElementById('db-lbl-'+k), val = document.getElementById('db-val-'+k), delta = document.getElementById('db-delta-'+k)
+    const lbl = document.getElementById('db-lbl-'+k), val = document.getElementById('db-val-'+k), foot = document.getElementById('db-delta-'+k)
     if(lbl) lbl.textContent = v.label
     if(val) val.textContent = v.value
-    if(delta) {
-      if(v.delta===null) delta.innerHTML = `<span style="color:${v.color}">${v.sub}</span>`
-      else {
+    if(foot) {
+      if(v.delta === null) {
+        // Collection Rate: status badge only
+        const cls = curRate>=80 ? 'up' : curRate>=50 ? 'neutral' : 'warn'
+        foot.innerHTML = `<span class="db-kpi-pill ${cls}">${v.sub}</span>`
+      } else {
         const up = v.delta >= 0
-        delta.innerHTML = `<span style="color:${up?'#22C55E':'#EF4444'}"><i class="ti ti-trending-${up?'up':'down'}"></i> ${up?'+':''}${v.delta.toFixed(2)}%</span>`
+        const flat = Math.abs(v.delta) < 0.005
+        if(flat) {
+          foot.innerHTML = `<span class="db-kpi-pill neutral">0.00%</span>`
+        } else {
+          foot.innerHTML = `<span class="db-kpi-pill ${up?'up':'down'}"><i class="ti ti-trending-${up?'up':'down'}"></i> ${up?'+':''}${v.delta.toFixed(2)}%</span>`
+        }
       }
     }
-    // Skip the sparkline for grossProfit — _dbRenderSparkline only has a
-    // per-day SALES total to draw from (no per-day COGS breakdown), so it
-    // would silently show the sales trend, not a gross profit trend.
-    if(k!=='grossProfit') _dbRenderSparkline(k, v.color, thisMonth, lastMonth)
   })
 
   _dbRenderGrowthChart(inv)
