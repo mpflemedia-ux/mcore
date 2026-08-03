@@ -483,6 +483,55 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-sd-line label { font-size:10px; color:#64748B; min-width:42px; font-weight:500; }
 .pdoc-sd-line .form-select { min-width:0; flex:1; font-size:11px; padding:4px 6px; height:auto; }
 .pdoc-sd-line .form-input { width:72px; font-size:11px; padding:4px 6px; height:auto; }
+/* Paper document always light — force readable controls even when app is dark */
+.pdoc .form-input,
+.pdoc .form-select,
+.pdoc textarea.form-input {
+  background:#fff !important;
+  border:1px solid #CBD5E1 !important;
+  color:#0F172A !important;
+  box-shadow:none !important;
+}
+.pdoc .form-input:focus,
+.pdoc .form-select:focus {
+  border-color:#0E7490 !important;
+  outline:none;
+  box-shadow:0 0 0 3px rgba(14,116,144,.15) !important;
+}
+.pdoc .form-select option {
+  background:#fff !important;
+  color:#0F172A !important;
+}
+.pdoc .form-label {
+  color:#475569 !important;
+}
+.pdoc .form-input::placeholder {
+  color:#94A3B8 !important;
+}
+/* Signature block on screen */
+.pdoc-sig-grid {
+  background:#fff;
+  border:1px solid #E2E8F0;
+  border-radius:10px;
+  margin-top:16px;
+}
+.pdoc-sig-grid .form-input {
+  background:#F8FAFC !important;
+  border:1px solid #E2E8F0 !important;
+  border-bottom:1.5px solid #94A3B8 !important;
+  border-radius:6px 6px 0 0 !important;
+  color:#0F172A !important;
+  text-align:center;
+  font-weight:600;
+}
+.pdoc-sig-grid .form-label {
+  text-align:center;
+  font-size:11px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:#64748B !important;
+}
 .pdoc-sd-basic { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; text-align:right; white-space:nowrap; }
 .pdoc-sd-net { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; text-align:right; color:var(--pdoc-accent); white-space:nowrap; }
 .pdoc-sd-print-line { font-size:11px; color:#334155; line-height:1.5; }
@@ -492,7 +541,8 @@ tbody tr:hover{background:var(--bg)}
 @media print {
   .pdoc-sd-line .form-select, .pdoc-sd-line .form-input { display:none !important; }
 }
-.pdoc-sig-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:24px; }
+.pdoc-sig-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:24px; background:#fff; border:1px solid #E2E8F0; border-radius:10px; margin-top:16px; }
+@media (max-width:900px){ .pdoc-sig-grid { grid-template-columns:1fr 1fr; } }
 .pdoc-sig-line { border-top:1.5px solid #334155; margin-top:34px; padding-top:6px; text-align:center; }
 .pdoc-sig-label { font-size:10px; color:#64748B; text-transform:uppercase; letter-spacing:.03em; }
 .pdoc-sig-name { font-size:12px; font-weight:600; margin-top:2px; }
