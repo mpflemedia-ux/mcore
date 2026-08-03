@@ -763,7 +763,7 @@ const LANG = {
       needsAttn:'Needs attention',thisMonth:'This month',active:'Active',invoices:'invoices',
       monthlySales:'Monthly Sales',recentInv:'Recent Invoices',viewAll:'View All',noInv:'No invoices yet',
       chartNote:'Will load with Chart.js',export:'Export',
-      people:'People',peopleSub:'Team members in this company',viewHR:'View HR',
+      people:'People',peopleSub:'Staff present today',viewHR:'View HR',
       recentActivity:'Recent Activity',noPeople:'No team members yet',noActivity:'No recent activity',
       active:'Active'
     },
@@ -781,7 +781,7 @@ const LANG = {
       needsAttn:'Perlu perhatian',thisMonth:'Bulan ini',active:'Aktif',invoices:'invois',
       monthlySales:'Jualan Bulanan',recentInv:'Invois Terkini',viewAll:'Lihat Semua',noInv:'Tiada invois lagi',
       chartNote:'Akan dimuatkan dengan Chart.js',export:'Eksport',
-      people:'Pasukan',peopleSub:'Ahli pasukan dalam syarikat ini',viewHR:'Lihat SDM',
+      people:'Pasukan',peopleSub:'Staff hadir hari ini',viewHR:'Lihat SDM',
       recentActivity:'Aktiviti Terkini',noPeople:'Tiada ahli pasukan lagi',noActivity:'Tiada aktiviti terkini',
       active:'Aktif'
     },
@@ -1924,36 +1924,41 @@ async function _dbLoadPeople() {
   const el = document.getElementById('db-people-list')
   if(!el || !APP.tenant.id) return
   const isBm = APP.language === 'bm'
+  const today = new Date().toISOString().slice(0,10)
   try {
-    const {data, error} = await sb.from('user_profiles')
-      .select('id, full_name, role, last_login, is_active')
+    // Get today's Present attendance + employee name
+    const {data, error} = await sb.from('attendance')
+      .select('id, status, clock_in, clock_out, employee_id, employees(id, name, position)')
       .eq('tenant_id', APP.tenant.id)
+      .eq('date', today)
+      .eq('status', 'Present')
       .is('deleted_at', null)
-      .order('full_name', {ascending: true})
-      .limit(12)
+      .order('clock_in', {ascending: true})
+      .limit(20)
     if(error) throw error
     const list = data || []
     if(!list.length) {
-      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada ahli pasukan lagi':'No team members yet'}</div>`
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada staff hadir hari ini':'No staff present today'}</div>`
       return
     }
-    el.innerHTML = list.map(u => {
-      const name = u.full_name || u.email || 'User'
-      const role = u.role || 'member'
+    el.innerHTML = list.map(a => {
+      const emp = a.employees || {}
+      const name = emp.name || 'Staff'
+      const position = emp.position || ''
       const initials = _dbInitials(name)
-      const ago = _dbTimeAgo(u.last_login)
+      const clock = a.clock_in ? String(a.clock_in).slice(0,5) : '-'
       return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
         <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
-          <div style="font-size:11px;color:var(--db-text3);text-transform:capitalize">${role}${ago ? ' · ' + ago : ''}</div>
+          <div style="font-size:11px;color:var(--db-text3)">${position}${position && clock!=='-' ? ' · ' : ''}${clock!=='-' ? 'In '+clock : ''}</div>
         </div>
-        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${u.is_active!==false?'rgba(22,163,74,.12)':'rgba(148,163,184,.15)'};color:${u.is_active!==false?'#16A34A':'#94A3B8'};font-weight:500">${u.is_active!==false?(isBm?'Aktif':'Active'):(isBm?'Tidak Aktif':'Inactive')}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(22,163,74,.12);color:#16A34A;font-weight:500">${isBm?'Hadir':'Present'}</span>
       </div>`
     }).join('')
   } catch(err) {
     console.error('_dbLoadPeople', err)
-    el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada data pasukan':'No people data'}</div>`
+    el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada data kehadiran':'No attendance data'}</div>`
   }
 }
 
