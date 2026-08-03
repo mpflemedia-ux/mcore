@@ -377,11 +377,11 @@ tbody tr:hover{background:var(--bg)}
 .db-btn:hover{filter:brightness(1.15)}
 .db-btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
 .db-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px}
-.db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:16px;position:relative;overflow:hidden}
+.db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:16px 16px 36px;position:relative;overflow:hidden}
 .db-kpi-label{font-size:12px;color:var(--db-text4);margin-bottom:8px}
 .db-kpi-value{font-size:22px;font-weight:700;color:var(--db-text);margin-bottom:4px}
 .db-kpi-delta{font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px}
-.db-kpi-spark{position:absolute;right:10px;bottom:10px;width:70px;height:28px;opacity:.9}
+.db-kpi-spark{position:absolute;right:12px;bottom:8px;width:72px!important;height:28px!important;max-width:72px;max-height:28px;opacity:.85;pointer-events:none;display:block}
 .db-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 .db-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:18px}
 .db-card-title{font-size:14px;font-weight:600;color:var(--db-text2);display:flex;align-items:center;gap:6px}
@@ -2158,22 +2158,40 @@ async function _dbLoadDailyDigest() {
 }
 
 function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
-  const ctx = document.getElementById('db-spark-'+key)
-  if(!ctx) return
+  const canvas = document.getElementById('db-spark-'+key)
+  if(!canvas) return
   _dbDestroy('spark-'+key)
+  // Force internal bitmap size to match CSS box so Chart.js never
+  // stretches the line across neighbouring KPI cards.
+  const W = 72, H = 28
+  canvas.width = W
+  canvas.height = H
+  canvas.style.width = W + 'px'
+  canvas.style.height = H + 'px'
   const days = 7
   const now = new Date()
   const daily = []
   for(let d=days-1; d>=0; d--) {
-    const day = new Date(now); day.getTime && day.setDate(now.getDate()-d)
+    const day = new Date(now)
+    day.setDate(now.getDate()-d)
     const dayStr = day.toISOString().slice(0,10)
     const total = thisMonth.concat(lastMonth).filter(i=>i.issue_date===dayStr).reduce((s,i)=>s+Number(i.total||0),0)
     daily.push(total)
   }
-  _dbCharts['spark-'+key] = new Chart(ctx, {
+  // Flat / all-zero data → tiny flat line, avoid extreme bezier curves
+  const hasVariance = Math.max(...daily) !== Math.min(...daily)
+  _dbCharts['spark-'+key] = new Chart(canvas, {
     type:'line',
-    data:{ labels: daily.map((_,i)=>i), datasets:[{ data: daily, borderColor: color, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:.4 }] },
-    options:{ responsive:false, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false}}, elements:{line:{borderJoinStyle:'round'}} }
+    data:{ labels: daily.map((_,i)=>i), datasets:[{ data: daily, borderColor: color, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension: hasVariance ? 0.35 : 0 }] },
+    options:{
+      responsive:false,
+      maintainAspectRatio:false,
+      animation:false,
+      layout:{ padding: 2 },
+      plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+      scales:{ x:{display:false}, y:{display:false, min: hasVariance ? undefined : -1, max: hasVariance ? undefined : 1} },
+      elements:{ line:{ borderJoinStyle:'round', borderCapStyle:'round' } }
+    }
   })
 }
 
