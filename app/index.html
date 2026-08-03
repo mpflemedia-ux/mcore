@@ -409,6 +409,8 @@ tbody tr:hover{background:var(--bg)}
 .db-donut-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
 .db-donut-wrap{position:relative;display:flex;justify-content:center;margin-bottom:12px}
 @media (max-width:900px){.db-row,.db-bottom-row{grid-template-columns:1fr}}
+.db-people-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+@media (max-width:900px){.db-people-row{grid-template-columns:1fr}}
 @media (max-width:768px) {
   /* Sidebar becomes a fixed overlay drawer instead of pushing/squeezing
      main content — #main-area (flex:1) naturally fills the full width
@@ -1697,7 +1699,7 @@ function renderDashboard() {
     </div>
 
     <!-- People + Recent Activity -->
-    <div class="db-row" style="grid-template-columns:1fr 1fr;margin-top:14px;gap:14px">
+    <div class="db-people-row">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div>
