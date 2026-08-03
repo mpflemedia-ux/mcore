@@ -93,6 +93,17 @@ input,select,textarea{font-family:inherit}
 .gs-hint{padding:8px 16px 12px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border)}
 
 .header-actions{display:flex;align-items:center;gap:4px}
+.notif-wrap{position:relative}
+.notif-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1}
+.notif-badge.show{display:flex}
+.notif-menu{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,92vw);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.2));display:none;z-index:200;max-height:70vh;overflow:hidden;flex-direction:column}
+.notif-menu.open{display:flex}
+.notif-menu-h{padding:12px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border)}
+.notif-list{overflow-y:auto;max-height:320px}
+.notif-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
+.notif-item:hover{background:var(--bg)}
+.notif-item .n-meta{font-size:11px;color:var(--text-3);margin-top:2px}
+
 .header-btn{width:36px;height:36px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:18px;position:relative;cursor:pointer}
 .header-btn:hover{background:var(--bg);color:var(--text)}
 .tenant-chip{display:flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary);padding:5px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:600}
@@ -896,6 +907,15 @@ tbody tr:hover{background:var(--bg)}
         <span style="font-size:10px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px">⌘K</span>
       </div>
       <div class="header-actions">
+        <div class="notif-wrap">
+          <button class="header-btn" id="notif-btn" onclick="toggleNotifMenu()" title="Notifications"><i class="ti ti-bell"></i>
+            <span class="notif-badge" id="notif-badge">0</span>
+          </button>
+          <div class="notif-menu" id="notif-menu">
+            <div class="notif-menu-h" id="notif-menu-title">Notifications</div>
+            <div class="notif-list" id="notif-list"><div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">…</div></div>
+          </div>
+        </div>
         <button class="header-btn" onclick="toggleTheme()" title="Toggle tema"><i class="ti ti-moon" id="theme-icon"></i></button>
         <button class="header-btn" onclick="toggleLang()" title="Tukar bahasa"><i class="ti ti-language"></i></button>
         <div class="tenant-chip">
@@ -1044,6 +1064,101 @@ function isPlatformAdmin() {
   return false
 }
 
+
+
+// ── In-app notifications (derived: overdue + low stock) ─────────────────────
+let _notifOpen = false
+function toggleNotifMenu() {
+  _notifOpen = !_notifOpen
+  const m = document.getElementById('notif-menu')
+  if(m) m.classList.toggle('open', _notifOpen)
+  if(_notifOpen) loadNotifications()
+}
+document.addEventListener('click', e => {
+  const wrap = document.querySelector('.notif-wrap')
+  if(_notifOpen && wrap && !wrap.contains(e.target)) {
+    _notifOpen = false
+    document.getElementById('notif-menu')?.classList.remove('open')
+  }
+})
+async function loadNotifications() {
+  const list = document.getElementById('notif-list')
+  const badge = document.getElementById('notif-badge')
+  const title = document.getElementById('notif-menu-title')
+  const isBm = APP.language==='bm'
+  if(title) title.textContent = isBm ? 'Pemberitahuan' : 'Notifications'
+  if(!APP.tenant?.id) {
+    if(list) list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-3)">${isBm?'Log masuk dulu':'Sign in first'}</div>`
+    return
+  }
+  if(list) list.innerHTML = `<div style="padding:20px;text-align:center"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block"></div></div>`
+  try {
+    const today = new Date().toISOString().slice(0,10)
+    const [{data: overdue}, {data: products}, {data: leaves}] = await Promise.all([
+      sb.from('invoices').select('id,ref_no,customer_name,total,paid_amt,due_date')
+        .eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('status','paid').lt('due_date', today).limit(15),
+      sb.from('products').select('id,name_en,name_bm,stock_qty,reorder_point')
+        .eq('tenant_id',APP.tenant.id).is('deleted_at',null).limit(200),
+      sb.from('leave_requests').select('id,employee_id,start_date,status,leave_type')
+        .eq('tenant_id',APP.tenant.id).eq('status','pending').limit(10),
+    ])
+    const low = (products||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5)).slice(0,10)
+    const items = []
+    ;(overdue||[]).forEach(inv => {
+      const bal = Number(inv.total||0) - Number(inv.paid_amt||0)
+      items.push({
+        icon:'ti-file-invoice', color:'var(--danger)',
+        text: isBm ? `Invois tertunggak ${inv.ref_no}` : `Overdue invoice ${inv.ref_no}`,
+        meta: `${inv.customer_name||''} · ${formatRM(bal)} · due ${formatDate(inv.due_date)}`,
+        go: () => openPage('sales',{view:'inv-detail',id:inv.id})
+      })
+    })
+    low.forEach(p => {
+      items.push({
+        icon:'ti-box', color:'var(--warning)',
+        text: isBm ? `Stok rendah: ${prodName(p)}` : `Low stock: ${prodName(p)}`,
+        meta: `stock ${p.stock_qty} ≤ reorder ${p.reorder_point??5}`,
+        go: () => openPage('inventory',{view:'product-form',id:p.id})
+      })
+    })
+    ;(leaves||[]).forEach(lv => {
+      items.push({
+        icon:'ti-calendar-event', color:'var(--primary)',
+        text: isBm ? `Cuti menunggu kelulusan` : `Leave pending approval`,
+        meta: `${lv.leave_type||''} · ${formatDate(lv.start_date)}`,
+        go: () => openPage('hr',{view:'leave'})
+      })
+    })
+    if(badge) {
+      badge.textContent = String(items.length)
+      badge.classList.toggle('show', items.length > 0)
+    }
+    if(!items.length) {
+      if(list) list.innerHTML = `<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">${isBm?'Tiada pemberitahuan':'No notifications'}</div>`
+      return
+    }
+    window._notifItems = items
+    if(list) list.innerHTML = items.map((it,i) => `
+      <div class="notif-item" onclick="closeNotifAndGo(${i})">
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <i class="ti ${it.icon}" style="color:${it.color};margin-top:2px"></i>
+          <div><div style="font-weight:600">${_aiEscapeHtml(it.text)}</div>
+          <div class="n-meta">${_aiEscapeHtml(it.meta||'')}</div></div>
+        </div>
+      </div>`).join('')
+  } catch(err) {
+    console.error('notifications', err)
+    if(list) list.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">${_aiEscapeHtml(err.message||'Error')}</div>`
+  }
+}
+function closeNotifAndGo(i) {
+  _notifOpen = false
+  document.getElementById('notif-menu')?.classList.remove('open')
+  const it = window._notifItems?.[i]
+  if(it && it.go) it.go()
+}
+// Refresh badge on shell show
+const _loadNotifOnce = () => { if(APP.tenant?.id) loadNotifications() }
 
 // ── Global Search (Ctrl/Cmd+K) ──────────────────────────────────────────────
 let _gsTimer = null
@@ -1930,6 +2045,7 @@ function showShell() {
     buildSidebar()
     updateUserUI()
     openPage(localStorage.getItem('nexerp_last_page') || 'dashboard')
+    setTimeout(() => { try { loadNotifications() } catch(e) {} }, 800)
   }
 }
 
@@ -9961,16 +10077,18 @@ function renderReports(params={}) {
   if(params.view==='balance-sheet') { renderBalanceSheet(); return }
   if(params.view==='sales') { renderSalesReport(); return }
   if(params.view==='custom') { renderCustomReport(); return }
+  if(params.view==='sst') { renderSstReport(); return }
   renderPnL()
 }
 
 function _repTabs(active) {
-  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', sales:'Laporan Jualan', custom:'Laporan Tersendiri' }
-    : { pnl:'Income Statement', bs:'Balance Sheet', sales:'Sales Report', custom:'Custom Report' }
+  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', sales:'Laporan Jualan', sst:'SST', custom:'Laporan Tersendiri' }
+    : { pnl:'Income Statement', bs:'Balance Sheet', sales:'Sales Report', sst:'SST', custom:'Custom Report' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='pnl'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{})"><i class="ti ti-report-money"></i> ${t.pnl}</button>
     <button class="btn btn-sm ${active==='bs'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'balance-sheet'})"><i class="ti ti-scale"></i> ${t.bs}</button>
     <button class="btn btn-sm ${active==='sales'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sales'})"><i class="ti ti-chart-bar"></i> ${t.sales}</button>
+    <button class="btn btn-sm ${active==='sst'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sst'})"><i class="ti ti-receipt-tax"></i> ${t.sst}</button>
     <button class="btn btn-sm ${active==='custom'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'custom'})"><i class="ti ti-table"></i> ${t.custom}</button>
   </div>`
 }
@@ -10237,6 +10355,135 @@ function _repCustomFmtVal(row, col) {
   if(col.type==='currency') return formatRM(v||0)
   if(col.type==='date') return formatDate(v)
   return v ?? ''
+}
+
+
+async function renderSstReport() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Laporan SST', sub:'Ringkasan cukai jualan (invois). Bukan fail LHDN rasmi.',
+    from:'Dari', to:'Hingga', run:'Jana', print:'Cetak',
+    inv:'Invois', date:'Tarikh', customer:'Pelanggan', subtotal:'Subjumlah', tax:'SST', total:'Jumlah', rate:'Kadar',
+    sumTax:'Jumlah SST', sumSales:'Jumlah jualan (termasuk cukai)', noData:'Tiada invois dalam tempoh ini.',
+    note:'Nota: Invois tanpa kolum tax_amt dikira 0% SST. Untuk pematuhan penuh, semak LHDN / akauntan.'
+  } : {
+    title:'SST Report', sub:'Sales tax summary from invoices. Not an official LHDN filing.',
+    from:'From', to:'To', run:'Generate', print:'Print',
+    inv:'Invoice', date:'Date', customer:'Customer', subtotal:'Subtotal', tax:'SST', total:'Total', rate:'Rate',
+    sumTax:'Total SST', sumSales:'Total sales (incl. tax)', noData:'No invoices in this period.',
+    note:'Note: Invoices without tax_amt are treated as 0% SST. For full compliance, consult LHDN / your accountant.'
+  }
+  const now = new Date()
+  const y = now.getFullYear(), m = now.getMonth()
+  // Default: current 2-month SST period (odd months start)
+  const periodStartMonth = m % 2 === 0 ? m : m - 1
+  const fromDef = new Date(y, periodStartMonth, 1).toISOString().slice(0,10)
+  const toDef = new Date(y, periodStartMonth + 2, 0).toISOString().slice(0,10)
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div>
+  <button class="btn btn-outline btn-sm no-print" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+  </div>
+  ${_repTabs('sst')}
+  <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="sst-from" class="form-input" value="${fromDef}"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="sst-to" class="form-input" value="${toDef}"></div>
+    <button class="btn btn-primary btn-sm" onclick="_sstRun()"><i class="ti ti-refresh"></i> ${t.run}</button>
+  </div>
+  <div id="sst-out"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  await _sstRun()
+}
+
+async function _sstRun() {
+  const isBm = APP.language==='bm'
+  const out = document.getElementById('sst-out')
+  if(!out) return
+  const from = document.getElementById('sst-from')?.value
+  const to = document.getElementById('sst-to')?.value
+  out.innerHTML = `<div class="empty-state" style="padding:40px"><div class="spinner"></div></div>`
+
+  let q = sb.from('invoices').select('id,ref_no,issue_date,customer_name,total,subtotal,tax_rate,tax_amt,status')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  if(from) q = q.gte('issue_date', from)
+  if(to) q = q.lte('issue_date', to)
+  let {data, error} = await q.order('issue_date', {ascending:true})
+
+  // Fallback if tax columns missing
+  if(error && /tax_amt|tax_rate|subtotal|column/i.test(error.message||'')) {
+    let q2 = sb.from('invoices').select('id,ref_no,issue_date,customer_name,total,status')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    if(from) q2 = q2.gte('issue_date', from)
+    if(to) q2 = q2.lte('issue_date', to)
+    ;({data, error} = await q2.order('issue_date', {ascending:true}))
+  }
+  if(error) {
+    out.innerHTML = `<div class="card" style="padding:24px;color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</div>`
+    return
+  }
+  const rows = (data||[]).map(r => {
+    const tax = Number(r.tax_amt||0)
+    const sub = r.subtotal != null ? Number(r.subtotal) : Math.max(0, Number(r.total||0) - tax)
+    const rate = r.tax_rate != null ? Number(r.tax_rate) : (sub > 0 && tax > 0 ? tax/sub : 0)
+    return {...r, _tax: tax, _sub: sub, _rate: rate}
+  })
+  const sumTax = rows.reduce((s,r)=>s+r._tax, 0)
+  const sumTotal = rows.reduce((s,r)=>s+Number(r.total||0), 0)
+
+  if(!rows.length) {
+    out.innerHTML = `<div class="card"><div class="empty-state" style="padding:60px"><p>${isBm?'Tiada invois dalam tempoh ini.':'No invoices in this period.'}</p></div></div>`
+    return
+  }
+
+  out.innerHTML = `
+  <div class="card" style="padding:20px;max-width:1000px" id="sst-doc">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:var(--text-3)">${isBm?'Jumlah SST':'Total SST'}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:var(--primary)">${formatRM(sumTax)}</div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:var(--text-3)">${isBm?'Jumlah jualan':'Total sales'}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${formatRM(sumTotal)}</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--bg)">
+          <th style="padding:10px;text-align:left">${isBm?'Invois':'Invoice'}</th>
+          <th style="padding:10px;text-align:left">${isBm?'Tarikh':'Date'}</th>
+          <th style="padding:10px;text-align:left">${isBm?'Pelanggan':'Customer'}</th>
+          <th style="padding:10px;text-align:right">${isBm?'Subjumlah':'Subtotal'}</th>
+          <th style="padding:10px;text-align:right">${isBm?'Kadar':'Rate'}</th>
+          <th style="padding:10px;text-align:right">SST</th>
+          <th style="padding:10px;text-align:right">${isBm?'Jumlah':'Total'}</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:9px 10px;font-weight:600">${_aiEscapeHtml(r.ref_no||'-')}</td>
+            <td style="padding:9px 10px">${formatDate(r.issue_date)}</td>
+            <td style="padding:9px 10px">${_aiEscapeHtml(r.customer_name||'-')}</td>
+            <td style="padding:9px 10px;text-align:right">${formatRM(r._sub)}</td>
+            <td style="padding:9px 10px;text-align:right">${(r._rate*100).toFixed(0)}%</td>
+            <td style="padding:9px 10px;text-align:right;font-weight:600">${formatRM(r._tax)}</td>
+            <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr style="background:var(--bg);font-weight:700">
+          <td colspan="5" style="padding:12px 10px;text-align:right">${isBm?'Jumlah SST':'Total SST'}</td>
+          <td style="padding:12px 10px;text-align:right;color:var(--primary)">${formatRM(sumTax)}</td>
+          <td style="padding:12px 10px;text-align:right">${formatRM(sumTotal)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--text-3);margin-top:14px">${isBm
+      ? 'Nota: Invois tanpa tax_amt = 0% SST. Ini ringkasan dalaman — bukan borang SST-02 rasmi LHDN.'
+      : 'Note: Invoices without tax_amt = 0% SST. Internal summary only — not an official LHDN SST-02 form.'}</p>
+  </div>`
 }
 
 function renderCustomReport() {
