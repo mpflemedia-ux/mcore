@@ -1926,7 +1926,7 @@ async function _dbLoadPeople() {
   const isBm = APP.language === 'bm'
   try {
     const {data, error} = await sb.from('user_profiles')
-      .select('id, full_name, role, last_active_at, email')
+      .select('id, full_name, role, last_login, is_active')
       .eq('tenant_id', APP.tenant.id)
       .is('deleted_at', null)
       .order('full_name', {ascending: true})
@@ -1941,14 +1941,14 @@ async function _dbLoadPeople() {
       const name = u.full_name || u.email || 'User'
       const role = u.role || 'member'
       const initials = _dbInitials(name)
-      const ago = _dbTimeAgo(u.last_active_at)
+      const ago = _dbTimeAgo(u.last_login)
       return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
         <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
           <div style="font-size:11px;color:var(--db-text3);text-transform:capitalize">${role}${ago ? ' · ' + ago : ''}</div>
         </div>
-        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(22,163,74,.12);color:#16A34A;font-weight:500">${isBm?'Aktif':'Active'}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${u.is_active!==false?'rgba(22,163,74,.12)':'rgba(148,163,184,.15)'};color:${u.is_active!==false?'#16A34A':'#94A3B8'};font-weight:500">${u.is_active!==false?(isBm?'Aktif':'Active'):(isBm?'Tidak Aktif':'Inactive')}</span>
       </div>`
     }).join('')
   } catch(err) {
