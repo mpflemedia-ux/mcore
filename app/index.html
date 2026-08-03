@@ -989,6 +989,7 @@ const NAV_ITEMS = [
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
   { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'core' },
   { section:'System' },
+  { id:'admin',      icon:'ti-shield-cog',        label_en:'Admin',       label_bm:'Admin',        module:'admin' },
   { id:'settings',   icon:'ti-settings',          label_en:'Settings',    label_bm:'Tetapan',      module:'core' },
 ]
 
@@ -998,8 +999,18 @@ function canAccess(module) {
   if(!role) return false
   if(role==='owner' || role==='admin') return true
   if(module==='core') return true
+  if(module==='admin') return false
   const allowed = APP.tenantConfig.roles[role]
   return Array.isArray(allowed) && allowed.includes(module)
+}
+function isPlatformAdmin() {
+  const email = (APP.user.email || '').toLowerCase()
+  if(APP.user.role === 'platform_admin') return true
+  if(localStorage.getItem('nexerp_platform_admin') === '1') return true
+  // Phion / MPFLE operators
+  if(email.includes('mpflemedia') || email.includes('phion')) return true
+  if(email.endsWith('@phion.my') || email.endsWith('@mpflemedia.my')) return true
+  return false
 }
 
 function openPage(page, params={}) {
@@ -1030,6 +1041,7 @@ function openPage(page, params={}) {
       case 'applicants': renderJobApplicants(params); break
       case 'accounting': renderAccounting(params); break
       case 'reports':    renderReports(params); break
+      case 'admin':      renderAdmin(params); break
       case 'settings':   renderSettings(); break
       default: main.innerHTML=`<div class="empty-state"><i class="ti ti-mood-confuzed"></i><h3>Page not found</h3></div>`
     }
@@ -2617,6 +2629,232 @@ const RP_MODULES = [
   { id:'hr',         en:'HR',        bm:'Sumber Manusia' },
 ]
 let _rolePermsState = {}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADMIN — Tenant team + (platform) client list
+// ═══════════════════════════════════════════════════════════════════════════
+function renderAdmin(params={}) {
+  if(!(APP.user.role==='owner' || APP.user.role==='admin' || isPlatformAdmin())) {
+    renderAccessDenied(); return
+  }
+  if(params.view==='tenant' && params.id) { renderAdminTenantDetail(params.id); return }
+  if(params.view==='clients' && isPlatformAdmin()) { renderAdminClients(); return }
+  renderAdminTeam()
+}
+
+function _adminTabs(active) {
+  const isBm = APP.language==='bm'
+  const platform = isPlatformAdmin()
+  return `<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="btn btn-sm ${active==='team'?'btn-primary':'btn-outline'}" onclick="openPage('admin')"><i class="ti ti-users"></i> ${isBm?'Pasukan':'Team'}</button>
+    ${platform ? `<button class="btn btn-sm ${active==='clients'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'clients'})"><i class="ti ti-building-skyscraper"></i> ${isBm?'Semua Client':'All Clients'}</button>` : ''}
+  </div>`
+}
+
+async function renderAdminTeam() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Admin — Pasukan', sub:'Pengguna dalam tenant ini', name:'Nama', email:'E-mel', role:'Peranan',
+    status:'Status', active:'Aktif', inactive:'Tidak aktif', noData:'Tiada pengguna.',
+    lastLogin:'Log masuk terakhir', save:'Simpan'
+  } : {
+    title:'Admin — Team', sub:'Users in this tenant', name:'Name', email:'Email', role:'Role',
+    status:'Status', active:'Active', inactive:'Inactive', noData:'No users yet.',
+    lastLogin:'Last login', save:'Save'
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub} · ${APP.tenant.name||''}</div>
+  </div></div>
+  ${_adminTabs('team')}
+  <div class="card"><div id="admin-team-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const wrap = document.getElementById('admin-team-wrap')
+  const {data, error} = await sb.from('user_profiles')
+    .select('id,full_name,role,is_active,last_login,created_at')
+    .eq('tenant_id', APP.tenant.id)
+    .is('deleted_at', null)
+    .order('full_name')
+
+  if(error) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`
+    return
+  }
+  if(!data || !data.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
+    return
+  }
+
+  const roles = ['owner','admin','manager','staff','accountant','cashier']
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.name}</th><th>${t.role}</th><th>${t.status}</th><th>${t.lastLogin}</th><th></th>
+  </tr></thead><tbody>
+  ${data.map(u => {
+    const isSelf = u.id === APP.user.id
+    return `<tr>
+      <td><strong>${_aiEscapeHtml(u.full_name||'-')}</strong>
+        <div style="font-size:11px;color:var(--text-3)">${u.id===APP.user.id?(isBm?'(anda)':'(you)'):''}</div>
+      </td>
+      <td>
+        <select class="form-select" style="width:auto;min-width:120px" id="adm-role-${u.id}" ${isSelf?'disabled':''}>
+          ${roles.map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <select class="form-select" style="width:auto" id="adm-active-${u.id}" ${isSelf?'disabled':''}>
+          <option value="1" ${u.is_active!==false?'selected':''}>${t.active}</option>
+          <option value="0" ${u.is_active===false?'selected':''}>${t.inactive}</option>
+        </select>
+      </td>
+      <td style="font-size:12px;color:var(--text-3)">${u.last_login ? formatDate(String(u.last_login).slice(0,10)) : '—'}</td>
+      <td>${isSelf ? '—' : `<button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.id}')"><i class="ti ti-check"></i> ${t.save}</button>`}</td>
+    </tr>`
+  }).join('')}
+  </tbody></table>
+  <p style="font-size:12px;color:var(--text-3);padding:12px 4px 4px">${isBm
+    ? 'Nota: jemputan user baru masih melalui daftar + onboarding. Di sini anda urus peranan & status ahli sedia ada.'
+    : 'Note: inviting new users is still via register + onboarding. Here you manage roles & status of existing members.'}</p>`
+}
+
+async function _adminSaveUser(userId) {
+  const isBm = APP.language==='bm'
+  const role = document.getElementById('adm-role-'+userId)?.value
+  const active = document.getElementById('adm-active-'+userId)?.value === '1'
+  const {error} = await sb.from('user_profiles').update({
+    role, is_active: active, updated_at: new Date().toISOString()
+  }).eq('id', userId).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('update','user_profiles', userId)
+  showToast(isBm?'Disimpan':'Saved', 'success')
+}
+
+async function renderAdminClients() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Admin — Semua Client', sub:'Platform overview (memerlukan RLS policy platform)',
+    name:'Syarikat', code:'Kod', plan:'Pelan', status:'Status', onboard:'Onboarding',
+    created:'Dicipta', noData:'Tiada tenant / akses ditolak RLS.', users:'Users', open:'Buka'
+  } : {
+    title:'Admin — All Clients', sub:'Platform overview (requires platform RLS policy)',
+    name:'Company', code:'Code', plan:'Plan', status:'Status', onboard:'Onboarding',
+    created:'Created', noData:'No tenants / RLS blocked access.', users:'Users', open:'Open'
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('clients')}
+  <div class="card"><div id="admin-clients-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const wrap = document.getElementById('admin-clients-wrap')
+  const {data, error} = await sb.from('tenants')
+    .select('id,code,name,plan,status,onboarding_completed,created_at')
+    .order('created_at', {ascending:false})
+
+  if(error) {
+    wrap.innerHTML = `<div style="padding:24px">
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Supabase RLS mungkin menyekat baca semua tenants. Tambah policy untuk platform admin, atau set <code>localStorage.nexerp_platform_admin=1</code> selepas policy siap.'
+        : 'Supabase RLS may block reading all tenants. Add a platform-admin policy, or set <code>localStorage.nexerp_platform_admin=1</code> after the policy is ready.'}</p>
+      <pre style="background:var(--bg);padding:12px;border-radius:8px;font-size:11px;overflow:auto;margin-top:12px">-- Example policy (run in Supabase SQL)
+CREATE POLICY "platform read tenants" ON tenants
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM user_profiles up
+    WHERE up.id = auth.uid()
+    AND (up.role = 'platform_admin' OR up.full_name ILIKE '%platform%')
+  )
+);</pre>
+    </div>`
+    return
+  }
+  if(!data || !data.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
+    return
+  }
+
+  // Enrich with user counts (best-effort)
+  const ids = data.map(d=>d.id)
+  let countMap = {}
+  try {
+    const {data: profiles} = await sb.from('user_profiles').select('tenant_id').in('tenant_id', ids).is('deleted_at',null)
+    ;(profiles||[]).forEach(p => { countMap[p.tenant_id] = (countMap[p.tenant_id]||0)+1 })
+  } catch(e) {}
+
+  wrap.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:12px 8px 20px">
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${isBm?'Jumlah tenant':'Total tenants'}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.length}</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${isBm?'Onboarding siap':'Onboarding done'}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.filter(d=>d.onboarding_completed).length}</div>
+    </div>
+  </div>
+  <table><thead><tr>
+    <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.users}</th><th>${t.created}</th>
+  </tr></thead><tbody>
+  ${data.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
+    <td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
+    <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
+    <td>${_aiEscapeHtml(d.plan||'—')}</td>
+    <td>${_aiEscapeHtml(d.status||'—')}</td>
+    <td style="color:${d.onboarding_completed?'var(--success)':'var(--warning)'}">${d.onboarding_completed?(isBm?'Siap':'Done'):(isBm?'Belum':'Pending')}</td>
+    <td>${countMap[d.id]||'—'}</td>
+    <td style="font-size:12px">${d.created_at?formatDate(String(d.created_at).slice(0,10)):'—'}</td>
+  </tr>`).join('')}
+  </tbody></table>`
+}
+
+async function renderAdminTenantDetail(tenantId) {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>`
+
+  const [{data: tenant}, {data: users}] = await Promise.all([
+    sb.from('tenants').select('*').eq('id', tenantId).single(),
+    sb.from('user_profiles').select('id,full_name,role,is_active,last_login').eq('tenant_id', tenantId).is('deleted_at',null).order('full_name')
+  ])
+
+  if(!tenant) {
+    document.getElementById('main').innerHTML = `<div class="empty-state"><p>Tenant not found / no access</p>
+      <button class="btn btn-outline btn-sm" onclick="openPage('admin',{view:'clients'})">← Back</button></div>`
+    return
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${_aiEscapeHtml(tenant.name||'Tenant')}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('admin',{view:'clients'})">← ${isBm?'Semua Client':'All Clients'}</div>
+  </div></div>
+  <div class="card" style="padding:20px;max-width:900px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
+      <div><div style="font-size:11px;color:var(--text-3)">Code</div><strong>${_aiEscapeHtml(tenant.code||'-')}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Plan</div><strong>${_aiEscapeHtml(tenant.plan||'-')}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Status</div><strong>${_aiEscapeHtml(tenant.status||'-')}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Onboarding</div><strong style="color:${tenant.onboarding_completed?'var(--success)':'var(--warning)'}">${tenant.onboarding_completed?'Done':'Pending'}</strong></div>
+    </div>
+  </div>
+  <div class="card" style="max-width:900px">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600">${isBm?'Pengguna':'Users'} (${(users||[]).length})</div>
+    ${!(users||[]).length ? `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada user':'No users'}</p></div>` :
+    `<table><thead><tr><th>${isBm?'Nama':'Name'}</th><th>Role</th><th>Status</th><th>${isBm?'Log masuk':'Last login'}</th></tr></thead>
+    <tbody>${users.map(u=>`<tr>
+      <td>${_aiEscapeHtml(u.full_name||'-')}</td>
+      <td>${_aiEscapeHtml(u.role||'-')}</td>
+      <td>${u.is_active===false?(isBm?'Tidak aktif':'Inactive'):(isBm?'Aktif':'Active')}</td>
+      <td style="font-size:12px;color:var(--text-3)">${u.last_login?formatDate(String(u.last_login).slice(0,10)):'—'}</td>
+    </tr>`).join('')}</tbody></table>`}
+  </div>`
+}
 
 async function renderSettings() {
   const t = LANG[APP.language].settings
