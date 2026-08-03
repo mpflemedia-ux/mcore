@@ -3643,6 +3643,55 @@ function _docCopyDraft() {
 // schema, so the scan works off what's actually tracked (amount, timing, payment
 // method, entry type) rather than the discount/void examples mentioned in the
 // original spec — flagged to the user as a scope adjustment.
+
+async function _exportTenantBackup() {
+  const isBm = APP.language==='bm'
+  const btn = document.getElementById('backup-export-btn')
+  const st = document.getElementById('backup-export-status')
+  if(btn) btn.disabled = true
+  if(st) st.textContent = isBm ? 'Mengumpul data…' : 'Collecting data…'
+  try {
+    const tid = APP.tenant.id
+    const tables = [
+      'customers','products','invoices','invoice_items','quotations','quotation_items',
+      'suppliers','purchase_orders','purchase_order_items','goods_received_notes',
+      'supplier_bills','employees','attendance','leave_requests','payroll_records',
+      'chart_of_accounts','journal_entries','payments','pos_transactions'
+    ]
+    const out = {
+      exported_at: new Date().toISOString(),
+      tenant: { id: tid, name: APP.tenant.name, code: APP.tenant.code },
+      version: 1,
+      data: {}
+    }
+    for(const table of tables) {
+      try {
+        const {data, error} = await sb.from(table).select('*').eq('tenant_id', tid).limit(5000)
+        if(error) { out.data[table] = { error: error.message }; continue }
+        out.data[table] = data || []
+      } catch(e) {
+        out.data[table] = { error: String(e.message||e) }
+      }
+    }
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'})
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const d = new Date()
+    const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
+    a.href = url
+    a.download = `nexerp-backup-${(APP.tenant.code||'tenant')}-${stamp}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    if(st) st.textContent = isBm ? 'Backup dimuat turun.' : 'Backup downloaded.'
+    showToast(isBm?'Backup siap':'Backup ready', 'success')
+  } catch(err) {
+    console.error(err)
+    if(st) st.textContent = 'Error: ' + (err.message||'')
+    showToast('Error: '+(err.message||''), 'error')
+  }
+  if(btn) btn.disabled = false
+}
+
 async function _fraudScan() {
   const isBm = APP.language==='bm'
   const t = isBm
