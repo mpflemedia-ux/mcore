@@ -762,7 +762,10 @@ const LANG = {
       totalSales:'Total Sales',outstanding:'Outstanding Invoices',totalCust:'Total Customers',lowStock:'Low Stock',
       needsAttn:'Needs attention',thisMonth:'This month',active:'Active',invoices:'invoices',
       monthlySales:'Monthly Sales',recentInv:'Recent Invoices',viewAll:'View All',noInv:'No invoices yet',
-      chartNote:'Will load with Chart.js',export:'Export'
+      chartNote:'Will load with Chart.js',export:'Export',
+      people:'People',peopleSub:'Team members in this company',viewHR:'View HR',
+      recentActivity:'Recent Activity',noPeople:'No team members yet',noActivity:'No recent activity',
+      active:'Active'
     },
     settings:{
       title:'Settings',account:'My Account',name:'Name',email:'Email',role:'Role',company:'Company'
@@ -777,7 +780,10 @@ const LANG = {
       totalSales:'Jumlah Jualan',outstanding:'Invois Tertunggak',totalCust:'Jumlah Pelanggan',lowStock:'Stok Rendah',
       needsAttn:'Perlu perhatian',thisMonth:'Bulan ini',active:'Aktif',invoices:'invois',
       monthlySales:'Jualan Bulanan',recentInv:'Invois Terkini',viewAll:'Lihat Semua',noInv:'Tiada invois lagi',
-      chartNote:'Akan dimuatkan dengan Chart.js',export:'Eksport'
+      chartNote:'Akan dimuatkan dengan Chart.js',export:'Eksport',
+      people:'Pasukan',peopleSub:'Ahli pasukan dalam syarikat ini',viewHR:'Lihat SDM',
+      recentActivity:'Aktiviti Terkini',noPeople:'Tiada ahli pasukan lagi',noActivity:'Tiada aktiviti terkini',
+      active:'Aktif'
     },
     settings:{
       title:'Tetapan',account:'Akaun Saya',name:'Nama',email:'E-mel',role:'Peranan',company:'Syarikat'
@@ -1698,6 +1704,28 @@ function renderDashboard() {
         <div id="db-digest-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik butang untuk gabungkan invois overdue, stok rendah, dan deadline pematuhan jadi satu senarai tindakan hari ni.':"Click the button to combine overdue invoices, low stock, and compliance deadlines into one list of today's action items."}</div>
       </div>
     </div>
+
+    <!-- People + Recent Activity -->
+    <div class="db-row" style="grid-template-columns:1fr 1fr;margin-top:14px;gap:14px">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div>
+            <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
+            <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan dalam syarikat ini':'Team members in this company')}</div>
+          </div>
+          <button class="db-btn" onclick="if(canAccess('hr')) openPage('hr')"><i class="ti ti-arrow-right"></i> ${t.viewHR||(isBm?'Lihat SDM':'View HR')}</button>
+        </div>
+        <div id="db-people-list" style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
+        </div>
+      </div>
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-activity"></i> ${t.recentActivity||(isBm?'Aktiviti Terkini':'Recent Activity')}</div>
+        <div id="db-activity-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">
+          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
+        </div>
+      </div>
+    </div>
   </div>`
 
   _dbSyncGlobalTheme()
@@ -1824,9 +1852,148 @@ async function loadDashboardData() {
   _dbRenderBreakdown(thisMonth)
   _dbRenderCustomerDonut(thisMonth)
   _dbRenderMonthlyBar(inv)
+  _dbLoadPeople()
+  _dbLoadRecentActivity()
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
+
+// ─── People + Recent Activity helpers ───────────────────────────────────────
+function _dbInitials(name) {
+  if(!name) return '?'
+  const parts = String(name).trim().split(/\s+/)
+  if(parts.length === 1) return parts[0].slice(0,2).toUpperCase()
+  return (parts[0][0] + parts[parts.length-1][0]).toUpperCase()
+}
+
+function _dbTimeAgo(iso) {
+  if(!iso) return ''
+  const isBm = APP.language === 'bm'
+  const d = new Date(iso)
+  const sec = Math.floor((Date.now() - d.getTime()) / 1000)
+  if(sec < 60) return isBm ? 'baru sahaja' : 'just now'
+  if(sec < 3600) {
+    const m = Math.floor(sec/60)
+    return isBm ? (m + ' min lalu') : (m + 'm ago')
+  }
+  if(sec < 86400) {
+    const h = Math.floor(sec/3600)
+    return isBm ? (h + ' jam lalu') : (h + 'h ago')
+  }
+  const days = Math.floor(sec/86400)
+  if(days < 7) return isBm ? (days + ' hari lalu') : (days + 'd ago')
+  return d.toLocaleDateString(isBm ? 'ms-MY' : 'en-MY', {day:'numeric', month:'short'})
+}
+
+function _dbActionLabel(action) {
+  const isBm = APP.language === 'bm'
+  const map = {
+    create: isBm ? 'cipta' : 'created',
+    created: isBm ? 'cipta' : 'created',
+    update: isBm ? 'kemaskini' : 'updated',
+    updated: isBm ? 'kemaskini' : 'updated',
+    delete: isBm ? 'padam' : 'deleted',
+    deleted: isBm ? 'padam' : 'deleted',
+    soft_delete: isBm ? 'padam' : 'deleted',
+    login: isBm ? 'log masuk' : 'logged in',
+    logout: isBm ? 'log keluar' : 'logged out',
+  }
+  return map[String(action||'').toLowerCase()] || action || ''
+}
+
+function _dbTableLabel(table) {
+  const isBm = APP.language === 'bm'
+  const map = {
+    invoices: isBm ? 'Invois' : 'Invoice',
+    invoice_items: isBm ? 'Item Invois' : 'Invoice Item',
+    quotations: isBm ? 'Sebut Harga' : 'Quotation',
+    customers: isBm ? 'Pelanggan' : 'Customer',
+    products: isBm ? 'Produk' : 'Product',
+    payments: isBm ? 'Bayaran' : 'Payment',
+    expense_claims: isBm ? 'Tuntutan Belanja' : 'Expense Claim',
+    journal_entries: isBm ? 'Entri Jurnal' : 'Journal Entry',
+    stock_movements: isBm ? 'Pergerakan Stok' : 'Stock Movement',
+    user_profiles: isBm ? 'Profil Pengguna' : 'User Profile',
+    audit_logs: isBm ? 'Log Audit' : 'Audit Log',
+    tenants: isBm ? 'Tenant' : 'Tenant',
+  }
+  return map[String(table||'').toLowerCase()] || table || ''
+}
+
+async function _dbLoadPeople() {
+  const el = document.getElementById('db-people-list')
+  if(!el || !APP.tenant.id) return
+  const isBm = APP.language === 'bm'
+  try {
+    const {data, error} = await sb.from('user_profiles')
+      .select('id, full_name, role, last_active_at, email')
+      .eq('tenant_id', APP.tenant.id)
+      .is('deleted_at', null)
+      .order('full_name', {ascending: true})
+      .limit(12)
+    if(error) throw error
+    const list = data || []
+    if(!list.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada ahli pasukan lagi':'No team members yet'}</div>`
+      return
+    }
+    el.innerHTML = list.map(u => {
+      const name = u.full_name || u.email || 'User'
+      const role = u.role || 'member'
+      const initials = _dbInitials(name)
+      const ago = _dbTimeAgo(u.last_active_at)
+      return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
+        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
+          <div style="font-size:11px;color:var(--db-text3);text-transform:capitalize">${role}${ago ? ' · ' + ago : ''}</div>
+        </div>
+        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(22,163,74,.12);color:#16A34A;font-weight:500">${isBm?'Aktif':'Active'}</span>
+      </div>`
+    }).join('')
+  } catch(err) {
+    console.error('_dbLoadPeople', err)
+    el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada data pasukan':'No people data'}</div>`
+  }
+}
+
+async function _dbLoadRecentActivity() {
+  const el = document.getElementById('db-activity-list')
+  if(!el || !APP.tenant.id) return
+  const isBm = APP.language === 'bm'
+  try {
+    const {data, error} = await sb.from('audit_logs')
+      .select('id, action, table_name, record_id, created_at, user_id, user_name')
+      .eq('tenant_id', APP.tenant.id)
+      .order('created_at', {ascending: false})
+      .limit(10)
+    if(error) throw error
+    const list = data || []
+    if(!list.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada aktiviti terkini':'No recent activity'}</div>`
+      return
+    }
+    el.innerHTML = list.map(a => {
+      const who = a.user_name || 'System'
+      const act = _dbActionLabel(a.action)
+      const tbl = _dbTableLabel(a.table_name)
+      const ago = _dbTimeAgo(a.created_at)
+      return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.05))">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);margin-top:6px;flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--db-text);line-height:1.4">
+            <strong>${who}</strong> <span style="color:var(--db-text3)">${act}</span> <strong>${tbl}</strong>
+          </div>
+          <div style="font-size:11px;color:var(--db-text3);margin-top:2px">${ago}</div>
+        </div>
+      </div>`
+    }).join('')
+  } catch(err) {
+    console.error('_dbLoadRecentActivity', err)
+    el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada aktiviti terkini':'No recent activity'}</div>`
+  }
+}
+
 
 async function _dbLoadAiInsight() {
   const isBm = APP.language==='bm'
