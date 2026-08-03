@@ -1924,25 +1924,37 @@ async function _dbLoadPeople() {
   const el = document.getElementById('db-people-list')
   if(!el || !APP.tenant.id) return
   const isBm = APP.language === 'bm'
-  const today = new Date().toISOString().slice(0,10)
+  // Use local date in GMT+8 (Malaysia)
+  const now = new Date()
+  const today = new Date(now.getTime() + (8*60*60*1000)).toISOString().slice(0,10)
   try {
-    // Get today's Present attendance + employee name
-    const {data, error} = await sb.from('attendance')
-      .select('id, status, clock_in, clock_out, employee_id, employees(id, name, position)')
+    // Step 1: get today's Present attendance
+    const {data: att, error: attErr} = await sb.from('attendance')
+      .select('id, status, clock_in, clock_out, employee_id, date')
       .eq('tenant_id', APP.tenant.id)
       .eq('date', today)
-      .eq('status', 'Present')
+      .ilike('status', 'present')
       .is('deleted_at', null)
       .order('clock_in', {ascending: true})
       .limit(20)
-    if(error) throw error
-    const list = data || []
+    if(attErr) throw attErr
+    const list = att || []
     if(!list.length) {
       el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada staff hadir hari ini':'No staff present today'}</div>`
       return
     }
+    // Step 2: get employee names
+    const empIds = [...new Set(list.map(a => a.employee_id).filter(Boolean))]
+    let empMap = {}
+    if(empIds.length) {
+      const {data: emps} = await sb.from('employees')
+        .select('id, name, position')
+        .in('id', empIds)
+        .is('deleted_at', null)
+      ;(emps||[]).forEach(e => { empMap[e.id] = e })
+    }
     el.innerHTML = list.map(a => {
-      const emp = a.employees || {}
+      const emp = empMap[a.employee_id] || {}
       const name = emp.name || 'Staff'
       const position = emp.position || ''
       const initials = _dbInitials(name)
