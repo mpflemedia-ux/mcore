@@ -753,6 +753,10 @@ tbody tr:hover{background:var(--bg)}
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">Invite code <span style="font-weight:400;color:var(--text-3)">(optional — join existing team)</span></label>
+          <input type="text" id="reg-invite" class="form-input" placeholder="Paste invite code" value="">
+        </div>
+        <div class="form-group">
           <label class="form-label">Email</label>
           <div class="input-group">
             <i class="ti ti-mail input-icon"></i>
@@ -1577,7 +1581,9 @@ async function doRegister() {
   const sucEl=document.getElementById('register-success')
   const btn=document.getElementById('btn-register')
   errEl.classList.remove('show');sucEl.classList.remove('show')
-  if(!name||!company||!email||!pass){errEl.textContent='Please fill in all fields.';errEl.classList.add('show');return}
+  const invEarly = (document.getElementById('reg-invite')?.value || localStorage.getItem('nexerp_invite_token') || '').trim()
+  if(!name||!email||!pass){errEl.textContent='Please fill in all fields.';errEl.classList.add('show');return}
+  if(!invEarly && !company){errEl.textContent='Please fill in company name (or use an invite code).';errEl.classList.add('show');return}
   if(pass.length<8){errEl.textContent='Password must be at least 8 characters.';errEl.classList.add('show');return}
   if(pass!==confirm){errEl.textContent='Passwords do not match.';errEl.classList.add('show');return}
   btn.innerHTML='<div class="spinner"></div> Creating account...'
@@ -1590,31 +1596,51 @@ async function doRegister() {
     if(error) throw error
     if(!data.user) throw new Error('User creation failed.')
 
-    // Step 2: Generate tenant code from company name
-    const tenantCode = company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) + Math.floor(Math.random()*100)
+    const inviteToken = (document.getElementById('reg-invite')?.value || localStorage.getItem('nexerp_invite_token') || '').trim()
 
-    // Step 3: Call register_tenant RPC
-    const {data:rpcData, error:rpcError}=await sb.rpc('register_tenant',{
-      p_user_id:     data.user.id,
-      p_tenant_name: company,
-      p_tenant_code: tenantCode,
-      p_full_name:   name,
-      p_entity_type: 'sdn_bhd',
-      p_industry:    'general',
-      p_plan_code:   'starter'
-    })
-    if(rpcError) {
-      console.error('register_tenant error:', rpcError)
-    } else if(rpcData) {
-      APP.tenant.id   = rpcData.tenant_id || null
-      APP.tenant.name = company
-      APP.user.id     = data.user.id
-      APP.user.name   = name
-      console.log('Tenant created:', rpcData)
+    if(inviteToken) {
+      // Join existing tenant instead of creating a new company
+      localStorage.setItem('nexerp_invite_token', inviteToken)
+      const {data: joinData, error: joinErr} = await sb.rpc('join_tenant_by_invite', {
+        p_token: inviteToken,
+        p_full_name: name
+      })
+      if(joinErr) {
+        console.error('join_tenant_by_invite', joinErr)
+        errEl.textContent = 'Invite failed: ' + joinErr.message + ' (If migration not applied, ask admin to run team_invites SQL.)'
+        errEl.classList.add('show')
+        btn.innerHTML='Create Account'; btn.disabled=false
+        return
+      }
+      localStorage.removeItem('nexerp_invite_token')
+      sucEl.textContent='✓ Joined team successfully! You can now sign in.'
+      sucEl.classList.add('show')
+    } else {
+      // Step 2: Generate tenant code from company name
+      const tenantCode = company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) + Math.floor(Math.random()*100)
+
+      // Step 3: Call register_tenant RPC
+      const {data:rpcData, error:rpcError}=await sb.rpc('register_tenant',{
+        p_user_id:     data.user.id,
+        p_tenant_name: company,
+        p_tenant_code: tenantCode,
+        p_full_name:   name,
+        p_entity_type: 'sdn_bhd',
+        p_industry:    'general',
+        p_plan_code:   'starter'
+      })
+      if(rpcError) {
+        console.error('register_tenant error:', rpcError)
+      } else if(rpcData) {
+        APP.tenant.id   = rpcData.tenant_id || null
+        APP.tenant.name = company
+        APP.user.id     = data.user.id
+        APP.user.name   = name
+        console.log('Tenant created:', rpcData)
+      }
+      sucEl.textContent='✓ Account created! You can now sign in.'
+      sucEl.classList.add('show')
     }
-
-    sucEl.textContent='✓ Account created! You can now sign in.'
-    sucEl.classList.add('show')
   } catch(err) {
     errEl.textContent=err.message||'Registration failed. Please try again.'
     errEl.classList.add('show')
@@ -1667,6 +1693,49 @@ async function doLogout() {
 let _sessionLoadPromise = null
 let _sessionLoadUserId = null
 
+function _captureInviteFromUrl() {
+  try {
+    const params = new URLSearchParams(location.search)
+    const inv = params.get('invite')
+    if(inv) {
+      localStorage.setItem('nexerp_invite_token', inv.trim())
+      // Clean URL without reload
+      params.delete('invite')
+      const qs = params.toString()
+      const clean = location.pathname + (qs ? '?' + qs : '') + location.hash
+      history.replaceState({}, '', clean)
+    }
+  } catch(e) {}
+}
+_captureInviteFromUrl()
+setTimeout(() => {
+  const el = document.getElementById('reg-invite')
+  const tok = localStorage.getItem('nexerp_invite_token')
+  if(el && tok) el.value = tok
+}, 0)
+
+async function _tryJoinInvite(user, token, fullName) {
+  try {
+    const {data, error} = await sb.rpc('join_tenant_by_invite', {
+      p_token: token,
+      p_full_name: fullName || (user.email||'').split('@')[0]
+    })
+    if(error) {
+      console.error('join_tenant_by_invite', error)
+      showToast((APP.language==='bm'?'Jemputan gagal: ':'Invite failed: ') + error.message, 'error')
+      return false
+    }
+    localStorage.removeItem('nexerp_invite_token')
+    showToast(APP.language==='bm'?'Berjaya sertai team!':'Successfully joined the team!', 'success')
+    _resetSessionLoadGuard()
+    await loadUserSession(user)
+    return true
+  } catch(e) {
+    console.error(e)
+    return false
+  }
+}
+
 async function loadUserSession(user) {
   if(!user){showAuthPage();return}
   if(_sessionLoadPromise && _sessionLoadUserId === user.id) return _sessionLoadPromise
@@ -1675,9 +1744,14 @@ async function loadUserSession(user) {
     APP.user.id=user.id
     APP.user.email=user.email
     const {data:profile}=await sb.from('user_profiles').select('*,tenants(*)').eq('id',user.id).single()
-    // New user — no profile yet, redirect to onboarding
+    // New user — no profile yet: try invite join, else onboarding (new tenant)
     if(!profile){
-      APP.user.name=user.email.split('@')[0]
+      APP.user.name = user.user_metadata?.full_name || user.email.split('@')[0]
+      const inviteToken = localStorage.getItem('nexerp_invite_token')
+      if(inviteToken) {
+        const joined = await _tryJoinInvite(user, inviteToken, APP.user.name)
+        if(joined) return
+      }
       showOnboarding()
       return
     }
@@ -2668,9 +2742,13 @@ async function renderAdminTeam() {
   <div class="page-header"><div>
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub} · ${APP.tenant.name||''}</div>
-  </div></div>
+  </div>
+  <button class="btn btn-primary btn-sm" onclick="_adminShowInviteModal()"><i class="ti ti-user-plus"></i> ${isBm?'Jemput ahli':'Invite member'}</button>
+  </div>
   ${_adminTabs('team')}
+  <div class="card" style="margin-bottom:16px;padding:16px" id="admin-invite-panel" style="display:none"></div>
   <div class="card"><div id="admin-team-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  _adminLoadInvites()
 
   const wrap = document.getElementById('admin-team-wrap')
   const {data, error} = await sb.from('user_profiles')
@@ -2719,6 +2797,87 @@ async function renderAdminTeam() {
   <p style="font-size:12px;color:var(--text-3);padding:12px 4px 4px">${isBm
     ? 'Nota: anda tidak boleh ubah role/status sendiri (elak terkunci). Jemput user baru melalui daftar + onboarding, kemudian urus mereka di sini.'
     : 'Note: you cannot change your own role/status (prevents lockout). Invite new users via register + onboarding, then manage them here.'}</p>`
+}
+
+
+async function _adminLoadInvites() {
+  const panel = document.getElementById('admin-invite-panel')
+  if(!panel) return
+  const isBm = APP.language==='bm'
+  const {data, error} = await sb.from('team_invites')
+    .select('id,token,role,email,expires_at,used_at,created_at')
+    .eq('tenant_id', APP.tenant.id)
+    .is('used_at', null)
+    .order('created_at', {ascending:false})
+  if(error) {
+    panel.innerHTML = `<div style="font-size:13px;color:var(--text-3)">${isBm
+      ? 'Table <code>team_invites</code> belum wujud. Jalankan migration SQL dalam Supabase (supabase/migrations/20260804000000_team_invites.sql).'
+      : 'Table <code>team_invites</code> missing. Run the SQL migration in Supabase (supabase/migrations/20260804000000_team_invites.sql).'}
+      <div style="margin-top:8px;color:var(--danger);font-size:12px">${_aiEscapeHtml(error.message)}</div></div>`
+    panel.style.display = 'block'
+    return
+  }
+  if(!data || !data.length) {
+    panel.innerHTML = `<div style="font-size:13px;color:var(--text-3)">${isBm?'Tiada jemputan aktif. Klik "Jemput ahli" untuk jana link.':'No active invites. Click "Invite member" to generate a link.'}</div>`
+    panel.style.display = 'block'
+    return
+  }
+  const base = location.origin + location.pathname.replace(/\/$/,'')
+  panel.innerHTML = `<div style="font-weight:600;margin-bottom:10px;font-size:13px">${isBm?'Jemputan aktif':'Active invites'}</div>
+    ${data.map(inv => {
+      const link = `${base}?invite=${encodeURIComponent(inv.token)}`
+      return `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;text-transform:capitalize;font-weight:600">${_aiEscapeHtml(inv.role)}</span>
+        <code style="font-size:11px;background:var(--bg);padding:4px 8px;border-radius:6px;word-break:break-all">${_aiEscapeHtml(inv.token)}</code>
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('${link.replace(/'/g,"\\'")}');showToast('${isBm?'Link disalin':'Link copied'}','success')"><i class="ti ti-copy"></i> Copy link</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_adminRevokeInvite('${inv.id}')"><i class="ti ti-x"></i></button>
+        <span style="font-size:11px;color:var(--text-3)">${inv.expires_at ? ('exp '+formatDate(String(inv.expires_at).slice(0,10))) : ''}</span>
+      </div>`
+    }).join('')}`
+  panel.style.display = 'block'
+}
+
+function _adminShowInviteModal() {
+  const isBm = APP.language==='bm'
+  const role = prompt(isBm ? 'Peranan untuk ahli baru (staff / cashier / accountant / manager / admin):' : 'Role for new member (staff / cashier / accountant / manager / admin):', 'staff')
+  if(role === null) return
+  const r = (role || 'staff').trim().toLowerCase()
+  if(!['staff','cashier','accountant','manager','admin'].includes(r)) {
+    showToast(isBm?'Peranan tidak sah':'Invalid role', 'error')
+    return
+  }
+  _adminCreateInvite(r)
+}
+
+async function _adminCreateInvite(role) {
+  const isBm = APP.language==='bm'
+  const token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'').slice(0,16)) || (Date.now().toString(36)+Math.random().toString(36).slice(2,10))
+  const expires = new Date(Date.now() + 7*86400000).toISOString()
+  const {error} = await sb.from('team_invites').insert({
+    tenant_id: APP.tenant.id,
+    token,
+    role,
+    created_by: APP.user.id,
+    expires_at: expires
+  })
+  if(error) {
+    showToast('Error: '+error.message + (isBm?' — pastikan migration SQL sudah dijalankan di Supabase.':' — ensure SQL migration is applied in Supabase.'), 'error')
+    return
+  }
+  const base = location.origin + location.pathname.replace(/\/$/,'')
+  const link = `${base}?invite=${encodeURIComponent(token)}`
+  try { await navigator.clipboard.writeText(link) } catch(e) {}
+  showToast(isBm?'Jemputan dicipta — link disalin!':'Invite created — link copied!', 'success')
+  alert((isBm?'Hantar link ni kepada ahli baru:\\n\\n':'Send this link to the new member:\\n\\n') + link + (isBm?'\\n\\nMereka daftar akaun baru, terus join team kau.':'\\n\\nThey register a new account and join your team.'))
+  _adminLoadInvites()
+}
+
+async function _adminRevokeInvite(id) {
+  if(!confirm(APP.language==='bm'?'Batalkan jemputan?':'Revoke invite?')) return
+  const {error} = await sb.from('team_invites').delete().eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message,'error'); return }
+  showToast(APP.language==='bm'?'Dibatalkan':'Revoked','success')
+  _adminLoadInvites()
 }
 
 async function _adminSaveUser(userId) {
