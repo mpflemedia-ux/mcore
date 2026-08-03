@@ -509,6 +509,49 @@ tbody tr:hover{background:var(--bg)}
   color:#94A3B8 !important;
 }
 /* Signature block — compact */
+
+/* ── POS Counter ── */
+.pos-wrap{display:grid;grid-template-columns:1fr minmax(320px,380px);gap:16px;align-items:start}
+@media(max-width:900px){.pos-wrap{grid-template-columns:1fr}}
+.pos-products{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:420px}
+.pos-cart{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:0;position:sticky;top:12px;display:flex;flex-direction:column;max-height:calc(100vh - 120px);overflow:hidden}
+.pos-cart-head{padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+.pos-cart-body{flex:1;overflow-y:auto;padding:8px 12px;min-height:120px}
+.pos-cart-foot{padding:14px 16px;border-top:1px solid var(--border);background:var(--bg)}
+.pos-prod{border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer;transition:border-color .15s,transform .1s,box-shadow .15s;display:flex;flex-direction:column;gap:6px;user-select:none}
+.pos-prod:hover{border-color:var(--primary);box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 30%,transparent)}
+.pos-prod:active{transform:scale(.98)}
+.pos-prod-avatar{width:36px;height:36px;border-radius:10px;background:color-mix(in srgb,var(--primary) 16%,transparent);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;font-family:'Space Grotesk',sans-serif}
+.pos-prod-name{font-weight:600;font-size:13px;line-height:1.3;color:var(--text)}
+.pos-prod-code{font-size:11px;color:var(--text-3)}
+.pos-prod-price{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:var(--primary);margin-top:2px}
+.pos-stock{font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;width:fit-content}
+.pos-stock.ok{background:rgba(22,163,74,.12);color:#16A34A}
+.pos-stock.low{background:rgba(220,38,38,.12);color:#DC2626}
+.pos-line{display:flex;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border)}
+.pos-line-info{flex:1;min-width:0}
+.pos-line-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pos-line-meta{font-size:11px;color:var(--text-3);margin-top:2px}
+.pos-qty{display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.pos-qty button{width:32px;height:32px;border:none;background:var(--bg);color:var(--text);font-size:16px;cursor:pointer;font-weight:600}
+.pos-qty button:hover{background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--primary)}
+.pos-qty span{min-width:28px;text-align:center;font-weight:600;font-size:13px}
+.pos-line-total{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;min-width:72px;text-align:right}
+.pos-grand{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.pos-grand-label{font-size:13px;color:var(--text-3);font-weight:600}
+.pos-grand-val{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--text)}
+.pos-tender-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.pos-change{font-size:12px;color:var(--text-3);margin-bottom:10px;min-height:18px}
+.pos-change.has{color:#16A34A;font-weight:600}
+.pos-pay-methods{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.pos-pay-btn{border:1px solid var(--border);background:var(--bg-card);border-radius:10px;padding:10px 6px;cursor:pointer;text-align:center;font-size:12px;font-weight:600;color:var(--text-2);transition:all .15s}
+.pos-pay-btn i{display:block;font-size:18px;margin-bottom:4px}
+.pos-pay-btn.active{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}
+.pos-checkout{width:100%;padding:14px!important;font-size:15px!important;font-weight:700}
+.pos-receipt-box{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;font-size:13px}
+.pos-receipt-box .r-row{display:flex;justify-content:space-between;padding:4px 0}
+.pos-receipt-box .r-total{border-top:1px dashed var(--border);margin-top:8px;padding-top:8px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif}
+
 .pdoc-sig-grid {
   display:flex;
   flex-wrap:wrap;
@@ -1748,7 +1791,7 @@ async function toggleLang() {
 }
 function toggleUserDropdown() { document.getElementById('user-dropdown').classList.toggle('open') }
 
-document.addEventListener('click',e=>{ if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('open')) })
+document.addEventListener('click',e=>{ if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('active')) })
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&document.getElementById('form-login').style.display!=='none')doLogin() })
 
 // PAGES — DASHBOARD (dark analytics theme, inspired by trading dashboard reference)
@@ -8500,37 +8543,58 @@ async function renderPOS() {
   _posProducts = data || []
   _posCart = []
 
+  const isBm = APP.language==='bm'
   document.getElementById('main').innerHTML = `
   <div class="page-header">
     <div><div class="page-title">${t.title}</div></div>
     <div id="pos-shift-status" style="font-size:13px"></div>
   </div>
-  <div id="pos-other-shifts" style="margin-bottom:16px"></div>
-  <div style="display:flex;gap:16px;align-items:flex-start">
-    <div class="card" style="flex:1.4;padding:16px">
-      <div style="display:flex;gap:8px;margin-bottom:12px">
+  <div id="pos-other-shifts" style="margin-bottom:12px"></div>
+  <div class="pos-wrap">
+    <div class="pos-products">
+      <div style="display:flex;gap:8px;margin-bottom:14px">
         <div class="input-group" style="flex:1"><i class="ti ti-search input-icon"></i>
-          <input id="pos-search" type="text" class="form-input" placeholder="${t.search}" oninput="_posFilterProducts(this.value)">
+          <input id="pos-search" type="text" class="form-input" placeholder="${t.search}" oninput="_posFilterProducts(this.value)" autofocus>
         </div>
-        <button class="btn btn-outline" onclick="_posScanBarcode()"><i class="ti ti-barcode"></i> ${t.scan}</button>
+        <button class="btn btn-outline" onclick="_posScanBarcode()" title="${t.scan}"><i class="ti ti-barcode"></i> ${t.scan}</button>
       </div>
-      <div id="pos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:calc(100vh - 260px);overflow-y:auto"></div>
+      <div id="pos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:calc(100vh - 220px);overflow-y:auto;padding-bottom:8px"></div>
     </div>
-    <div class="card" style="flex:1;padding:16px;position:sticky;top:0">
-      <div style="font-weight:600;margin-bottom:12px">${t.cart}</div>
-      <div id="pos-cart-body" style="max-height:calc(100vh - 380px);overflow-y:auto"></div>
-      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
-        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:18px;margin-bottom:12px">
-          <span>${t.total}</span><span id="pos-total">RM 0.00</span>
+    <div class="pos-cart">
+      <div class="pos-cart-head">
+        <span><i class="ti ti-shopping-cart" style="margin-right:6px"></i>${t.cart}</span>
+        <button class="btn btn-outline btn-sm" onclick="_posCart=[];_posRenderCart();_posUpdateChange()">${t.clear}</button>
+      </div>
+      <div class="pos-cart-body" id="pos-cart-body"></div>
+      <div class="pos-cart-foot">
+        <div class="pos-grand"><span class="pos-grand-label">${t.total}</span><span class="pos-grand-val" id="pos-total">RM 0.00</span></div>
+        <div class="pos-pay-methods">
+          <button type="button" class="pos-pay-btn active" data-method="cash" onclick="_posSetMethod('cash')"><i class="ti ti-cash"></i>${isBm?'Tunai':'Cash'}</button>
+          <button type="button" class="pos-pay-btn" data-method="card" onclick="_posSetMethod('card')"><i class="ti ti-credit-card"></i>${isBm?'Kad':'Card'}</button>
+          <button type="button" class="pos-pay-btn" data-method="online_banking" onclick="_posSetMethod('online_banking')"><i class="ti ti-qrcode"></i>QR / Online</button>
         </div>
-        <div class="form-group" style="margin-bottom:10px">
-          <label class="form-label">${t.method}</label>
-          <select id="pos-method" class="form-select">
-            <option value="cash">Cash</option><option value="card">Card</option><option value="online_banking">Online Banking</option>
-          </select>
+        <input type="hidden" id="pos-method" value="cash">
+        <div class="pos-tender-row" id="pos-tender-wrap">
+          <div class="form-group" style="margin:0">
+            <label class="form-label" style="font-size:11px">${isBm?'Bayaran diterima':'Amount tendered'}</label>
+            <input id="pos-tender" type="number" step="0.01" min="0" class="form-input" placeholder="0.00" oninput="_posUpdateChange()">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label" style="font-size:11px">${isBm?'Baki':'Change'}</label>
+            <div id="pos-change" class="pos-change" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:var(--text)">—</div>
+          </div>
         </div>
-        <button class="btn btn-primary" style="width:100%" onclick="_posCheckout()"><i class="ti ti-check"></i> ${t.checkout}</button>
-        <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="_posCart=[];_posRenderCart()">${t.clear}</button>
+        <button class="btn btn-primary pos-checkout" onclick="_posCheckout()"><i class="ti ti-check"></i> ${t.checkout}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pos-receipt-modal">
+    <div class="modal-box" style="max-width:400px">
+      <div class="modal-box-header"><i class="ti ti-circle-check" style="color:var(--success)"></i> ${isBm?'Jualan Berjaya':'Sale Complete'}</div>
+      <div class="modal-box-body" id="pos-receipt-body"></div>
+      <div class="modal-box-footer">
+        <button class="btn btn-primary" style="flex:1" onclick="_posCloseReceipt()"><i class="ti ti-check"></i> ${isBm?'Selesai':'Done'}</button>
       </div>
     </div>
   </div>
@@ -8843,18 +8907,50 @@ async function _posStartShift() {
 
 function _posFilterProducts(val) { _posSearch = val.toLowerCase(); _posRenderGrid() }
 
+function _posInitials(name) {
+  if(!name) return '?'
+  const p = String(name).trim().split(/\s+/)
+  return ((p[0][0]||'') + (p.length>1 ? p[p.length-1][0] : (p[0][1]||''))).toUpperCase()
+}
+function _posSetMethod(m) {
+  const el = document.getElementById('pos-method')
+  if(el) el.value = m
+  document.querySelectorAll('.pos-pay-btn').forEach(b => b.classList.toggle('active', b.dataset.method===m))
+  const wrap = document.getElementById('pos-tender-wrap')
+  if(wrap) wrap.style.display = m==='cash' ? '' : 'none'
+  _posUpdateChange()
+}
+function _posUpdateChange() {
+  const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
+  const method = document.getElementById('pos-method')?.value || 'cash'
+  const changeEl = document.getElementById('pos-change')
+  if(!changeEl) return
+  if(method!=='cash') { changeEl.textContent = '—'; changeEl.className='pos-change'; return }
+  const tender = Number(document.getElementById('pos-tender')?.value || 0)
+  if(!tender) { changeEl.textContent = '—'; changeEl.className='pos-change'; return }
+  const ch = tender - total
+  changeEl.textContent = formatRM(ch)
+  changeEl.className = 'pos-change' + (ch>=0 ? ' has' : '')
+  changeEl.style.color = ch < 0 ? 'var(--danger)' : ''
+}
 function _posRenderGrid() {
   const grid = document.getElementById('pos-grid')
   if(!grid) return
+  const isBm = APP.language==='bm'
   const list = _posProducts.filter(p => !_posSearch || (p.name_en||'').toLowerCase().includes(_posSearch) || (p.name_bm||'').toLowerCase().includes(_posSearch) || (p.code||'').toLowerCase().includes(_posSearch))
-  if(list.length===0) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:30px"><p>No products</p></div>`; return }
-  grid.innerHTML = list.map(p => `
-    <div onclick="_posAddToCart('${p.id}')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${prodName(p)}</div>
-      <div style="color:var(--text-3);font-size:11px;margin-bottom:6px">${p.code||''}</div>
-      <div style="font-weight:700;color:var(--primary)">${formatRM(p.unit_price)}</div>
-      <div style="font-size:11px;color:${Number(p.stock_qty)<=5?'var(--danger)':'var(--text-3)'}">Stock: ${p.stock_qty ?? 0}</div>
-    </div>`).join('')
+  if(list.length===0) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:30px"><p>${isBm?'Tiada produk':'No products'}</p></div>`; return }
+  grid.innerHTML = list.map(p => {
+    const stock = Number(p.stock_qty||0)
+    const low = stock <= 5
+    const name = prodName(p)
+    return `<div class="pos-prod" onclick="_posAddToCart('${p.id}')">
+      <div class="pos-prod-avatar">${_posInitials(name)}</div>
+      <div class="pos-prod-name">${name}</div>
+      <div class="pos-prod-code">${p.code||'—'}</div>
+      <div class="pos-prod-price">${formatRM(p.unit_price)}</div>
+      <div class="pos-stock ${low?'low':'ok'}">${isBm?'Stok':'Stock'} ${stock}</div>
+    </div>`
+  }).join('')
 }
 
 function _posAddToCart(productId) {
@@ -8880,27 +8976,44 @@ function _posScanBarcode() {
 }
 
 function _posRenderCart() {
-  const t = APP.language==='bm' ? { empty:'Troli kosong' } : { empty:'Cart is empty' }
+  const t = APP.language==='bm' ? { empty:'Troli kosong — ketik produk untuk mula' } : { empty:'Cart is empty — tap a product to start' }
   const body = document.getElementById('pos-cart-body')
   const totalEl = document.getElementById('pos-total')
   if(!body) return
-  if(_posCart.length===0) { body.innerHTML = `<div style="text-align:center;color:var(--text-3);padding:20px">${t.empty}</div>`; if(totalEl) totalEl.textContent = formatRM(0); return }
+  if(_posCart.length===0) {
+    body.innerHTML = `<div style="text-align:center;color:var(--text-3);padding:36px 16px"><i class="ti ti-shopping-cart" style="font-size:28px;opacity:.4;display:block;margin-bottom:8px"></i>${t.empty}</div>`
+    if(totalEl) totalEl.textContent = formatRM(0)
+    _posUpdateChange()
+    return
+  }
   body.innerHTML = _posCart.map((c,i) => `
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:500">${c.name}</div>
-        <div style="font-size:12px;color:var(--text-3)">${formatRM(c.unit_price)} × ${c.qty}</div>
+    <div class="pos-line">
+      <div class="pos-line-info">
+        <div class="pos-line-name">${c.name}</div>
+        <div class="pos-line-meta">${formatRM(c.unit_price)} × ${c.qty}</div>
       </div>
-      <button class="btn btn-outline btn-sm" style="padding:2px 6px" onclick="_posQty(${i},-1)">-</button>
-      <span style="min-width:20px;text-align:center">${c.qty}</span>
-      <button class="btn btn-outline btn-sm" style="padding:2px 6px" onclick="_posQty(${i},1)">+</button>
-      <button class="btn btn-outline btn-sm" style="padding:4px 6px;color:var(--danger);border-color:var(--danger)" onclick="_posRemove(${i})"><i class="ti ti-x"></i></button>
+      <div class="pos-qty">
+        <button type="button" onclick="_posQty(${i},-1)">−</button>
+        <span>${c.qty}</span>
+        <button type="button" onclick="_posQty(${i},1)">+</button>
+      </div>
+      <div class="pos-line-total">${formatRM(c.qty*Number(c.unit_price||0))}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="padding:6px 8px;color:var(--danger);border-color:transparent" onclick="_posRemove(${i})"><i class="ti ti-trash"></i></button>
     </div>`).join('')
   const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
   if(totalEl) totalEl.textContent = formatRM(total)
+  _posUpdateChange()
 }
-function _posQty(i, delta) { _posCart[i].qty = Math.max(1, _posCart[i].qty+delta); _posRenderCart() }
+function _posQty(i, delta) {
+  _posCart[i].qty = Math.max(1, _posCart[i].qty+delta)
+  _posRenderCart()
+}
 function _posRemove(i) { _posCart.splice(i,1); _posRenderCart() }
+function _posCloseReceipt() {
+  const m = document.getElementById('pos-receipt-modal')
+  if(m) m.classList.remove('active')
+  renderPOS()
+}
 
 async function _posCheckout() {
   if(_posCart.length===0) { showToast('Cart is empty', 'error'); return }
@@ -8942,15 +9055,30 @@ async function _posCheckout() {
   const itemsPayload = _posCart.map(c => ({ tenant_id: APP.tenant.id, txn_id: trans.id, product_id: c.product_id, name: c.name, qty: c.qty, unit_price: c.unit_price, line_total: c.qty*Number(c.unit_price||0) }))
   await sb.from('pos_transaction_items').insert(itemsPayload)
 
-  for(const c of _posCart) {
-    const p = _posProducts.find(x=>x.id===c.product_id)
-    const newStock = Math.max(0, Number(p?.stock_qty||0) - c.qty)
-    await sb.from('products').update({stock_qty: newStock}).eq('id', c.product_id).eq('tenant_id', APP.tenant.id)
-    await sb.from('stock_movements').insert({tenant_id: APP.tenant.id, product_id: c.product_id, type:'out', qty: c.qty, note: 'POS Sale '+(refData||trans.id)})
+  const receiptNo = refData || trans.id
+  const isBm2 = APP.language==='bm'
+  const methodLabel = {cash:isBm2?'Tunai':'Cash', card:isBm2?'Kad':'Card', online_banking:'QR / Online'}[method] || method
+  const tender = Number(document.getElementById('pos-tender')?.value||0)
+  const change = method==='cash' && tender ? tender - total : null
+  const cartSnapshot = _posCart.slice()
+  const body = document.getElementById('pos-receipt-body')
+  if(body) {
+    body.innerHTML = `<div class="pos-receipt-box">
+      <div style="text-align:center;margin-bottom:10px;font-weight:700">${isBm2?'Resit':'Receipt'} ${receiptNo}</div>
+      ${cartSnapshot.map(c=>`<div class="r-row"><span>${c.qty}× ${c.name}</span><span>${formatRM(c.qty*Number(c.unit_price||0))}</span></div>`).join('')}
+      <div class="r-row r-total"><span>${isBm2?'Jumlah':'Total'}</span><span>${formatRM(total)}</span></div>
+      <div class="r-row"><span>${isBm2?'Bayaran':'Payment'}</span><span>${methodLabel}</span></div>
+      ${change!==null ? `<div class="r-row"><span>${isBm2?'Diterima':'Tendered'}</span><span>${formatRM(tender)}</span></div><div class="r-row"><span>${isBm2?'Baki':'Change'}</span><span>${formatRM(change)}</span></div>` : ''}
+    </div>`
   }
-
-  showToast(APP.language==='bm'?'Jualan berjaya!':'Sale completed!', 'success')
-  renderPOS()
+  const modal = document.getElementById('pos-receipt-modal')
+  if(modal) modal.classList.add('active')
+  showToast(isBm2?'Jualan berjaya!':'Sale completed!', 'success')
+  _posCart = []
+  const {data: refreshed} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
+  _posProducts = refreshed || []
+  _posRenderGrid()
+  _posRenderCart()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
