@@ -5266,8 +5266,28 @@ function _invRenderLowStockAlert() {
         <div style="font-size:12px;color:var(--text-3)">${label}: ${lowStock.map(p=>prodName(p)).join(', ')}</div>
       </div>
     </div>
-    <button id="po-generate-btn" class="btn btn-primary btn-sm" onclick="_invGeneratePODraft()"><i class="ti ti-file-text"></i> ${btnLabel}</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="_invCreatePOFromLowStock()"><i class="ti ti-shopping-cart"></i> ${isBm?'Cipta PO':'Create PO'}</button>
+      <button id="po-generate-btn" class="btn btn-outline btn-sm" onclick="_invGeneratePODraft()"><i class="ti ti-sparkles"></i> ${btnLabel}</button>
+    </div>
   </div>`
+}
+
+function _invCreatePOFromLowStock() {
+  const lowStock = (_invState.data||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+  if(!lowStock.length) return
+  window._poPrefillItems = lowStock.map(p => {
+    const rp = Number(p.reorder_point ?? 5)
+    const stock = Number(p.stock_qty||0)
+    const qty = Math.max(rp * 2 - stock, rp, 1)
+    return {
+      product_id: p.id,
+      description: prodName(p),
+      qty,
+      unit_cost: Number(p.unit_cost||0)
+    }
+  })
+  openPage('purchasing', {view:'po-form'})
 }
 
 async function _invGeneratePODraft() {
@@ -6525,6 +6545,9 @@ async function renderPOForm(id=null) {
     if(data) po = data
     const {data: items} = await sb.from('purchase_order_items').select('*').eq('po_id',id)
     if(items && items.length) _poItems = items.map(it=>({product_id:it.product_id||'',description:it.description,qty:it.qty,unit_cost:it.unit_cost}))
+  } else if(window._poPrefillItems && window._poPrefillItems.length) {
+    _poItems = window._poPrefillItems
+    window._poPrefillItems = null
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
@@ -6677,10 +6700,13 @@ async function renderGRNForm(poId) {
   const {data: po} = await sb.from('purchase_orders').select('*,suppliers(name)').eq('id',poId).eq('tenant_id',APP.tenant.id).single()
   if(!po) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const {data: items} = await sb.from('purchase_order_items').select('*,products(name_en,name_bm)').eq('po_id',poId)
-  _grnItems = (items||[]).map(it=>({
-    po_item_id: it.id, product_id: it.product_id, description: it.description||prodName(it.products),
-    qty: it.qty, qty_received: it.qty_received, unit_cost: it.unit_cost, receive_now: 0
-  }))
+  _grnItems = (items||[]).map(it=>{
+    const remaining = Math.max(0, Number(it.qty||0) - Number(it.qty_received||0))
+    return {
+      po_item_id: it.id, product_id: it.product_id, description: it.description||prodName(it.products),
+      qty: it.qty, qty_received: it.qty_received, unit_cost: it.unit_cost, receive_now: remaining
+    }
+  })
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title} — ${po.po_no}</div>
@@ -6698,16 +6724,26 @@ async function renderGRNForm(poId) {
           <td>${_aiEscapeHtml(it.description||'-')}</td>
           <td style="text-align:right">${it.qty}</td>
           <td style="text-align:right">${it.qty_received}</td>
-          <td style="width:110px"><input type="number" min="0" max="${remaining}" class="form-input" style="text-align:right" value="0" oninput="_grnItems[${i}].receive_now=this.value" ${remaining<=0?'disabled':''}></td>
+          <td style="width:110px"><input type="number" min="0" max="${remaining}" class="form-input" style="text-align:right" value="${Math.max(0,remaining)}" oninput="_grnItems[${i}].receive_now=this.value" ${remaining<=0?'disabled':''}></td>
         </tr>`
       }).join('')}</tbody></table>
     </div>
     <div style="padding:20px"><div class="form-group"><label class="form-label">${t.notes}</label><textarea id="grn-notes" class="form-input" rows="2"></textarea></div></div>
-    <div style="padding:0 20px 20px;display:flex;gap:12px">
+    <div style="padding:0 20px 20px;display:flex;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-outline" type="button" onclick="_grnFillAll()"><i class="ti ti-checkbox"></i> ${APP.language==='bm'?'Terima semua baki':'Receive all remaining'}</button>
       <button id="grn-save" class="btn btn-primary" onclick="_grnSave('${poId}')"><i class="ti ti-check"></i> ${t.save}</button>
       <button class="btn btn-outline" onclick="openPage('purchasing',{view:'po-detail',id:'${poId}'})">${t.cancel}</button>
     </div>
   </div>`
+}
+
+function _grnFillAll() {
+  _grnItems.forEach((it,i) => {
+    const remaining = Math.max(0, Number(it.qty||0) - Number(it.qty_received||0))
+    it.receive_now = remaining
+    const inputs = document.querySelectorAll('#grn-items-body input[type=number]')
+    if(inputs[i]) inputs[i].value = remaining
+  })
 }
 
 async function _grnSave(poId) {
