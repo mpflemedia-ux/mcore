@@ -1979,17 +1979,58 @@ async function loadDashboardData() {
   const thisMonth = inv.filter(i => i.issue_date >= ms)
   const lastMonth = inv.filter(i => i.issue_date >= lms && i.issue_date < ms)
 
+  // POS completed sales (same period) — dashboard previously ignored these
+  let posThis = 0, posLast = 0, posPaidThis = 0, posPaidLast = 0
+  let posCogsThis = 0, posCogsLast = 0
+  try {
+    const {data: posRows} = await sb.from('pos_transactions')
+      .select('id,total,status,txn_type,created_at')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('status', 'completed')
+      .gte('created_at', sixMonthsAgo.toISOString())
+    const pos = posRows || []
+    const inMonth = (iso, start, end) => {
+      if(!iso) return false
+      const d = iso.slice(0,10)
+      return d >= start && (!end || d < end)
+    }
+    pos.forEach(p => {
+      if(p.txn_type && p.txn_type !== 'sale') return
+      const t = Number(p.total||0)
+      if(inMonth(p.created_at, ms, null)) { posThis += t; posPaidThis += t }
+      else if(inMonth(p.created_at, lms, ms)) { posLast += t; posPaidLast += t }
+    })
+    // POS COGS from line items × product unit_cost
+    const posIdsThis = pos.filter(p => inMonth(p.created_at, ms, null)).map(p=>p.id)
+    const posIdsLast = pos.filter(p => inMonth(p.created_at, lms, ms)).map(p=>p.id)
+    const posIds = [...posIdsThis, ...posIdsLast]
+    if(posIds.length) {
+      const {data: pItems} = await sb.from('pos_transaction_items')
+        .select('txn_id,qty,product_id,products(unit_cost)')
+        .in('txn_id', posIds)
+      const thisSet = new Set(posIdsThis), lastSet = new Set(posIdsLast)
+      ;(pItems||[]).forEach(it => {
+        const cost = Number(it.qty||0) * Number(it.products?.unit_cost||0)
+        if(thisSet.has(it.txn_id)) posCogsThis += cost
+        else if(lastSet.has(it.txn_id)) posCogsLast += cost
+      })
+    }
+  } catch(e) {
+    console.warn('loadDashboardData POS query skipped:', e)
+  }
+
   const sum = arr => arr.reduce((s,i)=>s+Number(i.total||0),0)
   const sumPaid = arr => arr.reduce((s,i)=>s+Number(i.paid_amt||0),0)
   const pctChange = (cur,prev) => prev===0 ? (cur>0?100:0) : ((cur-prev)/prev*100)
 
-  const curSales = sum(thisMonth), prevSales = sum(lastMonth)
-  const curPaid = sumPaid(thisMonth), prevPaid = sumPaid(lastMonth)
+  const curSales = sum(thisMonth) + posThis, prevSales = sum(lastMonth) + posLast
+  const curPaid = sumPaid(thisMonth) + posPaidThis, prevPaid = sumPaid(lastMonth) + posPaidLast
   const curRate = curSales ? (curPaid/curSales*100) : 0
-  const prevRate = prevSales ? (sumPaid(lastMonth)/prevSales*100) : 0
-  const curAvg = thisMonth.length ? curSales/thisMonth.length : 0
-  const prevAvg = lastMonth.length ? prevSales/lastMonth.length : 0
-  const curCount = thisMonth.length, prevCount = lastMonth.length
+  const prevRate = prevSales ? (prevPaid/prevSales*100) : 0
+  const invCountThis = thisMonth.length, invCountLast = lastMonth.length
+  const curAvg = invCountThis ? sum(thisMonth)/invCountThis : 0
+  const prevAvg = invCountLast ? sum(lastMonth)/invCountLast : 0
+  const curCount = invCountThis, prevCount = invCountLast
 
   // Gross Profit = Sales - COGS (qty × products.unit_cost per invoice line).
   // Lines with a null product_id (custom/ad-hoc line items, no catalog
@@ -2013,8 +2054,8 @@ async function loadDashboardData() {
       else if(lastSet.has(it.invoice_id)) prevCOGS += cost
     })
   }
-  const curGP = curSales - curCOGS
-  const prevGP = prevSales - prevCOGS
+  const curGP = curSales - curCOGS - posCogsThis
+  const prevGP = prevSales - prevCOGS - posCogsLast
 
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
