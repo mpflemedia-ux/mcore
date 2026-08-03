@@ -79,6 +79,19 @@ input,select,textarea{font-family:inherit}
 .header-search{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;width:220px}
 .header-search input{border:none;background:none;outline:none;font-size:13px;color:var(--text);width:100%}
 .header-search input::placeholder{color:var(--text-3)}
+.gs-modal{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:none;align-items:flex-start;justify-content:center;padding:12vh 16px 16px}
+.gs-modal.active{display:flex}
+.gs-box{width:100%;max-width:560px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-lg,0 20px 50px rgba(0,0,0,.25));overflow:hidden}
+.gs-input-row{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.gs-input-row input{flex:1;border:none;background:transparent;outline:none;font-size:15px;color:var(--text)}
+.gs-results{max-height:min(420px,50vh);overflow-y:auto;padding:8px}
+.gs-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .12s}
+.gs-item:hover,.gs-item.active{background:var(--bg)}
+.gs-item i{font-size:18px;color:var(--primary);width:22px;text-align:center}
+.gs-item .gs-meta{font-size:11px;color:var(--text-3)}
+.gs-empty{padding:28px;text-align:center;color:var(--text-3);font-size:13px}
+.gs-hint{padding:8px 16px 12px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border)}
+
 .header-actions{display:flex;align-items:center;gap:4px}
 .header-btn{width:36px;height:36px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:18px;position:relative;cursor:pointer}
 .header-btn:hover{background:var(--bg);color:var(--text)}
@@ -877,9 +890,10 @@ tbody tr:hover{background:var(--bg)}
       <button class="header-btn" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button>
       <div class="header-title" id="header-title">Dashboard</div>
       <div class="header-spacer"></div>
-      <div class="header-search">
+      <div class="header-search" onclick="openGlobalSearch()" style="cursor:pointer">
         <i class="ti ti-search" style="color:var(--text-3);font-size:14px"></i>
-        <input type="text" placeholder="Search...">
+        <input type="text" id="header-search-input" placeholder="Search..." readonly onclick="openGlobalSearch()" onfocus="openGlobalSearch()">
+        <span style="font-size:10px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px">⌘K</span>
       </div>
       <div class="header-actions">
         <button class="header-btn" onclick="toggleTheme()" title="Toggle tema"><i class="ti ti-moon" id="theme-icon"></i></button>
@@ -903,7 +917,20 @@ tbody tr:hover{background:var(--bg)}
     </main>
   </div>
 
-  <button id="ai-chat-fab" onclick="toggleAIChat()" title="AI Assistant"><i class="ti ti-message-chatbot"></i></button>
+  <!-- Global Search -->
+<div class="gs-modal" id="gs-modal" onclick="if(event.target===this)closeGlobalSearch()">
+  <div class="gs-box" onclick="event.stopPropagation()">
+    <div class="gs-input-row">
+      <i class="ti ti-search" style="color:var(--text-3)"></i>
+      <input type="text" id="gs-input" placeholder="Search customers, invoices, products..." autocomplete="off" oninput="_gsOnInput(this.value)" onkeydown="_gsOnKey(event)">
+      <span style="font-size:11px;color:var(--text-3)">ESC</span>
+    </div>
+    <div class="gs-results" id="gs-results"><div class="gs-empty">Type to search across modules</div></div>
+    <div class="gs-hint">↑↓ navigate · Enter open · Esc close</div>
+  </div>
+</div>
+
+<button id="ai-chat-fab" onclick="toggleAIChat()" title="AI Assistant"><i class="ti ti-message-chatbot"></i></button>
   <div id="ai-chat-panel">
     <div class="ai-chat-header">
       <div class="ai-chat-header-title"><i class="ti ti-sparkles"></i> <span id="ai-chat-title">AI Assistant</span></div>
@@ -1016,6 +1043,109 @@ function isPlatformAdmin() {
   if(email.endsWith('@phion.my') || email.endsWith('@mpflemedia.my')) return true
   return false
 }
+
+
+// ── Global Search (Ctrl/Cmd+K) ──────────────────────────────────────────────
+let _gsTimer = null
+let _gsItems = []
+let _gsIndex = 0
+
+function openGlobalSearch() {
+  const m = document.getElementById('gs-modal')
+  if(!m) return
+  m.classList.add('active')
+  const inp = document.getElementById('gs-input')
+  if(inp) { inp.value=''; inp.focus() }
+  _gsItems = []; _gsIndex = 0
+  const res = document.getElementById('gs-results')
+  if(res) res.innerHTML = `<div class="gs-empty">${APP.language==='bm'?'Taip untuk cari pelanggan, invois, produk...':'Type to search customers, invoices, products...'}</div>`
+}
+function closeGlobalSearch() {
+  const m = document.getElementById('gs-modal')
+  if(m) m.classList.remove('active')
+}
+function _gsOnInput(q) {
+  clearTimeout(_gsTimer)
+  _gsTimer = setTimeout(() => _gsSearch(q.trim()), 220)
+}
+function _gsOnKey(e) {
+  if(e.key === 'Escape') { closeGlobalSearch(); return }
+  if(e.key === 'ArrowDown') { e.preventDefault(); _gsIndex = Math.min(_gsIndex+1, _gsItems.length-1); _gsHighlight(); return }
+  if(e.key === 'ArrowUp') { e.preventDefault(); _gsIndex = Math.max(_gsIndex-1, 0); _gsHighlight(); return }
+  if(e.key === 'Enter' && _gsItems[_gsIndex]) { e.preventDefault(); _gsGo(_gsItems[_gsIndex]); return }
+}
+function _gsHighlight() {
+  document.querySelectorAll('.gs-item').forEach((el,i) => el.classList.toggle('active', i===_gsIndex))
+  const active = document.querySelector('.gs-item.active')
+  if(active) active.scrollIntoView({block:'nearest'})
+}
+function _gsGo(item) {
+  closeGlobalSearch()
+  if(!item) return
+  openPage(item.page, item.params||{})
+}
+async function _gsSearch(q) {
+  const res = document.getElementById('gs-results')
+  if(!res) return
+  const isBm = APP.language==='bm'
+  if(!q || q.length < 1) {
+    res.innerHTML = `<div class="gs-empty">${isBm?'Taip untuk cari...':'Type to search...'}</div>`
+    _gsItems = []; return
+  }
+  if(!APP.tenant?.id) {
+    res.innerHTML = `<div class="gs-empty">Not signed in</div>`; return
+  }
+  res.innerHTML = `<div class="gs-empty"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block"></div></div>`
+  const like = `%${q}%`
+  try {
+    const [cust, inv, prod, quo] = await Promise.all([
+      sb.from('customers').select('id,name,phone,email').eq('tenant_id',APP.tenant.id).is('deleted_at',null).or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`).limit(8),
+      sb.from('invoices').select('id,ref_no,customer_name,total,status').eq('tenant_id',APP.tenant.id).is('deleted_at',null).or(`ref_no.ilike.${like},customer_name.ilike.${like}`).limit(8),
+      sb.from('products').select('id,code,name_en,name_bm,stock_qty').eq('tenant_id',APP.tenant.id).is('deleted_at',null).or(`name_en.ilike.${like},name_bm.ilike.${like},code.ilike.${like}`).limit(8),
+      sb.from('quotations').select('id,ref_no,customer_name,total').eq('tenant_id',APP.tenant.id).is('deleted_at',null).or(`ref_no.ilike.${like},customer_name.ilike.${like}`).limit(5),
+    ])
+    const items = []
+    ;(cust.data||[]).forEach(r => items.push({
+      icon:'ti-user', title: r.name, meta: [r.phone,r.email].filter(Boolean).join(' · ') || (isBm?'Pelanggan':'Customer'),
+      page:'crm', params:{view:'detail', id:r.id}
+    }))
+    ;(inv.data||[]).forEach(r => items.push({
+      icon:'ti-file-invoice', title: r.ref_no||'Invoice', meta: `${r.customer_name||''} · ${formatRM(r.total)} · ${r.status||''}`,
+      page:'sales', params:{view:'inv-detail', id:r.id}
+    }))
+    ;(quo.data||[]).forEach(r => items.push({
+      icon:'ti-file-description', title: r.ref_no||'Quotation', meta: `${r.customer_name||''} · ${formatRM(r.total)}`,
+      page:'sales', params:{view:'quo-form', id:r.id}
+    }))
+    ;(prod.data||[]).forEach(r => items.push({
+      icon:'ti-box', title: prodName(r), meta: `${r.code||''} · stock ${r.stock_qty??'-'}`,
+      page:'inventory', params:{view:'product-form', id:r.id}
+    }))
+    _gsItems = items; _gsIndex = 0
+    if(!items.length) {
+      res.innerHTML = `<div class="gs-empty">${isBm?'Tiada hasil':'No results'}</div>`
+      return
+    }
+    res.innerHTML = items.map((it,i) => `
+      <div class="gs-item ${i===0?'active':''}" onmouseenter="_gsIndex=${i}" onclick="_gsGo(_gsItems[${i}])">
+        <i class="ti ${it.icon}"></i>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(it.title)}</div>
+          <div class="gs-meta">${_aiEscapeHtml(it.meta||'')}</div>
+        </div>
+      </div>`).join('')
+  } catch(err) {
+    console.error('global search', err)
+    res.innerHTML = `<div class="gs-empty" style="color:var(--danger)">${_aiEscapeHtml(err.message||'Error')}</div>`
+  }
+}
+document.addEventListener('keydown', function(e) {
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    if(document.getElementById('shell')?.classList.contains('active')) openGlobalSearch()
+  }
+  if(e.key === 'Escape') closeGlobalSearch()
+})
 
 function openPage(page, params={}) {
   const item = NAV_ITEMS.find(n=>n.id===page)
@@ -1757,6 +1887,8 @@ async function loadUserSession(user) {
     }
     APP.user.name=profile.full_name
     APP.user.role=profile.role
+    // Best-effort last_login stamp
+    sb.from('user_profiles').update({last_login: new Date().toISOString()}).eq('id', user.id).then(()=>{},()=>{})
     APP.language=profile.language||'en'
     APP.theme = localStorage.getItem('nexerp_theme') || profile.theme || 'light'
     applyTheme(APP.theme)
