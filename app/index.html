@@ -1943,6 +1943,11 @@ function _dbTableLabel(table) {
     user_profiles: isBm ? 'Profil Pengguna' : 'User Profile',
     audit_logs: isBm ? 'Log Audit' : 'Audit Log',
     tenants: isBm ? 'Tenant' : 'Tenant',
+    attendance: isBm ? 'Kehadiran' : 'Attendance',
+    employees: isBm ? 'Pekerja' : 'Employee',
+    payroll_records: isBm ? 'Rekod Gaji' : 'Payroll',
+    work_orders: isBm ? 'Work Order' : 'Work Order',
+    job_applicants: isBm ? 'Pemohon Kerja' : 'Job Applicant',
   }
   return map[String(table||'').toLowerCase()] || table || ''
 }
@@ -2006,8 +2011,9 @@ async function _dbLoadRecentActivity() {
   if(!el || !APP.tenant.id) return
   const isBm = APP.language === 'bm'
   try {
+    // Only select columns that exist on audit_logs (no user_name / record_id)
     const {data, error} = await sb.from('audit_logs')
-      .select('id, action, table_name, record_id, created_at, user_id, user_name')
+      .select('id, action, table_name, created_at, user_id')
       .eq('tenant_id', APP.tenant.id)
       .order('created_at', {ascending: false})
       .limit(10)
@@ -2017,8 +2023,17 @@ async function _dbLoadRecentActivity() {
       el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada aktiviti terkini':'No recent activity'}</div>`
       return
     }
+    // Resolve user names from user_profiles if possible
+    const uids = [...new Set(list.map(a => a.user_id).filter(Boolean))]
+    let nameMap = {}
+    if(uids.length) {
+      const {data: profiles} = await sb.from('user_profiles')
+        .select('id, full_name')
+        .in('id', uids)
+      ;(profiles||[]).forEach(p => { nameMap[p.id] = p.full_name })
+    }
     el.innerHTML = list.map(a => {
-      const who = a.user_name || 'System'
+      const who = nameMap[a.user_id] || (isBm ? 'Sistem' : 'System')
       const act = _dbActionLabel(a.action)
       const tbl = _dbTableLabel(a.table_name)
       const ago = _dbTimeAgo(a.created_at)
