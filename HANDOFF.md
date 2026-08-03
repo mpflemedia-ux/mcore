@@ -140,3 +140,17 @@ Push/merge to `main` → GitHub Pages serves `/app/`.
 ---
 
 *End of handoff.*
+
+
+## 8. Updates after handoff (same day)
+
+| Feature | Status |
+|---------|--------|
+| Global Search Ctrl+K | Done |
+| Team invite + SQL | Done (user applied SQL) |
+| SST Report (Reports tab) | Done |
+| Notification bell | Done (overdue / low stock / pending leave) |
+| Invoice tax columns migration | `20260804010000_invoice_tax_columns.sql` — run in Supabase |
+| PWA manifest + SW | Done (shell cache; not full offline POS) |
+
+**Still deferred:** MyInvois e-Invoice, 2FA, full offline POS, customer portal, public API, real BOM deduct, multi-branch UI.
