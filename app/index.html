@@ -452,18 +452,23 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-payslip-subtitle { font-size:11px; color:#334155; font-weight:600; letter-spacing:.02em; margin-top:2px; text-transform:uppercase; }
 .pdoc-meta { text-align:right; font-size:11px; color:#64748B; line-height:1.7; white-space:nowrap; }
 .pdoc-title-bar { background:var(--pdoc-accent); color:#fff; font-weight:700; text-align:center; padding:9px; font-size:13px; letter-spacing:.04em; text-transform:uppercase; }
-.pdoc-band { background:#F8FAFC; padding:12px 24px; border-top:1px solid #E2E8F0; border-bottom:1px solid #E2E8F0; }
-.pdoc-band-name { font-weight:700; font-size:13.5px; }
+.pdoc-band { background:#F8FAFC; padding:16px 24px; border-top:1px solid #E2E8F0; border-bottom:1px solid #E2E8F0; }
+.pdoc-band-name { font-weight:700; font-size:16px; font-family:'Space Grotesk',sans-serif; letter-spacing:-.01em; color:#0F172A; }
 .pdoc-band-sub { font-size:11px; color:#64748B; margin-top:2px; }
-.pdoc-section-title { background:#F8FAFC; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:7px 24px; color:#334155; border-bottom:1px solid #E2E8F0; }
-.pdoc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-.pdoc-table td { padding:7px 24px; border-bottom:1px solid #E2E8F0; }
+.pdoc-band-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:10px; }
+.pdoc-band-item { font-size:11px; color:#64748B; line-height:1.4; }
+.pdoc-band-item b { display:block; color:#0F172A; font-weight:600; font-size:12px; margin-top:1px; }
+.pdoc-section-title { background:#F8FAFC; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; padding:8px 24px; color:#64748B; border-bottom:1px solid #E2E8F0; }
+.pdoc-table { width:100%; border-collapse:collapse; font-size:13px; }
+.pdoc-table td { padding:9px 24px; border-bottom:1px solid #F1F5F9; }
+.pdoc-table td:last-child { font-family:'Space Grotesk',sans-serif; font-weight:500; white-space:nowrap; }
 .pdoc-table tr:last-child td { border-bottom:none; }
-.pdoc-total-row td { font-weight:700; background:#F8FAFC; }
-.pdoc-net-bar { background:#0F172A; color:#fff; display:flex; justify-content:space-between; align-items:center; padding:14px 24px; }
-.pdoc-net-bar .lbl { font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
-.pdoc-net-bar .amt { font-weight:700; font-size:21px; color:var(--pdoc-accent); }
-.pdoc-footer-note { text-align:center; font-size:9.5px; color:#64748B; padding:10px; }
+.pdoc-total-row td { font-weight:700; background:#F8FAFC; border-top:1px solid #E2E8F0; font-family:'Space Grotesk',sans-serif; }
+.pdoc-net-bar { background:linear-gradient(135deg, var(--pdoc-accent), color-mix(in srgb, var(--pdoc-accent) 75%, #0F172A)); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:16px 24px; }
+.pdoc-net-bar .lbl { font-weight:700; font-size:11px; letter-spacing:.1em; text-transform:uppercase; opacity:.9; }
+.pdoc-net-bar .amt { font-weight:700; font-size:22px; font-family:'Space Grotesk',sans-serif; letter-spacing:-.02em; }
+.pdoc-footer-note { text-align:center; font-size:10px; color:#94A3B8; padding:12px 24px 14px; border-top:1px solid #F1F5F9; }
+.pdoc-payslip-subtitle { font-size:11px; color:var(--pdoc-accent); font-weight:700; letter-spacing:.06em; margin-top:2px; text-transform:uppercase; }
 .pdoc-amt-pos { color:var(--success); }
 .pdoc-amt-neg { color:var(--danger); }
 .pdoc-sd-table { width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed; }
@@ -1029,31 +1034,38 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
     if(Number(amt) > 0) dedRows.push({ label: _sdTypeLabel(SD_DEDUCTION_TYPES, type), amount: amt })
   })
 
-  const bankLine = rec.employees?.bank_name ? `${rec.employees.bank_name} - ${rec.employees.bank_account_no||'-'}` : ''
+  const bankLine = rec.employees?.bank_name ? `${rec.employees.bank_name} · ${rec.employees.bank_account_no||'-'}` : ''
+  const totalDeductions = dedRows.reduce((s,r)=>s+Number(r.amount||0), 0)
+  const pos = rec.employees?.position || ''
 
   return `
-  <div class="pdoc" style="--pdoc-accent:${accent};max-width:640px;margin:0 auto 24px">
+  <div class="pdoc" style="--pdoc-accent:${accent};max-width:680px;margin:0 auto 28px">
     ${_pdocHeaderHtml(tn,
       `${isBm?'Tarikh Bayaran':'Pay Date'}: ${_pdocPayDate(rec)}<br>${isBm?'Ruj.':'Ref'}: ${_pdocPayslipRef(rec)}`,
       `${isBm?'SLIP GAJI':'PAYSLIP'} — ${_pdocMonthYearLabel(rec.month, rec.year, isBm)}`,
       'pdoc-payslip-subtitle')}
     <div class="pdoc-band">
       <div class="pdoc-band-name">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
-      ${bankLine ? `<div class="pdoc-band-sub">${isBm?'Bank':'Bank'}: ${_aiEscapeHtml(bankLine)}</div>` : ''}
-      ${rec.employees?.epf_no ? `<div class="pdoc-band-sub">${isBm?'No. EPF':'EPF No.'}: ${_aiEscapeHtml(rec.employees.epf_no)}</div>` : ''}
-      ${rec.employees?.socso_no ? `<div class="pdoc-band-sub">${isBm?'No. SOCSO':'SOCSO No.'}: ${_aiEscapeHtml(rec.employees.socso_no)}</div>` : ''}
+      ${pos ? `<div class="pdoc-band-sub">${_aiEscapeHtml(pos)}</div>` : ''}
+      <div class="pdoc-band-grid">
+        ${bankLine ? `<div class="pdoc-band-item">${isBm?'Akaun Bank':'Bank Account'}<b>${_aiEscapeHtml(bankLine)}</b></div>` : ''}
+        ${rec.employees?.epf_no ? `<div class="pdoc-band-item">${isBm?'No. KWSP':'EPF No.'}<b>${_aiEscapeHtml(rec.employees.epf_no)}</b></div>` : ''}
+        ${rec.employees?.socso_no ? `<div class="pdoc-band-item">${isBm?'No. PERKESO':'SOCSO No.'}<b>${_aiEscapeHtml(rec.employees.socso_no)}</b></div>` : ''}
+        <div class="pdoc-band-item">${isBm?'Tempoh':'Period'}<b>${_pdocMonthYearLabel(rec.month, rec.year, isBm)}</b></div>
+      </div>
     </div>
-    <div class="pdoc-section-title">${isBm?'PENDAPATAN':'EARNINGS'}</div>
+    <div class="pdoc-section-title">${isBm?'Pendapatan':'Earnings'}</div>
     <table class="pdoc-table"><tbody>
-      ${earnRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right${r.positive?';color:var(--success)':''}">${r.positive?'+ ':''}${formatRM(r.amount)}</td></tr>`).join('')}
+      ${earnRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right${r.positive?';color:#16A34A':''}">${r.positive?'+ ':''}${formatRM(r.amount)}</td></tr>`).join('')}
       <tr class="pdoc-total-row"><td>${isBm?'Jumlah Pendapatan':'Total Earnings'}</td><td style="text-align:right">${formatRM(totalEarnings)}</td></tr>
     </tbody></table>
-    <div class="pdoc-section-title">${isBm?'POTONGAN':'DEDUCTIONS'}</div>
+    <div class="pdoc-section-title">${isBm?'Potongan':'Deductions'}</div>
     <table class="pdoc-table"><tbody>
-      ${dedRows.length ? dedRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right;color:var(--danger)">- ${formatRM(r.amount)}</td></tr>`).join('') : `<tr><td colspan="2" style="color:#64748B">-</td></tr>`}
+      ${dedRows.length ? dedRows.map(r=>`<tr><td>${_aiEscapeHtml(r.label)}</td><td style="text-align:right;color:#DC2626">− ${formatRM(r.amount)}</td></tr>`).join('') : `<tr><td colspan="2" style="color:#94A3B8">${isBm?'Tiada potongan':'No deductions'}</td></tr>`}
+      ${dedRows.length ? `<tr class="pdoc-total-row"><td>${isBm?'Jumlah Potongan':'Total Deductions'}</td><td style="text-align:right;color:#DC2626">− ${formatRM(totalDeductions)}</td></tr>` : ''}
     </tbody></table>
-    <div class="pdoc-net-bar"><span class="lbl">${isBm?'GAJI BERSIH':'NET PAY'}</span><span class="amt">${formatRM(rec.net_pay)}</span></div>
-    <div class="pdoc-footer-note">${isBm?'Ini adalah slip gaji janaan komputer. Tiada tandatangan diperlukan.':'This is a computer-generated payslip. No signature required.'}</div>
+    <div class="pdoc-net-bar"><span class="lbl">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="amt">${formatRM(rec.net_pay)}</span></div>
+    <div class="pdoc-footer-note">${isBm?'Slip gaji janaan komputer · Tiada tandatangan diperlukan':'Computer-generated payslip · No signature required'}</div>
   </div>`
 }
 function formatDate(d) { if(!d)return'-'; return new Date(d).toLocaleDateString('ms-MY',{day:'2-digit',month:'2-digit',year:'numeric'}) }
@@ -7547,7 +7559,7 @@ async function renderPayslipDetail(id) {
     aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print',
     pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).', advance:'Advance'
   }
-  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no,epf_no,socso_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
@@ -7968,7 +7980,7 @@ async function renderPayslipsPrint(month, year) {
     back:'Salary Disbursement', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
     eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', print:'Print All', noData:'No payroll records for this period.', advance:'Advance'
   }
-  const {data, error} = await sb.from('payroll_records').select('*,employees(name,bank_name,bank_account_no,epf_no,socso_no)')
+  const {data, error} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no)')
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error || !data || data.length===0) {
     document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
