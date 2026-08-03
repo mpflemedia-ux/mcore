@@ -5636,7 +5636,7 @@ async function renderInvDetail(id) {
   <div class="no-print" style="display:flex;gap:8px">
     <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
     <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename.replace(/'/g,"\\'")}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
-    ${custPhone?.phone ? `<button class="btn btn-outline btn-sm" onclick="_sendInvWhatsApp('${custPhone.phone.replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'})"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>` : ''}
+    <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendInvWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'},'${(inv.customer_name||'').replace(/'/g,"\\'")}','${formatRM(balance)}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
   </div></div>
   <div class="card" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
@@ -5747,14 +5747,52 @@ async function _paySave(invoiceId, balance) {
   renderInvDetail(invoiceId)
 }
 
-function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm) {
-  const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/,'60')
-  const finalPhone = cleanPhone.startsWith('60') ? cleanPhone : '60'+cleanPhone
-  const msg = isBm
-    ? `Hai! Ini invois ${refNo} berjumlah ${total} (tarikh akhir: ${dueDate}). Terima kasih!`
-    : `Hi! Here's invoice ${refNo} for ${total} (due: ${dueDate}). Thank you!`
-  window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank')
+function _waNormalizePhone(phone) {
+  if(!phone) return ''
+  let p = String(phone).replace(/[^0-9]/g,'')
+  if(p.startsWith('0')) p = '60' + p.slice(1)
+  if(!p.startsWith('60') && p.length >= 9) p = '60' + p
+  return p
 }
+function _waOpen(phone, msg) {
+  const finalPhone = _waNormalizePhone(phone)
+  const url = finalPhone
+    ? `https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`
+  window.open(url, '_blank')
+}
+function _waCompanyName() {
+  return (APP.tenant && (APP.tenant.name || APP.tenant.company_name)) || 'NexERP'
+}
+function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm, customerName, balance) {
+  const co = _waCompanyName()
+  const cust = customerName || ''
+  const bal = balance != null ? balance : total
+  const msg = isBm
+    ? `*${co}*\n\nInvois: *${refNo}*\nPelanggan: ${cust}\nJumlah: *${total}*\nBaki: ${bal}\nTarikh akhir: ${dueDate || '-'}\n\nSila buat bayaran mengikut invois. Terima kasih!`
+    : `*${co}*\n\nInvoice: *${refNo}*\nCustomer: ${cust}\nAmount: *${total}*\nBalance: ${bal}\nDue: ${dueDate || '-'}\n\nPlease settle payment as per invoice. Thank you!`
+  if(!phone) {
+    const entered = prompt(isBm ? 'No. WhatsApp pelanggan (contoh 0123456789) — biar kosong untuk pilih manual:' : 'Customer WhatsApp (e.g. 0123456789) — leave blank to pick contact:')
+    _waOpen(entered || '', msg)
+  } else {
+    _waOpen(phone, msg)
+  }
+}
+function _sendPosWhatsApp(receiptNo, total, method, linesText, tender, change) {
+  const isBm = APP.language === 'bm'
+  const co = _waCompanyName()
+  const methodLabel = {cash: isBm?'Tunai':'Cash', card: isBm?'Kad':'Card', online_banking: 'QR / Online'}[method] || method
+  let msg = isBm
+    ? `*${co}* — Resit POS\n\nNo: *${receiptNo}*\n${linesText}\n*Jumlah: ${total}*\nBayaran: ${methodLabel}`
+    : `*${co}* — POS Receipt\n\nNo: *${receiptNo}*\n${linesText}\n*Total: ${total}*\nPayment: ${methodLabel}`
+  if(tender != null && method === 'cash') {
+    msg += isBm ? `\nDiterima: ${tender}\nBaki: ${change}` : `\nTendered: ${tender}\nChange: ${change}`
+  }
+  msg += isBm ? '\n\nTerima kasih!' : '\n\nThank you!'
+  const entered = prompt(isBm ? 'No. WhatsApp (kosong = pilih contact):' : 'WhatsApp number (blank = pick contact):')
+  _waOpen(entered || '', msg)
+}
+
 
 // ─── Quotations: List + Form (mirrors invoice, converts to invoice) ────────────
 async function renderQuoList() {
@@ -5819,7 +5857,7 @@ async function renderQuoForm(id=null) {
     ${id?`<div class="no-print" style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>
       <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
-      ${custPhone?.phone ? `<button class="btn btn-outline btn-sm" onclick="_sendQuoWhatsApp('${custPhone.phone.replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'})"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>` : ''}
+      <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendQuoWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'},'${(quo.customer_name||'').replace(/'/g,"\\'")}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
     </div>`:''}</div>
   <div class="card" style="max-width:900px">
     <div id="quo-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
@@ -5908,14 +5946,18 @@ async function _quoConvert(quoId) {
   openPage('sales',{view:'inv-detail',id:newInv.id})
 }
 
-function _sendQuoWhatsApp(phone, refNo, total, validUntil, isBm) {
-  const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/,'60')
-  const finalPhone = cleanPhone.startsWith('60') ? cleanPhone : '60'+cleanPhone
-  const validPart = validUntil ? (isBm ? ` (sah sehingga: ${validUntil})` : ` (valid until: ${validUntil})`) : ''
+function _sendQuoWhatsApp(phone, refNo, total, validUntil, isBm, customerName) {
+  const co = _waCompanyName()
+  const validPart = validUntil ? (isBm ? `\nSah sehingga: ${validUntil}` : `\nValid until: ${validUntil}`) : ''
   const msg = isBm
-    ? `Hai! Ini sebut harga ${refNo} berjumlah ${total}${validPart}. Terima kasih!`
-    : `Hi! Here's quotation ${refNo} for ${total}${validPart}. Thank you!`
-  window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank')
+    ? `*${co}*\n\nSebut harga: *${refNo}*\nPelanggan: ${customerName||'-'}\nJumlah: *${total}*${validPart}\n\nTerima kasih!`
+    : `*${co}*\n\nQuotation: *${refNo}*\nCustomer: ${customerName||'-'}\nAmount: *${total}*${validPart}\n\nThank you!`
+  if(!phone) {
+    const entered = prompt(isBm ? 'No. WhatsApp (kosong = pilih contact):' : 'WhatsApp number (blank = pick contact):')
+    _waOpen(entered || '', msg)
+  } else {
+    _waOpen(phone, msg)
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8634,7 +8676,8 @@ async function renderPOS() {
     <div class="modal-box" style="max-width:400px">
       <div class="modal-box-header"><i class="ti ti-circle-check" style="color:var(--success)"></i> ${isBm?'Jualan Berjaya':'Sale Complete'}</div>
       <div class="modal-box-body" id="pos-receipt-body"></div>
-      <div class="modal-box-footer">
+      <div class="modal-box-footer" style="display:flex;gap:8px">
+        <button class="btn btn-outline" style="flex:1;color:#16A34A;border-color:#16A34A" onclick="_posShareWhatsApp()"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
         <button class="btn btn-primary" style="flex:1" onclick="_posCloseReceipt()"><i class="ti ti-check"></i> ${isBm?'Selesai':'Done'}</button>
       </div>
     </div>
@@ -9050,6 +9093,11 @@ function _posQty(i, delta) {
   _posRenderCart()
 }
 function _posRemove(i) { _posCart.splice(i,1); _posRenderCart() }
+function _posShareWhatsApp() {
+  const r = window._posLastReceipt
+  if(!r) { showToast(APP.language==='bm'?'Tiada resit':'No receipt', 'error'); return }
+  _sendPosWhatsApp(r.receiptNo, r.total, r.method, r.linesText, r.tender, r.change)
+}
 function _posCloseReceipt() {
   const m = document.getElementById('pos-receipt-modal')
   if(m) m.classList.remove('active')
@@ -9102,6 +9150,12 @@ async function _posCheckout() {
   const tender = Number(document.getElementById('pos-tender')?.value||0)
   const change = method==='cash' && tender ? tender - total : null
   const cartSnapshot = _posCart.slice()
+  const linesText = cartSnapshot.map(c => `${c.qty}x ${c.name} = ${formatRM(c.qty*Number(c.unit_price||0))}`).join('\n')
+  window._posLastReceipt = {
+    receiptNo, total: formatRM(total), method, linesText,
+    tender: tender ? formatRM(tender) : null,
+    change: change !== null ? formatRM(change) : null
+  }
   const body = document.getElementById('pos-receipt-body')
   if(body) {
     body.innerHTML = `<div class="pos-receipt-box">
