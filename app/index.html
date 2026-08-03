@@ -1675,6 +1675,28 @@ function renderDashboard() {
       </div>
     </div>
 
+    <!-- People + Recent Activity -->
+    <div class="db-row" style="grid-template-columns:1fr 1fr;margin-top:14px;gap:14px">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div>
+            <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
+            <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan dalam syarikat ini':'Team members in this company')}</div>
+          </div>
+          <button class="db-btn" onclick="if(canAccess('hr')) openPage('hr')"><i class="ti ti-arrow-right"></i> ${t.viewHR||(isBm?'Lihat SDM':'View HR')}</button>
+        </div>
+        <div id="db-people-list" style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
+        </div>
+      </div>
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-activity"></i> ${t.recentActivity||(isBm?'Aktiviti Terkini':'Recent Activity')}</div>
+        <div id="db-activity-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">
+          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
+        </div>
+      </div>
+    </div>
+
     <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -1702,28 +1724,6 @@ function renderDashboard() {
           <button id="db-digest-btn" class="db-btn primary" onclick="_dbLoadDailyDigest()"><i class="ti ti-refresh"></i> ${isBm?'Jana Item Tindakan Hari Ni':"Generate Today's Action Items"}</button>
         </div>
         <div id="db-digest-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik butang untuk gabungkan invois overdue, stok rendah, dan deadline pematuhan jadi satu senarai tindakan hari ni.':"Click the button to combine overdue invoices, low stock, and compliance deadlines into one list of today's action items."}</div>
-      </div>
-    </div>
-
-    <!-- People + Recent Activity -->
-    <div class="db-row" style="grid-template-columns:1fr 1fr;margin-top:14px;gap:14px">
-      <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div>
-            <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
-            <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan dalam syarikat ini':'Team members in this company')}</div>
-          </div>
-          <button class="db-btn" onclick="if(canAccess('hr')) openPage('hr')"><i class="ti ti-arrow-right"></i> ${t.viewHR||(isBm?'Lihat SDM':'View HR')}</button>
-        </div>
-        <div id="db-people-list" style="display:flex;flex-direction:column;gap:10px">
-          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
-        </div>
-      </div>
-      <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-activity"></i> ${t.recentActivity||(isBm?'Aktiviti Terkini':'Recent Activity')}</div>
-        <div id="db-activity-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">
-          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
-        </div>
       </div>
     </div>
   </div>`
