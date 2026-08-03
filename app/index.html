@@ -3260,6 +3260,7 @@ async function _cpSave() {
 function renderCRM(params={}) {
   if(params.view==='detail' && params.id) { renderCustomerDetail(params.id); return }
   if(params.view==='form') { renderCustomerForm(params.id||null); return }
+  if(params.view==='soa' && params.id) { renderCustomerSOA(params.id); return }
   renderCustomerList()
 }
 
@@ -3502,6 +3503,158 @@ async function _crmSave(id) {
 // ─── Hari 17: Customer Detail ─────────────────────────────────────────────────
 let _custDetailCache = null
 
+
+async function renderCustomerSOA(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Penyata Akaun Pelanggan', back:'Pelanggan', print:'Cetak', whatsapp:'WhatsApp',
+    inv:'Invois', date:'Tarikh', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
+    status:'Status', noData:'Tiada invois untuk pelanggan ini.', outstanding:'Jumlah Hutang',
+    current:'Semasa', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari',
+    aging:'Analisis Umur Hutang'
+  } : {
+    title:'Customer Statement of Account', back:'Customer', print:'Print', whatsapp:'WhatsApp',
+    inv:'Invoice', date:'Date', due:'Due', total:'Total', paid:'Paid', balance:'Balance',
+    status:'Status', noData:'No invoices for this customer.', outstanding:'Total Outstanding',
+    current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days',
+    aging:'Aging Analysis'
+  }
+
+  document.getElementById('main').innerHTML = '<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>'
+
+  const [{data:cust}, {data:invs}] = await Promise.all([
+    sb.from('customers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(),
+    sb.from('invoices').select('id,ref_no,issue_date,due_date,total,paid_amt,status')
+      .eq('customer_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+      .order('issue_date',{ascending:true})
+  ])
+  if(!cust) { document.getElementById('main').innerHTML='<div class="empty-state"><p>Customer not found</p></div>'; return }
+
+  const rows = (invs||[]).map(inv => {
+    const bal = Math.max(0, Number(inv.total||0) - Number(inv.paid_amt||0))
+    return {...inv, balance: bal}
+  })
+  const outstanding = rows.reduce((s,r)=>s+r.balance, 0)
+  const today = new Date(); today.setHours(0,0,0,0)
+
+  const aging = { current:0, d30:0, d60:0, d90:0, d90p:0 }
+  rows.forEach(r => {
+    if(r.balance <= 0.005) return
+    const due = r.due_date ? new Date(r.due_date) : (r.issue_date ? new Date(r.issue_date) : today)
+    due.setHours(0,0,0,0)
+    const days = Math.floor((today - due) / 86400000)
+    if(days <= 0) aging.current += r.balance
+    else if(days <= 30) aging.d30 += r.balance
+    else if(days <= 60) aging.d60 += r.balance
+    else if(days <= 90) aging.d90 += r.balance
+    else aging.d90p += r.balance
+  })
+
+  const co = (APP.tenant && APP.tenant.name) || 'NexERP'
+  const statusLabel = s => s==='paid'?(isBm?'Lunas':'Paid'):s==='partial'?(isBm?'Separa':'Partial'):(isBm?'Belum bayar':'Unpaid')
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header no-print">
+    <div>
+      <div class="page-title">${t.title}</div>
+      <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('crm',{view:'detail',id:'${id}'})">← ${t.back}: ${cust.name}</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_soaWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
+      <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:960px;padding:24px" id="soa-doc">
+    <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;border-bottom:2px solid var(--primary);padding-bottom:16px">
+      <div>
+        <div style="font-weight:700;font-size:18px;color:var(--primary);font-family:'Space Grotesk',sans-serif">${co}</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:4px">${t.title}</div>
+      </div>
+      <div style="text-align:right;font-size:13px">
+        <div><strong>${cust.name}</strong></div>
+        <div style="color:var(--text-3)">${[cust.phone,cust.email].filter(Boolean).join(' · ')||''}</div>
+        <div style="color:var(--text-3);margin-top:4px">${isBm?'Dicetak':'Printed'}: ${formatDate(new Date().toISOString().slice(0,10))}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px">
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.outstanding}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;color:var(--danger)">${formatRM(outstanding)}</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.current}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:600">${formatRM(aging.current)}</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.d30}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:600">${formatRM(aging.d30)}</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.d60}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:600">${formatRM(aging.d60)}</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.d90}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:600">${formatRM(aging.d90)}</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.d90p}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;color:var(--danger)">${formatRM(aging.d90p)}</div>
+      </div>
+    </div>
+
+    ${!rows.length ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--bg)">
+          <th style="padding:10px;text-align:left">${t.inv}</th>
+          <th style="padding:10px;text-align:left">${t.date}</th>
+          <th style="padding:10px;text-align:left">${t.due}</th>
+          <th style="padding:10px;text-align:right">${t.total}</th>
+          <th style="padding:10px;text-align:right">${t.paid}</th>
+          <th style="padding:10px;text-align:right">${t.balance}</th>
+          <th style="padding:10px;text-align:left">${t.status}</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:9px 10px;font-weight:600">${r.ref_no||'-'}</td>
+            <td style="padding:9px 10px">${formatDate(r.issue_date)}</td>
+            <td style="padding:9px 10px">${formatDate(r.due_date)}</td>
+            <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
+            <td style="padding:9px 10px;text-align:right">${formatRM(r.paid_amt)}</td>
+            <td style="padding:9px 10px;text-align:right;font-weight:600;color:${r.balance>0.005?'var(--danger)':'var(--success)'}">${formatRM(r.balance)}</td>
+            <td style="padding:9px 10px">${statusLabel(r.status)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--bg);font-weight:700">
+            <td colspan="5" style="padding:12px 10px;text-align:right">${t.outstanding}</td>
+            <td style="padding:12px 10px;text-align:right;color:var(--danger);font-family:'Space Grotesk',sans-serif">${formatRM(outstanding)}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`}
+  </div>`
+
+  window._soaCache = { id, cust, outstanding, rows, aging }
+}
+
+function _soaWhatsApp(custId) {
+  const c = window._soaCache
+  if(!c || String(c.id)!==String(custId)) return
+  const isBm = APP.language==='bm'
+  const co = (APP.tenant && APP.tenant.name) || 'NexERP'
+  const openLines = c.rows.filter(r=>r.balance>0.005).slice(0,8)
+    .map(r=>`• ${r.ref_no}: ${formatRM(r.balance)}`).join('\\n')
+  const msg = isBm
+    ? `*${co}*\\n\\nPenyata Akaun — *${c.cust.name}*\\nJumlah hutang: *${formatRM(c.outstanding)}*\\n\\n${openLines||'(tiada baki)'}\\n\\nSila semak & buat bayaran. Terima kasih!`
+    : `*${co}*\\n\\nStatement of Account — *${c.cust.name}*\\nOutstanding: *${formatRM(c.outstanding)}*\\n\\n${openLines||'(no balance)'}\\n\\nPlease review & settle. Thank you!`
+  _waOpen(c.cust.phone||'', msg)
+}
+
 async function renderCustomerDetail(id) {
   const t = APP.language==='bm' ? { back:'Senarai Pelanggan', edit:'Edit', invoices:'Invois', noInv:'Tiada invois', totalSpent:'Jumlah Belanja', lastOrder:'Pesanan Terakhir', created:'Ahli Sejak' }
     : { back:'Customer List', edit:'Edit', invoices:'Invoices', noInv:'No invoices', totalSpent:'Total Spent', lastOrder:'Last Order', created:'Member Since' }
@@ -3525,7 +3678,10 @@ async function renderCustomerDetail(id) {
       <div class="page-title">${cust.name}</div>
       <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('crm')">← ${t.back}</div>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="openPage('crm',{view:'form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="openPage('crm',{view:'soa',id:'${id}'})"><i class="ti ti-file-analytics"></i> ${APP.language==='bm'?'Penyata Akaun (SOA)':'Statement (SOA)'}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('crm',{view:'form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
+    </div>
   </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
@@ -5382,12 +5538,28 @@ function _slRenderItems() {
   </tr>`).join('')
   _slUpdateTotal()
 }
+function _slGetSstRate() {
+  const el = document.getElementById('if-sst-rate')
+  if(!el) return 0
+  return Number(el.value||0)
+}
 function _slUpdateTotal() {
-  const t = APP.language==='bm' ? 'Jumlah Besar' : 'Grand Total'
-  const total = _slItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
+  const isBm = APP.language==='bm'
+  const subtotal = _slItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
+  const rate = _slGetSstRate()
+  const tax = Math.round(subtotal * rate * 100) / 100
+  const total = Math.round((subtotal + tax) * 100) / 100
   const el = document.getElementById('sl-grand-total')
-  if(el) el.textContent = `${t}: ${formatRM(total)}`
-  return total
+  if(el) {
+    if(rate > 0) {
+      el.innerHTML = `<div style="font-size:13px;font-weight:500;color:var(--text-3)">${isBm?'Subjumlah':'Subtotal'}: ${formatRM(subtotal)}</div>`
+        + `<div style="font-size:13px;font-weight:500;color:var(--text-3)">SST (${(rate*100).toFixed(0)}%): ${formatRM(tax)}</div>`
+        + `<div style="font-size:16px;font-weight:700;margin-top:4px">${isBm?'Jumlah Besar':'Grand Total'}: ${formatRM(total)}</div>`
+    } else {
+      el.textContent = `${isBm?'Jumlah Besar':'Grand Total'}: ${formatRM(total)}`
+    }
+  }
+  return { subtotal, tax, total, rate }
 }
 function _slItemsTableHead() {
   const t = APP.language==='bm' ? { product:'Produk', desc:'Keterangan', qty:'Kuantiti', price:'Harga', amount:'Jumlah' }
@@ -5537,13 +5709,31 @@ async function renderInvForm(id=null) {
     <div style="padding:0 20px">
       <table>${_slItemsTableHead()}<tbody id="sl-items-body"></tbody></table>
       <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_slAddItem()"><i class="ti ti-plus"></i> ${t.addLine}</button>
-      <div style="text-align:right;margin-top:12px;font-weight:700;font-size:16px" id="sl-grand-total"></div>
+      <div style="display:flex;justify-content:flex-end;align-items:flex-start;gap:24px;margin-top:16px;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;min-width:160px">
+          <label class="form-label">${APP.language==='bm'?'Kadar SST':'SST Rate'}</label>
+          <select id="if-sst-rate" class="form-select" onchange="_slUpdateTotal()">
+            <option value="0" ${Number(inv.tax_rate||0)===0?'selected':''}>${APP.language==='bm'?'Tiada SST (0%)':'No SST (0%)'}</option>
+            <option value="0.06" ${Number(inv.tax_rate||0)===0.06?'selected':''}>SST 6%</option>
+            <option value="0.08" ${Number(inv.tax_rate||0)===0.08?'selected':''}>SST 8%</option>
+          </select>
+        </div>
+        <div style="text-align:right;min-width:200px" id="sl-grand-total"></div>
+      </div>
     </div>
     <div style="padding:20px;display:flex;gap:12px">
       <button id="if-save" class="btn btn-primary" onclick="_invSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
       <button class="btn btn-outline" onclick="openPage('sales',{})">${t.cancel}</button>
     </div>
   </div>`
+  // Default SST from company profile if new invoice
+  if(!id && APP.tenant) {
+    const taxType = APP.tenant.tax_type || APP.tenant.config?.tax_type
+    if(taxType === 'sst_registered') {
+      const sel = document.getElementById('if-sst-rate')
+      if(sel && !inv.tax_rate) { sel.value = '0.06'; }
+    }
+  }
   _slRenderItems()
 }
 
@@ -5554,7 +5744,10 @@ async function _invSave(id) {
   errEl.style.display='none'
   const validItems = _slItems.filter(it=>it.description && Number(it.qty)>0)
   if(!customerId || validItems.length===0) { errEl.textContent=t.required; errEl.style.display='block'; return }
-  const total = validItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
+  const subtotal = validItems.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
+  const rate = _slGetSstRate()
+  const taxAmt = Math.round(subtotal * rate * 100) / 100
+  const total = Math.round((subtotal + taxAmt) * 100) / 100
 
   const customerName = document.getElementById('if-customer').selectedOptions[0]?.textContent || ''
   const payload = {
@@ -5563,17 +5756,34 @@ async function _invSave(id) {
     due_date: document.getElementById('if-due').value||null,
     total: total, updated_at: new Date().toISOString()
   }
+  // Optional tax columns — ignore if schema belum ada
+  payload.subtotal = subtotal
+  payload.tax_rate = rate
+  payload.tax_amt = taxAmt
 
   let invId = id
+  // Strip tax columns if DB belum support
+  const trySave = async (p, isUpdate) => {
+    if(isUpdate) return sb.from('invoices').update(p).eq('id',id).eq('tenant_id',APP.tenant.id)
+    return sb.from('invoices').insert(p).select('id').single()
+  }
+  const stripTax = (p) => { const q = {...p}; delete q.subtotal; delete q.tax_rate; delete q.tax_amt; return q }
+
   if(id) {
-    const {error} = await sb.from('invoices').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+    let {error} = await trySave(payload, true)
+    if(error && /subtotal|tax_rate|tax_amt|column/i.test(error.message||'')) {
+      ({error} = await trySave(stripTax(payload), true))
+    }
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     await sb.from('invoice_items').delete().eq('invoice_id', id)
   } else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).then(r=>r, ()=>({data:null}))
     payload.ref_no = refData || await _genFallbackRefNo('invoices','ref_no','INV')
     payload.status = 'unpaid'; payload.paid_amt = 0
-    const {data, error} = await sb.from('invoices').insert(payload).select('id').single()
+    let {data, error} = await trySave(payload, false)
+    if(error && /subtotal|tax_rate|tax_amt|column/i.test(error.message||'')) {
+      ({data, error} = await trySave(stripTax(payload), false))
+    }
     if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
     invId = data.id
   }
@@ -5648,7 +5858,7 @@ async function renderInvDetail(id) {
     <table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.amount}</th></tr></thead>
     <tbody>${(items||[]).map(it=>`<tr><td>${it.description}</td><td style="text-align:right">${it.qty}</td><td style="text-align:right">${formatRM(it.unit_price)}</td><td style="text-align:right">${formatRM(it.line_total)}</td></tr>`).join('')}</tbody></table>
     <div style="text-align:right;margin-top:16px;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-      <div>${t.total}: <strong>${formatRM(inv.total)}</strong></div>
+      <div>${Number(inv.tax_amt)>0 ? `${APP.language==='bm'?'Subjumlah':'Subtotal'}: ${formatRM(inv.subtotal|| (Number(inv.total)-Number(inv.tax_amt)))}<br>SST (${((Number(inv.tax_rate)||0)*100).toFixed(0)}%): ${formatRM(inv.tax_amt)}<br>` : ''}${t.total}: <strong>${formatRM(inv.total)}</strong></div>
       <div style="color:var(--success)">${t.paid}: ${formatRM(inv.paid_amt)}</div>
       <div style="color:${balance>0?'var(--danger)':'var(--text-2)'}">${t.balance}: <strong>${formatRM(balance)}</strong></div>
     </div>
