@@ -2694,29 +2694,31 @@ async function renderAdminTeam() {
   </tr></thead><tbody>
   ${data.map(u => {
     const isSelf = u.id === APP.user.id
-    return `<tr>
-      <td><strong>${_aiEscapeHtml(u.full_name||'-')}</strong>
-        <div style="font-size:11px;color:var(--text-3)">${u.id===APP.user.id?(isBm?'(anda)':'(you)'):''}</div>
-      </td>
-      <td>
-        <select class="form-select" style="width:auto;min-width:120px" id="adm-role-${u.id}" ${isSelf?'disabled':''}>
+    const roleCell = isSelf
+      ? `<span style="display:inline-block;padding:6px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:13px;text-transform:capitalize">${_aiEscapeHtml(u.role||'-')}</span>`
+      : `<select class="form-select" style="width:auto;min-width:120px" id="adm-role-${u.id}">
           ${roles.map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        <select class="form-select" style="width:auto" id="adm-active-${u.id}" ${isSelf?'disabled':''}>
+        </select>`
+    const statusCell = isSelf
+      ? `<span style="display:inline-block;padding:6px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:13px">${u.is_active===false?t.inactive:t.active}</span>`
+      : `<select class="form-select" style="width:auto" id="adm-active-${u.id}">
           <option value="1" ${u.is_active!==false?'selected':''}>${t.active}</option>
           <option value="0" ${u.is_active===false?'selected':''}>${t.inactive}</option>
-        </select>
+        </select>`
+    return `<tr>
+      <td><strong>${_aiEscapeHtml(u.full_name||'-')}</strong>
+        <div style="font-size:11px;color:var(--text-3)">${isSelf?(isBm?'(anda — tak boleh ubah sendiri)':'(you — cannot edit yourself)'):''}</div>
       </td>
+      <td>${roleCell}</td>
+      <td>${statusCell}</td>
       <td style="font-size:12px;color:var(--text-3)">${u.last_login ? formatDate(String(u.last_login).slice(0,10)) : '—'}</td>
       <td>${isSelf ? '—' : `<button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.id}')"><i class="ti ti-check"></i> ${t.save}</button>`}</td>
     </tr>`
   }).join('')}
   </tbody></table>
   <p style="font-size:12px;color:var(--text-3);padding:12px 4px 4px">${isBm
-    ? 'Nota: jemputan user baru masih melalui daftar + onboarding. Di sini anda urus peranan & status ahli sedia ada.'
-    : 'Note: inviting new users is still via register + onboarding. Here you manage roles & status of existing members.'}</p>`
+    ? 'Nota: anda tidak boleh ubah role/status sendiri (elak terkunci). Jemput user baru melalui daftar + onboarding, kemudian urus mereka di sini.'
+    : 'Note: you cannot change your own role/status (prevents lockout). Invite new users via register + onboarding, then manage them here.'}</p>`
 }
 
 async function _adminSaveUser(userId) {
