@@ -508,13 +508,19 @@ tbody tr:hover{background:var(--bg)}
 .pdoc .form-input::placeholder {
   color:#94A3B8 !important;
 }
-/* Signature block on screen */
+/* Signature block — compact */
 .pdoc-sig-grid {
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px 20px;
+  padding:14px 18px;
   background:#fff;
   border:1px solid #E2E8F0;
   border-radius:10px;
-  margin-top:16px;
+  margin-top:14px;
+  justify-content:flex-start;
 }
+.pdoc-sig-grid .form-group { margin:0; min-width:0; flex:1 1 140px; max-width:200px; }
 .pdoc-sig-grid .form-input {
   background:#F8FAFC !important;
   border:1px solid #E2E8F0 !important;
@@ -523,15 +529,19 @@ tbody tr:hover{background:var(--bg)}
   color:#0F172A !important;
   text-align:center;
   font-weight:600;
+  font-size:12px !important;
+  padding:6px 8px !important;
 }
 .pdoc-sig-grid .form-label {
   text-align:center;
-  font-size:11px;
+  font-size:10px;
   font-weight:600;
   text-transform:uppercase;
   letter-spacing:.04em;
   color:#64748B !important;
+  margin-bottom:4px !important;
 }
+@media (max-width:900px){ .pdoc-sig-grid { grid-template-columns:1fr 1fr; } }
 .pdoc-sd-basic { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; text-align:right; white-space:nowrap; }
 .pdoc-sd-net { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; text-align:right; color:var(--pdoc-accent); white-space:nowrap; }
 .pdoc-sd-print-line { font-size:11px; color:#334155; line-height:1.5; }
@@ -541,8 +551,6 @@ tbody tr:hover{background:var(--bg)}
 @media print {
   .pdoc-sd-line .form-select, .pdoc-sd-line .form-input { display:none !important; }
 }
-.pdoc-sig-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:24px; background:#fff; border:1px solid #E2E8F0; border-radius:10px; margin-top:16px; }
-@media (max-width:900px){ .pdoc-sig-grid { grid-template-columns:1fr 1fr; } }
 .pdoc-sig-line { border-top:1.5px solid #334155; margin-top:34px; padding-top:6px; text-align:center; }
 .pdoc-sig-label { font-size:10px; color:#64748B; text-transform:uppercase; letter-spacing:.03em; }
 .pdoc-sig-name { font-size:12px; font-weight:600; margin-top:2px; }
@@ -552,8 +560,50 @@ tbody tr:hover{background:var(--bg)}
 @media print {
   .pdoc { border:none !important; border-radius:0 !important; }
   .pdoc-title-bar, .pdoc-net-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-  .pdoc-sig-grid .form-label { font-weight:700; font-size:11px; color:#000 !important; margin-bottom:30px; display:block; }
-  .pdoc-sig-grid .form-input { border:none; border-top:1.5px solid #94A3B8; border-radius:0; padding:6px 0 0; text-align:center; background:transparent !important; font-weight:600; color:#000 !important; box-shadow:none !important; }
+  .pdoc-sig-grid {
+    display:flex !important;
+    flex-wrap:wrap !important;
+    gap:12px 28px !important;
+    padding:12px 0 0 !important;
+    border:none !important;
+    border-radius:0 !important;
+    background:transparent !important;
+    margin-top:18px !important;
+    page-break-inside:avoid;
+    justify-content:flex-start !important;
+  }
+  .pdoc-sig-grid .form-group {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    flex:0 0 160px !important;
+    max-width:180px !important;
+  }
+  /* Classic signature: space for pen, then line, then name, then role */
+  .pdoc-sig-grid .form-label {
+    order:3;
+    font-weight:600;
+    font-size:9px;
+    color:#475569 !important;
+    margin:4px 0 0 !important;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .pdoc-sig-grid .form-input {
+    order:2;
+    border:none !important;
+    border-top:1.5px solid #334155 !important;
+    border-radius:0 !important;
+    padding:6px 4px 0 !important;
+    margin-top:28px !important;
+    text-align:center;
+    background:transparent !important;
+    font-weight:600;
+    font-size:11px !important;
+    color:#0F172A !important;
+    box-shadow:none !important;
+    width:100%;
+  }
   /* The horizontal-scroll wrapper around the wide Salary Disbursement table
      clips its content in print (overflow:auto doesn't reflow for paged
      media) — force it visible so the table's natural width shows and
