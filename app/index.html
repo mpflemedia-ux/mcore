@@ -867,6 +867,41 @@ async function _pdocGetTenant() {
 function _pdocAddressLine(tn) {
   return [tn.address, tn.address_line2, [tn.postcode,tn.city].filter(Boolean).join(' '), tn.state].filter(Boolean).join(', ')
 }
+
+// ── Printable document filenames ────────────────────────────────────────
+// Suggests a unique "Save as PDF" filename via document.title (browsers use
+// it as the default filename in the print dialog) instead of letting every
+// printed document default to the app's own page title. Convention:
+// {DocType}_{DocNumber}_{Counterparty}_{YYYYMMDD}[_{HHmm}] — the trailing
+// time component is only needed for documents with no unique DB reference
+// number (Payslip, Salary Disbursement use month+year, which collides on
+// reprint), everything with a ref_no is already unique without it.
+function _pdocSlug(str) {
+  return String(str||'').trim()
+    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .replace(/\s+/g, '')
+    .slice(0, 40) || 'NexERP'
+}
+function _pdocDateStamp(dateStr) {
+  const d = dateStr ? new Date(dateStr) : new Date()
+  const p = n => String(n).padStart(2,'0')
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}`
+}
+function _pdocTimeStamp() {
+  const d = new Date()
+  const p = n => String(n).padStart(2,'0')
+  return `${p(d.getHours())}${p(d.getMinutes())}`
+}
+let _pdocOriginalTitle = null
+function _pdocSetPrintFilename(name) {
+  if(_pdocOriginalTitle === null) _pdocOriginalTitle = document.title
+  document.title = name
+  window.addEventListener('afterprint', _pdocRestoreTitle, { once: true })
+}
+function _pdocRestoreTitle() {
+  if(_pdocOriginalTitle !== null) { document.title = _pdocOriginalTitle; _pdocOriginalTitle = null }
+}
+
 function _pdocLogoHtml(tn) {
   return tn.logo_url
     ? `<img src="${tn.logo_url}" alt="logo">`
@@ -5105,6 +5140,7 @@ async function renderInvDetail(id) {
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
+  const printFilename = `Invoice_${inv.ref_no}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}`
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
@@ -5113,7 +5149,7 @@ async function renderInvDetail(id) {
   </div>
   <div class="no-print" style="display:flex;gap:8px">
     <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
-    <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename.replace(/'/g,"\\'")}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     ${custPhone?.phone ? `<button class="btn btn-outline btn-sm" onclick="_sendInvWhatsApp('${custPhone.phone.replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'})"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>` : ''}
   </div></div>
   <div class="card" style="max-width:900px;padding:20px">
@@ -5289,12 +5325,14 @@ async function renderQuoForm(id=null) {
     }
   }
 
+  const printFilename = `Quotation_${quo.ref_no}_${_pdocSlug(quo.customer_name)}_${_pdocDateStamp(quo.issue_date)}`.replace(/'/g,"\\'")
+
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{view:'quo'})">← ${t.back}</div></div>
     ${id?`<div class="no-print" style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>
-      <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
       ${custPhone?.phone ? `<button class="btn btn-outline btn-sm" onclick="_sendQuoWhatsApp('${custPhone.phone.replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'})"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>` : ''}
     </div>`:''}</div>
   <div class="card" style="max-width:900px">
@@ -7224,6 +7262,7 @@ async function renderPayslipDetail(id) {
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
   _pdocSetPageOrientation('portrait')
+  const printFilenamePrefix = `Payslip_${_pdocSlug(rec.employees?.name)}_${rec.year}${String(rec.month).padStart(2,'0')}`.replace(/'/g,"\\'")
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
@@ -7232,7 +7271,7 @@ async function renderPayslipDetail(id) {
   </div>
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('payslip', accent)}
-      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilenamePrefix}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
@@ -7273,6 +7312,10 @@ async function _payslipLoadNote(id) {
 }
 
 let _sdRecords = []
+// Filename prefix for _sdPreparePrint() (called both from the Print button and
+// the beforeprint listener for Ctrl+P) — set by renderSalaryDisbursement since
+// _sdPreparePrint itself has no access to that render's tn/month/year closure.
+let _sdPrintFilenamePrefix = ''
 
 const SD_ALLOWANCE_TYPES = [
   { key:'', en:'— None —', bm:'— Tiada —' },
@@ -7351,6 +7394,7 @@ async function renderSalaryDisbursement(month, year) {
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('sd')
   _pdocSetPageOrientation('landscape')
+  _sdPrintFilenamePrefix = `SalaryDisbursement_${_pdocSlug(tn.name)}_${year}${String(month).padStart(2,'0')}`
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
@@ -7472,6 +7516,7 @@ async function renderSalaryDisbursement(month, year) {
 // render time) — a user may edit a value and print before hitting Save.
 function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape');
+  if(_sdPrintFilenamePrefix) _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp())
   ['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
     const input = document.getElementById('sig-input-'+k)
     const wrapper = document.getElementById('sig-'+k)
@@ -7601,6 +7646,7 @@ async function renderPayslipsPrint(month, year) {
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
   _pdocSetPageOrientation('portrait')
+  const printFilenamePrefix = `Payslips_${_pdocSlug(tn.name)}_${year}${String(month).padStart(2,'0')}`
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
@@ -7609,7 +7655,7 @@ async function renderPayslipsPrint(month, year) {
   </div>
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('payslip', accent)}
-      <button class="btn btn-primary" onclick="_pdocSetPageOrientation('portrait');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-primary" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilenamePrefix}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
