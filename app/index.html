@@ -1619,7 +1619,7 @@ function renderDashboard() {
     </div>
 
     <div class="db-kpi-grid" id="db-kpi-grid">
-      ${['sales','collected','rate','avg','count'].map(k=>`
+      ${['sales','grossProfit','collected','rate','avg','count'].map(k=>`
       <div class="db-kpi-card">
         <div class="db-kpi-label" id="db-lbl-${k}">-</div>
         <div class="db-kpi-value" id="db-val-${k}">-</div>
@@ -1768,8 +1768,34 @@ async function loadDashboardData() {
   const prevAvg = lastMonth.length ? prevSales/lastMonth.length : 0
   const curCount = thisMonth.length, prevCount = lastMonth.length
 
+  // Gross Profit = Sales - COGS (qty × products.unit_cost per invoice line).
+  // Lines with a null product_id (custom/ad-hoc line items, no catalog
+  // product) are excluded from COGS since there's no unit_cost to look up —
+  // this is a conservative approximation (COGS is undercounted for tenants
+  // that use custom line items heavily), not a fully accurate cost figure.
+  const thisMonthIds = thisMonth.map(i=>i.id)
+  const lastMonthIds = lastMonth.map(i=>i.id)
+  const allRelevantIds = [...thisMonthIds, ...lastMonthIds]
+
+  let curCOGS = 0, prevCOGS = 0
+  if(allRelevantIds.length) {
+    const {data: items} = await sb.from('invoice_items')
+      .select('invoice_id,qty,product_id,products(unit_cost)')
+      .eq('tenant_id', APP.tenant.id)
+      .in('invoice_id', allRelevantIds)
+    const thisSet = new Set(thisMonthIds), lastSet = new Set(lastMonthIds)
+    ;(items||[]).forEach(it => {
+      const cost = Number(it.qty||0) * Number(it.products?.unit_cost||0)
+      if(thisSet.has(it.invoice_id)) curCOGS += cost
+      else if(lastSet.has(it.invoice_id)) prevCOGS += cost
+    })
+  }
+  const curGP = curSales - curCOGS
+  const prevGP = prevSales - prevCOGS
+
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
+    grossProfit: { label: isBm?'Untung Kasar':'Gross Profit', value: formatRM(curGP), delta: pctChange(curGP,prevGP), color:'#14B8A6' },
     collected:{ label: isBm?'Jumlah Kutipan':'Net Collected', value: formatRM(curPaid), delta: pctChange(curPaid,prevPaid), color:'#3B82F6' },
     rate:    { label: isBm?'Kadar Kutipan':'Collection Rate', value: curRate.toFixed(1)+'%', delta: null, sub: curRate>=80?(isBm?'Baik':'Good'):curRate>=50?(isBm?'Sederhana':'Fair'):(isBm?'Perlu Perhatian':'Needs Attention'), color:'#A855F7' },
     avg:     { label: isBm?'Purata Nilai Invois':'Avg Invoice Value', value: formatRM(curAvg), delta: pctChange(curAvg,prevAvg), color:'#F59E0B' },
@@ -1787,7 +1813,10 @@ async function loadDashboardData() {
         delta.innerHTML = `<span style="color:${up?'#22C55E':'#EF4444'}"><i class="ti ti-trending-${up?'up':'down'}"></i> ${up?'+':''}${v.delta.toFixed(2)}%</span>`
       }
     }
-    _dbRenderSparkline(k, v.color, thisMonth, lastMonth)
+    // Skip the sparkline for grossProfit — _dbRenderSparkline only has a
+    // per-day SALES total to draw from (no per-day COGS breakdown), so it
+    // would silently show the sales trend, not a gross profit trend.
+    if(k!=='grossProfit') _dbRenderSparkline(k, v.color, thisMonth, lastMonth)
   })
 
   _dbRenderGrowthChart(inv)
