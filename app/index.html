@@ -7471,7 +7471,7 @@ async function renderSalaryDisbursement(month, year) {
 // from the CURRENT on-screen input values (not just what was in the DB at
 // render time) — a user may edit a value and print before hitting Save.
 function _sdPreparePrint() {
-  _pdocSetPageOrientation('landscape')
+  _pdocSetPageOrientation('landscape');
   ['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
     const input = document.getElementById('sig-input-'+k)
     const wrapper = document.getElementById('sig-'+k)
