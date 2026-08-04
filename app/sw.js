@@ -1,5 +1,5 @@
 /* NexERP minimal service worker — cache shell for offline shell only */
-const CACHE = 'nexerp-shell-v1'
+const CACHE = 'nexerp-shell-v2'
 const ASSETS = ['./', './index.html', './manifest.webmanifest']
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()))
