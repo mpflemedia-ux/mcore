@@ -684,8 +684,28 @@ tbody tr:hover{background:var(--bg)}
      Chrome's print "shrink to fit" scales the whole thing onto the page,
      instead of cutting columns off past the screen viewport width. */
   .pdoc-sd-scroll { overflow:visible !important; }
-  .pdoc-sd-table { font-size:9.5px !important; }
-  .pdoc-sd-table th, .pdoc-sd-table td { padding:4px 3px !important; }
+  .pdoc-sd-table { font-size:10.5px !important; }
+  .pdoc-sd-table th { padding:8px 6px !important; font-size:9px !important; }
+  .pdoc-sd-table td { padding:8px 6px !important; line-height:1.45 !important; }
+  .pdoc-sd-table tfoot td { padding:8px 10px !important; }
+  .pdoc-sd-payee { font-size:11px !important; }
+  .pdoc-sd-print-line { font-size:10px !important; line-height:1.55 !important; }
+  .pdoc-sd-employer-note { font-size:9px !important; color:#475569 !important; margin-top:6px !important; line-height:1.4 !important; }
+  .pdoc-sig-grid {
+    display:flex !important;
+    visibility:visible !important;
+    page-break-inside:avoid !important;
+    break-inside:avoid !important;
+    margin-top:28px !important;
+    padding-top:16px !important;
+    border-top:1px solid #E2E8F0 !important;
+  }
+  .pdoc-sig-grid .form-group { display:flex !important; visibility:visible !important; }
+  .pdoc-sig-grid .form-input {
+    -webkit-print-color-adjust:exact !important;
+    color:#0F172A !important;
+    min-height:18px !important;
+  }
 }
 </style>
 </head>
@@ -9535,7 +9555,7 @@ async function renderSalaryDisbursement(month, year) {
           <div class="pdoc-sd-line"><label>EIS</label><span class="print-only pdoc-sd-print-line" id="sd-print-eis-${r.id}">${_sdPrintAmt(r.eis_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" value="${r.eis_employee||0}" oninput="_sdRecalc()"></div>
           <div class="pdoc-sd-line"><label>PCB</label><span class="print-only pdoc-sd-print-line" id="sd-print-pcb-${r.id}">${_sdPrintAmt(r.pcb)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" value="${r.pcb||0}" oninput="_sdRecalc()"></div>
           <div style="font-size:9px;color:#64748b;margin-top:4px;line-height:1.35" class="no-print">${isBm?'Majikan':'Er'}: EPF ${_sdPrintAmt(r.epf_employer)} · SOCSO ${_sdPrintAmt(r.socso_employer)} · EIS ${_sdPrintAmt(r.eis_employer)}</div>
-          <div style="font-size:9px;color:#64748b;margin-top:2px;line-height:1.35" class="print-only">${isBm?'Caruman majikan':'Employer'}: EPF ${_sdPrintAmt(r.epf_employer)} / SOCSO ${_sdPrintAmt(r.socso_employer)} / EIS ${_sdPrintAmt(r.eis_employer)}</div>
+          <div class="print-only pdoc-sd-employer-note">${isBm?'Majikan':'Employer'} — EPF ${_sdPrintAmt(r.epf_employer)} · SOCSO ${_sdPrintAmt(r.socso_employer)} · EIS ${_sdPrintAmt(r.eis_employer)}</div>
         </div>
       </td>
       <td>
@@ -9572,6 +9592,12 @@ async function renderSalaryDisbursement(month, year) {
       </tr>
     </tfoot>
     </table>
+    <div class="pdoc-sig-grid" style="margin:16px 12px 20px">
+      <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+      <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+      <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+      <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+    </div>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
       <div style="font-size:11px;color:#64748B;max-width:520px;line-height:1.45">${t.sessionHint}</div>
       <div style="display:flex;align-items:center;gap:10px">
@@ -9579,12 +9605,6 @@ async function renderSalaryDisbursement(month, year) {
         <button class="btn btn-primary btn-sm" onclick="_sdSaveAll()"><i class="ti ti-device-floppy"></i> ${t.save}</button>
       </div>
     </div>
-  </div>
-  <div class="pdoc-sig-grid">
-    <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
-    <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
-    <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
-    <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
   </div>
   <div class="card no-print" style="margin-top:16px">
     <div class="card-header"><div class="card-title">${t.generatePayslip}</div>
@@ -9606,12 +9626,10 @@ async function renderSalaryDisbursement(month, year) {
 function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape');
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
+  // Always show signature slots on print (empty = space for wet-ink / stamp)
   ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
-    const input = document.getElementById('sig-input-'+k)
     const wrapper = document.getElementById('sig-'+k)
-    if(input && wrapper) {
-      wrapper.style.display = input.value.trim() ? '' : 'none'
-    }
+    if(wrapper) wrapper.style.display = ''
   })
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
