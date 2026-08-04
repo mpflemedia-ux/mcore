@@ -9403,6 +9403,10 @@ async function renderSalaryDisbursement(month, year) {
   }
   _sdRecords = data
 
+  const sumSalary = data.reduce((s,r)=>s+Number(r.basic_salary||0),0)
+  const sumAllow = data.reduce((s,r)=>s+Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0),0)
+  const sumStat = data.reduce((s,r)=>s+Number(r.epf_employee||0)+Number(r.socso_employee||0)+Number(r.eis_employee||0)+Number(r.pcb||0),0)
+  const sumOther = data.reduce((s,r)=>s+Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0),0)
   const grandTotal = data.reduce((s,r) => {
     const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
     const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
@@ -9412,6 +9416,7 @@ async function renderSalaryDisbursement(month, year) {
   wrap.innerHTML = `
   <div class="pdoc-sd-summary no-print">
     <span>${isBm?'Pekerja':'Employees'}: <b>${data.length}</b></span>
+    <span>${isBm?'Jumlah Gaji':'Total Salary'}: <b>${formatRM(sumSalary)}</b></span>
     <span>${t.grandTotal}: <b id="sd-summary-total">${formatRM(grandTotal)}</b></span>
   </div>
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
@@ -9486,10 +9491,16 @@ async function renderSalaryDisbursement(month, year) {
       </td>
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`}).join('')}</tbody>
-    <tfoot><tr>
-      <td colspan="6" style="text-align:right">${t.grandTotal}</td>
-      <td style="text-align:right" id="sd-grand-total">${formatRM(grandTotal)}</td>
-    </tr></tfoot>
+    <tfoot>
+      <tr style="background:#f1f5f9;font-weight:700">
+        <td colspan="4" style="text-align:right;padding:12px 10px;font-size:12px;text-transform:uppercase;letter-spacing:.04em">${t.grandTotal}</td>
+        <td style="text-align:right;padding:12px 10px;font-size:12px" id="sd-sum-salary">${formatRM(sumSalary)}</td>
+        <td style="text-align:right;padding:12px 10px;font-size:11px;color:#64748b" id="sd-sum-allow">${sumAllow?formatRM(sumAllow):'—'}</td>
+        <td style="text-align:right;padding:12px 10px;font-size:11px;color:#64748b" id="sd-sum-stat">${formatRM(sumStat)}</td>
+        <td style="text-align:right;padding:12px 10px;font-size:11px;color:#64748b" id="sd-sum-other">${sumOther?formatRM(sumOther):'—'}</td>
+        <td style="text-align:right;padding:12px 10px;font-size:13px;color:var(--pdoc-accent,#0E7490)" id="sd-grand-total">${formatRM(grandTotal)}</td>
+      </tr>
+    </tfoot>
     </table>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
       <div style="font-size:11px;color:#64748B;max-width:520px;line-height:1.45">${t.sessionHint}</div>
@@ -9605,10 +9616,14 @@ function _sdMarkAmended(inputId, originalValue) {
 }
 
 function _sdRecalc() {
-  let grand = 0
+  let grand = 0, sumAllow = 0, sumStat = 0, sumOther = 0, sumSalary = 0
   _sdRecords.forEach(r => {
     const v = _sdRowValues(r)
     grand += v.net_pay
+    sumSalary += Number(r.basic_salary||0)
+    sumAllow += Number(v.allowance_1||0)+Number(v.allowance_2||0)+Number(v.allowance_3||0)
+    sumStat += Number(v.epf_employee||0)+Number(v.socso_employee||0)+Number(v.eis_employee||0)+Number(v.pcb||0)
+    sumOther += Number(v.advance||0)+Number(v.deduction_1||0)+Number(v.deduction_2||0)
     const cell = document.getElementById(`sd-net-${r.id}`)
     if(cell) cell.textContent = formatRM(v.net_pay)
     _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
@@ -9616,10 +9631,13 @@ function _sdRecalc() {
     _sdMarkAmended(`sd-eis-${r.id}`, r.eis_employee)
     _sdMarkAmended(`sd-pcb-${r.id}`, r.pcb)
   })
-  const totalCell = document.getElementById('sd-grand-total')
-  if(totalCell) totalCell.textContent = formatRM(grand)
-  const summaryTotal = document.getElementById('sd-summary-total')
-  if(summaryTotal) summaryTotal.textContent = formatRM(grand)
+  const setTxt = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt }
+  setTxt('sd-grand-total', formatRM(grand))
+  setTxt('sd-summary-total', formatRM(grand))
+  setTxt('sd-sum-salary', formatRM(sumSalary))
+  setTxt('sd-sum-allow', sumAllow ? formatRM(sumAllow) : '—')
+  setTxt('sd-sum-stat', formatRM(sumStat))
+  setTxt('sd-sum-other', sumOther ? formatRM(sumOther) : '—')
 }
 
 async function _sdSaveAll() {
