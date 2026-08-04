@@ -1489,6 +1489,14 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
       ${dedRows.length ? `<tr class="pdoc-total-row"><td>${isBm?'Jumlah Potongan':'Total Deductions'}</td><td style="text-align:right;color:#DC2626">− ${formatRM(totalDeductions)}</td></tr>` : ''}
     </tbody></table>
     <div class="pdoc-net-bar"><span class="lbl">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="amt">${formatRM(rec.net_pay)}</span></div>
+    <div class="pdoc-section-title">${isBm?'Caruman Majikan (maklumat)':'Employer Contributions (info)'}</div>
+    <table class="pdoc-table"><tbody>
+      <tr><td>${isBm?'KWSP (Majikan)':'EPF (Employer)'}</td><td style="text-align:right">${formatRM(rec.epf_employer||0)}</td></tr>
+      <tr><td>${isBm?'SOCSO (Majikan)':'SOCSO (Employer)'}</td><td style="text-align:right">${formatRM(rec.socso_employer||0)}</td></tr>
+      <tr><td>${isBm?'EIS (Majikan)':'EIS (Employer)'}</td><td style="text-align:right">${formatRM(rec.eis_employer||0)}</td></tr>
+      <tr class="pdoc-total-row"><td>${isBm?'Jumlah Caruman Majikan':'Total Employer Contrib.'}</td><td style="text-align:right">${formatRM(Number(rec.epf_employer||0)+Number(rec.socso_employer||0)+Number(rec.eis_employer||0))}</td></tr>
+    </tbody></table>
+    <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.4">${isBm?'Caruman majikan ditanggung syarikat — tidak ditolak dari gaji pekerja.':'Employer contributions are borne by the company — not deducted from employee net pay.'}</div>
     <div class="pdoc-footer-note">${isBm?'Slip gaji janaan komputer · Tiada tandatangan diperlukan':'Computer-generated payslip · No signature required'}</div>
   </div>`
 }
@@ -9440,7 +9448,7 @@ async function renderSalaryDisbursement(month, year) {
 
   const wrap = document.getElementById('sd-content')
   const {data, error} = await sb.from('payroll_records')
-    .select(`id,basic_salary,epf_employee,socso_employee,eis_employee,pcb,net_pay,
+    .select(`id,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,
       allowance_type_1,allowance_1,allowance_type_2,allowance_2,allowance_type_3,allowance_3,
       advance,deduction_type_1,deduction_1,deduction_type_2,deduction_2,
       employees(name,bank_name,bank_account_no)`)
@@ -9456,11 +9464,14 @@ async function renderSalaryDisbursement(month, year) {
   const sumAllow = data.reduce((s,r)=>s+Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0),0)
   const sumStat = data.reduce((s,r)=>s+Number(r.epf_employee||0)+Number(r.socso_employee||0)+Number(r.eis_employee||0)+Number(r.pcb||0),0)
   const sumOther = data.reduce((s,r)=>s+Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0),0)
+  const sumEmployer = data.reduce((s,r)=>s+Number(r.epf_employer||0)+Number(r.socso_employer||0)+Number(r.eis_employer||0),0)
   const grandTotal = data.reduce((s,r) => {
     const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
     const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
     return s + Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - totalDeduction
   }, 0)
+  // Company cost = gross earnings (basic+allow) + employer statutory contributions
+  const companyCost = sumSalary + sumAllow + sumEmployer
 
   const _sdSigsPrefill = _sdLoadSigs()
   const _sigPrep = (_sdSigsPrefill.preparedBy!=null && String(_sdSigsPrefill.preparedBy).trim()!=='') ? _sdSigsPrefill.preparedBy : (APP.user.name||'')
@@ -9469,6 +9480,8 @@ async function renderSalaryDisbursement(month, year) {
     <span>${isBm?'Pekerja':'Employees'}: <b>${data.length}</b></span>
     <span>${isBm?'Jumlah Gaji':'Total Salary'}: <b>${formatRM(sumSalary)}</b></span>
     <span>${t.grandTotal}: <b id="sd-summary-total">${formatRM(grandTotal)}</b></span>
+    <span>${isBm?'Caruman Majikan':'Employer Contrib.'}: <b id="sd-summary-employer">${formatRM(sumEmployer)}</b></span>
+    <span>${isBm?'Kos Syarikat':'Company Cost'}: <b id="sd-summary-company">${formatRM(companyCost)}</b></span>
   </div>
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
@@ -9521,6 +9534,8 @@ async function renderSalaryDisbursement(month, year) {
           <div class="pdoc-sd-line"><label>SOCSO</label><span class="print-only pdoc-sd-print-line" id="sd-print-socso-${r.id}">${_sdPrintAmt(r.socso_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-${r.id}" value="${r.socso_employee||0}" oninput="_sdRecalc()"></div>
           <div class="pdoc-sd-line"><label>EIS</label><span class="print-only pdoc-sd-print-line" id="sd-print-eis-${r.id}">${_sdPrintAmt(r.eis_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" value="${r.eis_employee||0}" oninput="_sdRecalc()"></div>
           <div class="pdoc-sd-line"><label>PCB</label><span class="print-only pdoc-sd-print-line" id="sd-print-pcb-${r.id}">${_sdPrintAmt(r.pcb)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" value="${r.pcb||0}" oninput="_sdRecalc()"></div>
+          <div style="font-size:9px;color:#64748b;margin-top:4px;line-height:1.35" class="no-print">${isBm?'Majikan':'Er'}: EPF ${_sdPrintAmt(r.epf_employer)} · SOCSO ${_sdPrintAmt(r.socso_employer)} · EIS ${_sdPrintAmt(r.eis_employer)}</div>
+          <div style="font-size:9px;color:#64748b;margin-top:2px;line-height:1.35" class="print-only">${isBm?'Caruman majikan':'Employer'}: EPF ${_sdPrintAmt(r.epf_employer)} / SOCSO ${_sdPrintAmt(r.socso_employer)} / EIS ${_sdPrintAmt(r.eis_employer)}</div>
         </div>
       </td>
       <td>
@@ -9544,8 +9559,16 @@ async function renderSalaryDisbursement(month, year) {
     </tr>`}).join('')}</tbody>
     <tfoot>
       <tr>
-        <td colspan="8" style="text-align:right;padding:12px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${t.grandTotal}</td>
-        <td class="pdoc-sd-net" style="text-align:right;padding:12px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
+        <td colspan="8" style="text-align:right;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${t.grandTotal}</td>
+        <td class="pdoc-sd-net" style="text-align:right;padding:10px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
+      </tr>
+      <tr>
+        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS)':'Total Employer Contrib. (EPF+SOCSO+EIS)'}</td>
+        <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-employer">${formatRM(sumEmployer)}</td>
+      </tr>
+      <tr>
+        <td colspan="8" style="text-align:right;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;border-top:1px solid rgba(255,255,255,.25)">${isBm?'Kos Payroll Syarikat (Gaji+Elaun+Caruman Majikan)':'Company Payroll Cost (Salary+Allow+Employer)'}</td>
+        <td style="text-align:right;padding:10px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-company">${formatRM(companyCost)}</td>
       </tr>
     </tfoot>
     </table>
