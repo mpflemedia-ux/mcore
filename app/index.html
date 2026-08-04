@@ -2107,8 +2107,11 @@ function _captureInviteFromUrl() {
 _captureInviteFromUrl()
 // Public invoice deep link (no login)
 try {
-  if(new URLSearchParams(location.search).get('public_inv')) {
+  const _qs = new URLSearchParams(location.search)
+  if(_qs.get('public_inv')) {
     setTimeout(async ()=>{ try { await _tryShowPublicInvoice() } catch(e) { console.error(e) } }, 100)
+  } else if(_qs.get('public_quo')) {
+    setTimeout(async ()=>{ try { await _tryShowPublicQuotation() } catch(e) { console.error(e) } }, 100)
   }
 } catch(e) {}
 setTimeout(() => {
@@ -3519,6 +3522,7 @@ async function renderSettings() {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:20px">
         <div class="form-group" style="grid-column:1/-1"><label class="form-label">${cp.companyName} *</label><input id="cp-name" class="form-input" value="${_aiEscapeHtml(tenantRow.name||'')}"></div>
         <div class="form-group"><label class="form-label">${cp.registrationNo}</label><input id="cp-ssm" class="form-input" value="${_aiEscapeHtml(tenantRow.ssm_no||'')}"></div>
+        <div class="form-group"><label class="form-label">TIN (LHDN)</label><input id="cp-tin" class="form-input" placeholder="e.g. C1234567890" value="${_aiEscapeHtml((tenantRow.config&&tenantRow.config.tin)||'')}"></div>
         <div class="form-group"><label class="form-label">${cp.incorpDate}</label><input id="cp-incorp-date" type="date" class="form-input" value="${tenantRow.incorporation_date||''}"></div>
       </div>
 
@@ -4134,10 +4138,21 @@ async function _cpSave() {
     invoice_terms: document.getElementById('cp-invoice-terms').value.trim() || null,
   }
 
+  const tinVal = (document.getElementById('cp-tin')?.value || '').trim() || null
+  // Merge TIN into config jsonb
+  const {data: curT} = await sb.from('tenants').select('config').eq('id', APP.tenant.id).single()
+  let cfg = curT?.config || {}
+  if(typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }
+  cfg = Object.assign({}, cfg || {})
+  if(tinVal) cfg.tin = tinVal
+  else delete cfg.tin
+  payload.config = cfg
+
   const {error} = await sb.from('tenants').update(payload).eq('id', APP.tenant.id)
   if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
 
   APP.tenant.name = name
+  APP.tenant.config = cfg
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')
@@ -6720,12 +6735,21 @@ async function _invExportEInvoice(id) {
     ? await sb.from('customers').select('*').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
     : {data:null}
   // Malaysia MyInvois-oriented export (manual submit / accountant). Not live LHDN API.
+  let tenantRow = null
+  try {
+    const tr = await sb.from('tenants').select('name,code,ssm_no,config').eq('id', APP.tenant.id).single()
+    tenantRow = tr.data
+  } catch(e) {}
+  const cfg = (tenantRow && tenantRow.config) || APP.tenant.config || {}
+  const sub = inv.subtotal != null ? Number(inv.subtotal) : Math.max(0, Number(inv.total||0) - Number(inv.tax_amt||0))
+  const taxAmt = Number(inv.tax_amt||0)
+  const taxRate = inv.tax_rate != null ? Number(inv.tax_rate) : 0
   const doc = {
     _meta: {
       format: 'NexERP-eInvoice-export-v1',
       note: 'Structured export for Malaysia e-Invoice preparation. Not a live LHDN MyInvois submission.',
       exported_at: new Date().toISOString(),
-      tenant: { id: APP.tenant.id, name: APP.tenant.name, code: APP.tenant.code }
+      tenant: { id: APP.tenant.id, name: (tenantRow&&tenantRow.name)||APP.tenant.name, code: (tenantRow&&tenantRow.code)||APP.tenant.code }
     },
     invoice: {
       codeNumber: inv.ref_no,
@@ -6734,17 +6758,17 @@ async function _invExportEInvoice(id) {
       documentCurrencyCode: 'MYR',
       status: inv.status,
       totals: {
-        totalExcludingTax: Number(inv.subtotal != null ? inv.subtotal : (Number(inv.total||0) - Number(inv.tax_amt||0))),
-        taxAmount: Number(inv.tax_amt||0),
-        taxRate: Number(inv.tax_rate||0),
+        totalExcludingTax: sub,
+        taxAmount: taxAmt,
+        taxRate: taxRate,
         totalIncludingTax: Number(inv.total||0),
         paidAmount: Number(inv.paid_amt||0)
       }
     },
     supplier: {
-      name: APP.tenant.name,
-      tin: APP.tenant.config?.tin || APP.tenant.config?.tax_id || null,
-      ssm: APP.tenant.config?.ssm_no || APP.tenant.config?.registration_no || null
+      name: (tenantRow&&tenantRow.name)||APP.tenant.name,
+      tin: cfg.tin || cfg.tax_id || cfg.tin_no || null,
+      ssm: (tenantRow&&tenantRow.ssm_no) || cfg.ssm_no || cfg.registration_no || null
     },
     buyer: {
       name: inv.customer_name || cust?.name,
@@ -6769,6 +6793,71 @@ async function _invExportEInvoice(id) {
   a.click()
   URL.revokeObjectURL(url)
   showToast(isBm?'e-Invoice JSON dimuat turun (untuk akauntan / LHDN manual).':'e-Invoice JSON downloaded (for accountant / manual LHDN).', 'success')
+}
+
+
+async function _quoPublicLink(id) {
+  const isBm = APP.language==='bm'
+  const {data: quo} = await sb.from('quotations').select('id,public_token,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!quo) { showToast('Not found','error'); return }
+  let token = quo.public_token
+  if(!token) {
+    token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'')) || (Date.now().toString(36)+Math.random().toString(36).slice(2))
+    const {error} = await sb.from('quotations').update({ public_token: token }).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) {
+      showToast((isBm?'Gagal jana link. SQL: ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token text; ':'Failed. SQL: ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token text; ') + error.message, 'error')
+      return
+    }
+  }
+  const base = (location.origin + location.pathname).replace(/index\.html$/,'').replace(/\/?$/, '/')
+  const link = base + '?public_quo=' + encodeURIComponent(token)
+  window._publicInvLink = link
+  _showPublicLinkModal(link, quo.ref_no || id)
+}
+
+async function _tryShowPublicQuotation() {
+  try {
+    const params = new URLSearchParams(location.search)
+    const token = params.get('public_quo')
+    if(!token) return false
+    document.getElementById('shell')?.classList.remove('active')
+    const auth = document.getElementById('auth-page')
+    if(auth) auth.style.display = 'none'
+    if(!document.getElementById('public-inv-root')) {
+      const root = document.createElement('div')
+      root.id = 'public-inv-root'
+      root.style.cssText = 'min-height:100vh;background:#F8FAFC;padding:24px 16px;font-family:Inter,system-ui,sans-serif'
+      document.body.appendChild(root)
+    }
+    const root = document.getElementById('public-inv-root')
+    root.innerHTML = '<div style="max-width:720px;margin:40px auto;text-align:center;color:#64748b">Loading quotation…</div>'
+    const {data, error} = await sb.rpc('get_public_quotation', { p_token: token })
+    if(error) {
+      root.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e2e8f0"><h2 style="margin:0 0 8px">Quotation unavailable</h2><p style="color:#64748b">' + _aiEscapeHtml(error.message) + '</p></div>'
+      return true
+    }
+    const q = data
+    const items = q.items || []
+    root.innerHTML = `
+    <div style="max-width:720px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+        <div><div style="font-size:12px;color:#94a3b8">From</div><div style="font-weight:700;font-size:18px;color:#0E7490">${_aiEscapeHtml(q.tenant_name||'NexERP')}</div></div>
+        <div style="text-align:right"><div style="font-size:12px;color:#94a3b8">Quotation</div><div style="font-weight:700;font-size:18px">${_aiEscapeHtml(q.ref_no||'-')}</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;font-size:13px">
+        <div><span style="color:#94a3b8">To</span><br><strong>${_aiEscapeHtml(q.customer_name||'-')}</strong></div>
+        <div><span style="color:#94a3b8">Date / Valid</span><br>${_aiEscapeHtml(String(q.issue_date||''))} / ${_aiEscapeHtml(String(q.valid_until||'-'))}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#f8fafc"><th style="padding:10px;text-align:left">Item</th><th style="padding:10px;text-align:right">Qty</th><th style="padding:10px;text-align:right">Price</th><th style="padding:10px;text-align:right">Amount</th></tr></thead>
+        <tbody>${(items||[]).map(it=>`<tr style="border-top:1px solid #e2e8f0"><td style="padding:10px">${_aiEscapeHtml(it.description||'')}</td><td style="padding:10px;text-align:right">${it.qty}</td><td style="padding:10px;text-align:right">${Number(it.unit_price||0).toFixed(2)}</td><td style="padding:10px;text-align:right">${Number(it.line_total||0).toFixed(2)}</td></tr>`).join('')}</tbody>
+      </table>
+      <div style="margin-top:16px;text-align:right;font-size:18px;font-weight:700">Total: MYR ${Number(q.total||0).toFixed(2)}</div>
+      <div style="margin-top:20px;text-align:center"><button onclick="window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer">Print</button></div>
+      <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
+    </div>`
+    return true
+  } catch(e) { console.error(e); return false }
 }
 
 async function _invPublicLink(id) {
@@ -6898,6 +6987,10 @@ async function _tryShowPublicInvoice() {
         <div style="font-size:18px;font-weight:700;margin-top:6px">Total: MYR ${Number(inv.total||0).toFixed(2)}</div>
         <div style="color:#16a34a">Paid: MYR ${Number(inv.paid_amt||0).toFixed(2)}</div>
         <div style="color:#dc2626">Balance: MYR ${(Number(inv.total||0)-Number(inv.paid_amt||0)).toFixed(2)}</div>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap" class="no-print">
+        <button onclick="window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
+        <button onclick="(function(){var t=location.href;var m='Invoice '+(_aiEscapeHtml(inv.ref_no||''))+': '+t;window.open('https://wa.me/?text='+encodeURIComponent(m),'_blank')})()" style="padding:10px 16px;border-radius:8px;border:1px solid #16a34a;color:#16a34a;background:#fff;cursor:pointer;font-size:13px">WhatsApp</button>
       </div>
       <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
     </div>`
@@ -7178,6 +7271,7 @@ async function renderQuoForm(id=null) {
       <button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>
       <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
       <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendQuoWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'},'${(quo.customer_name||'').replace(/'/g,"\\'")}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
+    <button class="btn btn-outline btn-sm" onclick="_quoPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     </div>`:''}</div>
   <div class="card" style="max-width:900px">
     <div id="quo-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
