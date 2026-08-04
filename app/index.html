@@ -9462,6 +9462,8 @@ async function renderSalaryDisbursement(month, year) {
     return s + Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - totalDeduction
   }, 0)
 
+  const _sdSigsPrefill = _sdLoadSigs()
+  const _sigPrep = (_sdSigsPrefill.preparedBy!=null && String(_sdSigsPrefill.preparedBy).trim()!=='') ? _sdSigsPrefill.preparedBy : (APP.user.name||'')
   wrap.innerHTML = `
   <div class="pdoc-sd-summary no-print">
     <span>${isBm?'Pekerja':'Employees'}: <b>${data.length}</b></span>
@@ -9556,10 +9558,10 @@ async function renderSalaryDisbursement(month, year) {
     </div>
   </div>
   <div class="pdoc-sig-grid">
-    <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(APP.user.name||'')}"></div>
-    <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input"></div>
-    <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input"></div>
-    <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input"></div>
+    <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+    <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+    <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+    <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
   </div>
   <div class="card no-print" style="margin-top:16px">
     <div class="card-header"><div class="card-title">${t.generatePayslip}</div>
@@ -9628,6 +9630,33 @@ function _sdUnregisterPrintListeners() {
   window.removeEventListener('beforeprint', _sdPreparePrint)
   window.removeEventListener('afterprint', _sdRestoreAfterPrint)
   _sdPrintListenersActive = false
+}
+
+
+function _sdSigStorageKey() {
+  return 'nexerp_sd_sigs_' + (APP.tenant?.id || 'x')
+}
+function _sdLoadSigs() {
+  try {
+    return JSON.parse(localStorage.getItem(_sdSigStorageKey()) || '{}') || {}
+  } catch(e) { return {} }
+}
+function _sdSaveSigs() {
+  const o = {
+    preparedBy: document.getElementById('sig-input-preparedBy')?.value || '',
+    checkedBy: document.getElementById('sig-input-checkedBy')?.value || '',
+    firstApproval: document.getElementById('sig-input-firstApproval')?.value || '',
+    secondApproval: document.getElementById('sig-input-secondApproval')?.value || ''
+  }
+  try { localStorage.setItem(_sdSigStorageKey(), JSON.stringify(o)) } catch(e) {}
+}
+function _sdBindSigPersist() {
+  ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k => {
+    const el = document.getElementById('sig-input-' + k)
+    if(!el) return
+    el.addEventListener('change', _sdSaveSigs)
+    el.addEventListener('blur', _sdSaveSigs)
+  })
 }
 
 function _sdRowValues(r) {
