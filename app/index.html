@@ -6773,10 +6773,9 @@ async function _invExportEInvoice(id) {
 
 async function _invPublicLink(id) {
   const isBm = APP.language==='bm'
-  let token = null
   const {data: inv} = await sb.from('invoices').select('id,public_token,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { showToast('Not found','error'); return }
-  token = inv.public_token
+  let token = inv.public_token
   if(!token) {
     token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'')) || (Date.now().toString(36)+Math.random().toString(36).slice(2))
     const {error} = await sb.from('invoices').update({ public_token: token }).eq('id',id).eq('tenant_id',APP.tenant.id)
@@ -6786,14 +6785,52 @@ async function _invPublicLink(id) {
     }
   }
   const base = (location.origin + location.pathname).replace(/index\.html$/,'').replace(/\/?$/, '/')
-  const link = `${base}?public_inv=${encodeURIComponent(token)}`
-  try { await navigator.clipboard.writeText(link) } catch(e) {}
-  showToast(isBm?'Link awam disalin — pelanggan boleh buka tanpa login.':'Public link copied — customer can open without login.', 'success')
-  alert((isBm ? 'Hantar link ni kepada pelanggan:
+  const link = base + '?public_inv=' + encodeURIComponent(token)
+  window._publicInvLink = link
+  _showPublicLinkModal(link, inv.ref_no || id)
+}
 
-' : 'Send this link to the customer:
+function _showPublicLinkModal(link, refNo) {
+  const isBm = APP.language==='bm'
+  let ov = document.getElementById('public-link-modal')
+  if(!ov) {
+    ov = document.createElement('div')
+    ov.id = 'public-link-modal'
+    ov.className = 'modal-overlay active'
+    ov.onclick = function(e){ if(e.target===ov) ov.classList.remove('active') }
+    document.body.appendChild(ov)
+  }
+  ov.classList.add('active')
+  ov.innerHTML = `
+    <div class="modal-box" style="max-width:480px" onclick="event.stopPropagation()">
+      <div class="modal-box-header">${isBm?'Link awam invois':'Public invoice link'}</div>
+      <div class="modal-box-body">
+        <p style="font-size:13px;color:var(--text-3);margin:0">${isBm?'Pelanggan boleh buka tanpa login (view-only).':'Customer can open without login (view-only).'}</p>
+        ${refNo?`<div style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(refNo)}</div>`:''}
+        <input type="text" id="public-link-input" class="form-input" readonly value="${String(link).replace(/"/g,'&quot;')}" style="font-size:12px" onclick="this.select()">
+      </div>
+      <div class="modal-box-footer" style="flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:1" onclick="_copyPublicLink()"><i class="ti ti-copy"></i> ${isBm?'Salin link':'Copy link'}</button>
+        <button class="btn btn-outline" style="flex:1" onclick="window.open(window._publicInvLink,'_blank')"><i class="ti ti-external-link"></i> ${isBm?'Buka':'Open'}</button>
+        <button class="btn btn-outline" onclick="document.getElementById('public-link-modal').classList.remove('active')">${isBm?'Tutup':'Close'}</button>
+      </div>
+    </div>`
+  const inp = document.getElementById('public-link-input')
+  if(inp) { inp.focus(); inp.select() }
+}
 
-') + link)
+async function _copyPublicLink() {
+  const isBm = APP.language==='bm'
+  const link = window._publicInvLink || document.getElementById('public-link-input')?.value || ''
+  if(!link) return
+  try {
+    await navigator.clipboard.writeText(link)
+    showToast(isBm?'Link disalin!':'Link copied!', 'success')
+  } catch(e) {
+    const inp = document.getElementById('public-link-input')
+    if(inp) { inp.select(); document.execCommand('copy') }
+    showToast(isBm?'Link disalin (pilih teks jika perlu).':'Link copied (select text if needed).', 'success')
+  }
 }
 
 async function _tryShowPublicInvoice() {
