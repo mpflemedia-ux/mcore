@@ -8267,6 +8267,9 @@ async function _billPaySave(billId, balance) {
 function renderPaymentVouchers(params={}) {
   if(params.view==='pv-form') { renderPVForm(params.id||null, params.billId||null); return }
   if(params.view==='pv-detail' && params.id) { renderPVDetail(params.id); return }
+  if(params.view==='pvd-form') { renderPVDForm(params.id||null); return }
+  if(params.view==='pvd-detail' && params.id) { renderPVDDetail(params.id); return }
+  if(params.view==='disbursements') { renderPVDList(); return }
   renderPVList()
 }
 
@@ -8276,8 +8279,13 @@ async function renderPVList() {
     ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal' }
     : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void' }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-primary" onclick="openPage('vouchers',{view:'pv-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+  <div class="page-header"><div><div class="page-title">${t.title}</div>
+    <div style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm?'Single PV (portrait) · Disbursement = multi bayaran (landscape)':'Single PV (portrait) · Disbursement = multi-payee batch (landscape)'}</div>
+  </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="openPage('vouchers',{view:'disbursements'})"><i class="ti ti-layout-list"></i> ${isBm?'Disbursement':'Disbursement'}</button>
+      <button class="btn btn-primary" onclick="openPage('vouchers',{view:'pv-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div>
   </div>
   ${_accTabs('pv')}
   <div class="card"><div id="pv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
@@ -8485,9 +8493,12 @@ function _pvDocHtml(v, tn, isBm, accent) {
       </tbody></table>
     </div>
     <div class="pdoc-sig-grid" style="margin:0 16px 20px">
-      <div class="form-group"><label class="form-label">${isBm?'Disediakan':'Prepared By'}</label><div class="form-input" style="border:none;border-top:1.5px solid #334155;border-radius:0;margin-top:28px;text-align:center;background:transparent">${_aiEscapeHtml(v.prepared_by||APP.user.name||'')}</div></div>
-      <div class="form-group"><label class="form-label">${isBm?'Disemak':'Checked By'}</label><div class="form-input" style="border:none;border-top:1.5px solid #334155;border-radius:0;margin-top:28px;text-align:center;background:transparent">${_aiEscapeHtml(v.checked_by||'')}</div></div>
-      <div class="form-group"><label class="form-label">${isBm?'Diluluskan':'Approved By'}</label><div class="form-input" style="border:none;border-top:1.5px solid #334155;border-radius:0;margin-top:28px;text-align:center;background:transparent">${_aiEscapeHtml(v.approved_by||'')}</div></div>
+      <div class="form-group"><label class="form-label">${isBm?'Disediakan':'Prepared By'}</label>
+        <input class="form-input" id="pv-sig-prepared" value="${_aiEscapeHtml(v.prepared_by||APP.user.name||'')}" onchange="_pvSaveSigs('${v.id}')" onblur="_pvSaveSigs('${v.id}')" style="text-align:center;font-weight:600"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Disemak':'Checked By'}</label>
+        <input class="form-input" id="pv-sig-checked" value="${_aiEscapeHtml(v.checked_by||'')}" onchange="_pvSaveSigs('${v.id}')" onblur="_pvSaveSigs('${v.id}')" style="text-align:center;font-weight:600"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Diluluskan':'Approved By'}</label>
+        <input class="form-input" id="pv-sig-approved" value="${_aiEscapeHtml(v.approved_by||'')}" onchange="_pvSaveSigs('${v.id}')" onblur="_pvSaveSigs('${v.id}')" style="text-align:center;font-weight:600"></div>
     </div>
     <div class="pdoc-footer-note">${isBm?'Baucar bayaran janaan komputer · NexERP / Phion':'Computer-generated payment voucher · NexERP / Phion'}</div>
   </div>`
@@ -8572,6 +8583,311 @@ async function _pvMarkPaid(id) {
   showToast(isBm?'Baucar ditanda dibayar. Kewangan dikemaskini.':'Voucher marked paid. Financials updated.','success')
   renderPVDetail(id)
 }
+
+
+async function _pvSaveSigs(id) {
+  if(!id) return
+  const payload = {
+    prepared_by: document.getElementById('pv-sig-prepared')?.value.trim() || null,
+    checked_by: document.getElementById('pv-sig-checked')?.value.trim() || null,
+    approved_by: document.getElementById('pv-sig-approved')?.value.trim() || null,
+    updated_at: new Date().toISOString()
+  }
+  const {error} = await sb.from('payment_vouchers').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) console.warn('pv sig save', error)
+}
+
+// ── Payment Voucher Disbursement (multi-line batch, landscape print) ─────────
+let _pvdLines = []
+
+async function renderPVDList() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { title:'PV Disbursement', add:'Disbursement Baru', ref:'No.', date:'Tarikh', titleCol:'Tajuk', lines:'Baris', total:'Jumlah', status:'Status', noData:'Tiada disbursement', back:'Baucar' }
+    : { title:'PV Disbursement', add:'New Disbursement', ref:'No.', date:'Date', titleCol:'Title', lines:'Lines', total:'Total', status:'Status', noData:'No disbursements yet', back:'Vouchers' }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{})">← ${t.back}</div>
+  </div>
+    <button class="btn btn-primary" onclick="openPage('vouchers',{view:'pvd-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+  </div>
+  ${_accTabs('pv')}
+  <div class="card"><div id="pvd-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('pvd-list-wrap')
+  const {data, error} = await sb.from('payment_voucher_batches').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('batch_date',{ascending:false}).limit(100)
+  if(error) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:12px;color:var(--text-3)">${isBm?'Jalankan SQL payment_voucher_batches.':'Run payment_voucher_batches SQL.'}</p></div>`
+    return
+  }
+  if(!data?.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  wrap.innerHTML = `<table><thead><tr><th>${t.ref}</th><th>${t.date}</th><th>${t.titleCol}</th><th style="text-align:right">${t.lines}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(b=>`<tr onclick="openPage('vouchers',{view:'pvd-detail',id:'${b.id}'})" style="cursor:pointer">
+    <td><strong>${_aiEscapeHtml(b.ref_no||'-')}</strong></td>
+    <td>${formatDate(b.batch_date)}</td>
+    <td>${_aiEscapeHtml(b.title||'-')}</td>
+    <td style="text-align:right">${b.line_count||'—'}</td>
+    <td style="text-align:right">${formatRM(b.total_amount)}</td>
+    <td>${_aiEscapeHtml(b.status||'draft')}</td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function renderPVDForm(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { title:'PV Disbursement', back:'Disbursement', batchTitle:'Tajuk *', date:'Tarikh', payee:'Penerima', amount:'Jumlah', method:'Kaedah', bank:'Bank / Akaun', desc:'Tujuan', addRow:'Tambah baris', save:'Simpan', cancel:'Batal' }
+    : { title:'PV Disbursement', back:'Disbursement', batchTitle:'Title *', date:'Date', payee:'Payee', amount:'Amount', method:'Method', bank:'Bank / Account', desc:'Purpose', addRow:'Add line', save:'Save', cancel:'Cancel' }
+  let batch = null, lines = []
+  if(id) {
+    const {data} = await sb.from('payment_voucher_batches').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    batch = data
+    const {data: ln} = await sb.from('payment_voucher_batch_lines').select('*').eq('batch_id',id).order('sort_order')
+    lines = ln || []
+  }
+  _pvdLines = lines.length ? lines.map(l=>({
+    payee_name: l.payee_name||'', amount: l.amount||0, payment_method: l.payment_method||'Bank Transfer',
+    bank_name: l.bank_name||'', description: l.description||'', bill_id: l.bill_id||null
+  })) : [{ payee_name:'', amount:0, payment_method:'Bank Transfer', bank_name:'', description:'', bill_id:null }]
+  const today = new Date().toISOString().slice(0,10)
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{view:'disbursements'})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="padding:20px;max-width:1100px">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:16px">
+      <div class="form-group"><label class="form-label">${t.batchTitle}</label><input id="pvd-title" class="form-input" value="${_aiEscapeHtml(batch?.title||'Payment Voucher Disbursement')}"></div>
+      <div class="form-group"><label class="form-label">${t.date}</label><input id="pvd-date" type="date" class="form-input" value="${batch?.batch_date||today}"></div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="pdoc-sd-table" style="min-width:800px"><thead><tr>
+        <th style="width:36px">#</th><th>${t.payee}</th><th style="width:120px">${t.amount}</th><th style="width:130px">${t.method}</th><th>${t.bank}</th><th>${t.desc}</th><th style="width:40px"></th>
+      </tr></thead>
+      <tbody id="pvd-lines-body"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-outline btn-sm" type="button" onclick="_pvdAddLine()"><i class="ti ti-plus"></i> ${t.addRow}</button>
+      <div style="font-weight:700" id="pvd-grand">Total: RM 0.00</div>
+    </div>
+    <div id="pvd-form-err" style="display:none;color:var(--danger);margin-top:10px;font-size:13px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="_pvdSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('vouchers',{view:'disbursements'})">${t.cancel}</button>
+    </div>
+  </div>`
+  _pvdRenderLines()
+}
+
+function _pvdAddLine() {
+  _pvdLines.push({ payee_name:'', amount:0, payment_method:'Bank Transfer', bank_name:'', description:'', bill_id:null })
+  _pvdRenderLines()
+}
+function _pvdRemoveLine(i) {
+  _pvdLines.splice(i,1)
+  if(!_pvdLines.length) _pvdAddLine()
+  else _pvdRenderLines()
+}
+function _pvdRenderLines() {
+  const body = document.getElementById('pvd-lines-body')
+  if(!body) return
+  const methods = ['Bank Transfer','Cheque','Cash','Online Banking','Other']
+  body.innerHTML = _pvdLines.map((l,i)=>`<tr>
+    <td style="color:#94A3B8">${i+1}</td>
+    <td><input class="form-input" value="${_aiEscapeHtml(l.payee_name)}" oninput="_pvdLines[${i}].payee_name=this.value"></td>
+    <td><input type="number" step="0.01" min="0" class="form-input" value="${l.amount||0}" oninput="_pvdLines[${i}].amount=Number(this.value)||0;_pvdUpdateGrand()"></td>
+    <td><select class="form-select" onchange="_pvdLines[${i}].payment_method=this.value">${methods.map(m=>`<option ${l.payment_method===m?'selected':''}>${m}</option>`).join('')}</select></td>
+    <td><input class="form-input" value="${_aiEscapeHtml(l.bank_name||'')}" oninput="_pvdLines[${i}].bank_name=this.value"></td>
+    <td><input class="form-input" value="${_aiEscapeHtml(l.description||'')}" oninput="_pvdLines[${i}].description=this.value"></td>
+    <td><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger)" onclick="_pvdRemoveLine(${i})"><i class="ti ti-x"></i></button></td>
+  </tr>`).join('')
+  _pvdUpdateGrand()
+}
+function _pvdUpdateGrand() {
+  const el = document.getElementById('pvd-grand')
+  if(!el) return
+  const tot = _pvdLines.reduce((s,l)=>s+Number(l.amount||0),0)
+  el.textContent = 'Total: ' + formatRM(tot)
+}
+
+async function _pvdSave(id) {
+  const isBm = APP.language==='bm'
+  const err = document.getElementById('pvd-form-err')
+  err.style.display='none'
+  const title = document.getElementById('pvd-title').value.trim()
+  if(!title) { err.textContent = isBm?'Tajuk diperlukan.':'Title is required.'; err.style.display='block'; return }
+  const valid = _pvdLines.filter(l => (l.payee_name||'').trim() && Number(l.amount)>0)
+  if(!valid.length) { err.textContent = isBm?'Sekurang-kurangnya 1 baris lengkap.':'At least one complete line required.'; err.style.display='block'; return }
+  const total = valid.reduce((s,l)=>s+Number(l.amount||0),0)
+  const payload = {
+    tenant_id: APP.tenant.id,
+    title,
+    batch_date: document.getElementById('pvd-date').value || new Date().toISOString().slice(0,10),
+    status: 'draft',
+    total_amount: total,
+    line_count: valid.length,
+    updated_at: new Date().toISOString()
+  }
+  let batchId = id
+  if(id) {
+    const {error} = await sb.from('payment_voucher_batches').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) { err.textContent = error.message; err.style.display='block'; return }
+    await sb.from('payment_voucher_batch_lines').delete().eq('batch_id', id)
+  } else {
+    payload.ref_no = await _genFallbackRefNo('payment_voucher_batches','ref_no','PVD')
+    payload.created_at = new Date().toISOString()
+    const {data, error} = await sb.from('payment_voucher_batches').insert(payload).select('id').single()
+    if(error) { err.textContent = error.message; err.style.display='block'; return }
+    batchId = data.id
+  }
+  const rows = valid.map((l,i)=>({
+    tenant_id: APP.tenant.id,
+    batch_id: batchId,
+    sort_order: i+1,
+    payee_name: l.payee_name.trim(),
+    amount: Number(l.amount),
+    payment_method: l.payment_method||'Bank Transfer',
+    bank_name: l.bank_name||null,
+    description: l.description||null,
+    bill_id: l.bill_id||null
+  }))
+  const {error: le} = await sb.from('payment_voucher_batch_lines').insert(rows)
+  if(le) { err.textContent = le.message; err.style.display='block'; return }
+  showToast(isBm?'Disbursement disimpan.':'Disbursement saved.','success')
+  openPage('vouchers',{view:'pvd-detail',id:batchId})
+}
+
+async function renderPVDDetail(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { back:'Disbursement', print:'Cetak (Landscape)', convert:'Convert ke Single PV', edit:'Edit', notFound:'Tidak dijumpai' }
+    : { back:'Disbursement', print:'Print (Landscape)', convert:'Convert to Single PVs', edit:'Edit', notFound:'Not found' }
+  const {data: b} = await sb.from('payment_voucher_batches').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!b) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const {data: lines} = await sb.from('payment_voucher_batch_lines').select('*').eq('batch_id',id).order('sort_order')
+  const tn = await _pdocGetTenant()
+  const accent = _pdocAccentGet('pvd')
+  _pdocSetPageOrientation('landscape')
+  const printFn = `PVDisbursement_${_pdocSlug(b.ref_no)}_${_pdocDateStamp(b.batch_date)}`.replace(/'/g,"\\'")
+  document.getElementById('main').innerHTML = `
+  <div class="page-header no-print"><div>
+    <div class="page-title">${_aiEscapeHtml(b.ref_no||'PVD')}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{view:'disbursements'})">← ${t.back}</div>
+  </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${_pdocColorPickerHtml('pvd', accent)}
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape');_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      ${b.status!=='converted'?`<button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pvd-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
+      <button class="btn btn-primary btn-sm" onclick="_pvdConvert('${id}')"><i class="ti ti-transform"></i> ${t.convert}</button>`:`<span style="font-size:12px;color:var(--success)">Converted</span>`}
+    </div>
+  </div>
+  ${_pvdDocHtml(b, lines||[], tn, isBm, accent)}`
+}
+
+function _pvdDocHtml(b, lines, tn, isBm, accent) {
+  const addr = _pdocAddressLine(tn)
+  const logo = tn.logo_url ? `<img src="${_aiEscapeHtml(tn.logo_url)}" style="height:40px;object-fit:contain">` : ''
+  const total = lines.reduce((s,l)=>s+Number(l.amount||0),0)
+  return `
+  <div class="pdoc" style="--pdoc-accent:${accent};margin:0 auto 24px">
+    <div class="pdoc-header">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        ${logo}
+        <div>
+          <div style="font-weight:700;font-size:15px">${_aiEscapeHtml(tn.name||'')}</div>
+          ${addr?`<div style="font-size:11px;color:#64748B;max-width:360px;line-height:1.35">${_aiEscapeHtml(addr)}</div>`:''}
+        </div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#64748B">
+        ${isBm?'Tarikh':'Date'}: ${formatDate(b.batch_date)}<br>
+        ${isBm?'Ruj.':'Ref'}: <strong style="color:#0F172A">${_aiEscapeHtml(b.ref_no||'-')}</strong>
+      </div>
+    </div>
+    <div class="pdoc-title-bar">${_aiEscapeHtml(b.title||'PAYMENT VOUCHER DISBURSEMENT')}</div>
+    <div style="padding:12px 16px;overflow-x:auto">
+      <table class="pdoc-sd-table" style="width:100%"><thead><tr>
+        <th style="width:36px">No</th>
+        <th>${isBm?'Penerima':'Payee'}</th>
+        <th>${isBm?'Kaedah':'Method'}</th>
+        <th>${isBm?'Bank / Ruj':'Bank / Ref'}</th>
+        <th>${isBm?'Tujuan':'Purpose'}</th>
+        <th style="text-align:right">${isBm?'Jumlah':'Amount'}</th>
+      </tr></thead>
+      <tbody>
+        ${lines.map((l,i)=>`<tr>
+          <td style="color:#94A3B8">${i+1}</td>
+          <td style="font-weight:600">${_aiEscapeHtml(l.payee_name||'-')}</td>
+          <td>${_aiEscapeHtml(l.payment_method||'-')}</td>
+          <td>${_aiEscapeHtml(l.bank_name||'—')}</td>
+          <td>${_aiEscapeHtml(l.description||'—')}</td>
+          <td style="text-align:right;font-weight:700;font-family:'Space Grotesk',sans-serif">${formatRM(l.amount)}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr>
+        <td colspan="5" style="text-align:right;padding:12px;color:#fff">${isBm?'JUMLAH BESAR':'GRAND TOTAL'}</td>
+        <td style="text-align:right;padding:12px;color:#fff;font-weight:700">${formatRM(total)}</td>
+      </tr></tfoot>
+      </table>
+    </div>
+    <div class="pdoc-sig-grid" style="margin:8px 16px 20px">
+      <div class="form-group"><label class="form-label">${isBm?'Disediakan':'Prepared By'}</label>
+        <input class="form-input" id="pvd-sig-prepared" value="${_aiEscapeHtml(b.prepared_by||APP.user.name||'')}" onchange="_pvdSaveSigs('${b.id}')" onblur="_pvdSaveSigs('${b.id}')" style="text-align:center;font-weight:600"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Disemak':'Checked By'}</label>
+        <input class="form-input" id="pvd-sig-checked" value="${_aiEscapeHtml(b.checked_by||'')}" onchange="_pvdSaveSigs('${b.id}')" onblur="_pvdSaveSigs('${b.id}')" style="text-align:center;font-weight:600"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Diluluskan':'Approved By'}</label>
+        <input class="form-input" id="pvd-sig-approved" value="${_aiEscapeHtml(b.approved_by||'')}" onchange="_pvdSaveSigs('${b.id}')" onblur="_pvdSaveSigs('${b.id}')" style="text-align:center;font-weight:600"></div>
+    </div>
+    <div class="pdoc-footer-note">${isBm?'PV Disbursement · Landscape · NexERP / Phion':'PV Disbursement · Landscape · NexERP / Phion'}</div>
+  </div>`
+}
+
+async function _pvdSaveSigs(id) {
+  if(!id) return
+  await sb.from('payment_voucher_batches').update({
+    prepared_by: document.getElementById('pvd-sig-prepared')?.value.trim() || null,
+    checked_by: document.getElementById('pvd-sig-checked')?.value.trim() || null,
+    approved_by: document.getElementById('pvd-sig-approved')?.value.trim() || null,
+    updated_at: new Date().toISOString()
+  }).eq('id',id).eq('tenant_id',APP.tenant.id)
+}
+
+async function _pvdConvert(batchId) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm?'Convert setiap baris kepada single Payment Voucher (portrait)?':'Convert each line to a single Payment Voucher (portrait)?')) return
+  const {data: b} = await sb.from('payment_voucher_batches').select('*').eq('id',batchId).eq('tenant_id',APP.tenant.id).single()
+  const {data: lines} = await sb.from('payment_voucher_batch_lines').select('*').eq('batch_id',batchId).order('sort_order')
+  if(!lines?.length) { showToast('No lines','error'); return }
+  let ok = 0
+  for(const l of lines) {
+    if(l.voucher_id) { ok++; continue }
+    const ref = await _genFallbackRefNo('payment_vouchers','ref_no','PV')
+    const {data: pv, error} = await sb.from('payment_vouchers').insert({
+      tenant_id: APP.tenant.id,
+      ref_no: ref,
+      voucher_date: b.batch_date,
+      payee_name: l.payee_name,
+      amount: l.amount,
+      payment_method: l.payment_method,
+      bank_name: l.bank_name,
+      description: l.description || (b.title || ''),
+      bill_id: l.bill_id,
+      status: 'draft',
+      prepared_by: b.prepared_by || APP.user.name,
+      checked_by: b.checked_by,
+      approved_by: b.approved_by,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).select('id').single()
+    if(error) { console.error(error); continue }
+    await sb.from('payment_voucher_batch_lines').update({ voucher_id: pv.id }).eq('id', l.id)
+    ok++
+  }
+  await sb.from('payment_voucher_batches').update({ status:'converted', updated_at: new Date().toISOString() }).eq('id', batchId)
+  showToast(isBm?`${ok} baucar tunggal dijana.`:`${ok} single voucher(s) created.`,'success')
+  openPage('vouchers',{})
+}
+
 
 async function _pvShareWhatsApp(id) {
   const isBm = APP.language==='bm'
