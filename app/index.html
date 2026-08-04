@@ -505,6 +505,8 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-sd-table td { padding:12px; border-bottom:1px solid #E2E8F0; vertical-align:top; color:#0F172A; }
 .pdoc-sd-table tbody tr:hover { background:#F8FAFC; }
 .pdoc-sd-table tfoot td { font-weight:700; background:var(--pdoc-accent); color:#fff; padding:12px; font-family:'Space Grotesk',sans-serif; }
+.pdoc-sd-table tfoot td#sd-grand-total,
+.pdoc-sd-table tfoot .pdoc-sd-net { color:#fff !important; text-align:right; font-size:14px; }
 .pdoc-sd-payee { font-weight:600; font-size:13px; color:#0F172A; line-height:1.35; }
 .pdoc-sd-bank { font-size:11px; color:#64748B; margin-top:3px; line-height:1.35; }
 .pdoc-sd-stack { display:flex; flex-direction:column; gap:6px; }
@@ -9492,13 +9494,9 @@ async function renderSalaryDisbursement(month, year) {
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`}).join('')}</tbody>
     <tfoot>
-      <tr style="background:#f1f5f9;font-weight:700">
-        <td colspan="4" style="text-align:right;padding:12px 10px;font-size:12px;text-transform:uppercase;letter-spacing:.04em">${t.grandTotal}</td>
-        <td style="text-align:right;padding:12px 10px;font-size:12px" id="sd-sum-salary">${formatRM(sumSalary)}</td>
-        <td style="text-align:right;padding:12px 10px;font-size:11px;color:#64748b" id="sd-sum-allow">${sumAllow?formatRM(sumAllow):'—'}</td>
-        <td style="text-align:right;padding:12px 10px;font-size:11px;color:#64748b" id="sd-sum-stat">${formatRM(sumStat)}</td>
-        <td style="text-align:right;padding:12px 10px;font-size:11px;color:#64748b" id="sd-sum-other">${sumOther?formatRM(sumOther):'—'}</td>
-        <td style="text-align:right;padding:12px 10px;font-size:13px;color:var(--pdoc-accent,#0E7490)" id="sd-grand-total">${formatRM(grandTotal)}</td>
+      <tr>
+        <td colspan="8" style="text-align:right;padding:12px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${t.grandTotal}</td>
+        <td class="pdoc-sd-net" style="text-align:right;padding:12px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
       </tr>
     </tfoot>
     </table>
