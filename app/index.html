@@ -12345,11 +12345,24 @@ async function obFinish() {
   if(btn) { btn.disabled=true; btn.innerHTML=`<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> ${L==='bm'?'Menyimpan...':'Saving...'}` }
 
   try {
-    // If tenant_id not in APP state, fetch from Supabase
+    // If tenant_id not in APP state, fetch from Supabase. Refresh the
+    // session first — a stale/expired client session can make this SELECT
+    // come back empty even though the tenant row genuinely exists — then
+    // retry the read a couple of times (short delay) before giving up with
+    // the "Tenant ID not found" error, in case it's a transient/timing issue.
     if(!APP.tenant.id) {
+      const {error: refreshErr} = await sb.auth.refreshSession()
+      if(refreshErr) console.error('obFinish: session refresh failed:', refreshErr)
+
       const {data:{user}} = await sb.auth.getUser()
       if(user) {
-        const {data:profile} = await sb.from('user_profiles').select('tenant_id').eq('id', user.id).single()
+        let profile = null
+        for(let attempt=0; attempt<3 && !profile?.tenant_id; attempt++) {
+          if(attempt>0) await new Promise(r => setTimeout(r, 600))
+          const {data, error} = await sb.from('user_profiles').select('tenant_id').eq('id', user.id).single()
+          if(error) console.error(`obFinish: user_profiles fetch failed (attempt ${attempt+1}):`, error)
+          profile = data
+        }
         if(profile) APP.tenant.id = profile.tenant_id
       }
     }
