@@ -6785,11 +6785,15 @@ async function _invPublicLink(id) {
       return
     }
   }
-  const base = location.origin + location.pathname.replace(/\/$/,'')
+  const base = (location.origin + location.pathname).replace(/index\.html$/,'').replace(/\/?$/, '/')
   const link = `${base}?public_inv=${encodeURIComponent(token)}`
   try { await navigator.clipboard.writeText(link) } catch(e) {}
   showToast(isBm?'Link awam disalin — pelanggan boleh buka tanpa login.':'Public link copied — customer can open without login.', 'success')
-  alert((isBm?'Hantar link ni kepada pelanggan:\\n\\n':'Send this link to the customer:\\n\\n') + link)
+  alert((isBm ? 'Hantar link ni kepada pelanggan:
+
+' : 'Send this link to the customer:
+
+') + link)
 }
 
 async function _tryShowPublicInvoice() {
