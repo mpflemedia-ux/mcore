@@ -8660,11 +8660,18 @@ async function renderPVDForm(id) {
       <div class="form-group"><label class="form-label">${t.batchTitle}</label><input id="pvd-title" class="form-input" value="${_aiEscapeHtml(batch?.title||'Payment Voucher Disbursement')}"></div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="pvd-date" type="date" class="form-input" value="${batch?.batch_date||today}"></div>
     </div>
-    <div style="overflow-x:auto">
-      <table class="pdoc-sd-table" style="min-width:800px"><thead><tr>
-        <th style="width:36px">#</th><th>${t.payee}</th><th style="width:120px">${t.amount}</th><th style="width:130px">${t.method}</th><th>${t.bank}</th><th>${t.desc}</th><th style="width:40px"></th>
-      </tr></thead>
-      <tbody id="pvd-lines-body"></tbody>
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px">
+      <table class="pvd-edit-table" style="width:100%;min-width:900px;border-collapse:collapse">
+        <thead><tr style="background:var(--bg);text-align:left">
+          <th style="width:36px;padding:10px 8px;font-size:11px;color:var(--text-3);text-transform:uppercase">#</th>
+          <th style="padding:10px 8px;font-size:11px;color:var(--text-3);text-transform:uppercase">${t.payee}</th>
+          <th style="width:130px;padding:10px 8px;font-size:11px;color:var(--text-3);text-transform:uppercase">${t.amount}</th>
+          <th style="width:150px;padding:10px 8px;font-size:11px;color:var(--text-3);text-transform:uppercase">${t.method}</th>
+          <th style="padding:10px 8px;font-size:11px;color:var(--text-3);text-transform:uppercase">${t.bank}</th>
+          <th style="padding:10px 8px;font-size:11px;color:var(--text-3);text-transform:uppercase">${t.desc}</th>
+          <th style="width:44px;padding:10px 8px"></th>
+        </tr></thead>
+        <tbody id="pvd-lines-body"></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:8px">
@@ -8693,14 +8700,14 @@ function _pvdRenderLines() {
   const body = document.getElementById('pvd-lines-body')
   if(!body) return
   const methods = ['Bank Transfer','Cheque','Cash','Online Banking','Other']
-  body.innerHTML = _pvdLines.map((l,i)=>`<tr>
-    <td style="color:#94A3B8">${i+1}</td>
-    <td><input class="form-input" value="${_aiEscapeHtml(l.payee_name)}" oninput="_pvdLines[${i}].payee_name=this.value"></td>
-    <td><input type="number" step="0.01" min="0" class="form-input" value="${l.amount||0}" oninput="_pvdLines[${i}].amount=Number(this.value)||0;_pvdUpdateGrand()"></td>
-    <td><select class="form-select" onchange="_pvdLines[${i}].payment_method=this.value">${methods.map(m=>`<option ${l.payment_method===m?'selected':''}>${m}</option>`).join('')}</select></td>
-    <td><input class="form-input" value="${_aiEscapeHtml(l.bank_name||'')}" oninput="_pvdLines[${i}].bank_name=this.value"></td>
-    <td><input class="form-input" value="${_aiEscapeHtml(l.description||'')}" oninput="_pvdLines[${i}].description=this.value"></td>
-    <td><button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger)" onclick="_pvdRemoveLine(${i})"><i class="ti ti-x"></i></button></td>
+  body.innerHTML = _pvdLines.map((l,i)=>`<tr style="border-top:1px solid var(--border)">
+    <td style="padding:8px;color:var(--text-3);vertical-align:middle;font-size:12px">${i+1}</td>
+    <td style="padding:6px 8px"><input class="form-input" placeholder="Payee name" value="${_aiEscapeHtml(l.payee_name)}" oninput="_pvdLines[${i}].payee_name=this.value" style="min-width:140px"></td>
+    <td style="padding:6px 8px"><input type="number" step="0.01" min="0" class="form-input" value="${l.amount||0}" oninput="_pvdLines[${i}].amount=Number(this.value)||0;_pvdUpdateGrand()" style="width:100%"></td>
+    <td style="padding:6px 8px"><select class="form-select" onchange="_pvdLines[${i}].payment_method=this.value" style="width:100%;min-width:120px">${methods.map(m=>`<option value="${m}" ${l.payment_method===m?'selected':''}>${m}</option>`).join('')}</select></td>
+    <td style="padding:6px 8px"><input class="form-input" placeholder="Bank / account" value="${_aiEscapeHtml(l.bank_name||'')}" oninput="_pvdLines[${i}].bank_name=this.value" style="min-width:120px"></td>
+    <td style="padding:6px 8px"><input class="form-input" placeholder="Purpose" value="${_aiEscapeHtml(l.description||'')}" oninput="_pvdLines[${i}].description=this.value" style="min-width:120px"></td>
+    <td style="padding:6px 8px;text-align:center"><button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_pvdRemoveLine(${i})"><i class="ti ti-x"></i></button></td>
   </tr>`).join('')
   _pvdUpdateGrand()
 }
