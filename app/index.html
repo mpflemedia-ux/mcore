@@ -1076,6 +1076,7 @@ const NAV_ITEMS = [
   { id:'applicants', icon:'ti-user-search',       label_en:'Job Applicants', label_bm:'Permohonan Kerja', module:'hr' },
   { section:'Finance' },
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
+  { id:'vouchers',   icon:'ti-file-invoice',      label_en:'Payment Vouchers', label_bm:'Baucar Bayaran', module:'accounting' },
   { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'core' },
   { section:'System' },
   { id:'admin',      icon:'ti-shield-cog',        label_en:'Admin',       label_bm:'Admin',        module:'admin' },
@@ -1327,6 +1328,7 @@ function openPage(page, params={}) {
       case 'hr':         renderHR(params); break
       case 'applicants': renderJobApplicants(params); break
       case 'accounting': renderAccounting(params); break
+      case 'vouchers':   renderPaymentVouchers(params); break
       case 'reports':    renderReports(params); break
       case 'admin':      renderAdmin(params); break
       case 'settings':   renderSettings(); break
@@ -4748,15 +4750,17 @@ function renderAccounting(params={}) {
   if(params.view==='fixed-assets') { renderFixedAssets(); return }
   if(params.view==='fa-form') { renderFAForm(); return }
   if(params.view==='fa-detail') { renderFADetail(params.id); return }
+  if(params.view==='vouchers' || params.view==='pv-form' || params.view==='pv-detail') { renderPaymentVouchers(params); return }
   renderCOAList()
 }
 
 function _accTabs(active) {
-  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap' }
-    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets' }
+  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap', pv:'Baucar Bayaran' }
+    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets', pv:'Payment Vouchers' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
     <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
+    <button class="btn btn-sm ${active==='pv'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('vouchers',{})"><i class="ti ti-file-invoice"></i> ${t.pv}</button>
     <button class="btn btn-sm ${active==='fiscal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'fiscal'})"><i class="ti ti-calendar"></i> ${t.fiscal}</button>
     <button class="btn btn-sm ${active==='expense'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'expense'})"><i class="ti ti-receipt"></i> ${t.expense}</button>
     <button class="btn btn-sm ${active==='reconcile'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'reconcile'})"><i class="ti ti-arrows-left-right"></i> ${t.reconcile}</button>
@@ -8190,7 +8194,10 @@ async function renderSupplierBillDetail(id) {
     <div class="page-title">${bill.bill_no}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'bills'})">← ${t.back}</div>
   </div>
-  <button class="btn btn-outline btn-sm" onclick="openPage('purchasing',{view:'bill-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pv-form',billId:'${id}'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Baucar Bayaran':'Payment Voucher'}</button>
+    <button class="btn btn-outline btn-sm" onclick="openPage('purchasing',{view:'bill-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
+  </div></div>
   <div class="card" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
       <div><div style="color:var(--text-3);font-size:12px">${t.supplier}</div><strong>${bill.suppliers?.name||'-'}</strong></div>
@@ -8252,6 +8259,344 @@ async function _billPaySave(billId, balance) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYMENT VOUCHERS (PV) — formal payment documents + financial reflection
+// ═══════════════════════════════════════════════════════════════════════════
+
+function renderPaymentVouchers(params={}) {
+  if(params.view==='pv-form') { renderPVForm(params.id||null, params.billId||null); return }
+  if(params.view==='pv-detail' && params.id) { renderPVDetail(params.id); return }
+  renderPVList()
+}
+
+async function renderPVList() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal' }
+    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void' }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-primary" onclick="openPage('vouchers',{view:'pv-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+  </div>
+  ${_accTabs('pv')}
+  <div class="card"><div id="pv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('pv-list-wrap')
+  const {data, error} = await sb.from('payment_vouchers').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('voucher_date',{ascending:false}).order('created_at',{ascending:false}).limit(200)
+  if(error) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:12px;color:var(--text-3);margin-top:8px">${isBm?'Jalankan SQL migration payment_vouchers di Supabase.':'Run payment_vouchers SQL migration in Supabase.'}</p></div>`
+    return
+  }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const stColor = s => s==='paid'?'var(--success)':s==='approved'?'#3B82F6':s==='void'?'var(--danger)':'var(--warning)'
+  const stLabel = s => t[s]||s
+  wrap.innerHTML = `<table><thead><tr><th>${t.ref}</th><th>${t.date}</th><th>${t.payee}</th><th>${t.method}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th></tr></thead>
+  <tbody>${data.map(v=>`<tr onclick="openPage('vouchers',{view:'pv-detail',id:'${v.id}'})" style="cursor:pointer">
+    <td><strong>${_aiEscapeHtml(v.ref_no||'-')}</strong></td>
+    <td>${formatDate(v.voucher_date)}</td>
+    <td>${_aiEscapeHtml(v.payee_name||'-')}</td>
+    <td>${_aiEscapeHtml(v.payment_method||'-')}</td>
+    <td style="text-align:right">${formatRM(v.amount)}</td>
+    <td><span style="color:${stColor(v.status)};font-weight:600">${stLabel(v.status)}</span></td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function renderPVForm(id, billId) {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { titleAdd:'Baucar Bayaran Baru', titleEdit:'Edit Baucar', back:'Baucar Bayaran', date:'Tarikh', payee:'Nama Penerima *', amount:'Jumlah (RM) *', method:'Kaedah Bayaran', bank:'Bank', cheque:'No. Cek / Rujukan', desc:'Keterangan / Tujuan', bill:'Link Bil Pembekal', none:'— Tiada —', save:'Simpan Draf', cancel:'Batal', supplier:'Pembekal' }
+    : { titleAdd:'New Payment Voucher', titleEdit:'Edit Voucher', back:'Payment Vouchers', date:'Date', payee:'Payee Name *', amount:'Amount (RM) *', method:'Payment Method', bank:'Bank', cheque:'Cheque / Ref No.', desc:'Description / Purpose', bill:'Link Supplier Bill', none:'— None —', save:'Save Draft', cancel:'Cancel', supplier:'Supplier' }
+  let v = null
+  if(id) {
+    const {data} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    v = data
+  }
+  const [{data: bills}, {data: suppliers}] = await Promise.all([
+    sb.from('supplier_bills').select('id,ref_no,total,paid_amt,status,supplier_name').eq('tenant_id',APP.tenant.id).in('status',['unpaid','partial','pending','approved']).is('deleted_at',null).order('bill_date',{ascending:false}).limit(100),
+    sb.from('suppliers').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name').limit(200)
+  ])
+  // Prefill from bill
+  let prefill = { payee_name:'', amount:'', bill_id: billId||'', supplier_id:'' }
+  if(billId && !v) {
+    const {data: b} = await sb.from('supplier_bills').select('*').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
+    if(b) {
+      prefill.payee_name = b.supplier_name || ''
+      prefill.amount = Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
+      prefill.bill_id = b.id
+      prefill.supplier_id = b.supplier_id || ''
+    }
+  }
+  const src = v || prefill
+  const today = new Date().toISOString().slice(0,10)
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${id?t.titleEdit:t.titleAdd}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:720px;padding:20px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="form-group"><label class="form-label">${t.date}</label><input id="pv-date" type="date" class="form-input" value="${src.voucher_date||today}"></div>
+      <div class="form-group"><label class="form-label">${t.method}</label>
+        <select id="pv-method" class="form-select">
+          ${['Bank Transfer','Cheque','Cash','Online Banking','Other'].map(m=>`<option ${((src.payment_method||'Bank Transfer')===m)?'selected':''}>${m}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.payee}</label><input id="pv-payee" class="form-input" value="${_aiEscapeHtml(src.payee_name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.amount}</label><input id="pv-amount" type="number" step="0.01" min="0" class="form-input" value="${src.amount??''}"></div>
+      <div class="form-group"><label class="form-label">${t.bank}</label><input id="pv-bank" class="form-input" value="${_aiEscapeHtml(src.bank_name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.cheque}</label><input id="pv-cheque" class="form-input" value="${_aiEscapeHtml(src.cheque_no||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.bill}</label>
+        <select id="pv-bill" class="form-select" onchange="_pvOnBillChange()">
+          <option value="">${t.none}</option>
+          ${(bills||[]).map(b=>{
+            const bal = Number(b.total||0)-Number(b.paid_amt||0)
+            return `<option value="${b.id}" data-payee="${_aiEscapeHtml(b.supplier_name||'')}" data-bal="${bal}" ${(src.bill_id===b.id)?'selected':''}>${_aiEscapeHtml(b.ref_no||b.id.slice(0,8))} — ${_aiEscapeHtml(b.supplier_name||'')} (${formatRM(bal)})</option>`
+          }).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.desc}</label><textarea id="pv-desc" class="form-input" rows="3">${_aiEscapeHtml(src.description||'')}</textarea></div>
+    </div>
+    <div id="pv-form-err" style="display:none;color:var(--danger);font-size:13px;margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="_pvSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="openPage('vouchers',{})">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+function _pvOnBillChange() {
+  const sel = document.getElementById('pv-bill')
+  if(!sel || !sel.value) return
+  const opt = sel.options[sel.selectedIndex]
+  const payee = opt.getAttribute('data-payee') || ''
+  const bal = opt.getAttribute('data-bal') || ''
+  const pe = document.getElementById('pv-payee')
+  const am = document.getElementById('pv-amount')
+  if(pe && payee && !pe.value.trim()) pe.value = payee
+  if(am && bal && (!am.value || Number(am.value)===0)) am.value = Number(bal).toFixed(2)
+}
+
+async function _pvSave(id) {
+  const isBm = APP.language==='bm'
+  const err = document.getElementById('pv-form-err')
+  err.style.display = 'none'
+  const payee = document.getElementById('pv-payee').value.trim()
+  const amount = Number(document.getElementById('pv-amount').value||0)
+  if(!payee) { err.textContent = isBm?'Nama penerima diperlukan.':'Payee name is required.'; err.style.display='block'; return }
+  if(amount<=0) { err.textContent = isBm?'Jumlah mesti lebih daripada 0.':'Amount must be greater than 0.'; err.style.display='block'; return }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    voucher_date: document.getElementById('pv-date').value || new Date().toISOString().slice(0,10),
+    payee_name: payee,
+    amount,
+    payment_method: document.getElementById('pv-method').value,
+    bank_name: document.getElementById('pv-bank').value.trim() || null,
+    cheque_no: document.getElementById('pv-cheque').value.trim() || null,
+    description: document.getElementById('pv-desc').value.trim() || null,
+    bill_id: document.getElementById('pv-bill').value || null,
+    status: 'draft',
+    updated_at: new Date().toISOString()
+  }
+  let error, newId = id
+  if(id) {
+    const res = await sb.from('payment_vouchers').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)
+    error = res.error
+  } else {
+    payload.ref_no = await _genFallbackRefNo('payment_vouchers','ref_no','PV')
+    payload.created_at = new Date().toISOString()
+    const res = await sb.from('payment_vouchers').insert(payload).select('id').single()
+    error = res.error
+    newId = res.data?.id
+  }
+  if(error) { err.textContent = 'Error: '+error.message; err.style.display='block'; return }
+  auditLog(id?'update':'create','payment_vouchers', newId)
+  showToast(isBm?'Baucar disimpan.':'Voucher saved.', 'success')
+  openPage('vouchers',{view:'pv-detail',id:newId})
+}
+
+async function renderPVDetail(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { back:'Baucar Bayaran', print:'Cetak', approve:'Luluskan', markPaid:'Tanda Dibayar', void:'Batalkan', edit:'Edit', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', voided:'Batal', notFound:'Baucar tidak dijumpai.' }
+    : { back:'Payment Vouchers', print:'Print', approve:'Approve', markPaid:'Mark as Paid', void:'Void', edit:'Edit', draft:'Draft', approved:'Approved', paid:'Paid', voided:'Void', notFound:'Voucher not found.' }
+  const {data: v, error} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(error || !v) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  const tn = await _pdocGetTenant()
+  const accent = _pdocAccentGet('pv')
+  _pdocSetPageOrientation('portrait')
+  const printFn = `PV_${_pdocSlug(v.ref_no)}_${_pdocSlug(v.payee_name)}_${_pdocDateStamp(v.voucher_date)}`.replace(/'/g,"\\'")
+  const stColor = v.status==='paid'?'var(--success)':v.status==='approved'?'#3B82F6':v.status==='void'?'var(--danger)':'var(--warning)'
+  document.getElementById('main').innerHTML = `
+  <div class="page-header no-print"><div>
+    <div class="page-title">${_aiEscapeHtml(v.ref_no||'PV')}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{})">← ${t.back}</div>
+  </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      ${_pdocColorPickerHtml('pv', accent)}
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline" style="color:#16A34A;border-color:#16A34A" onclick="_pvShareWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
+      <button class="btn btn-outline" onclick="_pvShareEmail('${id}')"><i class="ti ti-mail"></i> Email</button>
+      ${v.status==='draft'?`<button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>`:''}
+      ${v.status==='draft'?`<button class="btn btn-primary btn-sm" onclick="_pvSetStatus('${id}','approved')"><i class="ti ti-check"></i> ${t.approve}</button>`:''}
+      ${v.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="_pvMarkPaid('${id}')"><i class="ti ti-cash"></i> ${t.markPaid}</button>`:''}
+      ${v.status!=='void'&&v.status!=='paid'?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_pvSetStatus('${id}','void')">${t.void}</button>`:''}
+    </div>
+  </div>
+  ${_pvDocHtml(v, tn, isBm, accent)}
+  <div class="no-print" style="max-width:720px;margin:12px auto 0;font-size:12px;color:var(--text-3)">
+    Status: <strong style="color:${stColor}">${t[v.status]==null?v.status:t[v.status==='void'?'voided':v.status]}</strong>
+    ${v.bill_id?` · Bill linked` : ''}
+  </div>`
+}
+
+function _pvDocHtml(v, tn, isBm, accent) {
+  const addr = _pdocAddressLine(tn)
+  const logo = tn.logo_url ? `<img src="${_aiEscapeHtml(tn.logo_url)}" alt="" style="height:42px;object-fit:contain">` : `<div style="font-weight:700;font-size:18px;color:var(--pdoc-accent,#0E7490)">${_aiEscapeHtml(tn.name||'Company')}</div>`
+  return `
+  <div class="pdoc" style="--pdoc-accent:${accent};max-width:720px;margin:0 auto 24px">
+    <div class="pdoc-header">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        ${logo}
+        <div>
+          <div style="font-weight:700;font-size:15px;color:#0F172A">${_aiEscapeHtml(tn.name||'')}</div>
+          ${addr?`<div style="font-size:11px;color:#64748B;margin-top:2px;max-width:320px;line-height:1.4">${_aiEscapeHtml(addr)}</div>`:''}
+        </div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#64748B">
+        ${isBm?'Tarikh':'Date'}: ${formatDate(v.voucher_date)}<br>
+        ${isBm?'Ruj.':'Ref'}: <strong style="color:#0F172A">${_aiEscapeHtml(v.ref_no||'-')}</strong>
+      </div>
+    </div>
+    <div class="pdoc-title-bar">${isBm?'BAUCAR BAYARAN':'PAYMENT VOUCHER'}</div>
+    <div style="padding:20px 24px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;font-size:13px">
+        <div><div style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em">${isBm?'Bayar kepada':'Pay to'}</div>
+          <div style="font-weight:700;font-size:16px;margin-top:4px;color:#0F172A">${_aiEscapeHtml(v.payee_name||'-')}</div></div>
+        <div style="text-align:right"><div style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em">${isBm?'Jumlah':'Amount'}</div>
+          <div style="font-weight:700;font-size:22px;margin-top:4px;color:var(--pdoc-accent,#0E7490);font-family:'Space Grotesk',sans-serif">${formatRM(v.amount)}</div></div>
+      </div>
+      <table class="pdoc-table" style="width:100%"><tbody>
+        <tr><td style="color:#64748B;width:40%">${isBm?'Kaedah bayaran':'Payment method'}</td><td style="font-weight:600">${_aiEscapeHtml(v.payment_method||'-')}</td></tr>
+        <tr><td style="color:#64748B">${isBm?'Bank':'Bank'}</td><td style="font-weight:600">${_aiEscapeHtml(v.bank_name||'—')}</td></tr>
+        <tr><td style="color:#64748B">${isBm?'No. cek / rujukan':'Cheque / Ref no.'}</td><td style="font-weight:600">${_aiEscapeHtml(v.cheque_no||'—')}</td></tr>
+        <tr><td style="color:#64748B">${isBm?'Keterangan':'Description'}</td><td>${_aiEscapeHtml(v.description||'—')}</td></tr>
+        <tr><td style="color:#64748B">${isBm?'Status':'Status'}</td><td style="font-weight:700;text-transform:uppercase">${_aiEscapeHtml(v.status||'draft')}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="pdoc-sig-grid" style="margin:0 16px 20px">
+      <div class="form-group"><label class="form-label">${isBm?'Disediakan':'Prepared By'}</label><div class="form-input" style="border:none;border-top:1.5px solid #334155;border-radius:0;margin-top:28px;text-align:center;background:transparent">${_aiEscapeHtml(v.prepared_by||APP.user.name||'')}</div></div>
+      <div class="form-group"><label class="form-label">${isBm?'Disemak':'Checked By'}</label><div class="form-input" style="border:none;border-top:1.5px solid #334155;border-radius:0;margin-top:28px;text-align:center;background:transparent">${_aiEscapeHtml(v.checked_by||'')}</div></div>
+      <div class="form-group"><label class="form-label">${isBm?'Diluluskan':'Approved By'}</label><div class="form-input" style="border:none;border-top:1.5px solid #334155;border-radius:0;margin-top:28px;text-align:center;background:transparent">${_aiEscapeHtml(v.approved_by||'')}</div></div>
+    </div>
+    <div class="pdoc-footer-note">${isBm?'Baucar bayaran janaan komputer · NexERP / Phion':'Computer-generated payment voucher · NexERP / Phion'}</div>
+  </div>`
+}
+
+async function _pvSetStatus(id, status) {
+  const isBm = APP.language==='bm'
+  const patch = { status, updated_at: new Date().toISOString() }
+  if(status==='approved') patch.approved_by = APP.user.name || APP.user.email
+  if(status==='draft') { /* noop */ }
+  const {error} = await sb.from('payment_vouchers').update(patch).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message,'error'); return }
+  auditLog('update','payment_vouchers', id)
+  showToast(isBm?'Status dikemaskini.':'Status updated.','success')
+  renderPVDetail(id)
+}
+
+async function _pvMarkPaid(id) {
+  const isBm = APP.language==='bm'
+  const {data: v} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!v) { showToast('Not found','error'); return }
+  if(v.status==='paid') { showToast(isBm?'Sudah dibayar.':'Already paid.','error'); return }
+
+  // 1) Update PV
+  const {error: e1} = await sb.from('payment_vouchers').update({
+    status: 'paid',
+    paid_at: new Date().toISOString(),
+    approved_by: v.approved_by || APP.user.name || APP.user.email,
+    updated_at: new Date().toISOString()
+  }).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(e1) { showToast('Error: '+e1.message,'error'); return }
+
+  // 2) Reflect on supplier bill if linked
+  if(v.bill_id) {
+    try {
+      const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt').eq('id',v.bill_id).eq('tenant_id',APP.tenant.id).single()
+      if(bill) {
+        await sb.from('supplier_payments').insert({
+          tenant_id: APP.tenant.id,
+          bill_id: v.bill_id,
+          payment_date: v.voucher_date || new Date().toISOString().slice(0,10),
+          amount: Number(v.amount||0),
+          method: v.payment_method || 'Bank Transfer',
+          notes: 'PV '+ (v.ref_no||'')
+        })
+        const newPaid = Number(bill.paid_amt||0) + Number(v.amount||0)
+        const newStatus = newPaid >= Number(bill.total) - 0.005 ? 'paid' : 'partial'
+        await sb.from('supplier_bills').update({ paid_amt: newPaid, status: newStatus }).eq('id',v.bill_id).eq('tenant_id',APP.tenant.id)
+      }
+    } catch(e) { console.warn('PV bill reflect', e) }
+  }
+
+  // 3) Optional outflow payment row (cashbook-ish)
+  try {
+    await sb.from('payments').insert({
+      tenant_id: APP.tenant.id,
+      ref_no: v.ref_no,
+      payment_date: v.voucher_date || new Date().toISOString().slice(0,10),
+      amount: Number(v.amount||0),
+      payment_type: 'payment',
+      payment_method: v.payment_method || null,
+      customer_name: v.payee_name,
+      notes: 'Payment Voucher ' + (v.ref_no||'') + (v.description ? ' — '+v.description : '')
+    })
+  } catch(e) { console.warn('PV payments insert', e) }
+
+  // 4) Soft journal (best-effort)
+  try {
+    const ref = await _genFallbackRefNo('journal_entries','ref_no','JNL')
+    await sb.from('journal_entries').insert({
+      tenant_id: APP.tenant.id,
+      ref_no: ref,
+      entry_date: v.voucher_date || new Date().toISOString().slice(0,10),
+      description: 'PV '+(v.ref_no||'')+' — '+ (v.payee_name||'') + ' — ' + formatRM(v.amount),
+      status: 'posted',
+      total_debit: Number(v.amount||0),
+      total_credit: Number(v.amount||0)
+    })
+  } catch(e) { console.warn('PV journal', e) }
+
+  auditLog('update','payment_vouchers', id)
+  showToast(isBm?'Baucar ditanda dibayar. Kewangan dikemaskini.':'Voucher marked paid. Financials updated.','success')
+  renderPVDetail(id)
+}
+
+async function _pvShareWhatsApp(id) {
+  const isBm = APP.language==='bm'
+  const {data: v} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!v) return
+  const co = APP.tenant?.name || 'Company'
+  const msg = isBm
+    ? `*${co} — Baucar Bayaran*\n\nNo: *${v.ref_no}*\nPenerima: *${v.payee_name}*\nJumlah: *${formatRM(v.amount)}*\nTarikh: ${formatDate(v.voucher_date)}\nKaedah: ${v.payment_method||'-'}\nStatus: ${v.status}\n\n${v.description||''}`
+    : `*${co} — Payment Voucher*\n\nNo: *${v.ref_no}*\nPayee: *${v.payee_name}*\nAmount: *${formatRM(v.amount)}*\nDate: ${formatDate(v.voucher_date)}\nMethod: ${v.payment_method||'-'}\nStatus: ${v.status}\n\n${v.description||''}`
+  window.open('https://wa.me/?text='+encodeURIComponent(msg), '_blank')
+}
+
+async function _pvShareEmail(id) {
+  const isBm = APP.language==='bm'
+  const {data: v} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!v) return
+  const co = APP.tenant?.name || 'Company'
+  const subject = `${co} — ${isBm?'Baucar Bayaran':'Payment Voucher'} ${v.ref_no||''}`
+  const body = isBm
+    ? `Baucar Bayaran\n\nNo: ${v.ref_no}\nPenerima: ${v.payee_name}\nJumlah: ${formatRM(v.amount)}\nTarikh: ${formatDate(v.voucher_date)}\nKaedah: ${v.payment_method||'-'}\nStatus: ${v.status}\n\n${v.description||''}\n\n— ${co}`
+    : `Payment Voucher\n\nNo: ${v.ref_no}\nPayee: ${v.payee_name}\nAmount: ${formatRM(v.amount)}\nDate: ${formatDate(v.voucher_date)}\nMethod: ${v.payment_method||'-'}\nStatus: ${v.status}\n\n${v.description||''}\n\n— ${co}`
+  window.location.href = 'mailto:?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)
+}
+
+
 // PRODUCTION MODULE (Batch 4, #16 — MVP: manual status, no linked BOM/component
 // inventory, AI check is a text-based sanity/scheduling advisory only)
 // ═══════════════════════════════════════════════════════════════════════════
