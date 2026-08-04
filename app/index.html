@@ -9210,6 +9210,51 @@ async function _payrollRunExecute() {
   showToast(isBm?'Payroll selesai dijalankan':'Payroll run complete', 'success')
 }
 
+
+async function _payslipShareWhatsApp(id) {
+  const isBm = APP.language==='bm'
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,phone,email,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!rec) { showToast('Not found','error'); return }
+  const co = (APP.tenant && APP.tenant.name) || 'Company'
+  const name = rec.employees?.name || ''
+  const period = _pdocMonthYearLabel(rec.month, rec.year, isBm)
+  const net = formatRM(rec.net_pay)
+  const bank = rec.employees?.bank_name ? (rec.employees.bank_name + ' ' + (rec.employees.bank_account_no||'')).trim() : '-'
+  const msg = isBm
+    ? ('*' + co + ' — Slip Gaji*\n\nPekerja: *' + name + '*\nTempoh: ' + period + '\nGaji bersih: *' + net + '*\nBank: ' + bank + '\n\nSila semak slip gaji anda. Sebarang pertanyaan hubungi HR.\n\n_Nota: PDF penuh — NexERP → HR → Print._')
+    : ('*' + co + ' — Payslip*\n\nEmployee: *' + name + '*\nPeriod: ' + period + '\nNet pay: *' + net + '*\nBank: ' + bank + '\n\nPlease review your payslip. Contact HR for questions.\n\n_Note: Full PDF — NexERP → HR → Print._')
+  let phone = (rec.employees?.phone || '').replace(/\D/g,'')
+  if(phone.startsWith('0')) phone = '60' + phone.slice(1)
+  if(phone && !phone.startsWith('60') && phone.length >= 9) phone = '60' + phone
+  if(!phone) {
+    const entered = prompt(isBm ? 'No. WhatsApp staf (cth 60123456789):' : 'Staff WhatsApp no. (e.g. 60123456789):', '')
+    if(!entered) return
+    phone = String(entered).replace(/\D/g,'')
+  }
+  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank')
+}
+
+async function _payslipShareEmail(id) {
+  const isBm = APP.language==='bm'
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,phone,email,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!rec) { showToast('Not found','error'); return }
+  const co = (APP.tenant && APP.tenant.name) || 'Company'
+  const name = rec.employees?.name || ''
+  const period = _pdocMonthYearLabel(rec.month, rec.year, isBm)
+  const net = formatRM(rec.net_pay)
+  const bank = rec.employees?.bank_name ? (rec.employees.bank_name + ' ' + (rec.employees.bank_account_no||'')).trim() : '-'
+  const subject = isBm ? (co + ' — Slip Gaji ' + period + ' (' + name + ')') : (co + ' — Payslip ' + period + ' (' + name + ')')
+  const body = isBm
+    ? ('Assalamualaikum / Salam sejahtera ' + name + ',\n\nBerikut ringkasan slip gaji anda:\n\nSyarikat: ' + co + '\nTempoh: ' + period + '\nGaji bersih: ' + net + '\nBank: ' + bank + '\n\nSila log masuk NexERP → HR & Payroll untuk cetak PDF penuh.\n\nTerima kasih.\nHR ' + co)
+    : ('Dear ' + name + ',\n\nPlease find your payslip summary below:\n\nCompany: ' + co + '\nPeriod: ' + period + '\nNet pay: ' + net + '\nBank: ' + bank + '\n\nLog in to NexERP → HR & Payroll to print the full PDF.\n\nThank you.\nHR ' + co)
+  let email = (rec.employees?.email || '').trim()
+  if(!email) {
+    email = prompt(isBm ? 'Emel staf:' : 'Staff email:', '') || ''
+  }
+  if(!email) return
+  window.location.href = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body)
+}
+
 async function renderPayslipDetail(id) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
