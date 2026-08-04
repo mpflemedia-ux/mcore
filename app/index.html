@@ -816,7 +816,18 @@ tbody tr:hover{background:var(--bg)}
     </div>
 
     <!-- FORGOT PASSWORD -->
-    <div id="form-forgot" style="display:none">
+    
+      <div id="form-pin" style="display:none">
+        <div class="auth-error" id="pin-error"></div>
+        <p style="font-size:13px;color:var(--text-3);margin-bottom:12px" id="pin-hint">Enter your security PIN</p>
+        <div class="form-group">
+          <label class="form-label">PIN</label>
+          <input type="password" id="pin-input" class="form-input" inputmode="numeric" maxlength="8" placeholder="••••••" autocomplete="one-time-code">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" id="btn-pin" onclick="doVerifyPin()">Verify PIN</button>
+        <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="doPinCancel()">Cancel</button>
+      </div>
+<div id="form-forgot" style="display:none">
       <div class="auth-form">
         <div id="forgot-msg" class="auth-success"></div>
         <p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:4px">Enter your email to reset your password.</p>
@@ -1794,6 +1805,138 @@ async function doResetPassword() {
   }
 }
 
+
+// ── Security PIN (2FA-lite) ──────────────────────────────────────────────────
+async function _sha256(text) {
+  const data = new TextEncoder().encode(text)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('')
+}
+function _pinSessionKey() { return 'nexerp_pin_ok_' + (APP.user?.id || '') }
+function _pinIsVerified() { return sessionStorage.getItem(_pinSessionKey()) === '1' }
+function _pinMarkVerified() { sessionStorage.setItem(_pinSessionKey(), '1') }
+function _pinClearVerified() { sessionStorage.removeItem(_pinSessionKey()) }
+
+async function _userPinHash() {
+  const perms = APP.user?.permissions
+  if(perms && typeof perms === 'object' && perms.pin_hash) return perms.pin_hash
+  // reload from profile if needed
+  if(!APP.user?.id) return null
+  const {data} = await sb.from('user_profiles').select('permissions').eq('id', APP.user.id).single()
+  const p = data?.permissions
+  if(p && typeof p === 'object') return p.pin_hash || null
+  if(typeof p === 'string') {
+    try { return JSON.parse(p).pin_hash || null } catch(e) { return null }
+  }
+  return null
+}
+
+async function _requirePinGate(user) {
+  // After password auth, if user has PIN enabled and not verified this session
+  const {data: profile} = await sb.from('user_profiles').select('permissions,full_name,role,language,theme,tenant_id,tenants(*)').eq('id', user.id).single()
+  if(!profile) return false // let normal flow handle
+  let perms = profile.permissions
+  if(typeof perms === 'string') { try { perms = JSON.parse(perms) } catch(e) { perms = {} } }
+  perms = perms || {}
+  APP.user.permissions = perms
+  if(!perms.pin_enabled || !perms.pin_hash) return false
+  if(_pinIsVerified()) return false
+  // Show PIN UI
+  document.getElementById('shell').classList.remove('active')
+  document.getElementById('auth-page').style.display = 'flex'
+  document.getElementById('form-login').style.display = 'none'
+  document.getElementById('form-register').style.display = 'none'
+  const ff = document.getElementById('form-forgot'); if(ff) ff.style.display = 'none'
+  const fr = document.getElementById('form-reset'); if(fr) fr.style.display = 'none'
+  const tabs = document.querySelector('.auth-tabs'); if(tabs) tabs.style.display = 'none'
+  const fp = document.getElementById('form-pin')
+  if(fp) fp.style.display = 'block'
+  const hint = document.getElementById('pin-hint')
+  if(hint) hint.textContent = (APP.language==='bm' || profile.language==='bm')
+    ? 'Masukkan PIN keselamatan anda'
+    : 'Enter your security PIN'
+  window._pendingPinUser = user
+  window._pendingPinProfile = profile
+  return true // gated
+}
+
+async function doVerifyPin() {
+  const errEl = document.getElementById('pin-error')
+  const btn = document.getElementById('btn-pin')
+  const pin = (document.getElementById('pin-input')?.value || '').trim()
+  errEl?.classList.remove('show')
+  if(pin.length < 4) {
+    if(errEl) { errEl.textContent = 'PIN must be at least 4 digits.'; errEl.classList.add('show') }
+    return
+  }
+  if(btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>' }
+  try {
+    const hash = await _sha256(pin + ':' + (window._pendingPinUser?.id || APP.user?.id || ''))
+    const expected = (APP.user?.permissions?.pin_hash) || (await _userPinHash())
+    // Also from pending profile
+    let exp = expected
+    const pp = window._pendingPinProfile?.permissions
+    if(!exp && pp) {
+      const p = typeof pp === 'string' ? JSON.parse(pp) : pp
+      exp = p?.pin_hash
+    }
+    if(hash !== exp) {
+      if(errEl) { errEl.textContent = APP.language==='bm'?'PIN salah.':'Incorrect PIN.'; errEl.classList.add('show') }
+      if(btn) { btn.disabled = false; btn.textContent = 'Verify PIN' }
+      return
+    }
+    _pinMarkVerified()
+    const user = window._pendingPinUser
+    window._pendingPinUser = null
+    window._pendingPinProfile = null
+    document.getElementById('form-pin').style.display = 'none'
+    const tabs = document.querySelector('.auth-tabs'); if(tabs) tabs.style.display = ''
+    await loadUserSession(user, { skipPin: true })
+  } catch(e) {
+    if(errEl) { errEl.textContent = e.message; errEl.classList.add('show') }
+  }
+  if(btn) { btn.disabled = false; btn.textContent = 'Verify PIN' }
+}
+
+async function doPinCancel() {
+  await sb.auth.signOut()
+  _pinClearVerified()
+  window._pendingPinUser = null
+  document.getElementById('form-pin').style.display = 'none'
+  const tabs = document.querySelector('.auth-tabs'); if(tabs) tabs.style.display = ''
+  switchAuthTab('login')
+  showAuthPage()
+}
+
+async function _settingsSavePin() {
+  const isBm = APP.language==='bm'
+  const enabled = document.getElementById('pin-enable')?.checked
+  const pin = (document.getElementById('pin-new')?.value || '').trim()
+  const pin2 = (document.getElementById('pin-confirm')?.value || '').trim()
+  if(enabled) {
+    if(pin.length < 4 || pin.length > 8) { showToast(isBm?'PIN 4–8 digit.':'PIN must be 4–8 digits.', 'error'); return }
+    if(pin !== pin2) { showToast(isBm?'PIN tak sama.':'PIN does not match.', 'error'); return }
+  }
+  const {data: cur} = await sb.from('user_profiles').select('permissions').eq('id', APP.user.id).single()
+  let perms = cur?.permissions || {}
+  if(typeof perms === 'string') { try { perms = JSON.parse(perms) } catch(e) { perms = {} } }
+  perms = Object.assign({}, perms || {})
+  if(enabled) {
+    perms.pin_enabled = true
+    perms.pin_hash = await _sha256(pin + ':' + APP.user.id)
+  } else {
+    perms.pin_enabled = false
+    delete perms.pin_hash
+  }
+  const {error} = await sb.from('user_profiles').update({ permissions: perms }).eq('id', APP.user.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  APP.user.permissions = perms
+  _pinClearVerified()
+  if(enabled) _pinMarkVerified()
+  showToast(isBm?'PIN disimpan.':'PIN saved.', 'success')
+}
+
+
 async function doLogin() {
   const email=document.getElementById('login-email').value.trim()
   const pass=document.getElementById('login-password').value
@@ -1910,6 +2053,7 @@ async function doForgotPassword() {
 }
 
 async function doLogout() {
+  _pinClearVerified()
   await sb.auth.signOut()
   // Reset session-scoped state so a stale tenant/user never lingers in memory
   // if another account logs in on the same tab afterwards.
@@ -1943,7 +2087,18 @@ async function doLogout() {
 let _sessionLoadPromise = null
 let _sessionLoadUserId = null
 
-function _captureInviteFromUrl() {
+function _captureInviteFromUrl()
+
+// Public invoice deep link (no login)
+;(async function(){
+  try {
+    if(new URLSearchParams(location.search).get('public_inv')) {
+      // Wait a tick for sb
+      setTimeout(async ()=>{ await _tryShowPublicInvoice() }, 50)
+    }
+  } catch(e) {}
+})()
+ {
   try {
     const params = new URLSearchParams(location.search)
     const inv = params.get('invite')
@@ -1986,13 +2141,18 @@ async function _tryJoinInvite(user, token, fullName) {
   }
 }
 
-async function loadUserSession(user) {
+async function loadUserSession(user, opts={}) {
   if(!user){showAuthPage();return}
-  if(_sessionLoadPromise && _sessionLoadUserId === user.id) return _sessionLoadPromise
+  if(_sessionLoadPromise && _sessionLoadUserId === user.id && !opts.skipPin) return _sessionLoadPromise
   _sessionLoadUserId = user.id
   _sessionLoadPromise = (async () => {
     APP.user.id=user.id
     APP.user.email=user.email
+    // PIN gate (after password, before shell)
+    if(!opts.skipPin) {
+      const gated = await _requirePinGate(user)
+      if(gated) { _sessionLoadPromise = null; _sessionLoadUserId = null; return }
+    }
     const {data:profile}=await sb.from('user_profiles').select('*,tenants(*)').eq('id',user.id).single()
     // New user — no profile yet: try invite join, else onboarding (new tenant)
     if(!profile){
@@ -2007,6 +2167,9 @@ async function loadUserSession(user) {
     }
     APP.user.name=profile.full_name
     APP.user.role=profile.role
+    let _perms = profile.permissions
+    if(typeof _perms === 'string') { try { _perms = JSON.parse(_perms) } catch(e) { _perms = {} } }
+    APP.user.permissions = _perms || {}
     // Best-effort last_login stamp
     sb.from('user_profiles').update({last_login: new Date().toISOString()}).eq('id', user.id).then(()=>{},()=>{})
     APP.language=profile.language||'en'
@@ -3455,6 +3618,23 @@ async function renderSettings() {
       <div class="form-group"><label class="form-label">${APP.language==='bm'?'Nama / Penerima':'Name / Recipient'}</label><input id="doc-name" type="text" class="form-input"></div>
       <div class="form-group"><label class="form-label">${APP.language==='bm'?'Tujuan / Konteks':'Purpose / Context'}</label><textarea id="doc-context" class="form-input" rows="3" placeholder="${APP.language==='bm'?'cth: susulan lepas mesyuarat pasal sebut harga bekalan bahan mentah':'e.g. follow-up after meeting about a raw material supply quote'}"></textarea></div>
       <button id="doc-generate-btn" class="btn btn-primary btn-sm" onclick="_docGenerate()"><i class="ti ti-file-text"></i> ${APP.language==='bm'?'Jana Draf':'Generate Draft'}</button>
+    </div>
+  </div>
+  <div class="card" style="max-width:500px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'PIN Keselamatan (2FA)':'Security PIN (2FA)'}</div></div>
+    <div style="padding:16px">
+      <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
+        ?'Selepas login, diminta PIN 4–8 digit. Disimpan hash di profil (bukan plain text).'
+        :'After login, you will be asked for a 4–8 digit PIN. Stored as a hash on your profile.'}</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px">
+        <input type="checkbox" id="pin-enable" ${(APP.user.permissions&&APP.user.permissions.pin_enabled)?'checked':''}>
+        ${APP.language==='bm'?'Aktifkan PIN':'Enable PIN'}
+      </label>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'PIN baru':'New PIN'}</label>
+        <input type="password" id="pin-new" class="form-input" inputmode="numeric" maxlength="8" placeholder="••••••"></div>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Sahkan PIN':'Confirm PIN'}</label>
+        <input type="password" id="pin-confirm" class="form-input" inputmode="numeric" maxlength="8" placeholder="••••••"></div>
+      <button class="btn btn-primary btn-sm" onclick="_settingsSavePin()"><i class="ti ti-lock"></i> ${APP.language==='bm'?'Simpan PIN':'Save PIN'}</button>
     </div>
   </div>
   <div class="card" style="max-width:500px;margin-top:16px">
@@ -6532,6 +6712,164 @@ async function _invSave(id) {
 }
 
 // ─── Invoices: Detail + Payment ────────────────────────────────────────────────
+
+async function _invExportEInvoice(id) {
+  const isBm = APP.language==='bm'
+  const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!inv) { showToast('Not found','error'); return }
+  const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
+  const {data: cust} = inv.customer_id
+    ? await sb.from('customers').select('*').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
+    : {data:null}
+  // Malaysia MyInvois-oriented export (manual submit / accountant). Not live LHDN API.
+  const doc = {
+    _meta: {
+      format: 'NexERP-eInvoice-export-v1',
+      note: 'Structured export for Malaysia e-Invoice preparation. Not a live LHDN MyInvois submission.',
+      exported_at: new Date().toISOString(),
+      tenant: { id: APP.tenant.id, name: APP.tenant.name, code: APP.tenant.code }
+    },
+    invoice: {
+      codeNumber: inv.ref_no,
+      issueDate: inv.issue_date,
+      dueDate: inv.due_date,
+      documentCurrencyCode: 'MYR',
+      status: inv.status,
+      totals: {
+        totalExcludingTax: Number(inv.subtotal != null ? inv.subtotal : (Number(inv.total||0) - Number(inv.tax_amt||0))),
+        taxAmount: Number(inv.tax_amt||0),
+        taxRate: Number(inv.tax_rate||0),
+        totalIncludingTax: Number(inv.total||0),
+        paidAmount: Number(inv.paid_amt||0)
+      }
+    },
+    supplier: {
+      name: APP.tenant.name,
+      tin: APP.tenant.config?.tin || APP.tenant.config?.tax_id || null,
+      ssm: APP.tenant.config?.ssm_no || APP.tenant.config?.registration_no || null
+    },
+    buyer: {
+      name: inv.customer_name || cust?.name,
+      phone: cust?.phone || null,
+      email: cust?.email || null,
+      address: [cust?.address_line1, cust?.city, cust?.postcode, cust?.state].filter(Boolean).join(', ') || null,
+      tin: cust?.tin || null
+    },
+    lineItems: (items||[]).map((it,i)=>({
+      id: i+1,
+      description: it.description,
+      quantity: Number(it.qty||0),
+      unitPrice: Number(it.unit_price||0),
+      lineTotal: Number(it.line_total||0)
+    }))
+  }
+  const blob = new Blob([JSON.stringify(doc,null,2)], {type:'application/json'})
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `eInvoice_${inv.ref_no||id}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+  showToast(isBm?'e-Invoice JSON dimuat turun (untuk akauntan / LHDN manual).':'e-Invoice JSON downloaded (for accountant / manual LHDN).', 'success')
+}
+
+async function _invPublicLink(id) {
+  const isBm = APP.language==='bm'
+  let token = null
+  const {data: inv} = await sb.from('invoices').select('id,public_token,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!inv) { showToast('Not found','error'); return }
+  token = inv.public_token
+  if(!token) {
+    token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'')) || (Date.now().toString(36)+Math.random().toString(36).slice(2))
+    const {error} = await sb.from('invoices').update({ public_token: token }).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) {
+      showToast((isBm?'Gagal jana link. Jalankan SQL public_token: ':'Failed. Run public_token SQL: ') + error.message, 'error')
+      return
+    }
+  }
+  const base = location.origin + location.pathname.replace(/\/$/,'')
+  const link = `${base}?public_inv=${encodeURIComponent(token)}`
+  try { await navigator.clipboard.writeText(link) } catch(e) {}
+  showToast(isBm?'Link awam disalin — pelanggan boleh buka tanpa login.':'Public link copied — customer can open without login.', 'success')
+  alert((isBm?'Hantar link ni kepada pelanggan:\\n\\n':'Send this link to the customer:\\n\\n') + link)
+}
+
+async function _tryShowPublicInvoice() {
+  try {
+    const params = new URLSearchParams(location.search)
+    const token = params.get('public_inv')
+    if(!token) return false
+    document.getElementById('shell')?.classList.remove('active')
+    const auth = document.getElementById('auth-page')
+    if(auth) auth.style.display = 'none'
+    let main = document.getElementById('main')
+    // Ensure a visible container
+    if(!document.getElementById('public-inv-root')) {
+      const root = document.createElement('div')
+      root.id = 'public-inv-root'
+      root.style.cssText = 'min-height:100vh;background:var(--bg,#F8FAFC);padding:24px 16px;font-family:Inter,system-ui,sans-serif'
+      document.body.appendChild(root)
+    }
+    const root = document.getElementById('public-inv-root')
+    root.innerHTML = `<div style="max-width:720px;margin:40px auto;text-align:center;color:#64748b">Loading invoice…</div>`
+    const {data, error} = await sb.rpc('get_public_invoice', { p_token: token })
+    if(error) {
+      root.innerHTML = `<div style="max-width:560px;margin:60px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e2e8f0">
+        <h2 style="margin:0 0 8px">Invoice unavailable</h2>
+        <p style="color:#64748b">${_aiEscapeHtml(error.message)}</p>
+        <p style="font-size:12px;color:#94a3b8">If you are the admin: run SQL migration get_public_invoice in Supabase.</p>
+      </div>`
+      return true
+    }
+    const inv = data
+    const items = inv.items || []
+    root.innerHTML = `
+    <div style="max-width:720px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,.06)">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+        <div>
+          <div style="font-size:12px;color:#94a3b8">From</div>
+          <div style="font-weight:700;font-size:18px;color:#0E7490">${_aiEscapeHtml(inv.tenant_name||'NexERP')}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:12px;color:#94a3b8">Invoice</div>
+          <div style="font-weight:700;font-size:18px">${_aiEscapeHtml(inv.ref_no||'-')}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;font-size:13px">
+        <div><span style="color:#94a3b8">Bill to</span><br><strong>${_aiEscapeHtml(inv.customer_name||'-')}</strong></div>
+        <div><span style="color:#94a3b8">Issue / Due</span><br>${_aiEscapeHtml(String(inv.issue_date||''))} / ${_aiEscapeHtml(String(inv.due_date||''))}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#f8fafc;text-align:left">
+          <th style="padding:10px">Item</th><th style="padding:10px;text-align:right">Qty</th>
+          <th style="padding:10px;text-align:right">Price</th><th style="padding:10px;text-align:right">Amount</th>
+        </tr></thead>
+        <tbody>
+          ${(items||[]).map(it=>`<tr style="border-top:1px solid #e2e8f0">
+            <td style="padding:10px">${_aiEscapeHtml(it.description||'')}</td>
+            <td style="padding:10px;text-align:right">${it.qty}</td>
+            <td style="padding:10px;text-align:right">${Number(it.unit_price||0).toFixed(2)}</td>
+            <td style="padding:10px;text-align:right">${Number(it.line_total||0).toFixed(2)}</td>
+          </tr>`).join('')||'<tr><td colspan="4" style="padding:16px;color:#94a3b8">No lines</td></tr>'}
+        </tbody>
+      </table>
+      <div style="margin-top:16px;text-align:right;font-size:14px">
+        ${Number(inv.tax_amt)>0?`<div>Subtotal: MYR ${Number(inv.subtotal||0).toFixed(2)}</div>
+        <div>SST: MYR ${Number(inv.tax_amt||0).toFixed(2)}</div>`:''}
+        <div style="font-size:18px;font-weight:700;margin-top:6px">Total: MYR ${Number(inv.total||0).toFixed(2)}</div>
+        <div style="color:#16a34a">Paid: MYR ${Number(inv.paid_amt||0).toFixed(2)}</div>
+        <div style="color:#dc2626">Balance: MYR ${(Number(inv.total||0)-Number(inv.paid_amt||0)).toFixed(2)}</div>
+      </div>
+      <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
+    </div>`
+    return true
+  } catch(e) {
+    console.error(e)
+    return false
+  }
+}
+
+
 async function renderInvDetail(id) {
   const t = APP.language==='bm' ? {
     back:'Invois', edit:'Edit', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
@@ -6578,6 +6916,8 @@ async function renderInvDetail(id) {
     <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
     <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename.replace(/'/g,"\\'")}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendInvWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'},'${(inv.customer_name||'').replace(/'/g,"\\'")}','${formatRM(balance)}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
+    <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
+    <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
   </div></div>
   <div class="card" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
