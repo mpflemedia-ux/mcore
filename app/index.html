@@ -1454,9 +1454,10 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
     if(Number(amt) > 0) dedRows.push({ label: _sdTypeLabel(SD_DEDUCTION_TYPES, type), amount: amt })
   })
 
-  const bankLine = rec.employees?.bank_name ? `${rec.employees.bank_name} · ${rec.employees.bank_account_no||'-'}` : ''
   const totalDeductions = dedRows.reduce((s,r)=>s+Number(r.amount||0), 0)
   const pos = rec.employees?.position || ''
+  const bankName = (rec.employees?.bank_name || '').trim()
+  const bankAcc = (rec.employees?.bank_account_no || '').trim()
 
   return `
   <div class="pdoc" style="--pdoc-accent:${accent};max-width:680px;margin:0 auto 28px">
@@ -1468,7 +1469,8 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
       <div class="pdoc-band-name">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
       ${pos ? `<div class="pdoc-band-sub">${_aiEscapeHtml(pos)}</div>` : ''}
       <div class="pdoc-band-grid">
-        ${bankLine ? `<div class="pdoc-band-item">${isBm?'Akaun Bank':'Bank Account'}<b>${_aiEscapeHtml(bankLine)}</b></div>` : ''}
+        <div class="pdoc-band-item">${isBm?'Bank':'Bank'}<b>${_aiEscapeHtml(bankName || '—')}</b></div>
+        <div class="pdoc-band-item">${isBm?'No. Akaun Bank':'Bank Account No.'}<b>${_aiEscapeHtml(bankAcc || '—')}</b></div>
         ${rec.employees?.epf_no ? `<div class="pdoc-band-item">${isBm?'No. KWSP':'EPF No.'}<b>${_aiEscapeHtml(rec.employees.epf_no)}</b></div>` : ''}
         ${rec.employees?.socso_no ? `<div class="pdoc-band-item">${isBm?'No. PERKESO':'SOCSO No.'}<b>${_aiEscapeHtml(rec.employees.socso_no)}</b></div>` : ''}
         <div class="pdoc-band-item">${isBm?'Tempoh':'Period'}<b>${_pdocMonthYearLabel(rec.month, rec.year, isBm)}</b></div>
@@ -8611,7 +8613,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     titleAdd:'Tambah Pekerja', titleEdit:'Kemaskini Pekerja', name:'Nama', ic:'No. IC', icPh:'XXXXXX-XX-XXXX',
-    position:'Jawatan', salary:'Gaji Pokok (RM)', epfNo:'No. EPF', socsoNo:'No. SOCSO', save:'Simpan', cancel:'Batal',
+    position:'Jawatan', salary:'Gaji Pokok (RM)', epfNo:'No. EPF', socsoNo:'No. SOCSO', bankName:'Nama Bank', bankAcc:'No. Akaun Bank', save:'Simpan', cancel:'Batal',
     nameRequired:'Nama diperlukan', icInvalid:'Format IC tidak sah (XXXXXX-XX-XXXX)', notFound:'Pekerja tidak dijumpai.',
     fromApplicant:'Pekerja baru ini akan pautkan balik ke permohonan kerja asal.',
     phone:'Telefon', email:'Emel', address:'Alamat', dob:'Tarikh Lahir', gender:'Jantina', male:'Lelaki', female:'Perempuan',
@@ -8619,7 +8621,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
     emergencyName:'Nama Kenalan Kecemasan', emergencyRel:'Hubungan', emergencyMobile:'No. Telefon Kecemasan', emergencyAddress:'Alamat Kecemasan'
   } : {
     titleAdd:'Add Employee', titleEdit:'Edit Employee', name:'Name', ic:'IC No.', icPh:'XXXXXX-XX-XXXX',
-    position:'Position', salary:'Basic Salary (RM)', epfNo:'EPF No.', socsoNo:'SOCSO No.', save:'Save', cancel:'Cancel',
+    position:'Position', salary:'Basic Salary (RM)', epfNo:'EPF No.', socsoNo:'SOCSO No.', bankName:'Bank Name', bankAcc:'Bank Account No.', save:'Save', cancel:'Cancel',
     nameRequired:'Name is required', icInvalid:'Invalid IC format (XXXXXX-XX-XXXX)', notFound:'Employee not found.',
     fromApplicant:'This new employee will be linked back to the original job application.',
     phone:'Phone', email:'Email', address:'Address', dob:'Date of Birth', gender:'Gender', male:'Male', female:'Female',
@@ -8660,6 +8662,8 @@ async function renderEmployeeForm(id, fromApplicantId) {
       <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${src.basic_salary??''}"></div>
       <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
+      <div class="form-group"><label class="form-label">${t.bankName}</label><input id="emp-bank-name" class="form-input" placeholder="Maybank / CIMB / ..." value="${_aiEscapeHtml(emp?.bank_name||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.bankAcc}</label><input id="emp-bank-acc" class="form-input" placeholder="1234567890" value="${_aiEscapeHtml(emp?.bank_account_no||'')}"></div>
       <div class="form-group"><label class="form-label">${t.phone}</label><input id="emp-phone" class="form-input" value="${src.phone||''}"></div>
       <div class="form-group"><label class="form-label">${t.email}</label><input id="emp-email" type="email" class="form-input" value="${src.email||''}"></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.address}</label><input id="emp-address" class="form-input" value="${_aiEscapeHtml(src.address||'')}"></div>
@@ -8707,6 +8711,8 @@ async function _employeeSave(id, fromApplicantId) {
     basic_salary: Number(document.getElementById('emp-salary').value) || 0,
     epf_no: document.getElementById('emp-epf').value.trim() || null,
     socso_no: document.getElementById('emp-socso').value.trim() || null,
+    bank_name: document.getElementById('emp-bank-name')?.value.trim() || null,
+    bank_account_no: document.getElementById('emp-bank-acc')?.value.trim() || null,
     phone: document.getElementById('emp-phone').value.trim() || null,
     email: document.getElementById('emp-email').value.trim() || null,
     address: document.getElementById('emp-address').value.trim() || null,
@@ -9411,23 +9417,25 @@ async function renderSalaryDisbursement(month, year) {
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
       <th style="width:36px">${t.no}</th>
-      <th style="width:22%">${t.payee}</th>
-      <th style="width:12%;text-align:right">${t.salary}</th>
-      <th style="width:22%">${isBm?'Elaun':'Allowances'}</th>
-      <th style="width:18%">${isBm?'Caruman':'Statutory'}</th>
-      <th style="width:16%">${isBm?'Potongan Lain':'Other Ded.'}</th>
-      <th style="width:12%;text-align:right">${t.netPay}</th>
+      <th style="width:16%">${t.payee}</th>
+      <th style="width:12%">${isBm?'Bank':'Bank'}</th>
+      <th style="width:12%">${isBm?'No. Akaun':'Account No.'}</th>
+      <th style="width:10%;text-align:right">${t.salary}</th>
+      <th style="width:18%">${isBm?'Elaun':'Allowances'}</th>
+      <th style="width:14%">${isBm?'Caruman':'Statutory'}</th>
+      <th style="width:12%">${isBm?'Potongan Lain':'Other Ded.'}</th>
+      <th style="width:10%;text-align:right">${t.netPay}</th>
     </tr></thead>
     <tbody>${data.map((r,i)=>{
-      const bank = r.employees?.bank_name
-        ? `${_aiEscapeHtml(r.employees.bank_name)} · ${_aiEscapeHtml(r.employees.bank_account_no||'-')}`
-        : '-';
+      const bankName = r.employees?.bank_name ? _aiEscapeHtml(r.employees.bank_name) : '—'
+      const bankAcc = r.employees?.bank_account_no ? _aiEscapeHtml(r.employees.bank_account_no) : '—'
       return `<tr>
       <td style="color:#94A3B8;font-size:11px">${i+1}</td>
       <td>
         <div class="pdoc-sd-payee">${_aiEscapeHtml(r.employees?.name||'-')}</div>
-        <div class="pdoc-sd-bank">${bank}</div>
       </td>
+      <td style="font-size:12px;color:#334155">${bankName}</td>
+      <td style="font-size:12px;font-family:ui-monospace,monospace;color:#334155;letter-spacing:.02em">${bankAcc}</td>
       <td class="pdoc-sd-basic">${formatRM(r.basic_salary)}</td>
       <td>
         <div class="pdoc-sd-stack">
