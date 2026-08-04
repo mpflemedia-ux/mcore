@@ -1833,7 +1833,11 @@ async function _userPinHash() {
 
 async function _requirePinGate(user) {
   // After password auth, if user has PIN enabled and not verified this session
-  const {data: profile} = await sb.from('user_profiles').select('permissions,full_name,role,language,theme,tenant_id,tenants(*)').eq('id', user.id).single()
+  let profile = null
+  try {
+    const res = await sb.from('user_profiles').select('permissions,full_name,role,language,theme,tenant_id,tenants(*)').eq('id', user.id).single()
+    profile = res.data
+  } catch(e) { console.warn('pin gate profile', e); return false }
   if(!profile) return false // let normal flow handle
   let perms = profile.permissions
   if(typeof perms === 'string') { try { perms = JSON.parse(perms) } catch(e) { perms = {} } }
@@ -2087,24 +2091,12 @@ async function doLogout() {
 let _sessionLoadPromise = null
 let _sessionLoadUserId = null
 
-function _captureInviteFromUrl()
-
-// Public invoice deep link (no login)
-;(async function(){
-  try {
-    if(new URLSearchParams(location.search).get('public_inv')) {
-      // Wait a tick for sb
-      setTimeout(async ()=>{ await _tryShowPublicInvoice() }, 50)
-    }
-  } catch(e) {}
-})()
- {
+function _captureInviteFromUrl() {
   try {
     const params = new URLSearchParams(location.search)
     const inv = params.get('invite')
     if(inv) {
       localStorage.setItem('nexerp_invite_token', inv.trim())
-      // Clean URL without reload
       params.delete('invite')
       const qs = params.toString()
       const clean = location.pathname + (qs ? '?' + qs : '') + location.hash
@@ -2113,6 +2105,12 @@ function _captureInviteFromUrl()
   } catch(e) {}
 }
 _captureInviteFromUrl()
+// Public invoice deep link (no login)
+try {
+  if(new URLSearchParams(location.search).get('public_inv')) {
+    setTimeout(async ()=>{ try { await _tryShowPublicInvoice() } catch(e) { console.error(e) } }, 100)
+  }
+} catch(e) {}
 setTimeout(() => {
   const el = document.getElementById('reg-invite')
   const tok = localStorage.getItem('nexerp_invite_token')
