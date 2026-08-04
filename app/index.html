@@ -9223,7 +9223,7 @@ async function renderPayslipDetail(id) {
     aiNoteTitle:'AI Payslip Note', getNote:'Get Note', noteHint:'Click for a brief plain-language summary of this payslip.', print:'Print',
     pcbNote:'Basic PCB only — no individual relief (spouse, child, insurance, etc).', advance:'Advance'
   }
-  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no,phone,email)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
@@ -9238,6 +9238,8 @@ async function renderPayslipDetail(id) {
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('payslip', accent)}
       <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilenamePrefix}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline" style="color:#16A34A;border-color:#16A34A" onclick="_payslipShareWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
+      <button class="btn btn-outline" onclick="_payslipShareEmail('${id}')"><i class="ti ti-mail"></i> Email</button>
     </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
