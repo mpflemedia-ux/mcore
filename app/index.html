@@ -3524,6 +3524,13 @@ async function renderSettings() {
     title:'Default Accounts', note:'Set your default general ledger (GL) accounts ONCE here — journal auto-posting (invoice payment, POS, expense claims, supplier bills, payroll) will use these, so you don’t have to pick an account on every transaction.',
     selectAcc:'-- Select Account --', save:'Save Default Accounts', saved:'Default accounts saved!', missingRequired:'Please fill in all required (*) accounts.',
   }
+  const bf = APP.language==='bm' ? {
+    title:'Backfill Jurnal Sejarah', note:'Untuk transaksi yang dah jalan SEBELUM auto-posting jurnal ni wujud (invois dibayar, jualan POS, tuntutan diluluskan, bil pembekal dibayar, payroll dijana, baucar bayaran dibayar) — belum ada journal_lines, jadi P&L/Kunci Kira-kira tak reflect transaksi tu. Guna alat ni SEKALI untuk catch-up. Selamat run berkali-kali — rekod yang dah ada journal akan di-skip automatik.',
+    cutoffLabel:'Cuma proses transaksi sebelum tarikh ni', dryRun:'Dry Run (Preview)', runLive:'Run Backfill (Tulis ke DB)',
+  } : {
+    title:'Backfill Historical Journals', note:'For transactions that already happened BEFORE this journal auto-posting existed (paid invoices, completed POS sales, approved expense claims, paid supplier bills, generated payroll, paid payment vouchers) — they have no journal_lines yet, so P&L/Balance Sheet don\'t reflect them. Use this ONCE to catch up. Safe to run repeatedly — records that already have a journal are automatically skipped.',
+    cutoffLabel:'Only process transactions before this date', dryRun:'Dry Run (Preview)', runLive:'Run Backfill (Writes to DB)',
+  }
   document.getElementById('main').innerHTML=`
   <div class="page-header"><div class="page-title">${t.title}</div></div>
   <div class="card" style="max-width:500px">
@@ -3656,6 +3663,22 @@ async function renderSettings() {
       <button class="btn btn-primary" onclick="_damSave()"><i class="ti ti-check"></i> ${da.save}</button>
       <div id="dam-save-msg" style="margin-top:8px;font-size:12px"></div>
       `}
+    </div>
+  </div>` : ''}
+  ${isAdmin ? `
+  <div class="card" style="max-width:900px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${bf.title}</div></div>
+    <div style="padding:16px">
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:16px;line-height:1.5">${bf.note}</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+        <div class="form-group" style="max-width:200px">
+          <label class="form-label">${bf.cutoffLabel}</label>
+          <input id="bf-cutoff-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}">
+        </div>
+        <button class="btn btn-outline" onclick="_backfillRun(false)"><i class="ti ti-eye"></i> ${bf.dryRun}</button>
+        <button class="btn btn-primary" onclick="_backfillRun(true)"><i class="ti ti-database-import"></i> ${bf.runLive}</button>
+      </div>
+      <div id="bf-result-wrap"></div>
     </div>
   </div>` : ''}
   <div class="card" style="max-width:500px;margin-top:16px">
@@ -4256,6 +4279,67 @@ async function _damSave() {
   showToast(t.saved, 'success')
 }
 
+function _backfillLabels() {
+  return APP.language==='bm' ? {
+    candidates:'Calon', created:'Dicipta', skippedExisting:'Dah Ada', skippedNoMapping:'Akaun Tiada', totalDebit:'Jumlah Debit', totalCredit:'Jumlah Kredit',
+    invoices:'Bayaran Invois', pos:'Jualan POS', expense:'Tuntutan Perbelanjaan', bills:'Bayaran Bil Pembekal', payroll:'Payroll', vouchers:'Baucar Bayaran',
+    grandTotal:'Jumlah Keseluruhan', running:'Memproses...', dryRunBadge:'PRATONTON — tiada apa ditulis ke DB', liveBadge:'DIJALANKAN — journal entries dicipta',
+    confirmLive:'Ini akan TULIS journal entries sebenar ke database untuk semua rekod yang disenaraikan. Teruskan?',
+  } : {
+    candidates:'Candidates', created:'Created', skippedExisting:'Already Posted', skippedNoMapping:'No Account', totalDebit:'Total Debit', totalCredit:'Total Credit',
+    invoices:'Invoice Payments', pos:'POS Sales', expense:'Expense Claims', bills:'Supplier Bill Payments', payroll:'Payroll', vouchers:'Payment Vouchers',
+    grandTotal:'Grand Total', running:'Processing...', dryRunBadge:'PREVIEW — nothing written to DB', liveBadge:'RUN COMPLETE — journal entries created',
+    confirmLive:'This will WRITE real journal entries to the database for every record listed below. Continue?',
+  }
+}
+
+function _backfillReportHtml(report) {
+  const l = _backfillLabels()
+  const sections = [
+    ['invoices', l.invoices], ['pos', l.pos], ['expense', l.expense],
+    ['bills', l.bills], ['payroll', l.payroll], ['vouchers', l.vouchers],
+  ]
+  const rows = sections.map(([key,label]) => {
+    const s = report[key]
+    return `<tr>
+      <td>${label}</td>
+      <td style="text-align:right">${s.candidates}</td>
+      <td style="text-align:right;color:var(--success)">${s.created}</td>
+      <td style="text-align:right;color:var(--text-3)">${s.skippedExisting}</td>
+      <td style="text-align:right;color:var(--warning)">${s.skippedNoMapping}</td>
+      <td style="text-align:right">${formatRM(s.totalDebit)}</td>
+      <td style="text-align:right">${formatRM(s.totalCredit)}</td>
+    </tr>`
+  }).join('')
+  const badge = report.dryRun
+    ? `<span style="color:var(--warning);font-weight:600">${l.dryRunBadge}</span>`
+    : `<span style="color:var(--success);font-weight:600">${l.liveBadge}</span>`
+  return `
+  <div style="margin-bottom:10px">${badge}</div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th></th><th style="text-align:right">${l.candidates}</th><th style="text-align:right">${l.created}</th><th style="text-align:right">${l.skippedExisting}</th><th style="text-align:right">${l.skippedNoMapping}</th><th style="text-align:right">${l.totalDebit}</th><th style="text-align:right">${l.totalCredit}</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="font-weight:700"><td>${l.grandTotal}</td><td></td><td></td><td></td><td></td><td style="text-align:right">${formatRM(report.grandTotalDebit)}</td><td style="text-align:right">${formatRM(report.grandTotalCredit)}</td></tr></tfoot>
+    </table>
+  </div>`
+}
+
+async function _backfillRun(live) {
+  const l = _backfillLabels()
+  const wrap = document.getElementById('bf-result-wrap')
+  if(live && !confirm(l.confirmLive)) return
+  const cutoffDate = document.getElementById('bf-cutoff-date').value
+  wrap.innerHTML = `<div class="empty-state" style="padding:24px"><div class="spinner"></div><p>${l.running}</p></div>`
+  try {
+    const report = await _backfillHistoricalJournals(cutoffDate, !live)
+    wrap.innerHTML = _backfillReportHtml(report)
+    if(live) showToast(APP.language==='bm'?'Backfill selesai!':'Backfill complete!', 'success')
+  } catch(e) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:24px"><p style="color:var(--danger)">Error: ${e.message}</p></div>`
+  }
+}
+
 // Looks up a tenant's configured default account for a given mapping_key
 // (see DEFAULT_ACCOUNT_MAPPING_KEYS). Returns null if not configured —
 // callers must handle that by skipping the journal post with a clear
@@ -4296,7 +4380,11 @@ async function _calcCOGS(table, idColumn, id) {
 // required Cash/Sales Revenue mappings aren't set up yet — the caller's main
 // transaction (the payment or the sale) must complete either way; posting is
 // best-effort, never a blocker.
-async function _postSaleJournal({ description, entryDate, amount, cogsAmount }) {
+//
+// sourceTable/sourceId/dryRun pass straight through to _postJournalEntry —
+// see that function for what they do (source tracking + the historical
+// backfill's dry-run mode reuse this same function unchanged).
+async function _postSaleJournal({ description, entryDate, amount, cogsAmount, sourceTable, sourceId, dryRun }) {
   const cashAcc = await _getDefaultAccountId('cash')
   const revenueAcc = await _getDefaultAccountId('sales_revenue')
   if(!cashAcc || !revenueAcc) {
@@ -4315,7 +4403,7 @@ async function _postSaleJournal({ description, entryDate, amount, cogsAmount }) 
       lines.push({ account_id: invAcc, debit: 0, credit: cogsAmount })
     }
   }
-  return await _postJournalEntry({ description, entryDate, entryType: 'auto', lines })
+  return await _postJournalEntry({ description, entryDate, entryType: 'auto', lines, sourceTable, sourceId, dryRun })
 }
 
 // Generic double-entry journal poster — creates one journal_entries header
@@ -4326,11 +4414,24 @@ async function _postSaleJournal({ description, entryDate, amount, cogsAmount }) 
 //
 // lines: [{ account_id, debit: number, credit: number }, ...] — must balance
 // (sum of debit === sum of credit) or this throws before touching the DB.
-async function _postJournalEntry({ description, entryDate, entryType, lines }) {
+//
+// sourceTable/sourceId (optional): tags the entry with the record that
+// caused it (e.g. 'invoices'/<invoice id>) so a later check — live or the
+// historical backfill — can ask "has this record already been posted?"
+// with an exact lookup instead of guessing from the description text.
+//
+// dryRun (optional): when true, still validates the balance and still
+// returns the same shape (so callers/report code don't need a separate
+// code path), but never touches journal_entries/journal_lines — used by
+// the backfill's dry-run mode to preview totals with zero risk of writing.
+async function _postJournalEntry({ description, entryDate, entryType, lines, sourceTable, sourceId, dryRun }) {
   const totalDebit = lines.reduce((s,l)=>s+Number(l.debit||0), 0)
   const totalCredit = lines.reduce((s,l)=>s+Number(l.credit||0), 0)
   if(Math.round((totalDebit-totalCredit)*100) !== 0) {
     throw new Error(`_postJournalEntry: unbalanced entry (debit ${totalDebit.toFixed(2)} != credit ${totalCredit.toFixed(2)}) for "${description}"`)
+  }
+  if(dryRun) {
+    return { dryRun: true, description, entryDate, sourceTable, sourceId: sourceId||null, totalDebit, totalCredit, lines }
   }
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).then(r=>r, ()=>({data:null}))
   const entryPayload = {
@@ -4340,6 +4441,8 @@ async function _postJournalEntry({ description, entryDate, entryType, lines }) {
     description,
     entry_type: entryType || 'auto',
     created_by: APP.user.id,
+    source_table: sourceTable || null,
+    source_id: sourceId || null,
   }
   const {data: entry, error: entryErr} = await sb.from('journal_entries').insert(entryPayload).select('id,ref_no').single()
   if(entryErr) throw entryErr
@@ -4352,7 +4455,166 @@ async function _postJournalEntry({ description, entryDate, entryType, lines }) {
   if(linesErr) throw linesErr
 
   auditLog('create','journal_entries', entry.id)
-  return entry
+  return { ...entry, totalDebit, totalCredit }
+}
+
+// Checks whether a journal entry has already been posted for a specific
+// source record (e.g. sourceTable='invoices', sourceId=<invoice id>) —
+// the idempotency guard shared by the historical backfill (so re-running
+// it never creates duplicates) and available for any future "has this
+// already been posted?" check.
+async function _journalAlreadyPosted(sourceTable, sourceId) {
+  const {data} = await sb.from('journal_entries').select('id')
+    .eq('tenant_id', APP.tenant.id).eq('source_table', sourceTable).eq('source_id', sourceId).limit(1)
+  return !!(data && data.length)
+}
+
+// Historical backfill for the 6 auto-posting integration points, for
+// transactions that already happened (paid invoices, completed POS sales,
+// approved expense claims, paid supplier bills, generated payroll, paid
+// payment vouchers) before this auto-posting code existed — those records
+// never got a journal entry, so P&L/Balance Sheet still show them as zero.
+//
+// Reuses the EXACT SAME posting functions as live code (_postSaleJournal /
+// _postJournalEntry / _getExpenseAccountId / _postPayrollJournal) for every
+// single entry created here — nothing about how an entry is built is
+// reimplemented, only which records to look at and whether to actually
+// write are specific to this function. Both dryRun:true and dryRun:false
+// run this identical code path; dryRun only changes what _postJournalEntry
+// does at its very last step (see that function).
+//
+// Idempotent: every record is checked via _journalAlreadyPosted() before
+// anything is computed for it, so running this twice (dry or live) never
+// creates duplicate entries — the second run reports everything as
+// "already posted" and creates nothing.
+//
+// Tenant-scoped: every query below filters on APP.tenant.id, same as every
+// other query in this file — running this posts only for the tenant of
+// whoever is logged in and clicked the button, never cross-tenant.
+async function _backfillHistoricalJournals(cutoffDate, dryRun) {
+  const section = () => ({ candidates: 0, created: 0, skippedExisting: 0, skippedNoMapping: 0, totalDebit: 0, totalCredit: 0, items: [] })
+  const report = {
+    cutoffDate, dryRun,
+    invoices: section(), pos: section(), expense: section(), bills: section(), payroll: section(), vouchers: section(),
+    grandTotalDebit: 0, grandTotalCredit: 0,
+  }
+  const addResult = (sec, result, label) => {
+    if(!result) { sec.skippedNoMapping++; return }
+    sec.created++
+    sec.items.push({ label, debit: result.totalDebit, credit: result.totalCredit })
+    sec.totalDebit += result.totalDebit; sec.totalCredit += result.totalCredit
+    report.grandTotalDebit += result.totalDebit; report.grandTotalCredit += result.totalCredit
+  }
+
+  // 1) Invoices with paid_amt > 0 — one backfilled entry per invoice for its
+  // current paid_amt (not one per historical payment row — this is a one-time
+  // catch-up, not a reconstruction of every past partial payment).
+  const {data: invoices} = await sb.from('invoices').select('id,ref_no,total,paid_amt,status,issue_date')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gt('paid_amt',0).lt('issue_date',cutoffDate)
+  report.invoices.candidates = (invoices||[]).length
+  for(const inv of (invoices||[])) {
+    if(await _journalAlreadyPosted('invoices', inv.id)) { report.invoices.skippedExisting++; continue }
+    const cogs = inv.status==='paid' ? await _calcCOGS('invoice_items','invoice_id',inv.id) : 0
+    const result = await _postSaleJournal({
+      description: `Invoice Payment ${inv.ref_no} (backfill)`,
+      entryDate: inv.issue_date, amount: Number(inv.paid_amt), cogsAmount: cogs,
+      sourceTable: 'invoices', sourceId: inv.id, dryRun,
+    })
+    addResult(report.invoices, result, inv.ref_no)
+  }
+
+  // 2) Completed POS transactions
+  const {data: posTxns} = await sb.from('pos_transactions').select('id,receipt_no,total,created_at')
+    .eq('tenant_id',APP.tenant.id).eq('status','completed').lt('created_at',cutoffDate)
+  report.pos.candidates = (posTxns||[]).length
+  for(const txn of (posTxns||[])) {
+    if(await _journalAlreadyPosted('pos_transactions', txn.id)) { report.pos.skippedExisting++; continue }
+    const cogs = await _calcCOGS('pos_transaction_items','txn_id',txn.id)
+    const result = await _postSaleJournal({
+      description: `POS Sale ${txn.receipt_no} (backfill)`,
+      entryDate: (txn.created_at||'').slice(0,10), amount: Number(txn.total), cogsAmount: cogs,
+      sourceTable: 'pos_transactions', sourceId: txn.id, dryRun,
+    })
+    addResult(report.pos, result, txn.receipt_no)
+  }
+
+  // 3) Approved/paid expense claims
+  const {data: claims} = await sb.from('expense_claims').select('id,ref_no,total_amount,category_id,claim_date,status')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('status',['approved','paid']).lt('claim_date',cutoffDate)
+  report.expense.candidates = (claims||[]).length
+  for(const claim of (claims||[])) {
+    if(await _journalAlreadyPosted('expense_claims', claim.id)) { report.expense.skippedExisting++; continue }
+    const cashAcc = await _getDefaultAccountId('cash')
+    const expenseAcc = await _getExpenseAccountId(claim)
+    if(!cashAcc || !expenseAcc) { report.expense.skippedNoMapping++; continue }
+    const result = await _postJournalEntry({
+      description: `Expense Claim ${claim.ref_no} (backfill)`,
+      entryDate: claim.claim_date, entryType: 'auto',
+      lines: [
+        { account_id: expenseAcc, debit: Number(claim.total_amount), credit: 0 },
+        { account_id: cashAcc, debit: 0, credit: Number(claim.total_amount) },
+      ],
+      sourceTable: 'expense_claims', sourceId: claim.id, dryRun,
+    })
+    addResult(report.expense, result, claim.ref_no)
+  }
+
+  // 4) Supplier bills with paid_amt > 0 — same one-entry-per-bill simplification as invoices
+  const {data: bills} = await sb.from('supplier_bills').select('id,ref_no,total,paid_amt,bill_date')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gt('paid_amt',0).lt('bill_date',cutoffDate)
+  report.bills.candidates = (bills||[]).length
+  for(const bill of (bills||[])) {
+    if(await _journalAlreadyPosted('supplier_bills', bill.id)) { report.bills.skippedExisting++; continue }
+    const apAcc = await _getDefaultAccountId('accounts_payable')
+    const cashAcc = await _getDefaultAccountId('cash')
+    if(!apAcc || !cashAcc) { report.bills.skippedNoMapping++; continue }
+    const result = await _postJournalEntry({
+      description: `Supplier Bill Payment ${bill.ref_no} (backfill)`,
+      entryDate: bill.bill_date, entryType: 'auto',
+      lines: [
+        { account_id: apAcc, debit: Number(bill.paid_amt), credit: 0 },
+        { account_id: cashAcc, debit: 0, credit: Number(bill.paid_amt) },
+      ],
+      sourceTable: 'supplier_bills', sourceId: bill.id, dryRun,
+    })
+    addResult(report.bills, result, bill.ref_no)
+  }
+
+  // 5) Payroll records already generated
+  const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,generated_at')
+    .eq('tenant_id',APP.tenant.id).lt('generated_at',cutoffDate)
+  report.payroll.candidates = (payrolls||[]).length
+  for(const pr of (payrolls||[])) {
+    if(await _journalAlreadyPosted('payroll_records', pr.id)) { report.payroll.skippedExisting++; continue }
+    const entryDate = (pr.generated_at||'').slice(0,10) || `${pr.year}-${String(pr.month).padStart(2,'0')}-01`
+    const result = await _postPayrollJournal(pr, pr.month, pr.year, pr.id, dryRun, entryDate)
+    addResult(report.payroll, result, `${String(pr.month).padStart(2,'0')}/${pr.year}`)
+  }
+
+  // 6) Paid payment vouchers — the original bug (journal_entries header with
+  // no journal_lines) fixed in _pvMarkPaid; these are the historical rows
+  // that got that broken header before the fix.
+  const {data: vouchers} = await sb.from('payment_vouchers').select('id,ref_no,amount,bill_id,payee_name,voucher_date,status')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('status','paid').lt('voucher_date',cutoffDate)
+  report.vouchers.candidates = (vouchers||[]).length
+  for(const v of (vouchers||[])) {
+    if(await _journalAlreadyPosted('payment_vouchers', v.id)) { report.vouchers.skippedExisting++; continue }
+    const cashAcc = await _getDefaultAccountId('cash')
+    const debitAcc = v.bill_id ? await _getDefaultAccountId('accounts_payable') : await _getDefaultAccountId('general_expense')
+    if(!cashAcc || !debitAcc) { report.vouchers.skippedNoMapping++; continue }
+    const result = await _postJournalEntry({
+      description: `PV ${v.ref_no||''} — ${v.payee_name||''} (backfill)`,
+      entryDate: v.voucher_date, entryType: 'auto',
+      lines: [
+        { account_id: debitAcc, debit: Number(v.amount||0), credit: 0 },
+        { account_id: cashAcc, debit: 0, credit: Number(v.amount||0) },
+      ],
+      sourceTable: 'payment_vouchers', sourceId: v.id, dryRun,
+    })
+    addResult(report.vouchers, result, v.ref_no)
+  }
+
+  return report
 }
 
 // ─── CRM MODULE ──────────────────────────────────────────────────────────────
@@ -5988,6 +6250,7 @@ async function _expSave(id) {
   }
   let error
   let prevStatus = null
+  let claimId = id
   if(id) {
     const {data: existing} = await sb.from('expense_claims').select('status,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
     prevStatus = existing?.status || null
@@ -5998,7 +6261,9 @@ async function _expSave(id) {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'EXP'}).then(r=>r, ()=>({data:null}))
     payload.ref_no = refData || await _genFallbackRefNo('expense_claims','ref_no','EXP')
     payload.claimed_by = APP.user.id
-    const r = await sb.from('expense_claims').insert(payload); error = r.error
+    const {data: newClaim, error: insErr} = await sb.from('expense_claims').insert(payload).select('id').single()
+    error = insErr
+    claimId = newClaim?.id
   }
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
 
@@ -6008,13 +6273,14 @@ async function _expSave(id) {
       const expenseAcc = await _getExpenseAccountId(payload)
       if(cashAcc && expenseAcc) {
         await _postJournalEntry({
-          description: `Expense Claim ${payload.ref_no||id}`,
+          description: `Expense Claim ${payload.ref_no||claimId}`,
           entryDate: payload.claim_date,
           entryType: 'auto',
           lines: [
             { account_id: expenseAcc, debit: payload.total_amount, credit: 0 },
             { account_id: cashAcc, debit: 0, credit: payload.total_amount },
           ],
+          sourceTable: 'expense_claims', sourceId: claimId,
         })
       } else {
         console.warn('Expense claim journal post skipped (missing Cash/Expense default account)')
@@ -7418,6 +7684,7 @@ async function _paySave(invoiceId, balance) {
       description: `Invoice Payment ${inv.ref_no}`,
       entryDate: document.getElementById('pay-date').value,
       amount, cogsAmount: cogs,
+      sourceTable: 'invoices', sourceId: invoiceId,
     })
   } catch(e) { console.error('Invoice payment journal post failed:', e) }
 
@@ -8494,6 +8761,7 @@ async function _billPaySave(billId, balance) {
           { account_id: apAcc, debit: amount, credit: 0 },
           { account_id: cashAcc, debit: 0, credit: amount },
         ],
+        sourceTable: 'supplier_bills', sourceId: billId,
       })
     } else {
       console.warn('Supplier bill payment journal post skipped (missing AP/Cash default account)')
@@ -8830,6 +9098,7 @@ async function _pvMarkPaid(id) {
           { account_id: debitAcc, debit: Number(v.amount||0), credit: 0 },
           { account_id: cashAcc, debit: 0, credit: Number(v.amount||0) },
         ],
+        sourceTable: 'payment_vouchers', sourceId: id,
       })
     } else {
       console.warn('PV journal post skipped (missing Cash/'+(v.bill_id?'Accounts Payable':'General Expense')+' default account)')
@@ -10150,7 +10419,13 @@ async function renderPayrollRun() {
 // in _calcPayroll. Returns null without throwing when any required default
 // account isn't configured yet — the payroll_records row this posts against
 // has already been saved either way.
-async function _postPayrollJournal(calc, month, year) {
+//
+// sourceId/dryRun/entryDate are optional — live calls (_payrollRunExecute)
+// omit them and get today's date with no source tag; the historical
+// backfill passes the payroll_records row id (for the idempotency check)
+// and the actual historical period so backdated entries land in the right
+// accounting period instead of all showing up as posted "today".
+async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDate) {
   const salaryAcc = await _getDefaultAccountId('salary_expense')
   const cashAcc = await _getDefaultAccountId('cash')
   const epfAcc = await _getDefaultAccountId('epf_payable')
@@ -10173,9 +10448,10 @@ async function _postPayrollJournal(calc, month, year) {
   if(calc.pcb > 0) lines.push({ account_id: pcbAcc, debit: 0, credit: calc.pcb })
   return await _postJournalEntry({
     description: `Payroll ${String(month).padStart(2,'0')}/${year}`,
-    entryDate: new Date().toISOString().slice(0,10),
+    entryDate: entryDate || new Date().toISOString().slice(0,10),
     entryType: 'auto',
     lines,
+    sourceTable: 'payroll_records', sourceId, dryRun,
   })
 }
 
@@ -10193,10 +10469,10 @@ async function _payrollRunExecute() {
     if(!emp) { errCount++; continue }
     const calc = _calcPayroll(emp)
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
-    const {error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' })
+    const {data: prRow, error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single()
     if(error) errCount++; else {
       okCount++; auditLog('create','payroll_records', empId)
-      try { await _postPayrollJournal(calc, month, year) } catch(e) { console.error('Payroll journal post failed for employee '+empId+':', e) }
+      try { await _postPayrollJournal(calc, month, year, prRow?.id) } catch(e) { console.error('Payroll journal post failed for employee '+empId+':', e) }
     }
   }
   result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
@@ -11688,6 +11964,7 @@ async function _posCheckout() {
       description: `POS Sale ${receiptNo}`,
       entryDate: new Date().toISOString().slice(0,10),
       amount: total, cogsAmount: cogs,
+      sourceTable: 'pos_transactions', sourceId: trans.id,
     })
   } catch(e) { console.error('POS sale journal post failed:', e) }
   const isBm2 = APP.language==='bm'
