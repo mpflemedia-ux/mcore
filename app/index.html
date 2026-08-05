@@ -3507,9 +3507,22 @@ async function renderSettings() {
     nameRequired:'Company name is required.', saved:'Company profile saved!',
   }
   let tenantRow = {}
+  let coaAccounts = []
+  let acctMappings = {}
   if(isAdmin) {
     const {data} = await sb.from('tenants').select('*').eq('id',APP.tenant.id).single()
     tenantRow = data || {}
+    const {data: coaData} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('is_active',true).order('code')
+    coaAccounts = coaData || []
+    const {data: mapData} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
+    ;(mapData||[]).forEach(m => { acctMappings[m.mapping_key] = m.account_id })
+  }
+  const da = APP.language==='bm' ? {
+    title:'Akaun Default', note:'Tetapkan akaun buku besar (GL) default sekali sahaja di sini — auto-posting jurnal (bayaran invois, POS, tuntutan perbelanjaan, bil pembekal, gaji) akan guna tetapan ni, jadi tak perlu pilih akaun setiap kali buat transaksi.',
+    selectAcc:'-- Pilih Akaun --', save:'Simpan Akaun Default', saved:'Akaun default disimpan!', missingRequired:'Sila lengkapkan semua akaun yang diperlukan (*).',
+  } : {
+    title:'Default Accounts', note:'Set your default general ledger (GL) accounts ONCE here — journal auto-posting (invoice payment, POS, expense claims, supplier bills, payroll) will use these, so you don’t have to pick an account on every transaction.',
+    selectAcc:'-- Select Account --', save:'Save Default Accounts', saved:'Default accounts saved!', missingRequired:'Please fill in all required (*) accounts.',
   }
   document.getElementById('main').innerHTML=`
   <div class="page-header"><div class="page-title">${t.title}</div></div>
@@ -3620,6 +3633,29 @@ async function renderSettings() {
 
       <button class="btn btn-primary" onclick="_cpSave()"><i class="ti ti-check"></i> ${c.save}</button>
       <div id="cp-save-msg" style="margin-top:8px;font-size:12px"></div>
+    </div>
+  </div>` : ''}
+  ${isAdmin ? `
+  <div class="card" style="max-width:700px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${da.title}</div></div>
+    <div style="padding:16px">
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:16px;line-height:1.5">${da.note}</div>
+      ${coaAccounts.length===0 ? `<div class="empty-state" style="padding:24px"><p>${APP.language==='bm'?'Sila tambah akaun dalam Chart of Accounts dahulu.':'Please add accounts in Chart of Accounts first.'}</p></div>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+        ${DEFAULT_ACCOUNT_MAPPING_KEYS.map(m => {
+          const opts = coaAccounts.filter(a=>a.account_type===m.accountType)
+          return `<div class="form-group">
+            <label class="form-label">${APP.language==='bm'?m.bm:m.en}${m.required?' *':''}</label>
+            <select id="dam-${m.key}" class="form-select">
+              <option value="">${da.selectAcc}</option>
+              ${opts.map(a=>`<option value="${a.id}" ${acctMappings[m.key]===a.id?'selected':''}>${a.code} - ${_aiEscapeHtml(a.name_en)}</option>`).join('')}
+            </select>
+          </div>`
+        }).join('')}
+      </div>
+      <button class="btn btn-primary" onclick="_damSave()"><i class="ti ti-check"></i> ${da.save}</button>
+      <div id="dam-save-msg" style="margin-top:8px;font-size:12px"></div>
+      `}
     </div>
   </div>` : ''}
   <div class="card" style="max-width:500px;margin-top:16px">
@@ -4192,6 +4228,87 @@ async function _cpSave() {
   showToast(t.saved, 'success')
 }
 
+async function _damSave() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { missingRequired:'Sila lengkapkan semua akaun yang diperlukan (*).', saved:'Akaun default disimpan!' }
+    : { missingRequired:'Please fill in all required (*) accounts.', saved:'Default accounts saved!' }
+  const msgEl = document.getElementById('dam-save-msg')
+  msgEl.style.color=''; msgEl.textContent=''
+
+  const rows = []
+  for(const m of DEFAULT_ACCOUNT_MAPPING_KEYS) {
+    const el = document.getElementById('dam-'+m.key)
+    if(!el) continue
+    const accountId = el.value || null
+    if(m.required && !accountId) {
+      msgEl.style.color='var(--danger)'; msgEl.textContent = t.missingRequired
+      return
+    }
+    if(accountId) rows.push({ tenant_id: APP.tenant.id, mapping_key: m.key, account_id: accountId })
+  }
+
+  const {error} = await sb.from('default_account_mappings').upsert(rows, { onConflict: 'tenant_id,mapping_key' })
+  if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
+
+  msgEl.style.color='var(--success)'
+  msgEl.textContent = t.saved
+  showToast(t.saved, 'success')
+}
+
+// Looks up a tenant's configured default account for a given mapping_key
+// (see DEFAULT_ACCOUNT_MAPPING_KEYS). Returns null if not configured —
+// callers must handle that by skipping the journal post with a clear
+// message, never by guessing an account.
+let _damCache = null
+async function _getDefaultAccountId(mappingKey) {
+  if(!_damCache || _damCache.tenantId !== APP.tenant.id) {
+    const {data} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
+    const map = {}
+    ;(data||[]).forEach(r => { map[r.mapping_key] = r.account_id })
+    _damCache = { tenantId: APP.tenant.id, map }
+  }
+  return _damCache.map[mappingKey] || null
+}
+function _damClearCache() { _damCache = null }
+
+// Generic double-entry journal poster — creates one journal_entries header
+// + its journal_lines in a single call, reused by every auto-posting
+// integration point (invoice payment, POS checkout, expense claims,
+// supplier bill payment, payroll, payment vouchers) instead of duplicating
+// the entry+lines insert boilerplate at each call site.
+//
+// lines: [{ account_id, debit: number, credit: number }, ...] — must balance
+// (sum of debit === sum of credit) or this throws before touching the DB.
+async function _postJournalEntry({ description, entryDate, entryType, lines }) {
+  const totalDebit = lines.reduce((s,l)=>s+Number(l.debit||0), 0)
+  const totalCredit = lines.reduce((s,l)=>s+Number(l.credit||0), 0)
+  if(Math.round((totalDebit-totalCredit)*100) !== 0) {
+    throw new Error(`_postJournalEntry: unbalanced entry (debit ${totalDebit.toFixed(2)} != credit ${totalCredit.toFixed(2)}) for "${description}"`)
+  }
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'JNL'}).then(r=>r, ()=>({data:null}))
+  const entryPayload = {
+    tenant_id: APP.tenant.id,
+    ref_no: refData || await _genFallbackRefNo('journal_entries','ref_no','JNL'),
+    entry_date: entryDate,
+    description,
+    entry_type: entryType || 'auto',
+    created_by: APP.user.id,
+  }
+  const {data: entry, error: entryErr} = await sb.from('journal_entries').insert(entryPayload).select('id,ref_no').single()
+  if(entryErr) throw entryErr
+
+  const linesPayload = lines.map((l,i) => ({
+    tenant_id: APP.tenant.id, entry_id: entry.id, account_id: l.account_id,
+    line_no: i+1, debit_amt: Number(l.debit||0), credit_amt: Number(l.credit||0),
+  }))
+  const {error: linesErr} = await sb.from('journal_lines').insert(linesPayload)
+  if(linesErr) throw linesErr
+
+  auditLog('create','journal_entries', entry.id)
+  return entry
+}
+
 // ─── CRM MODULE ──────────────────────────────────────────────────────────────
 // Hari 15 — Customer List | Hari 16 — Form | Hari 17 — Detail
 
@@ -4739,6 +4856,25 @@ const ACC_TYPES = [
 ]
 function accTypeLabel(id) { const x=ACC_TYPES.find(a=>a.id===id); return x?(APP.language==='bm'?x.bm:x.en):(id||'-') }
 function accTypeColor(id) { const x=ACC_TYPES.find(a=>a.id===id); return x?x.color:'var(--text-3)' }
+
+// Default Account Mappings — the fixed set of GL "roles" auto-posting code
+// looks up by key (see _postJournalEntry / _getDefaultAccountId). Each
+// tenant maps these ONCE in Settings -> Accounting -> Default Accounts to
+// their own chart_of_accounts rows, instead of being asked to pick an
+// account on every single transaction (that per-transaction picker only
+// makes sense for a rare action like Fixed Assets depreciation).
+const DEFAULT_ACCOUNT_MAPPING_KEYS = [
+  { key:'cash',              accountType:'asset',     en:'Cash / Bank',              bm:'Tunai / Bank',              required:true  },
+  { key:'sales_revenue',     accountType:'revenue',   en:'Sales Revenue',            bm:'Hasil Jualan',              required:true  },
+  { key:'cogs',              accountType:'expense',   en:'Cost of Goods Sold',       bm:'Kos Barang Dijual',         required:false },
+  { key:'inventory',         accountType:'asset',     en:'Inventory',                bm:'Inventori',                 required:false },
+  { key:'accounts_payable',  accountType:'liability', en:'Accounts Payable',         bm:'Akaun Belum Bayar',         required:true  },
+  { key:'general_expense',   accountType:'expense',   en:'General Expense',          bm:'Perbelanjaan Am',           required:true  },
+  { key:'salary_expense',    accountType:'expense',   en:'Salary Expense',           bm:'Perbelanjaan Gaji',         required:true  },
+  { key:'epf_payable',       accountType:'liability', en:'EPF Payable',              bm:'KWSP Belum Bayar',          required:true  },
+  { key:'socso_payable',     accountType:'liability', en:'SOCSO Payable',            bm:'PERKESO Belum Bayar',       required:true  },
+  { key:'eis_payable',       accountType:'liability', en:'EIS Payable',              bm:'EIS Belum Bayar',           required:true  },
+]
 
 function renderAccounting(params={}) {
   if(params.view==='coa-form') { renderCOAForm(params.id||null); return }
