@@ -10462,6 +10462,12 @@ async function renderPayslipsPrint(month, year) {
   // clearly and render a visible error placeholder in that slip's slot
   // instead of losing the rest of the batch silently.
   const slipsHtml = data.map((rec,i) => {
+    // TEMP DEBUG (remove once the batch-print truncation bug is confirmed
+    // fixed): logs each record's raw fields so a specific broken employee's
+    // actual data shape can be inspected in DevTools Console, even when
+    // _pdocPayslipHtml() does NOT throw (silent data-shape issues, not just
+    // exceptions, wouldn't otherwise be visible here).
+    console.debug(`renderPayslipsPrint record ${i+1}/${data.length}:`, JSON.parse(JSON.stringify(rec)))
     let html
     try {
       html = _pdocPayslipHtml(rec, tn, t, isBm, accent)
