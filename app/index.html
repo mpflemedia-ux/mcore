@@ -4282,6 +4282,42 @@ async function _getExpenseAccountId(claim) {
   return await _getDefaultAccountId('general_expense')
 }
 
+// Sums qty × products.unit_cost for the line items of one invoice/POS sale —
+// same computation the Dashboard Gross Profit KPI already uses, reused here
+// so auto-posted COGS matches the figure already shown to the user.
+async function _calcCOGS(table, idColumn, id) {
+  const {data: items} = await sb.from(table).select(`${idColumn},qty,product_id,products(unit_cost)`).eq(idColumn, id)
+  return (items||[]).reduce((s,it)=>s+Number(it.qty||0)*Number(it.products?.unit_cost||0), 0)
+}
+
+// Posts Dr Cash/Bank, Cr Sales Revenue for a completed sale (invoice payment
+// or POS checkout), optionally adding Dr COGS/Cr Inventory when cogsAmount>0
+// and both of those are configured. Returns null without throwing when the
+// required Cash/Sales Revenue mappings aren't set up yet — the caller's main
+// transaction (the payment or the sale) must complete either way; posting is
+// best-effort, never a blocker.
+async function _postSaleJournal({ description, entryDate, amount, cogsAmount }) {
+  const cashAcc = await _getDefaultAccountId('cash')
+  const revenueAcc = await _getDefaultAccountId('sales_revenue')
+  if(!cashAcc || !revenueAcc) {
+    console.warn('Journal auto-post skipped (Cash/Sales Revenue default account not configured):', description)
+    return null
+  }
+  const lines = [
+    { account_id: cashAcc, debit: amount, credit: 0 },
+    { account_id: revenueAcc, debit: 0, credit: amount },
+  ]
+  if(cogsAmount > 0) {
+    const cogsAcc = await _getDefaultAccountId('cogs')
+    const invAcc = await _getDefaultAccountId('inventory')
+    if(cogsAcc && invAcc) {
+      lines.push({ account_id: cogsAcc, debit: cogsAmount, credit: 0 })
+      lines.push({ account_id: invAcc, debit: 0, credit: cogsAmount })
+    }
+  }
+  return await _postJournalEntry({ description, entryDate, entryType: 'auto', lines })
+}
+
 // Generic double-entry journal poster — creates one journal_entries header
 // + its journal_lines in a single call, reused by every auto-posting
 // integration point (invoice payment, POS checkout, expense claims,
@@ -5951,7 +5987,13 @@ async function _expSave(id) {
     updated_at: new Date().toISOString()
   }
   let error
-  if(id) { const r = await sb.from('expense_claims').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id); error = r.error }
+  let prevStatus = null
+  if(id) {
+    const {data: existing} = await sb.from('expense_claims').select('status,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    prevStatus = existing?.status || null
+    payload.ref_no = existing?.ref_no
+    const r = await sb.from('expense_claims').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id); error = r.error
+  }
   else {
     const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'EXP'}).then(r=>r, ()=>({data:null}))
     payload.ref_no = refData || await _genFallbackRefNo('expense_claims','ref_no','EXP')
@@ -5959,6 +6001,27 @@ async function _expSave(id) {
     const r = await sb.from('expense_claims').insert(payload); error = r.error
   }
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
+
+  if(payload.status==='approved' && prevStatus!=='approved') {
+    try {
+      const cashAcc = await _getDefaultAccountId('cash')
+      const expenseAcc = await _getExpenseAccountId(payload)
+      if(cashAcc && expenseAcc) {
+        await _postJournalEntry({
+          description: `Expense Claim ${payload.ref_no||id}`,
+          entryDate: payload.claim_date,
+          entryType: 'auto',
+          lines: [
+            { account_id: expenseAcc, debit: payload.total_amount, credit: 0 },
+            { account_id: cashAcc, debit: 0, credit: payload.total_amount },
+          ],
+        })
+      } else {
+        console.warn('Expense claim journal post skipped (missing Cash/Expense default account)')
+      }
+    } catch(e) { console.error('Expense claim journal post failed:', e) }
+  }
+
   showToast(APP.language==='bm'?'Tuntutan disimpan!':'Claim saved!', 'success')
   openPage('accounting',{view:'expense'})
 }
@@ -7327,7 +7390,7 @@ async function _paySave(invoiceId, balance) {
   errEl.style.display='none'
   if(amount<=0 || amount>balance+0.005) { errEl.textContent = APP.language==='bm'?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
 
-  const {data: inv} = await sb.from('invoices').select('ref_no,customer_id,customer_name,total,paid_amt').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
+  const {data: inv} = await sb.from('invoices').select('ref_no,customer_id,customer_name,total,paid_amt,status').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { errEl.textContent='Invoice not found.'; errEl.style.display='block'; return }
 
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).then(r=>r, ()=>({data:null}))
@@ -7348,6 +7411,15 @@ async function _paySave(invoiceId, balance) {
   const newPaid = Number(inv.paid_amt||0) + amount
   const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
   await sb.from('invoices').update({paid_amt:newPaid, status:newStatus}).eq('id',invoiceId).eq('tenant_id',APP.tenant.id)
+
+  try {
+    const cogs = (newStatus==='paid' && inv.status!=='paid') ? await _calcCOGS('invoice_items','invoice_id',invoiceId) : 0
+    await _postSaleJournal({
+      description: `Invoice Payment ${inv.ref_no}`,
+      entryDate: document.getElementById('pay-date').value,
+      amount, cogsAmount: cogs,
+    })
+  } catch(e) { console.error('Invoice payment journal post failed:', e) }
 
   showToast(APP.language==='bm'?'Bayaran direkod!':'Payment recorded!', 'success')
   renderInvDetail(invoiceId)
@@ -8396,7 +8468,7 @@ async function _billPaySave(billId, balance) {
   errEl.style.display='none'
   if(amount<=0 || amount>balance+0.005) { errEl.textContent = isBm?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
 
-  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
+  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt,ref_no').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
   if(!bill) { errEl.textContent='Bill not found.'; errEl.style.display='block'; return }
 
   const {error} = await sb.from('supplier_payments').insert({
@@ -8409,6 +8481,24 @@ async function _billPaySave(billId, balance) {
   const newPaid = Number(bill.paid_amt||0) + amount
   const newStatus = newPaid >= Number(bill.total) - 0.005 ? 'paid' : 'partial'
   await sb.from('supplier_bills').update({paid_amt:newPaid, status:newStatus}).eq('id',billId).eq('tenant_id',APP.tenant.id)
+
+  try {
+    const apAcc = await _getDefaultAccountId('accounts_payable')
+    const cashAcc = await _getDefaultAccountId('cash')
+    if(apAcc && cashAcc) {
+      await _postJournalEntry({
+        description: `Supplier Bill Payment ${bill.ref_no||billId}`,
+        entryDate: document.getElementById('bill-pay-date').value,
+        entryType: 'auto',
+        lines: [
+          { account_id: apAcc, debit: amount, credit: 0 },
+          { account_id: cashAcc, debit: 0, credit: amount },
+        ],
+      })
+    } else {
+      console.warn('Supplier bill payment journal post skipped (missing AP/Cash default account)')
+    }
+  } catch(e) { console.error('Supplier bill payment journal post failed:', e) }
 
   auditLog('create','supplier_payments', billId)
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
@@ -8722,18 +8812,28 @@ async function _pvMarkPaid(id) {
     })
   } catch(e) { console.warn('PV payments insert', e) }
 
-  // 4) Soft journal (best-effort)
+  // 4) Journal — Dr Accounts Payable (voucher linked to a supplier bill) or
+  // the General Expense fallback (ad-hoc payee, no bill), Cr Cash. Uses the
+  // same generic double-entry poster as every other auto-posting integration
+  // point — this used to only insert a journal_entries header with no
+  // journal_lines, so despite looking "posted" it never actually reached
+  // P&L/Balance Sheet (those read journal_lines, not journal_entries).
   try {
-    const ref = await _genFallbackRefNo('journal_entries','ref_no','JNL')
-    await sb.from('journal_entries').insert({
-      tenant_id: APP.tenant.id,
-      ref_no: ref,
-      entry_date: v.voucher_date || new Date().toISOString().slice(0,10),
-      description: 'PV '+(v.ref_no||'')+' — '+ (v.payee_name||'') + ' — ' + formatRM(v.amount),
-      status: 'posted',
-      total_debit: Number(v.amount||0),
-      total_credit: Number(v.amount||0)
-    })
+    const cashAcc = await _getDefaultAccountId('cash')
+    const debitAcc = v.bill_id ? await _getDefaultAccountId('accounts_payable') : await _getDefaultAccountId('general_expense')
+    if(cashAcc && debitAcc) {
+      await _postJournalEntry({
+        description: 'PV '+(v.ref_no||'')+' — '+(v.payee_name||''),
+        entryDate: v.voucher_date || new Date().toISOString().slice(0,10),
+        entryType: 'auto',
+        lines: [
+          { account_id: debitAcc, debit: Number(v.amount||0), credit: 0 },
+          { account_id: cashAcc, debit: 0, credit: Number(v.amount||0) },
+        ],
+      })
+    } else {
+      console.warn('PV journal post skipped (missing Cash/'+(v.bill_id?'Accounts Payable':'General Expense')+' default account)')
+    }
   } catch(e) { console.warn('PV journal', e) }
 
   auditLog('update','payment_vouchers', id)
@@ -10042,6 +10142,43 @@ async function renderPayrollRun() {
   </div>`
 }
 
+// Posts one payroll journal entry for a single employee's calculated pay:
+// Dr Salary Expense (basic + employer EPF/SOCSO/EIS — the company's full
+// cost), Cr Cash (net pay actually disbursed), Cr EPF/SOCSO/EIS/PCB Payable
+// (statutory amounts withheld/owed, employee+employer portions combined for
+// EPF/SOCSO/EIS). These always balance exactly given how net_pay is derived
+// in _calcPayroll. Returns null without throwing when any required default
+// account isn't configured yet — the payroll_records row this posts against
+// has already been saved either way.
+async function _postPayrollJournal(calc, month, year) {
+  const salaryAcc = await _getDefaultAccountId('salary_expense')
+  const cashAcc = await _getDefaultAccountId('cash')
+  const epfAcc = await _getDefaultAccountId('epf_payable')
+  const socsoAcc = await _getDefaultAccountId('socso_payable')
+  const eisAcc = await _getDefaultAccountId('eis_payable')
+  const pcbAcc = await _getDefaultAccountId('pcb_payable')
+  if(!salaryAcc || !cashAcc || !epfAcc || !socsoAcc || !eisAcc || !pcbAcc) {
+    console.warn('Payroll journal post skipped (missing one or more default accounts: salary_expense/cash/epf_payable/socso_payable/eis_payable/pcb_payable)')
+    return null
+  }
+  const totalExpense = Number(calc.basic_salary||0) + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0)
+  const epfTotal = Number(calc.epf_employee||0) + Number(calc.epf_employer||0)
+  const socsoTotal = Number(calc.socso_employee||0) + Number(calc.socso_employer||0)
+  const eisTotal = Number(calc.eis_employee||0) + Number(calc.eis_employer||0)
+  const lines = [{ account_id: salaryAcc, debit: totalExpense, credit: 0 }]
+  if(calc.net_pay > 0) lines.push({ account_id: cashAcc, debit: 0, credit: calc.net_pay })
+  if(epfTotal > 0) lines.push({ account_id: epfAcc, debit: 0, credit: epfTotal })
+  if(socsoTotal > 0) lines.push({ account_id: socsoAcc, debit: 0, credit: socsoTotal })
+  if(eisTotal > 0) lines.push({ account_id: eisAcc, debit: 0, credit: eisTotal })
+  if(calc.pcb > 0) lines.push({ account_id: pcbAcc, debit: 0, credit: calc.pcb })
+  return await _postJournalEntry({
+    description: `Payroll ${String(month).padStart(2,'0')}/${year}`,
+    entryDate: new Date().toISOString().slice(0,10),
+    entryType: 'auto',
+    lines,
+  })
+}
+
 async function _payrollRunExecute() {
   const isBm = APP.language==='bm'
   const month = Number(document.getElementById('payroll-month').value)
@@ -10057,7 +10194,10 @@ async function _payrollRunExecute() {
     const calc = _calcPayroll(emp)
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
     const {error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' })
-    if(error) errCount++; else { okCount++; auditLog('create','payroll_records', empId) }
+    if(error) errCount++; else {
+      okCount++; auditLog('create','payroll_records', empId)
+      try { await _postPayrollJournal(calc, month, year) } catch(e) { console.error('Payroll journal post failed for employee '+empId+':', e) }
+    }
   }
   result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
   showToast(isBm?'Payroll selesai dijalankan':'Payroll run complete', 'success')
@@ -11541,6 +11681,15 @@ async function _posCheckout() {
   await sb.from('pos_transaction_items').insert(itemsPayload)
 
   const receiptNo = refData || trans.id
+
+  try {
+    const cogs = await _calcCOGS('pos_transaction_items','txn_id',trans.id)
+    await _postSaleJournal({
+      description: `POS Sale ${receiptNo}`,
+      entryDate: new Date().toISOString().slice(0,10),
+      amount: total, cogsAmount: cogs,
+    })
+  } catch(e) { console.error('POS sale journal post failed:', e) }
   const isBm2 = APP.language==='bm'
   const methodLabel = {cash:isBm2?'Tunai':'Cash', card:isBm2?'Kad':'Card', online_banking:'QR / Online'}[method] || method
   const tender = Number(document.getElementById('pos-tender')?.value||0)
