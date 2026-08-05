@@ -4272,6 +4272,16 @@ async function _getDefaultAccountId(mappingKey) {
 }
 function _damClearCache() { _damCache = null }
 
+// Resolves the GL account an expense claim should post to: the claim's own
+// category_id (chosen on the expense claim form, referencing an
+// account_type='expense' row in chart_of_accounts) if set, otherwise the
+// tenant's "general_expense" default mapping — this keeps old claims saved
+// before the category field existed postable without throwing.
+async function _getExpenseAccountId(claim) {
+  if(claim && claim.category_id) return claim.category_id
+  return await _getDefaultAccountId('general_expense')
+}
+
 // Generic double-entry journal poster — creates one journal_entries header
 // + its journal_lines in a single call, reused by every auto-posting
 // integration point (invoice payment, POS checkout, expense claims,
@@ -5866,13 +5876,13 @@ async function renderExpenseForm(id=null) {
     claimant:'Penuntut', date:'Tarikh *', desc:'Keterangan', amount:'Jumlah (RM) *',
     status:'Status', pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak',
     save:'Simpan', cancel:'Batal', required:'Tarikh dan jumlah diperlukan.',
-    scanReceipt:'Imbas Resit (pilihan)'
+    scanReceipt:'Imbas Resit (pilihan)', category:'Kategori', selectCategory:'-- Pilih Kategori --'
   } : {
     addTitle:'New Expense Claim', editTitle:'Edit Expense Claim', back:'Expense Claims',
     claimant:'Claimant', date:'Date *', desc:'Description', amount:'Amount (RM) *',
     status:'Status', pending:'Pending', approved:'Approved', rejected:'Rejected',
     save:'Save', cancel:'Cancel', required:'Date and amount are required.',
-    scanReceipt:'Scan Receipt (optional)'
+    scanReceipt:'Scan Receipt (optional)', category:'Category', selectCategory:'-- Select Category --'
   }
   let claim = { claim_date: new Date().toISOString().slice(0,10), status:'pending' }
   let claimantName = APP.user.name || ''
@@ -5886,6 +5896,8 @@ async function renderExpenseForm(id=null) {
       }
     }
   }
+  const {data: expenseAccounts} = await sb.from('chart_of_accounts').select('id,code,name_en')
+    .eq('tenant_id',APP.tenant.id).eq('account_type','expense').is('deleted_at',null).eq('is_active',true).order('code')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
@@ -5908,6 +5920,12 @@ async function renderExpenseForm(id=null) {
           <option value="rejected" ${claim.status==='rejected'?'selected':''}>${t.rejected}</option>
         </select>
       </div>
+      <div class="form-group"><label class="form-label">${t.category}</label>
+        <select id="ef-category" class="form-select">
+          <option value="">${t.selectCategory}</option>
+          ${(expenseAccounts||[]).map(a=>`<option value="${a.id}" ${claim.category_id===a.id?'selected':''}>${a.code} - ${_aiEscapeHtml(a.name_en)}</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.desc}</label><textarea id="ef-desc" class="form-input" rows="3">${claim.description||''}</textarea></div>
     </div>
     <div style="padding:0 20px 20px;display:flex;gap:12px">
@@ -5927,7 +5945,9 @@ async function _expSave(id) {
   const payload = {
     tenant_id: APP.tenant.id, claim_date: date,
     total_amount: Number(amount), status: document.getElementById('ef-status').value,
-    description: document.getElementById('ef-desc').value.trim()||null, updated_at: new Date().toISOString()
+    description: document.getElementById('ef-desc').value.trim()||null,
+    category_id: document.getElementById('ef-category').value || null,
+    updated_at: new Date().toISOString()
   }
   let error
   if(id) { const r = await sb.from('expense_claims').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id); error = r.error }
