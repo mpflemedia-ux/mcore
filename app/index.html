@@ -4580,8 +4580,12 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
     addResult(report.bills, result, bill.ref_no)
   }
 
-  // 5) Payroll records already generated
-  const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,generated_at')
+  // 5) Payroll records already generated — includes allowance_1/2/3,
+  // deduction_1/2, advance since Salary Disbursement editing can set these
+  // on top of the plain _calcPayroll output, and they change net_pay; the
+  // journal must balance against the row's ACTUAL stored net_pay, not just
+  // the basic-minus-statutory case (see _postPayrollJournal).
+  const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,generated_at,allowance_1,allowance_2,allowance_3,advance,deduction_1,deduction_2')
     .eq('tenant_id',APP.tenant.id).lt('generated_at',cutoffDate)
   report.payroll.candidates = (payrolls||[]).length
   for(const pr of (payrolls||[])) {
@@ -10412,13 +10416,27 @@ async function renderPayrollRun() {
 }
 
 // Posts one payroll journal entry for a single employee's calculated pay:
-// Dr Salary Expense (basic + employer EPF/SOCSO/EIS — the company's full
-// cost), Cr Cash (net pay actually disbursed), Cr EPF/SOCSO/EIS/PCB Payable
-// (statutory amounts withheld/owed, employee+employer portions combined for
-// EPF/SOCSO/EIS). These always balance exactly given how net_pay is derived
-// in _calcPayroll. Returns null without throwing when any required default
-// account isn't configured yet — the payroll_records row this posts against
-// has already been saved either way.
+// Dr Salary Expense (basic + allowances + employer EPF/SOCSO/EIS, net of any
+// deduction/advance recovered this period — see below), Cr Cash (net pay
+// actually disbursed), Cr EPF/SOCSO/EIS/PCB Payable (statutory amounts
+// withheld/owed, employee+employer portions combined for EPF/SOCSO/EIS).
+//
+// A payroll_records row is not always just the plain _calcPayroll output —
+// the Salary Disbursement screen (_sdRowValues) can add allowance_1/2/3,
+// deduction_1/2, and advance on top of it, and its net_pay formula is
+// `basic + totalAllowance - statutory - totalDeduction`. This function
+// must balance against THAT net_pay (whatever produced it), not just the
+// bare basic-minus-statutory case — otherwise entries for any row that went
+// through Salary Disbursement editing throw as "unbalanced". There is no
+// dedicated ledger account yet for advance/deduction recovery (that's the
+// planned Cash Advance/Panjar feature) — until it exists, deduction/advance
+// nets against Salary Expense (money recovered this period reduces what it
+// actually cost the company), which balances for any combination of these
+// fields without inventing an account no one has configured.
+//
+// Returns null without throwing when any required default account isn't
+// configured yet — the payroll_records row this posts against has already
+// been saved either way.
 //
 // sourceId/dryRun/entryDate are optional — live calls (_payrollRunExecute)
 // omit them and get today's date with no source tag; the historical
@@ -10436,7 +10454,9 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
     console.warn('Payroll journal post skipped (missing one or more default accounts: salary_expense/cash/epf_payable/socso_payable/eis_payable/pcb_payable)')
     return null
   }
-  const totalExpense = Number(calc.basic_salary||0) + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0)
+  const totalAllowance = Number(calc.allowance_1||0) + Number(calc.allowance_2||0) + Number(calc.allowance_3||0)
+  const totalDeduction = Number(calc.advance||0) + Number(calc.deduction_1||0) + Number(calc.deduction_2||0)
+  const totalExpense = Number(calc.basic_salary||0) + totalAllowance + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0) - totalDeduction
   const epfTotal = Number(calc.epf_employee||0) + Number(calc.epf_employer||0)
   const socsoTotal = Number(calc.socso_employee||0) + Number(calc.socso_employer||0)
   const eisTotal = Number(calc.eis_employee||0) + Number(calc.eis_employer||0)
