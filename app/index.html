@@ -10892,6 +10892,14 @@ async function renderSalaryDisbursement(month, year) {
   const sumStat = data.reduce((s,r)=>s+Number(r.epf_employee||0)+Number(r.socso_employee||0)+Number(r.eis_employee||0)+Number(r.pcb||0),0)
   const sumOther = data.reduce((s,r)=>s+Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0),0)
   const sumEmployer = data.reduce((s,r)=>s+Number(r.epf_employer||0)+Number(r.socso_employer||0)+Number(r.eis_employer||0),0)
+  // Breakdown by statutory TYPE (employer+employee combined per body) — a
+  // detail/cross-check view alongside the existing WHO-PAYS split. PCB has
+  // no employer portion. sumEPF+sumSOCSO+sumEIS+sumPCB must always equal
+  // sumEmployer+sumStat by construction (same six fields, grouped two ways).
+  const sumEPF = data.reduce((s,r)=>s+Number(r.epf_employee||0)+Number(r.epf_employer||0),0)
+  const sumSOCSO = data.reduce((s,r)=>s+Number(r.socso_employee||0)+Number(r.socso_employer||0),0)
+  const sumEIS = data.reduce((s,r)=>s+Number(r.eis_employee||0)+Number(r.eis_employer||0),0)
+  const sumPCB = data.reduce((s,r)=>s+Number(r.pcb||0),0)
   const grandTotal = data.reduce((s,r) => {
     const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
     const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
@@ -10929,6 +10937,14 @@ async function renderSalaryDisbursement(month, year) {
     <tr><td>${isBm?'Jumlah Caruman Pekerja (EPF+SOCSO+EIS+PCB)':'Total Employee Contrib. (EPF+SOCSO+EIS+PCB)'}</td><td style="text-align:right" id="sd-budget-employee">${formatRM(sumStat)}</td></tr>
   </tbody></table>
   <div class="pdoc-budget-bar"><span class="lbl">${isBm?'JUMLAH KESELURUHAN DIPERLUKAN':'GRAND TOTAL BUDGET REQUIRED'}</span><span class="amt" id="sd-budget-required">${formatRM(budgetRequired)}</span></div>
+  <div class="pdoc-section-title">${isBm?'Pecahan Mengikut Jenis Caruman (maklumat)':'Breakdown by Statutory Type (info)'}</div>
+  <table class="pdoc-table"><tbody>
+    <tr><td>${isBm?'Jumlah KWSP (Majikan + Pekerja)':'Total EPF (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-epf">${formatRM(sumEPF)}</td></tr>
+    <tr><td>${isBm?'Jumlah PERKESO (Majikan + Pekerja)':'Total SOCSO (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-socso">${formatRM(sumSOCSO)}</td></tr>
+    <tr><td>${isBm?'Jumlah SIP/EIS (Majikan + Pekerja)':'Total EIS (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-eis">${formatRM(sumEIS)}</td></tr>
+    <tr><td>${isBm?'Jumlah PCB (Pekerja sahaja — tiada bahagian majikan)':'Total PCB (Employee only — no employer portion)'}</td><td style="text-align:right" id="sd-budget-pcb">${formatRM(sumPCB)}</td></tr>
+  </tbody></table>
+  <div style="font-size:11px;color:#64748b;margin:8px 24px 0;line-height:1.4">${isBm?'Nota: Jumlah KWSP + PERKESO + SIP/EIS + PCB di atas adalah pecahan mengikut jenis caruman untuk rujukan sahaja (bukan tambahan kepada Jumlah Keseluruhan) — ia sepatutnya sama dengan Jumlah Caruman Majikan + Jumlah Caruman Pekerja di atas.':'Note: The EPF + SOCSO + EIS + PCB totals above are a breakdown by contribution type for reference only (not additional to the Grand Total) — they should equal Total Employer Contrib. + Total Employee Contrib. above.'}</div>
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
       <th style="width:36px">${t.no}</th>
@@ -11162,6 +11178,7 @@ function _sdMarkAmended(inputId, originalValue) {
 
 function _sdRecalc() {
   let grand = 0, sumAllow = 0, sumStat = 0, sumOther = 0, sumSalary = 0, sumEmployer = 0
+  let sumEPF = 0, sumSOCSO = 0, sumEIS = 0, sumPCB = 0
   _sdRecords.forEach(r => {
     const v = _sdRowValues(r)
     grand += v.net_pay
@@ -11176,6 +11193,13 @@ function _sdRecalc() {
     // live record set anyway (not just the initial page-load value) so it
     // can never go stale relative to grand/sumStat above.
     sumEmployer += Number(r.epf_employer||0)+Number(r.socso_employer||0)+Number(r.eis_employer||0)
+    // Per-type breakdown (employer+employee combined per statutory body) —
+    // employee-side reads the live edited value, employer-side reads the
+    // fixed record value, same split as sumStat/sumEmployer above.
+    sumEPF += Number(v.epf_employee||0)+Number(r.epf_employer||0)
+    sumSOCSO += Number(v.socso_employee||0)+Number(r.socso_employer||0)
+    sumEIS += Number(v.eis_employee||0)+Number(r.eis_employer||0)
+    sumPCB += Number(v.pcb||0)
     const cell = document.getElementById(`sd-net-${r.id}`)
     if(cell) cell.textContent = formatRM(v.net_pay)
     _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
@@ -11206,6 +11230,10 @@ function _sdRecalc() {
   setTxt('sd-budget-employer', formatRM(sumEmployer))
   setTxt('sd-budget-employee', formatRM(sumStat))
   setTxt('sd-budget-required', formatRM(budgetRequired))
+  setTxt('sd-budget-epf', formatRM(sumEPF))
+  setTxt('sd-budget-socso', formatRM(sumSOCSO))
+  setTxt('sd-budget-eis', formatRM(sumEIS))
+  setTxt('sd-budget-pcb', formatRM(sumPCB))
 }
 
 async function _sdSaveAll() {
