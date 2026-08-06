@@ -496,6 +496,12 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-net-bar { background:linear-gradient(135deg, var(--pdoc-accent), color-mix(in srgb, var(--pdoc-accent) 75%, #0F172A)); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:16px 24px; }
 .pdoc-net-bar .lbl { font-weight:700; font-size:11px; letter-spacing:.1em; text-transform:uppercase; opacity:.9; }
 .pdoc-net-bar .amt { font-weight:700; font-size:22px; font-family:'Space Grotesk',sans-serif; letter-spacing:-.02em; }
+/* Most prominent figure in the Salary Disbursement print view — the total
+   cash the company needs approved, so it must read as bigger/heavier than
+   every other total on the page (Net Pay bar included). */
+.pdoc-budget-bar { background:linear-gradient(135deg, var(--pdoc-accent), color-mix(in srgb, var(--pdoc-accent) 70%, #0F172A)); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:20px 24px; margin-top:2px; }
+.pdoc-budget-bar .lbl { font-weight:700; font-size:13px; letter-spacing:.1em; text-transform:uppercase; opacity:.95; }
+.pdoc-budget-bar .amt { font-weight:800; font-size:30px; font-family:'Space Grotesk',sans-serif; letter-spacing:-.02em; }
 .pdoc-footer-note { text-align:center; font-size:10px; color:#94A3B8; padding:12px 24px 14px; border-top:1px solid #F1F5F9; }
 .pdoc-payslip-subtitle { font-size:11px; color:var(--pdoc-accent); font-weight:700; letter-spacing:.06em; margin-top:2px; text-transform:uppercase; }
 .pdoc-amt-pos { color:var(--success); }
@@ -633,7 +639,7 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-swatch.active { border-color:var(--text); }
 @media print {
   .pdoc { border:none !important; border-radius:0 !important; }
-  .pdoc-title-bar, .pdoc-net-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+  .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid {
     display:flex !important;
     flex-wrap:wrap !important;
@@ -10894,6 +10900,21 @@ async function renderSalaryDisbursement(month, year) {
   // Company cost = gross earnings (basic+allow) + employer statutory contributions
   const companyCost = sumSalary + sumAllow + sumEmployer
 
+  // Budget Approval Summary (for BOD approval) — the total cash the company
+  // must actually set aside/transfer this month: net pay to staff PLUS the
+  // full statutory remittance (both employer and employee portions of
+  // EPF/SOCSO/EIS, employee-side PCB) PLUS advances disbursed. Distinct from
+  // grandTotal (net pay only) and companyCost (accounting cost, which
+  // excludes employee-side statutory since that's a deduction from gross,
+  // not an extra cost) — neither of those alone is "how much cash to
+  // prepare", which is what this figure answers.
+  const sumEpfTotal = data.reduce((s,r)=>s+Number(r.epf_employee||0)+Number(r.epf_employer||0),0)
+  const sumSocsoTotal = data.reduce((s,r)=>s+Number(r.socso_employee||0)+Number(r.socso_employer||0),0)
+  const sumEisTotal = data.reduce((s,r)=>s+Number(r.eis_employee||0)+Number(r.eis_employer||0),0)
+  const sumPcbTotal = data.reduce((s,r)=>s+Number(r.pcb||0),0)
+  const sumAdvance = data.reduce((s,r)=>s+Number(r.advance||0),0)
+  const budgetRequired = grandTotal + sumEpfTotal + sumSocsoTotal + sumEisTotal + sumPcbTotal + sumAdvance
+
   const _sdSigsPrefill = _sdLoadSigs()
   const _sigPrep = (_sdSigsPrefill.preparedBy!=null && String(_sdSigsPrefill.preparedBy).trim()!=='') ? _sdSigsPrefill.preparedBy : (APP.user.name||'')
   wrap.innerHTML = `
@@ -10904,6 +10925,16 @@ async function renderSalaryDisbursement(month, year) {
     <span>${isBm?'Caruman Majikan':'Employer Contrib.'}: <b id="sd-summary-employer">${formatRM(sumEmployer)}</b></span>
     <span>${isBm?'Kos Syarikat':'Company Cost'}: <b id="sd-summary-company">${formatRM(companyCost)}</b></span>
   </div>
+  <div class="pdoc-section-title">${isBm?'Ringkasan Kelulusan Bajet (Lembaga Pengarah)':'Budget Approval Summary (Board of Directors)'}</div>
+  <table class="pdoc-table"><tbody>
+    <tr><td>${isBm?'Jumlah Gaji Bersih kepada Pekerja':'Total Net Pay to Employees'}</td><td style="text-align:right" id="sd-budget-net">${formatRM(grandTotal)}</td></tr>
+    <tr><td>${isBm?'Jumlah KWSP (Majikan + Pekerja)':'Total EPF (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-epf">${formatRM(sumEpfTotal)}</td></tr>
+    <tr><td>${isBm?'Jumlah SOCSO (Majikan + Pekerja)':'Total SOCSO (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-socso">${formatRM(sumSocsoTotal)}</td></tr>
+    <tr><td>${isBm?'Jumlah EIS (Majikan + Pekerja)':'Total EIS (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-eis">${formatRM(sumEisTotal)}</td></tr>
+    <tr><td>${isBm?'Jumlah PCB (Pekerja)':'Total PCB (Employee)'}</td><td style="text-align:right" id="sd-budget-pcb">${formatRM(sumPcbTotal)}</td></tr>
+    <tr><td>${isBm?'Jumlah Pendahuluan Disalurkan':'Total Advances Disbursed'}</td><td style="text-align:right" id="sd-budget-advance">${formatRM(sumAdvance)}</td></tr>
+  </tbody></table>
+  <div class="pdoc-budget-bar"><span class="lbl">${isBm?'JUMLAH KESELURUHAN DIPERLUKAN':'GRAND TOTAL BUDGET REQUIRED'}</span><span class="amt" id="sd-budget-required">${formatRM(budgetRequired)}</span></div>
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
       <th style="width:36px">${t.no}</th>
@@ -11133,6 +11164,7 @@ function _sdMarkAmended(inputId, originalValue) {
 
 function _sdRecalc() {
   let grand = 0, sumAllow = 0, sumStat = 0, sumOther = 0, sumSalary = 0
+  let sumEpfTotal = 0, sumSocsoTotal = 0, sumEisTotal = 0, sumPcbTotal = 0, sumAdvance = 0
   _sdRecords.forEach(r => {
     const v = _sdRowValues(r)
     grand += v.net_pay
@@ -11140,6 +11172,14 @@ function _sdRecalc() {
     sumAllow += Number(v.allowance_1||0)+Number(v.allowance_2||0)+Number(v.allowance_3||0)
     sumStat += Number(v.epf_employee||0)+Number(v.socso_employee||0)+Number(v.eis_employee||0)+Number(v.pcb||0)
     sumOther += Number(v.advance||0)+Number(v.deduction_1||0)+Number(v.deduction_2||0)
+    // Budget Approval Summary — employee-side portions come from the live
+    // edited values (v), employer-side portions are fixed (not editable in
+    // this screen), same split _postPayrollJournal uses for the journal.
+    sumEpfTotal += Number(v.epf_employee||0)+Number(r.epf_employer||0)
+    sumSocsoTotal += Number(v.socso_employee||0)+Number(r.socso_employer||0)
+    sumEisTotal += Number(v.eis_employee||0)+Number(r.eis_employer||0)
+    sumPcbTotal += Number(v.pcb||0)
+    sumAdvance += Number(v.advance||0)
     const cell = document.getElementById(`sd-net-${r.id}`)
     if(cell) cell.textContent = formatRM(v.net_pay)
     _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
@@ -11154,6 +11194,13 @@ function _sdRecalc() {
   setTxt('sd-sum-allow', sumAllow ? formatRM(sumAllow) : '—')
   setTxt('sd-sum-stat', formatRM(sumStat))
   setTxt('sd-sum-other', sumOther ? formatRM(sumOther) : '—')
+  setTxt('sd-budget-net', formatRM(grand))
+  setTxt('sd-budget-epf', formatRM(sumEpfTotal))
+  setTxt('sd-budget-socso', formatRM(sumSocsoTotal))
+  setTxt('sd-budget-eis', formatRM(sumEisTotal))
+  setTxt('sd-budget-pcb', formatRM(sumPcbTotal))
+  setTxt('sd-budget-advance', formatRM(sumAdvance))
+  setTxt('sd-budget-required', formatRM(grand+sumEpfTotal+sumSocsoTotal+sumEisTotal+sumPcbTotal+sumAdvance))
 }
 
 async function _sdSaveAll() {
