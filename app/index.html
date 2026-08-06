@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-a">
+<meta name="nexerp-build" content="2026-08-07-b">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -10934,7 +10934,7 @@ async function renderSalaryDisbursement(month, year) {
   <div class="pdoc-section-title">${isBm?'Ringkasan Kelulusan Bajet (Lembaga Pengarah)':'Budget Approval Summary (Board of Directors)'}</div>
   <table class="pdoc-table"><tbody>
     <tr><td>${isBm?'Jumlah Gaji Bersih kepada Pekerja':'Total Net Pay to Employees'}</td><td style="text-align:right" id="sd-budget-net">${formatRM(grandTotal)}</td></tr>
-    <tr><td>${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS)':'Total Employer Contrib. (EPF+SOCSO+EIS)'}</td><td style="text-align:right" id="sd-budget-employer">${formatRM(sumEmployer)}</td></tr>
+    <tr><td>${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS+PCB)':'Total Employer Contrib. (EPF+SOCSO+EIS+PCB)'}</td><td style="text-align:right" id="sd-budget-employer">${formatRM(sumEmployer)}</td></tr>
     <tr><td>${isBm?'Jumlah Caruman Pekerja (EPF+SOCSO+EIS+PCB)':'Total Employee Contrib. (EPF+SOCSO+EIS+PCB)'}</td><td style="text-align:right" id="sd-budget-employee">${formatRM(sumStat)}</td></tr>
   </tbody></table>
   <div class="pdoc-budget-bar"><span class="lbl">${isBm?'JUMLAH KESELURUHAN DIPERLUKAN':'GRAND TOTAL BUDGET REQUIRED'}</span><span class="amt" id="sd-budget-required">${formatRM(budgetRequired)}</span></div>
@@ -11026,7 +11026,7 @@ async function renderSalaryDisbursement(month, year) {
         <td class="pdoc-sd-net" style="text-align:right;padding:10px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
       </tr>
       <tr>
-        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS)':'Total Employer Contrib. (EPF+SOCSO+EIS)'}</td>
+        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS+PCB)':'Total Employer Contrib. (EPF+SOCSO+EIS+PCB)'}</td>
         <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-employer">${formatRM(sumEmployer)}</td>
       </tr>
       <tr>
