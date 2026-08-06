@@ -12195,14 +12195,21 @@ async function renderBalanceSheet() {
 }
 
 async function _bsLoad() {
-  const t = APP.language==='bm' ? { assets:'Aset', liabilities:'Liabiliti', equity:'Ekuiti', totalAssets:'Jumlah Aset', totalLE:'Jumlah Liabiliti + Ekuiti', noData:'Tiada data' }
-    : { assets:'Assets', liabilities:'Liabilities', equity:'Equity', totalAssets:'Total Assets', totalLE:'Total Liabilities + Equity', noData:'No data' }
+  const t = APP.language==='bm' ? { assets:'Aset', liabilities:'Liabiliti', equity:'Ekuiti', totalAssets:'Jumlah Aset', totalLE:'Jumlah Liabiliti + Ekuiti', noData:'Tiada data', retainedEarnings:'Untung/(Rugi) Terkumpul' }
+    : { assets:'Assets', liabilities:'Liabilities', equity:'Equity', totalAssets:'Total Assets', totalLE:'Total Liabilities + Equity', noData:'No data', retainedEarnings:'Retained Earnings' }
   const asOf = document.getElementById('bs-asof')?.value
   const result = document.getElementById('bs-result')
 
   const {data: entries} = await sb.from('journal_entries').select('id').eq('tenant_id',APP.tenant.id).is('deleted_at',null).lte('entry_date',asOf)
   const entryIds = (entries||[]).map(e=>e.id)
-  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('account_type',['asset','liability','equity'])
+  // Includes revenue/expense too (not just asset/liability/equity) — needed
+  // to compute Retained Earnings below. Balance Sheet equity must include
+  // cumulative net profit/(loss) since inception, same as the P&L's Net
+  // Profit/(Loss), or Assets never equals Liabilities+Equity: this system
+  // has no period-end closing entries that would otherwise roll P&L
+  // balances into an Equity account, so without this line the Balance
+  // Sheet always understates Equity by exactly the cumulative net income.
+  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).in('account_type',['asset','liability','equity','revenue','expense'])
 
   if(!accounts?.length) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`; return }
 
@@ -12221,8 +12228,20 @@ async function _bsLoad() {
   const liab = build('liability','credit')
   const eq = build('equity','credit')
 
+  // Retained Earnings — same computation as _pnlLoad's Net Profit/(Loss),
+  // but cumulative from the earliest journal entry through asOf (not a
+  // from/to window) since a Balance Sheet is a point-in-time snapshot of
+  // everything that happened up to that date, not just one period.
+  const totalRev = accounts.filter(a=>a.account_type==='revenue').reduce((s,a)=>{ const b=byAccount[a.id]||{debit:0,credit:0}; return s+(b.credit-b.debit) }, 0)
+  const totalExp = accounts.filter(a=>a.account_type==='expense').reduce((s,a)=>{ const b=byAccount[a.id]||{debit:0,credit:0}; return s+(b.debit-b.credit) }, 0)
+  const retainedEarnings = totalRev - totalExp
+  if(retainedEarnings !== 0) {
+    eq.rows.push({ a: { code:'', name_en: t.retainedEarnings }, amt: retainedEarnings })
+    eq.total += retainedEarnings
+  }
+
   const section = (label, group) => `<div style="font-weight:700;margin:16px 0 8px">${label}</div>
-    <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
+    <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code?r.a.code+' - ':''}${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div>`
 
   result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
@@ -12233,7 +12252,7 @@ async function _bsLoad() {
     <div style="display:flex;justify-content:space-between;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span>${formatRM(liab.total+eq.total)}</span></div>
   </div>` + _repAiSummaryBlock('bs-ai-btn','bs-ai-out')
 
-  _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity: RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
+  _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity (incl. Retained Earnings RM${retainedEarnings.toFixed(2)}): RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
 }
 
 // ─── Sales Report ──────────────────────────────────────────────────────────────
