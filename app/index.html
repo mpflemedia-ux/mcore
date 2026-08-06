@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-d">
+<meta name="nexerp-build" content="2026-08-07-e">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -454,6 +454,12 @@ tbody tr:hover{background:var(--bg)}
   }
 }
 .print-only { display:none; }
+/* BOD budget summary: print document only — hidden in on-screen SD workspace */
+.pdoc-bod-print-only { display:none !important; }
+@media print {
+  .pdoc-bod-print-only { display:block !important; }
+}
+
 @media print {
   #sidebar, #header, .no-print { display:none !important; }
   #main-area { margin:0 !important; }
@@ -10928,6 +10934,7 @@ async function renderSalaryDisbursement(month, year) {
     <span>PCB: <b id="sd-summary-pcb">${formatRM(sumPCB)}</b></span>
     <span>${isBm?'Bajet':'Budget'}: <b id="sd-summary-budget">${formatRM(budgetRequired)}</b></span>
   </div>
+  <div class="pdoc-bod-print-only">
   <div class="pdoc-section-title">${isBm?'Ringkasan Kelulusan Bajet (Lembaga Pengarah)':'Budget Approval Summary (Board of Directors)'}</div>
   <table class="pdoc-table" style="width:100%"><tbody>
     <tr style="background:#fff;color:#0F172A"><td style="color:#0F172A">${isBm?'Jumlah Gaji Bersih kepada Pekerja':'Total Net Pay to Employees'}</td><td style="text-align:right;color:#0F172A;font-weight:600" id="sd-budget-net">${formatRM(grandTotal)}</td></tr>
@@ -10938,6 +10945,7 @@ async function renderSalaryDisbursement(month, year) {
   </tbody></table>
   <div class="pdoc-budget-bar"><span class="lbl">${isBm?'JUMLAH KESELURUHAN DIPERLUKAN':'GRAND TOTAL BUDGET REQUIRED'}</span><span class="amt" id="sd-budget-required">${formatRM(budgetRequired)}</span></div>
   <div style="font-size:11px;color:#64748b;margin:8px 24px 0;line-height:1.4">${isBm?'Jumlah keseluruhan = Gaji bersih + KWSP + PERKESO + EIS + PCB (semua bahagian majikan & pekerja).':'Grand total = Net pay + EPF + SOCSO + EIS + PCB (employer & employee portions).'}</div>
+  </div>
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
       <th style="width:36px">${t.no}</th>
