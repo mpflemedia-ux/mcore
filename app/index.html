@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-h">
+<meta name="nexerp-build" content="2026-08-07-i">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -641,7 +641,7 @@ tbody tr:hover{background:var(--bg)}
   margin:0;
 }
 .pdoc-sd-tot {
-  background:color-mix(in srgb, var(--pdoc-accent) 82%, #0F172A);
+  background:var(--pdoc-accent, #0E7490);
   color:#fff;
   padding:10px 8px;
   text-align:center;
@@ -650,6 +650,8 @@ tbody tr:hover{background:var(--bg)}
   gap:4px;
   justify-content:center;
   min-width:0;
+  -webkit-print-color-adjust:exact;
+  print-color-adjust:exact;
 }
 .pdoc-sd-tot .k {
   font-size:9px;
@@ -667,6 +669,7 @@ tbody tr:hover{background:var(--bg)}
   white-space:nowrap;
 }
 .pdoc-sd-tot.budget {
+  background:#0C4A6E;
   background:color-mix(in srgb, var(--pdoc-accent) 42%, #0F172A);
 }
 .pdoc-sd-tot.budget .k { opacity:.95; font-size:9px; }
@@ -689,7 +692,7 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-swatch.active { border-color:var(--text); }
 @media print {
   .pdoc { border:none !important; border-radius:0 !important; }
-  .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+  .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td, .pdoc-sd-totals, .pdoc-sd-tot { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid {
     display:flex !important;
     flex-wrap:wrap !important;
@@ -755,21 +758,38 @@ tbody tr:hover{background:var(--bg)}
   .pdoc-sd-basic, .pdoc-sd-net { font-size:10px !important; }
   .pdoc-sd-print-line { font-size:8px !important; line-height:1.25 !important; }
   .pdoc-sd-employer-note { display:none !important; }
-  .pdoc-sd-totals { page-break-inside:avoid !important; }
-  .pdoc-sd-tot { padding:6px 4px !important; }
-  .pdoc-sd-tot .k { font-size:7px !important; }
-  .pdoc-sd-tot .v { font-size:11px !important; }
-  .pdoc-sd-tot.budget .v { font-size:13px !important; }
+  .pdoc-sd-totals {
+    page-break-inside:avoid !important;
+    background:#0E7490 !important;
+    border-color:#0E7490 !important;
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+  .pdoc-sd-tot {
+    padding:8px 6px !important;
+    background:#0E7490 !important;
+    color:#ffffff !important;
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+  .pdoc-sd-tot .k { font-size:7.5px !important; color:#ffffff !important; opacity:0.9 !important; }
+  .pdoc-sd-tot .v { font-size:12px !important; color:#ffffff !important; }
+  .pdoc-sd-tot.budget {
+    background:#0C4A6E !important;
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+  .pdoc-sd-tot.budget .v { font-size:14px !important; color:#ffffff !important; }
   .pdoc-sd-closing { page-break-inside:avoid !important; break-inside:avoid !important; }
   .pdoc-sig-grid {
     display:flex !important;
     visibility:visible !important;
     page-break-inside:avoid !important;
     break-inside:avoid !important;
-    margin-top:6px !important;
-    padding-top:6px !important;
+    margin-top:22px !important;
+    padding-top:14px !important;
     border-top:1px solid #E2E8F0 !important;
-    gap:8px 16px !important;
+    gap:10px 20px !important;
   }
   .pdoc-sig-grid .form-group { flex:1 1 0 !important; max-width:none !important; }
   .pdoc-sig-grid .form-input { margin-top:14px !important; font-size:9px !important; padding:2px 2px 0 !important; }
@@ -11086,7 +11106,7 @@ async function renderSalaryDisbursement(month, year) {
       <div class="pdoc-sd-tot"><span class="k">PCB</span><span class="v" id="sd-grand-pcb">${formatRM(sumPCB)}</span></div>
       <div class="pdoc-sd-tot budget"><span class="k">${isBm?'Bajet Diperlukan':'Budget Required'}</span><span class="v" id="sd-grand-budget">${formatRM(budgetRequired)}</span></div>
     </div>
-    <div class="pdoc-sig-grid" style="margin:8px 8px 4px">
+    <div class="pdoc-sig-grid" style="margin:20px 12px 8px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
