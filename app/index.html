@@ -5198,6 +5198,59 @@ const ACC_TYPES = [
 function accTypeLabel(id) { const x=ACC_TYPES.find(a=>a.id===id); return x?(APP.language==='bm'?x.bm:x.en):(id||'-') }
 function accTypeColor(id) { const x=ACC_TYPES.find(a=>a.id===id); return x?x.color:'var(--text-3)' }
 
+// Standard starter Chart of Accounts — reusable across every tenant that
+// onboards (not a one-off), matches the mapping keys _postJournalEntry's
+// callers look up by default (cash, accounts_payable, epf/socso/eis/pcb
+// payable, general_expense, salary_expense) plus the two revenue/equity
+// accounts every tenant needs regardless. Seeded rows are ordinary
+// chart_of_accounts rows — fully editable/deletable afterward, nothing
+// about them is locked or protected.
+const DEFAULT_COA_SEED = [
+  { code:'1000', name_en:'Cash in Hand',      account_type:'asset' },
+  { code:'2100', name_en:'Accounts Payable',  account_type:'liability' },
+  { code:'2200', name_en:'EPF Payable',       account_type:'liability' },
+  { code:'2210', name_en:'SOCSO Payable',     account_type:'liability' },
+  { code:'2220', name_en:'EIS Payable',       account_type:'liability' },
+  { code:'2230', name_en:'PCB Payable',       account_type:'liability' },
+  { code:'3000', name_en:"Owner's Capital",   account_type:'equity' },
+  { code:'4000', name_en:'Sales Revenue',     account_type:'revenue' },
+  { code:'5000', name_en:'General Expense',   account_type:'expense' },
+  { code:'5100', name_en:'Salary Expense',    account_type:'expense' },
+]
+
+// Inserts whichever DEFAULT_COA_SEED rows the tenant doesn't already have
+// an ACTIVE account for (checked by code, deleted_at is null) — safe to
+// click repeatedly (e.g. an admin who already added "1000 Cash in Hand"
+// manually gets the other 9, not a duplicate-key error on the 1st).
+async function _coaSeedDefaults() {
+  const isBm = APP.language==='bm'
+  const btn = document.getElementById('coa-seed-btn')
+  if(btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>' }
+  try {
+    const {data: existing} = await sb.from('chart_of_accounts').select('code')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).in('code', DEFAULT_COA_SEED.map(a=>a.code))
+    const existingCodes = new Set((existing||[]).map(a=>a.code))
+    const missing = DEFAULT_COA_SEED.filter(a => !existingCodes.has(a.code))
+    if(missing.length===0) {
+      showToast(isBm?'Semua akaun default dah wujud.':'All default accounts already exist.', 'success')
+      return
+    }
+    const payload = missing.map(a => ({
+      tenant_id: APP.tenant.id, code: a.code, name_en: a.name_en,
+      account_type: a.account_type,
+      account_class: ['asset','liability','equity'].includes(a.account_type) ? 'balance_sheet' : 'income_statement',
+      is_active: true,
+    }))
+    const {error} = await sb.from('chart_of_accounts').insert(payload)
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    auditLog('create','chart_of_accounts','seed-defaults')
+    showToast(isBm?`${missing.length} akaun default ditambah!`:`${missing.length} default account(s) added!`, 'success')
+    await _coaLoad()
+  } finally {
+    if(btn) { btn.disabled = false; btn.innerHTML = `<i class="ti ti-database-import"></i> ${isBm?'Seed Akaun Default':'Seed Default Accounts'}` }
+  }
+}
+
 // Default Account Mappings — the fixed set of GL "roles" auto-posting code
 // looks up by key (see _postJournalEntry / _getDefaultAccountId). Each
 // tenant maps these ONCE in Settings -> Accounting -> Default Accounts to
@@ -5602,7 +5655,10 @@ async function renderCOAList() {
   document.getElementById('main').innerHTML = `
   <div class="page-header">
     <div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'coa-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="coa-seed-btn" class="btn btn-outline btn-sm" onclick="_coaSeedDefaults()"><i class="ti ti-database-import"></i> ${APP.language==='bm'?'Seed Akaun Default':'Seed Default Accounts'}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'coa-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div>
   </div>
   ${_accTabs('coa')}
   <div class="card" style="margin-bottom:0">
