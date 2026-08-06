@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-i">
+<meta name="nexerp-build" content="2026-08-07-g">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -632,52 +632,6 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-sd-summary b { color:#0F172A; font-family:'Space Grotesk',sans-serif; }
 .pdoc-sd-meta { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; font-size:10px; color:#64748B; border-bottom:1px solid #E2E8F0; background:#fff; letter-spacing:.02em; }
 .pdoc-sd-meta b { color:#0F172A; font-weight:600; }
-.pdoc-sd-totals {
-  display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
-  gap:1px;
-  background:var(--pdoc-accent);
-  border:1px solid var(--pdoc-accent);
-  margin:0;
-}
-.pdoc-sd-tot {
-  background:var(--pdoc-accent, #0E7490);
-  color:#fff;
-  padding:10px 8px;
-  text-align:center;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  justify-content:center;
-  min-width:0;
-  -webkit-print-color-adjust:exact;
-  print-color-adjust:exact;
-}
-.pdoc-sd-tot .k {
-  font-size:9px;
-  font-weight:600;
-  letter-spacing:.06em;
-  text-transform:uppercase;
-  opacity:.88;
-  line-height:1.2;
-}
-.pdoc-sd-tot .v {
-  font-family:'Space Grotesk',sans-serif;
-  font-weight:700;
-  font-size:13px;
-  letter-spacing:-.01em;
-  white-space:nowrap;
-}
-.pdoc-sd-tot.budget {
-  background:#0C4A6E;
-  background:color-mix(in srgb, var(--pdoc-accent) 42%, #0F172A);
-}
-.pdoc-sd-tot.budget .k { opacity:.95; font-size:9px; }
-.pdoc-sd-tot.budget .v { font-size:15px; font-weight:800; }
-@media (max-width:900px){
-  .pdoc-sd-totals { grid-template-columns:repeat(3,minmax(0,1fr)); }
-}
-
 .pdoc-sd-table tfoot tr.sd-ft-mid td { background:color-mix(in srgb, var(--pdoc-accent) 88%, #0F172A); font-size:10px; font-weight:600; }
 .pdoc-sd-table tfoot tr.sd-ft-total td { background:color-mix(in srgb, var(--pdoc-accent) 55%, #0F172A); font-size:12px; font-weight:800; border-top:2px solid rgba(255,255,255,.35); }
 .pdoc-sd-table tfoot tr.sd-ft-budget td { background:color-mix(in srgb, var(--pdoc-accent) 40%, #0F172A); font-size:13px; font-weight:800; letter-spacing:.04em; }
@@ -692,7 +646,7 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-swatch.active { border-color:var(--text); }
 @media print {
   .pdoc { border:none !important; border-radius:0 !important; }
-  .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td, .pdoc-sd-totals, .pdoc-sd-tot { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+  .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid {
     display:flex !important;
     flex-wrap:wrap !important;
@@ -728,7 +682,7 @@ tbody tr:hover{background:var(--bg)}
     border-top:1.5px solid #334155 !important;
     border-radius:0 !important;
     padding:4px 4px 0 !important;
-    margin-top:14px !important;
+    margin-top:20px !important;
     text-align:center;
     background:transparent !important;
     font-weight:600;
@@ -742,58 +696,27 @@ tbody tr:hover{background:var(--bg)}
      media) — force it visible so the table's natural width shows and
      Chrome's print "shrink to fit" scales the whole thing onto the page,
      instead of cutting columns off past the screen viewport width. */
-  /* —— Salary Disbursement: force one landscape page —— */
-  .pdoc-header { padding:6px 10px !important; }
-  .pdoc-logo-row img, .pdoc-logo-fallback { width:28px !important; height:28px !important; }
-  .pdoc-company-name { font-size:12px !important; }
-  .pdoc-company-sub { font-size:8px !important; line-height:1.25 !important; }
-  .pdoc-meta { font-size:8px !important; }
-  .pdoc-title-bar { padding:5px 8px !important; font-size:11px !important; letter-spacing:.03em !important; }
   .pdoc-sd-scroll { overflow:visible !important; }
-  .pdoc-sd-meta { padding:3px 8px !important; font-size:8px !important; }
-  .pdoc-sd-table { font-size:8.5px !important; }
-  .pdoc-sd-table th { padding:4px 4px !important; font-size:7.5px !important; }
-  .pdoc-sd-table td { padding:3px 4px !important; line-height:1.25 !important; }
-  .pdoc-sd-payee { font-size:9px !important; }
-  .pdoc-sd-basic, .pdoc-sd-net { font-size:10px !important; }
-  .pdoc-sd-print-line { font-size:8px !important; line-height:1.25 !important; }
-  .pdoc-sd-employer-note { display:none !important; }
-  .pdoc-sd-totals {
-    page-break-inside:avoid !important;
-    background:#0E7490 !important;
-    border-color:#0E7490 !important;
-    -webkit-print-color-adjust:exact !important;
-    print-color-adjust:exact !important;
-  }
-  .pdoc-sd-tot {
-    padding:8px 6px !important;
-    background:#0E7490 !important;
-    color:#ffffff !important;
-    -webkit-print-color-adjust:exact !important;
-    print-color-adjust:exact !important;
-  }
-  .pdoc-sd-tot .k { font-size:7.5px !important; color:#ffffff !important; opacity:0.9 !important; }
-  .pdoc-sd-tot .v { font-size:12px !important; color:#ffffff !important; }
-  .pdoc-sd-tot.budget {
-    background:#0C4A6E !important;
-    -webkit-print-color-adjust:exact !important;
-    print-color-adjust:exact !important;
-  }
-  .pdoc-sd-tot.budget .v { font-size:14px !important; color:#ffffff !important; }
+  .pdoc-sd-meta { padding:5px 10px !important; font-size:9px !important; }
+  .pdoc-sd-table { font-size:9.5px !important; }
+  .pdoc-sd-table th { padding:6px 5px !important; font-size:8px !important; }
+  .pdoc-sd-table td { padding:5px 5px !important; line-height:1.35 !important; }
+  .pdoc-sd-table tfoot td { padding:5px 10px !important; }
+  .pdoc-sd-table tfoot tr.sd-ft-budget td { padding:8px 10px !important; font-size:12px !important; }
+  .pdoc-sd-payee { font-size:10px !important; }
+  .pdoc-sd-print-line { font-size:9px !important; line-height:1.4 !important; }
+  .pdoc-sd-employer-note { font-size:8px !important; color:#475569 !important; margin-top:3px !important; line-height:1.3 !important; }
+  /* Keep totals + signatures together; reduce orphan page-2 */
   .pdoc-sd-closing { page-break-inside:avoid !important; break-inside:avoid !important; }
   .pdoc-sig-grid {
     display:flex !important;
     visibility:visible !important;
     page-break-inside:avoid !important;
     break-inside:avoid !important;
-    margin-top:22px !important;
-    padding-top:14px !important;
+    margin-top:14px !important;
+    padding-top:10px !important;
     border-top:1px solid #E2E8F0 !important;
-    gap:10px 20px !important;
   }
-  .pdoc-sig-grid .form-group { flex:1 1 0 !important; max-width:none !important; }
-  .pdoc-sig-grid .form-input { margin-top:14px !important; font-size:9px !important; padding:2px 2px 0 !important; }
-  .pdoc-sig-grid .form-label { font-size:7px !important; }
   .pdoc-sig-grid .form-group { display:flex !important; visibility:visible !important; }
   .pdoc-sig-grid .form-input {
     -webkit-print-color-adjust:exact !important;
@@ -1531,12 +1454,10 @@ function _pdocColorPickerHtml(docKey, current) {
 // Injects/updates a dynamic @page rule so different printable views can use
 // different paper orientation (Payslip = portrait, Salary Disbursement =
 // landscape) without a permanent global @page declaration.
-function _pdocSetPageOrientation(orientation, marginMm) {
+function _pdocSetPageOrientation(orientation) {
   let el = document.getElementById('pdoc-page-style')
   if(!el) { el = document.createElement('style'); el.id = 'pdoc-page-style'; document.head.appendChild(el) }
-  // Salary Disbursement landscape needs tighter margins to keep table+sig on 1 page
-  const m = marginMm != null ? marginMm : (orientation === 'landscape' ? 8 : 10)
-  el.textContent = `@page { size: A4 ${orientation}; margin: ${m}mm; }`
+  el.textContent = `@page { size: A4 ${orientation}; margin: 10mm; }`
 }
 
 const MONTH_NAMES_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -9550,7 +9471,7 @@ async function renderPVDDetail(id) {
   </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       ${_pdocColorPickerHtml('pvd', accent)}
-      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape', 6);_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape');_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
       ${b.status!=='converted'?`<button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pvd-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
       <button class="btn btn-primary btn-sm" onclick="_pvdConvert('${id}')"><i class="ti ti-transform"></i> ${t.convert}</button>`:`<span style="font-size:12px;color:var(--success)">Converted</span>`}
     </div>
@@ -10941,7 +10862,7 @@ async function renderSalaryDisbursement(month, year) {
   </div>
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('sd', accent)}
-      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape', 6); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape'); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
@@ -11096,17 +11017,35 @@ async function renderSalaryDisbursement(month, year) {
       </td>
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`}).join('')}</tbody>
+    <tfoot>
+      <tr class="sd-ft-total">
+        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${t.grandTotal}</td>
+        <td class="pdoc-sd-net" style="text-align:right;padding:8px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
+      </tr>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah KWSP (Majikan + Pekerja)':'Total EPF (Employer + Employee)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-epf">${formatRM(sumEPF)}</td>
+      </tr>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah PERKESO (Majikan + Pekerja)':'Total SOCSO (Employer + Employee)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-socso">${formatRM(sumSOCSO)}</td>
+      </tr>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah SIP/EIS (Majikan + Pekerja)':'Total EIS (Employer + Employee)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-eis">${formatRM(sumEIS)}</td>
+      </tr>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah PCB (Pekerja sahaja)':'Total PCB (Employee only)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-pcb">${formatRM(sumPCB)}</td>
+      </tr>
+      <tr class="sd-ft-budget">
+        <td colspan="8" style="text-align:right;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap">${isBm?'Jumlah Keseluruhan Diperlukan':'Grand Total Budget Required'}</td>
+        <td style="text-align:right;padding:10px 14px;font-size:15px;font-weight:800;color:#fff !important;white-space:nowrap" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
+      </tr>
+    </tfoot>
     </table>
     <div class="pdoc-sd-closing">
-    <div class="pdoc-sd-totals">
-      <div class="pdoc-sd-tot"><span class="k">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="v" id="sd-grand-total">${formatRM(grandTotal)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">EPF</span><span class="v" id="sd-grand-epf">${formatRM(sumEPF)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">SOCSO</span><span class="v" id="sd-grand-socso">${formatRM(sumSOCSO)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">EIS</span><span class="v" id="sd-grand-eis">${formatRM(sumEIS)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">PCB</span><span class="v" id="sd-grand-pcb">${formatRM(sumPCB)}</span></div>
-      <div class="pdoc-sd-tot budget"><span class="k">${isBm?'Bajet Diperlukan':'Budget Required'}</span><span class="v" id="sd-grand-budget">${formatRM(budgetRequired)}</span></div>
-    </div>
-    <div class="pdoc-sig-grid" style="margin:20px 12px 8px">
+    <div class="pdoc-sig-grid" style="margin:12px 12px 8px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
@@ -11139,7 +11078,7 @@ async function renderSalaryDisbursement(month, year) {
 // from the CURRENT on-screen input values (not just what was in the DB at
 // render time) — a user may edit a value and print before hitting Save.
 function _sdPreparePrint() {
-  _pdocSetPageOrientation('landscape', 6);
+  _pdocSetPageOrientation('landscape');
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
   // Always show signature slots on print (empty = space for wet-ink / stamp)
   ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
