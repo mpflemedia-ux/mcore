@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-f">
+<meta name="nexerp-build" content="2026-08-07-g">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -630,6 +630,11 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-sd-print-line strong { color:#0F172A; }
 .pdoc-sd-summary { display:flex; gap:16px; flex-wrap:wrap; padding:14px 24px; background:#F8FAFC; border-bottom:1px solid #E2E8F0; font-size:12px; color:#475569; }
 .pdoc-sd-summary b { color:#0F172A; font-family:'Space Grotesk',sans-serif; }
+.pdoc-sd-meta { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; font-size:10px; color:#64748B; border-bottom:1px solid #E2E8F0; background:#fff; letter-spacing:.02em; }
+.pdoc-sd-meta b { color:#0F172A; font-weight:600; }
+.pdoc-sd-table tfoot tr.sd-ft-mid td { background:color-mix(in srgb, var(--pdoc-accent) 88%, #0F172A); font-size:10px; font-weight:600; }
+.pdoc-sd-table tfoot tr.sd-ft-total td { background:color-mix(in srgb, var(--pdoc-accent) 55%, #0F172A); font-size:12px; font-weight:800; border-top:2px solid rgba(255,255,255,.35); }
+.pdoc-sd-table tfoot tr.sd-ft-budget td { background:color-mix(in srgb, var(--pdoc-accent) 40%, #0F172A); font-size:13px; font-weight:800; letter-spacing:.04em; }
 @media print {
   .pdoc-sd-line .form-select, .pdoc-sd-line .form-input { display:none !important; }
 }
@@ -650,7 +655,7 @@ tbody tr:hover{background:var(--bg)}
     border:none !important;
     border-radius:0 !important;
     background:transparent !important;
-    margin-top:18px !important;
+    margin-top:10px !important;
     page-break-inside:avoid;
     justify-content:center !important;
   }
@@ -658,16 +663,16 @@ tbody tr:hover{background:var(--bg)}
     display:flex;
     flex-direction:column;
     align-items:center;
-    flex:0 0 160px !important;
-    max-width:180px !important;
+    flex:0 0 150px !important;
+    max-width:170px !important;
   }
   /* Classic signature: space for pen, then line, then name, then role */
   .pdoc-sig-grid .form-label {
     order:3;
     font-weight:600;
-    font-size:9px;
+    font-size:8px;
     color:#475569 !important;
-    margin:4px 0 0 !important;
+    margin:3px 0 0 !important;
     letter-spacing:.04em;
     text-transform:uppercase;
   }
@@ -676,8 +681,8 @@ tbody tr:hover{background:var(--bg)}
     border:none !important;
     border-top:1.5px solid #334155 !important;
     border-radius:0 !important;
-    padding:6px 4px 0 !important;
-    margin-top:28px !important;
+    padding:4px 4px 0 !important;
+    margin-top:20px !important;
     text-align:center;
     background:transparent !important;
     font-weight:600;
@@ -692,20 +697,24 @@ tbody tr:hover{background:var(--bg)}
      Chrome's print "shrink to fit" scales the whole thing onto the page,
      instead of cutting columns off past the screen viewport width. */
   .pdoc-sd-scroll { overflow:visible !important; }
-  .pdoc-sd-table { font-size:10.5px !important; }
-  .pdoc-sd-table th { padding:8px 6px !important; font-size:9px !important; }
-  .pdoc-sd-table td { padding:8px 6px !important; line-height:1.45 !important; }
-  .pdoc-sd-table tfoot td { padding:8px 10px !important; }
-  .pdoc-sd-payee { font-size:11px !important; }
-  .pdoc-sd-print-line { font-size:10px !important; line-height:1.55 !important; }
-  .pdoc-sd-employer-note { font-size:9px !important; color:#475569 !important; margin-top:6px !important; line-height:1.4 !important; }
+  .pdoc-sd-meta { padding:5px 10px !important; font-size:9px !important; }
+  .pdoc-sd-table { font-size:9.5px !important; }
+  .pdoc-sd-table th { padding:6px 5px !important; font-size:8px !important; }
+  .pdoc-sd-table td { padding:5px 5px !important; line-height:1.35 !important; }
+  .pdoc-sd-table tfoot td { padding:5px 10px !important; }
+  .pdoc-sd-table tfoot tr.sd-ft-budget td { padding:8px 10px !important; font-size:12px !important; }
+  .pdoc-sd-payee { font-size:10px !important; }
+  .pdoc-sd-print-line { font-size:9px !important; line-height:1.4 !important; }
+  .pdoc-sd-employer-note { font-size:8px !important; color:#475569 !important; margin-top:3px !important; line-height:1.3 !important; }
+  /* Keep totals + signatures together; reduce orphan page-2 */
+  .pdoc-sd-closing { page-break-inside:avoid !important; break-inside:avoid !important; }
   .pdoc-sig-grid {
     display:flex !important;
     visibility:visible !important;
     page-break-inside:avoid !important;
     break-inside:avoid !important;
-    margin-top:28px !important;
-    padding-top:16px !important;
+    margin-top:14px !important;
+    padding-top:10px !important;
     border-top:1px solid #E2E8F0 !important;
   }
   .pdoc-sig-grid .form-group { display:flex !important; visibility:visible !important; }
@@ -10919,6 +10928,10 @@ async function renderSalaryDisbursement(month, year) {
   const _sdSigsPrefill = _sdLoadSigs()
   const _sigPrep = (_sdSigsPrefill.preparedBy!=null && String(_sdSigsPrefill.preparedBy).trim()!=='') ? _sdSigsPrefill.preparedBy : (APP.user.name||'')
   wrap.innerHTML = `
+  <div class="pdoc-sd-meta">
+    <span><b>SD-${year}${String(month).padStart(2,'0')}</b> · ${isBm?'Gaji':'Salary'} ${_pdocMonthYearLabel(month, year, isBm)} · ${data.length} ${isBm?'pekerja':'employees'}</span>
+    <span>${isBm?'SULIT — Untuk kelulusan dalaman':'CONFIDENTIAL — For internal approval'}</span>
+  </div>
   <div class="pdoc-sd-summary no-print">
     <span>${isBm?'Pekerja':'Employees'}: <b>${data.length}</b></span>
     <span>${isBm?'Jumlah Gaji':'Total Salary'}: <b>${formatRM(sumSalary)}</b></span>
@@ -11005,37 +11018,39 @@ async function renderSalaryDisbursement(month, year) {
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`}).join('')}</tbody>
     <tfoot>
-      <tr>
-        <td colspan="8" style="text-align:right;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${t.grandTotal}</td>
-        <td class="pdoc-sd-net" style="text-align:right;padding:10px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
+      <tr class="sd-ft-total">
+        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${t.grandTotal}</td>
+        <td class="pdoc-sd-net" style="text-align:right;padding:8px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
       </tr>
-      <tr>
-        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah KWSP (Majikan + Pekerja)':'Total EPF (Employer + Employee)'}</td>
-        <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-epf">${formatRM(sumEPF)}</td>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah KWSP (Majikan + Pekerja)':'Total EPF (Employer + Employee)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-epf">${formatRM(sumEPF)}</td>
       </tr>
-      <tr>
-        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah PERKESO (Majikan + Pekerja)':'Total SOCSO (Employer + Employee)'}</td>
-        <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-socso">${formatRM(sumSOCSO)}</td>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah PERKESO (Majikan + Pekerja)':'Total SOCSO (Employer + Employee)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-socso">${formatRM(sumSOCSO)}</td>
       </tr>
-      <tr>
-        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah SIP/EIS (Majikan + Pekerja)':'Total EIS (Employer + Employee)'}</td>
-        <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-eis">${formatRM(sumEIS)}</td>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah SIP/EIS (Majikan + Pekerja)':'Total EIS (Employer + Employee)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-eis">${formatRM(sumEIS)}</td>
       </tr>
-      <tr>
-        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah PCB (Pekerja sahaja)':'Total PCB (Employee only)'}</td>
-        <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-pcb">${formatRM(sumPCB)}</td>
+      <tr class="sd-ft-mid">
+        <td colspan="8" style="text-align:right;padding:6px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah PCB (Pekerja sahaja)':'Total PCB (Employee only)'}</td>
+        <td style="text-align:right;padding:6px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-pcb">${formatRM(sumPCB)}</td>
       </tr>
-      <tr>
-        <td colspan="8" style="text-align:right;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;border-top:1px solid rgba(255,255,255,.25)">${isBm?'Jumlah Keseluruhan Diperlukan':'Grand Total Budget Required'}</td>
-        <td style="text-align:right;padding:10px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
+      <tr class="sd-ft-budget">
+        <td colspan="8" style="text-align:right;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap">${isBm?'Jumlah Keseluruhan Diperlukan':'Grand Total Budget Required'}</td>
+        <td style="text-align:right;padding:10px 14px;font-size:15px;font-weight:800;color:#fff !important;white-space:nowrap" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
       </tr>
     </tfoot>
     </table>
-    <div class="pdoc-sig-grid" style="margin:16px 12px 20px">
+    <div class="pdoc-sd-closing">
+    <div class="pdoc-sig-grid" style="margin:12px 12px 8px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+    </div>
     </div>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
       <div style="font-size:11px;color:#64748B;max-width:520px;line-height:1.45">${t.sessionHint}</div>
