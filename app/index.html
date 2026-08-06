@@ -4281,15 +4281,17 @@ async function _damSave() {
 
 function _backfillLabels() {
   return APP.language==='bm' ? {
-    candidates:'Calon', created:'Dicipta', skippedExisting:'Dah Ada', skippedNoMapping:'Akaun Tiada', totalDebit:'Jumlah Debit', totalCredit:'Jumlah Kredit',
+    candidates:'Calon', created:'Dicipta', skippedExisting:'Dah Ada', skippedNoMapping:'Akaun Tiada', errorsCol:'Ralat', totalDebit:'Jumlah Debit', totalCredit:'Jumlah Kredit',
     invoices:'Bayaran Invois', pos:'Jualan POS', expense:'Tuntutan Perbelanjaan', bills:'Bayaran Bil Pembekal', payroll:'Payroll', vouchers:'Baucar Bayaran',
     grandTotal:'Jumlah Keseluruhan', running:'Memproses...', dryRunBadge:'PRATONTON — tiada apa ditulis ke DB', liveBadge:'DIJALANKAN — journal entries dicipta',
     confirmLive:'Ini akan TULIS journal entries sebenar ke database untuk semua rekod yang disenaraikan. Teruskan?',
+    errorsTitle:'Rekod bermasalah (tidak diproses — betulkan dulu, pastu run semula)',
   } : {
-    candidates:'Candidates', created:'Created', skippedExisting:'Already Posted', skippedNoMapping:'No Account', totalDebit:'Total Debit', totalCredit:'Total Credit',
+    candidates:'Candidates', created:'Created', skippedExisting:'Already Posted', skippedNoMapping:'No Account', errorsCol:'Errors', totalDebit:'Total Debit', totalCredit:'Total Credit',
     invoices:'Invoice Payments', pos:'POS Sales', expense:'Expense Claims', bills:'Supplier Bill Payments', payroll:'Payroll', vouchers:'Payment Vouchers',
     grandTotal:'Grand Total', running:'Processing...', dryRunBadge:'PREVIEW — nothing written to DB', liveBadge:'RUN COMPLETE — journal entries created',
     confirmLive:'This will WRITE real journal entries to the database for every record listed below. Continue?',
+    errorsTitle:'Problem records (not processed — fix these, then re-run)',
   }
 }
 
@@ -4307,6 +4309,7 @@ function _backfillReportHtml(report) {
       <td style="text-align:right;color:var(--success)">${s.created}</td>
       <td style="text-align:right;color:var(--text-3)">${s.skippedExisting}</td>
       <td style="text-align:right;color:var(--warning)">${s.skippedNoMapping}</td>
+      <td style="text-align:right;color:${s.errors.length?'var(--danger)':'var(--text-3)'}">${s.errors.length}</td>
       <td style="text-align:right">${formatRM(s.totalDebit)}</td>
       <td style="text-align:right">${formatRM(s.totalCredit)}</td>
     </tr>`
@@ -4314,15 +4317,24 @@ function _backfillReportHtml(report) {
   const badge = report.dryRun
     ? `<span style="color:var(--warning);font-weight:600">${l.dryRunBadge}</span>`
     : `<span style="color:var(--success);font-weight:600">${l.liveBadge}</span>`
+  const allErrors = sections.flatMap(([key,label]) => report[key].errors.map(e => ({ section: label, ...e })))
+  const errorsBlock = allErrors.length ? `
+  <div style="margin-top:16px;border:1px solid var(--danger);border-radius:var(--radius-sm);padding:12px 14px">
+    <div style="font-weight:700;color:var(--danger);margin-bottom:8px">${l.errorsTitle} (${allErrors.length})</div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+      ${allErrors.map(e => `<div><strong>[${e.section}]</strong> ${_aiEscapeHtml(e.label||'')} — <span style="color:var(--danger)">${_aiEscapeHtml(e.message)}</span></div>`).join('')}
+    </div>
+  </div>` : ''
   return `
   <div style="margin-bottom:10px">${badge}</div>
   <div style="overflow-x:auto">
     <table>
-      <thead><tr><th></th><th style="text-align:right">${l.candidates}</th><th style="text-align:right">${l.created}</th><th style="text-align:right">${l.skippedExisting}</th><th style="text-align:right">${l.skippedNoMapping}</th><th style="text-align:right">${l.totalDebit}</th><th style="text-align:right">${l.totalCredit}</th></tr></thead>
+      <thead><tr><th></th><th style="text-align:right">${l.candidates}</th><th style="text-align:right">${l.created}</th><th style="text-align:right">${l.skippedExisting}</th><th style="text-align:right">${l.skippedNoMapping}</th><th style="text-align:right">${l.errorsCol}</th><th style="text-align:right">${l.totalDebit}</th><th style="text-align:right">${l.totalCredit}</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr style="font-weight:700"><td>${l.grandTotal}</td><td></td><td></td><td></td><td></td><td style="text-align:right">${formatRM(report.grandTotalDebit)}</td><td style="text-align:right">${formatRM(report.grandTotalCredit)}</td></tr></tfoot>
+      <tfoot><tr style="font-weight:700"><td>${l.grandTotal}</td><td></td><td></td><td></td><td></td><td></td><td style="text-align:right">${formatRM(report.grandTotalDebit)}</td><td style="text-align:right">${formatRM(report.grandTotalCredit)}</td></tr></tfoot>
     </table>
-  </div>`
+  </div>
+  ${errorsBlock}`
 }
 
 async function _backfillRun(live) {
@@ -4492,7 +4504,7 @@ async function _journalAlreadyPosted(sourceTable, sourceId) {
 // other query in this file — running this posts only for the tenant of
 // whoever is logged in and clicked the button, never cross-tenant.
 async function _backfillHistoricalJournals(cutoffDate, dryRun) {
-  const section = () => ({ candidates: 0, created: 0, skippedExisting: 0, skippedNoMapping: 0, totalDebit: 0, totalCredit: 0, items: [] })
+  const section = () => ({ candidates: 0, created: 0, skippedExisting: 0, skippedNoMapping: 0, totalDebit: 0, totalCredit: 0, items: [], errors: [] })
   const report = {
     cutoffDate, dryRun,
     invoices: section(), pos: section(), expense: section(), bills: section(), payroll: section(), vouchers: section(),
@@ -4505,6 +4517,19 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
     sec.totalDebit += result.totalDebit; sec.totalCredit += result.totalCredit
     report.grandTotalDebit += result.totalDebit; report.grandTotalCredit += result.totalCredit
   }
+  // One bad historical record (e.g. an unbalanced entry from stale/edited
+  // data) must never abort the whole scan — every posting call below is
+  // wrapped so its section records the failure and every OTHER record
+  // still gets evaluated and reported in the same run, instead of the
+  // caller having to fix one record, re-run, hit the next one, and repeat.
+  const runPost = async (sec, label, fn) => {
+    try {
+      const result = await fn()
+      addResult(sec, result, label)
+    } catch(e) {
+      sec.errors.push({ label, message: e.message })
+    }
+  }
 
   // 1) Invoices with paid_amt > 0 — one backfilled entry per invoice for its
   // current paid_amt (not one per historical payment row — this is a one-time
@@ -4514,13 +4539,14 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
   report.invoices.candidates = (invoices||[]).length
   for(const inv of (invoices||[])) {
     if(await _journalAlreadyPosted('invoices', inv.id)) { report.invoices.skippedExisting++; continue }
-    const cogs = inv.status==='paid' ? await _calcCOGS('invoice_items','invoice_id',inv.id) : 0
-    const result = await _postSaleJournal({
-      description: `Invoice Payment ${inv.ref_no} (backfill)`,
-      entryDate: inv.issue_date, amount: Number(inv.paid_amt), cogsAmount: cogs,
-      sourceTable: 'invoices', sourceId: inv.id, dryRun,
+    await runPost(report.invoices, inv.ref_no, async () => {
+      const cogs = inv.status==='paid' ? await _calcCOGS('invoice_items','invoice_id',inv.id) : 0
+      return _postSaleJournal({
+        description: `Invoice Payment ${inv.ref_no} (backfill)`,
+        entryDate: inv.issue_date, amount: Number(inv.paid_amt), cogsAmount: cogs,
+        sourceTable: 'invoices', sourceId: inv.id, dryRun,
+      })
     })
-    addResult(report.invoices, result, inv.ref_no)
   }
 
   // 2) Completed POS transactions
@@ -4529,13 +4555,14 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
   report.pos.candidates = (posTxns||[]).length
   for(const txn of (posTxns||[])) {
     if(await _journalAlreadyPosted('pos_transactions', txn.id)) { report.pos.skippedExisting++; continue }
-    const cogs = await _calcCOGS('pos_transaction_items','txn_id',txn.id)
-    const result = await _postSaleJournal({
-      description: `POS Sale ${txn.receipt_no} (backfill)`,
-      entryDate: (txn.created_at||'').slice(0,10), amount: Number(txn.total), cogsAmount: cogs,
-      sourceTable: 'pos_transactions', sourceId: txn.id, dryRun,
+    await runPost(report.pos, txn.receipt_no, async () => {
+      const cogs = await _calcCOGS('pos_transaction_items','txn_id',txn.id)
+      return _postSaleJournal({
+        description: `POS Sale ${txn.receipt_no} (backfill)`,
+        entryDate: (txn.created_at||'').slice(0,10), amount: Number(txn.total), cogsAmount: cogs,
+        sourceTable: 'pos_transactions', sourceId: txn.id, dryRun,
+      })
     })
-    addResult(report.pos, result, txn.receipt_no)
   }
 
   // 3) Approved/paid expense claims
@@ -4547,7 +4574,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
     const cashAcc = await _getDefaultAccountId('cash')
     const expenseAcc = await _getExpenseAccountId(claim)
     if(!cashAcc || !expenseAcc) { report.expense.skippedNoMapping++; continue }
-    const result = await _postJournalEntry({
+    await runPost(report.expense, claim.ref_no, () => _postJournalEntry({
       description: `Expense Claim ${claim.ref_no} (backfill)`,
       entryDate: claim.claim_date, entryType: 'auto',
       lines: [
@@ -4555,8 +4582,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
         { account_id: cashAcc, debit: 0, credit: Number(claim.total_amount) },
       ],
       sourceTable: 'expense_claims', sourceId: claim.id, dryRun,
-    })
-    addResult(report.expense, result, claim.ref_no)
+    }))
   }
 
   // 4) Supplier bills with paid_amt > 0 — same one-entry-per-bill simplification as invoices
@@ -4568,7 +4594,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
     const apAcc = await _getDefaultAccountId('accounts_payable')
     const cashAcc = await _getDefaultAccountId('cash')
     if(!apAcc || !cashAcc) { report.bills.skippedNoMapping++; continue }
-    const result = await _postJournalEntry({
+    await runPost(report.bills, bill.ref_no, () => _postJournalEntry({
       description: `Supplier Bill Payment ${bill.ref_no} (backfill)`,
       entryDate: bill.bill_date, entryType: 'auto',
       lines: [
@@ -4576,23 +4602,27 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
         { account_id: cashAcc, debit: 0, credit: Number(bill.paid_amt) },
       ],
       sourceTable: 'supplier_bills', sourceId: bill.id, dryRun,
-    })
-    addResult(report.bills, result, bill.ref_no)
+    }))
   }
 
   // 5) Payroll records already generated — includes allowance_1/2/3,
   // deduction_1/2, advance since Salary Disbursement editing can set these
   // on top of the plain _calcPayroll output, and they change net_pay; the
   // journal must balance against the row's ACTUAL stored net_pay, not just
-  // the basic-minus-statutory case (see _postPayrollJournal).
-  const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,generated_at,allowance_1,allowance_2,allowance_3,advance,deduction_1,deduction_2')
+  // the basic-minus-statutory case (see _postPayrollJournal). Joins
+  // employees(name) purely so an unbalanced-entry error can name WHICH
+  // employee's record is the problem, since the entry description alone
+  // ("Payroll MM/YYYY") doesn't distinguish employees.
+  const {data: payrolls} = await sb.from('payroll_records').select('id,employee_id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,generated_at,allowance_1,allowance_2,allowance_3,advance,deduction_1,deduction_2,employees(name)')
     .eq('tenant_id',APP.tenant.id).lt('generated_at',cutoffDate)
   report.payroll.candidates = (payrolls||[]).length
   for(const pr of (payrolls||[])) {
     if(await _journalAlreadyPosted('payroll_records', pr.id)) { report.payroll.skippedExisting++; continue }
-    const entryDate = (pr.generated_at||'').slice(0,10) || `${pr.year}-${String(pr.month).padStart(2,'0')}-01`
-    const result = await _postPayrollJournal(pr, pr.month, pr.year, pr.id, dryRun, entryDate)
-    addResult(report.payroll, result, `${String(pr.month).padStart(2,'0')}/${pr.year}`)
+    const label = `${pr.employees?.name||pr.employee_id} ${String(pr.month).padStart(2,'0')}/${pr.year}`
+    await runPost(report.payroll, label, () => {
+      const entryDate = (pr.generated_at||'').slice(0,10) || `${pr.year}-${String(pr.month).padStart(2,'0')}-01`
+      return _postPayrollJournal(pr, pr.month, pr.year, pr.id, dryRun, entryDate)
+    })
   }
 
   // 6) Paid payment vouchers — the original bug (journal_entries header with
@@ -4606,7 +4636,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
     const cashAcc = await _getDefaultAccountId('cash')
     const debitAcc = v.bill_id ? await _getDefaultAccountId('accounts_payable') : await _getDefaultAccountId('general_expense')
     if(!cashAcc || !debitAcc) { report.vouchers.skippedNoMapping++; continue }
-    const result = await _postJournalEntry({
+    await runPost(report.vouchers, v.ref_no, () => _postJournalEntry({
       description: `PV ${v.ref_no||''} — ${v.payee_name||''} (backfill)`,
       entryDate: v.voucher_date, entryType: 'auto',
       lines: [
@@ -4614,8 +4644,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
         { account_id: cashAcc, debit: 0, credit: Number(v.amount||0) },
       ],
       sourceTable: 'payment_vouchers', sourceId: v.id, dryRun,
-    })
-    addResult(report.vouchers, result, v.ref_no)
+    }))
   }
 
   return report
