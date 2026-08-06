@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-b">
+<meta name="nexerp-build" content="2026-08-07-c">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -10909,16 +10909,11 @@ async function renderSalaryDisbursement(month, year) {
   // Company cost = gross earnings (basic+allow) + employer statutory contributions
   const companyCost = sumSalary + sumAllow + sumEmployer
 
-  // Budget Approval Summary (for BOD approval) — Net Pay + Employer Contrib.
-  // + Employee Contrib. Mike confirmed advance is explicitly OUT of scope
-  // for this figure (the earlier version added it back in, which cancelled
-  // out algebraically against net_pay's own advance deduction — see commit
-  // b32659e). sumStat (already computed above for the existing footer line)
-  // IS the employee-contrib total (EPF+SOCSO+EIS+PCB, employee side) —
-  // reused as-is rather than recomputed, so there's exactly one definition.
-  // When every employee has zero advance/other-deductions this ties out
-  // exactly to companyCost (verified in the test) — a useful sanity check.
-  const budgetRequired = grandTotal + sumEmployer + sumStat
+  // Budget Approval Summary (BOD): Net Pay + EPF + SOCSO + EIS + PCB
+  // (employer+employee portions). Same value as Net + Employer + Employee
+  // statutory; advance stays out of scope (Mike). Display is by statutory
+  // type — clearer for board than employer vs employee split.
+  const budgetRequired = grandTotal + sumEPF + sumSOCSO + sumEIS + sumPCB
 
   const _sdSigsPrefill = _sdLoadSigs()
   const _sigPrep = (_sdSigsPrefill.preparedBy!=null && String(_sdSigsPrefill.preparedBy).trim()!=='') ? _sdSigsPrefill.preparedBy : (APP.user.name||'')
@@ -10934,18 +10929,13 @@ async function renderSalaryDisbursement(month, year) {
   <div class="pdoc-section-title">${isBm?'Ringkasan Kelulusan Bajet (Lembaga Pengarah)':'Budget Approval Summary (Board of Directors)'}</div>
   <table class="pdoc-table"><tbody>
     <tr><td>${isBm?'Jumlah Gaji Bersih kepada Pekerja':'Total Net Pay to Employees'}</td><td style="text-align:right" id="sd-budget-net">${formatRM(grandTotal)}</td></tr>
-    <tr><td>${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS+PCB)':'Total Employer Contrib. (EPF+SOCSO+EIS+PCB)'}</td><td style="text-align:right" id="sd-budget-employer">${formatRM(sumEmployer)}</td></tr>
-    <tr><td>${isBm?'Jumlah Caruman Pekerja (EPF+SOCSO+EIS+PCB)':'Total Employee Contrib. (EPF+SOCSO+EIS+PCB)'}</td><td style="text-align:right" id="sd-budget-employee">${formatRM(sumStat)}</td></tr>
-  </tbody></table>
-  <div class="pdoc-budget-bar"><span class="lbl">${isBm?'JUMLAH KESELURUHAN DIPERLUKAN':'GRAND TOTAL BUDGET REQUIRED'}</span><span class="amt" id="sd-budget-required">${formatRM(budgetRequired)}</span></div>
-  <div class="pdoc-section-title">${isBm?'Pecahan Mengikut Jenis Caruman (maklumat)':'Breakdown by Statutory Type (info)'}</div>
-  <table class="pdoc-table"><tbody>
     <tr><td>${isBm?'Jumlah KWSP (Majikan + Pekerja)':'Total EPF (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-epf">${formatRM(sumEPF)}</td></tr>
     <tr><td>${isBm?'Jumlah PERKESO (Majikan + Pekerja)':'Total SOCSO (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-socso">${formatRM(sumSOCSO)}</td></tr>
     <tr><td>${isBm?'Jumlah SIP/EIS (Majikan + Pekerja)':'Total EIS (Employer + Employee)'}</td><td style="text-align:right" id="sd-budget-eis">${formatRM(sumEIS)}</td></tr>
-    <tr><td>${isBm?'Jumlah PCB (Pekerja sahaja — tiada bahagian majikan)':'Total PCB (Employee only — no employer portion)'}</td><td style="text-align:right" id="sd-budget-pcb">${formatRM(sumPCB)}</td></tr>
+    <tr><td>${isBm?'Jumlah PCB (Pekerja sahaja)':'Total PCB (Employee only)'}</td><td style="text-align:right" id="sd-budget-pcb">${formatRM(sumPCB)}</td></tr>
   </tbody></table>
-  <div style="font-size:11px;color:#64748b;margin:8px 24px 0;line-height:1.4">${isBm?'Nota: Jumlah KWSP + PERKESO + SIP/EIS + PCB di atas adalah pecahan mengikut jenis caruman untuk rujukan sahaja (bukan tambahan kepada Jumlah Keseluruhan) — ia sepatutnya sama dengan Jumlah Caruman Majikan + Jumlah Caruman Pekerja di atas.':'Note: The EPF + SOCSO + EIS + PCB totals above are a breakdown by contribution type for reference only (not additional to the Grand Total) — they should equal Total Employer Contrib. + Total Employee Contrib. above.'}</div>
+  <div class="pdoc-budget-bar"><span class="lbl">${isBm?'JUMLAH KESELURUHAN DIPERLUKAN':'GRAND TOTAL BUDGET REQUIRED'}</span><span class="amt" id="sd-budget-required">${formatRM(budgetRequired)}</span></div>
+  <div style="font-size:11px;color:#64748b;margin:8px 24px 0;line-height:1.4">${isBm?'Jumlah keseluruhan = Gaji bersih + KWSP + PERKESO + EIS + PCB (semua bahagian majikan & pekerja).':'Grand total = Net pay + EPF + SOCSO + EIS + PCB (employer & employee portions).'}</div>
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
     <table class="pdoc-sd-table"><thead><tr>
       <th style="width:36px">${t.no}</th>
@@ -11026,7 +11016,7 @@ async function renderSalaryDisbursement(month, year) {
         <td class="pdoc-sd-net" style="text-align:right;padding:10px 14px;font-size:14px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-total">${formatRM(grandTotal)}</td>
       </tr>
       <tr>
-        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS+PCB)':'Total Employer Contrib. (EPF+SOCSO+EIS+PCB)'}</td>
+        <td colspan="8" style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.95">${isBm?'Jumlah Caruman Majikan (EPF+SOCSO+EIS)':'Total Employer Contrib. (EPF+SOCSO+EIS)'}</td>
         <td style="text-align:right;padding:8px 14px;font-size:12px;font-weight:700;color:#fff !important;white-space:nowrap" id="sd-grand-employer">${formatRM(sumEmployer)}</td>
       </tr>
       <tr>
@@ -11209,11 +11199,8 @@ function _sdRecalc() {
     _sdMarkAmended(`sd-pcb-${r.id}`, r.pcb)
   })
   const companyCost = sumSalary + sumAllow + sumEmployer
-  // Grand Total Budget Required = Net Pay + Employer Contrib. + Employee
-  // Contrib. — advance is intentionally NOT part of this (Mike confirmed
-  // out of scope; the earlier version added it back in, which cancelled
-  // out algebraically against net_pay's own advance deduction).
-  const budgetRequired = grand + sumEmployer + sumStat
+  // Same as render: Net + EPF + SOCSO + EIS + PCB (all portions)
+  const budgetRequired = grand + sumEPF + sumSOCSO + sumEIS + sumPCB
   const setTxt = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt }
   setTxt('sd-grand-total', formatRM(grand))
   setTxt('sd-summary-total', formatRM(grand))
@@ -11228,8 +11215,6 @@ function _sdRecalc() {
   setTxt('sd-grand-employee', formatRM(sumStat))
   setTxt('sd-grand-company', formatRM(companyCost))
   setTxt('sd-budget-net', formatRM(grand))
-  setTxt('sd-budget-employer', formatRM(sumEmployer))
-  setTxt('sd-budget-employee', formatRM(sumStat))
   setTxt('sd-budget-required', formatRM(budgetRequired))
   setTxt('sd-budget-epf', formatRM(sumEPF))
   setTxt('sd-budget-socso', formatRM(sumSOCSO))
