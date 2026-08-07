@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ak">
+<meta name="nexerp-build" content="2026-08-07-am">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2769,6 +2769,7 @@ async function _dbMonthPnL(fromDate, toDateExclusive) {
 
 async function loadDashboardData() {
   if(!APP.tenant.id) return
+  _warnIfDefaultAccountsMissing()
   const isBm = APP.language==='bm'
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -2885,14 +2886,14 @@ async function loadDashboardData() {
     avg:     { label: isBm?'Purata Nilai Invois':'Avg Invoice Value', value: formatRM(curAvg), delta: pctChange(curAvg,prevAvg), color:'#F59E0B' },
     count:   { label: t_dash('invoices').charAt(0).toUpperCase()+t_dash('invoices').slice(1), value: String(curCount), delta: pctChange(curCount,prevCount), color:'#38BDF8' },
     revenue: {
-      label: isBm?'Hasil (P&L)':'Revenue (P&L)',
+      label: isBm?'Hasil':'Revenue',
       value: formatRM(plThis.revenue),
       delta: pctChange(plThis.revenue, plLast.revenue),
       color: '#22C55E',
       valueColor: ''
     },
     expenses: {
-      label: isBm?'Perbelanjaan (P&L)':'Expenses (P&L)',
+      label: isBm?'Perbelanjaan':'Expenses',
       value: formatRM(plThis.expense),
       delta: pctChange(plThis.expense, plLast.expense),
       color: '#F59E0B',
@@ -4659,6 +4660,29 @@ async function _backfillRun(live) {
   }
 }
 
+
+// Required default-account keys for day-to-day auto-posting
+const REQUIRED_DEFAULT_ACCOUNT_KEYS = ['cash','sales_revenue','accounts_payable','general_expense','salary_expense','epf_payable','socso_payable','eis_payable','pcb_payable']
+
+async function _missingDefaultAccountKeys() {
+  try {
+    const {data} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id', APP.tenant.id)
+    const set = new Set((data||[]).filter(m => m.account_id).map(m => m.mapping_key))
+    return REQUIRED_DEFAULT_ACCOUNT_KEYS.filter(k => !set.has(k))
+  } catch(e) { return REQUIRED_DEFAULT_ACCOUNT_KEYS.slice() }
+}
+
+async function _warnIfDefaultAccountsMissing() {
+  const missing = await _missingDefaultAccountKeys()
+  if(!missing.length) return false
+  const isBm = APP.language==='bm'
+  const msg = isBm
+    ? 'Akaun lalai belum lengkap. Sila tetapkan di Tetapan → Akaun Lalai supaya jurnal automatik dan laporan tepat.'
+    : 'Default accounts are incomplete. Set them under Settings → Default Accounts so auto-posting and reports work correctly.'
+  showToast(msg, 'warning')
+  return true
+}
+
 // Looks up a tenant's configured default account for a given mapping_key
 // (see DEFAULT_ACCOUNT_MAPPING_KEYS). Returns null if not configured —
 // callers must handle that by skipping the journal post with a clear
@@ -5644,12 +5668,13 @@ function renderAccounting(params={}) {
   if(params.view==='fa-form') { renderFAForm(); return }
   if(params.view==='fa-detail') { renderFADetail(params.id); return }
   if(params.view==='vouchers' || params.view==='pv-form' || params.view==='pv-detail') { renderPaymentVouchers(params); return }
+  if(params.view==='opening-balance') { renderOpeningBalance(); return }
   renderCOAList()
 }
 
 function _accTabs(active) {
-  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap', pv:'Baucar Bayaran' }
-    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets', pv:'Payment Vouchers' }
+  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap', pv:'Baucar Bayaran', ob:'Baki Pembukaan' }
+    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets', pv:'Payment Vouchers', ob:'Opening Balance' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
     <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
@@ -5658,7 +5683,82 @@ function _accTabs(active) {
     <button class="btn btn-sm ${active==='expense'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'expense'})"><i class="ti ti-receipt"></i> ${t.expense}</button>
     <button class="btn btn-sm ${active==='reconcile'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'reconcile'})"><i class="ti ti-arrows-left-right"></i> ${t.reconcile}</button>
     <button class="btn btn-sm ${active==='fa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'fixed-assets'})"><i class="ti ti-building"></i> ${t.fa}</button>
+    <button class="btn btn-sm ${active==='ob'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'opening-balance'})"><i class="ti ti-building-bank"></i> ${t.ob}</button>
   </div>`
+}
+
+
+// ─── Opening Balance (capital injection) ─────────────────────────────────────
+async function renderOpeningBalance() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Baki Pembukaan', note:'Catat modal atau baki bank permulaan supaya Kunci Kira-kira tidak menunjukkan tunai negatif selepas penggajian. Entri: Debit Tunai/Bank, Kredit Modal.',
+    date:'Tarikh', amount:'Jumlah (RM)', cashAcc:'Akaun Tunai / Bank', capitalAcc:'Akaun Modal / Ekuiti', desc:'Keterangan',
+    save:'Hantar Entri', saved:'Baki pembukaan direkodkan.', needAmt:'Sila masukkan jumlah yang sah.', needAcc:'Sila pilih kedua-dua akaun.',
+    select:'-- Pilih akaun --'
+  } : {
+    title:'Opening Balance', note:'Record starting capital or bank balance so the Balance Sheet does not show negative cash after payroll. Entry: Debit Cash/Bank, Credit Capital/Equity.',
+    date:'Date', amount:'Amount (RM)', cashAcc:'Cash / Bank account', capitalAcc:'Capital / Equity account', desc:'Description',
+    save:'Post Entry', saved:'Opening balance posted.', needAmt:'Please enter a valid amount.', needAcc:'Please select both accounts.',
+    select:'-- Select account --'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_accTabs('ob')}
+  <div class="card" style="max-width:560px">
+    <div style="padding:16px;font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:8px">${t.note}</div>
+    <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
+      <div class="form-group"><label class="form-label">${t.date}</label><input type="date" class="form-input" id="ob-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="form-label">${t.amount}</label><input type="number" min="0" step="0.01" class="form-input" id="ob-amount" placeholder="0.00"></div>
+      <div class="form-group"><label class="form-label">${t.cashAcc}</label><select class="form-select" id="ob-cash"></select></div>
+      <div class="form-group"><label class="form-label">${t.capitalAcc}</label><select class="form-select" id="ob-capital"></select></div>
+      <div class="form-group"><label class="form-label">${t.desc}</label><input type="text" class="form-input" id="ob-desc" value="${isBm?'Baki pembukaan modal':'Opening capital balance'}"></div>
+      <button class="btn btn-primary" onclick="_obPost()"><i class="ti ti-check"></i> ${t.save}</button>
+    </div>
+  </div>`
+  const {data: coa} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('is_active',true).order('code')
+  const cashDef = await _getDefaultAccountId('cash')
+  const opts = (list, selected) => {
+    const ph = `<option value="">${t.select}</option>`
+    return ph + (list||[]).map(a => `<option value="${a.id}" ${selected&&selected===a.id?'selected':''}>${a.code} — ${a.name_en||''}</option>`).join('')
+  }
+  const assets = (coa||[]).filter(a => a.account_type==='asset')
+  const equity = (coa||[]).filter(a => a.account_type==='equity' || /capital|modal|equity|owner/i.test(a.name_en||'') || String(a.code||'').startsWith('3'))
+  const cashEl = document.getElementById('ob-cash')
+  const capEl = document.getElementById('ob-capital')
+  if(cashEl) cashEl.innerHTML = opts(assets.length?assets:coa, cashDef)
+  if(capEl) capEl.innerHTML = opts(equity.length?equity:coa, null)
+}
+
+async function _obPost() {
+  const isBm = APP.language==='bm'
+  const amount = Number(document.getElementById('ob-amount')?.value||0)
+  const cashId = document.getElementById('ob-cash')?.value
+  const capId = document.getElementById('ob-capital')?.value
+  const entryDate = document.getElementById('ob-date')?.value || new Date().toISOString().slice(0,10)
+  const description = (document.getElementById('ob-desc')?.value||'').trim() || (isBm?'Baki pembukaan modal':'Opening capital balance')
+  if(!(amount>0)) { showToast(isBm?'Sila masukkan jumlah yang sah.':'Please enter a valid amount.', 'warning'); return }
+  if(!cashId || !capId) { showToast(isBm?'Sila pilih kedua-dua akaun.':'Please select both accounts.', 'warning'); return }
+  if(cashId === capId) { showToast(isBm?'Akaun debit dan kredit mesti berbeza.':'Debit and credit accounts must differ.', 'warning'); return }
+  try {
+    await _postJournalEntry({
+      description,
+      entryDate,
+      entryType: 'manual',
+      lines: [
+        { account_id: cashId, debit: amount, credit: 0 },
+        { account_id: capId, debit: 0, credit: amount },
+      ],
+      sourceTable: 'opening_balance',
+      sourceId: null,
+      dryRun: false,
+    })
+    showToast(isBm?'Baki pembukaan direkodkan.':'Opening balance posted.', 'success')
+    openPage('accounting',{view:'journal'})
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 // ─── Fixed Assets: List ──────────────────────────────────────────────────────
@@ -12625,6 +12725,7 @@ async function _posCheckout() {
 
 function renderReports(params={}) {
   if(params.view==='balance-sheet') { renderBalanceSheet(); return }
+  if(params.view==='trial-balance') { renderTrialBalance(); return }
   if(params.view==='sales') { renderSalesReport(); return }
   if(params.view==='custom') { renderCustomReport(); return }
   if(params.view==='sst') { renderSstReport(); return }
@@ -12632,11 +12733,12 @@ function renderReports(params={}) {
 }
 
 function _repTabs(active) {
-  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', sales:'Laporan Jualan', sst:'SST', custom:'Laporan Tersendiri' }
-    : { pnl:'Income Statement', bs:'Balance Sheet', sales:'Sales Report', sst:'SST', custom:'Custom Report' }
+  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', tb:'Imbangan Duga', sales:'Laporan Jualan', sst:'SST', custom:'Laporan Tersendiri' }
+    : { pnl:'Income Statement', bs:'Balance Sheet', tb:'Trial Balance', sales:'Sales Report', sst:'SST', custom:'Custom Report' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='pnl'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{})"><i class="ti ti-report-money"></i> ${t.pnl}</button>
     <button class="btn btn-sm ${active==='bs'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'balance-sheet'})"><i class="ti ti-scale"></i> ${t.bs}</button>
+    <button class="btn btn-sm ${active==='tb'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'trial-balance'})"><i class="ti ti-sum"></i> ${t.tb}</button>
     <button class="btn btn-sm ${active==='sales'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sales'})"><i class="ti ti-chart-bar"></i> ${t.sales}</button>
     <button class="btn btn-sm ${active==='sst'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sst'})"><i class="ti ti-receipt-tax"></i> ${t.sst}</button>
     <button class="btn btn-sm ${active==='custom'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'custom'})"><i class="ti ti-table"></i> ${t.custom}</button>
@@ -12685,6 +12787,96 @@ function _repDateRangeBar(fromId, toId, onApply) {
     <div class="form-group"><label class="form-label">${t.from}</label><input id="${fromId}" type="date" class="form-input" value="${firstOfMonth}"></div>
     <div class="form-group"><label class="form-label">${t.to}</label><input id="${toId}" type="date" class="form-input" value="${today}"></div>
     <button class="btn btn-primary btn-sm" onclick="${onApply}">${t.apply}</button>
+  </div>`
+}
+
+
+// ─── Trial Balance ──────────────────────────────────────────────────────────
+async function renderTrialBalance() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Laporan / Imbangan Duga', asOf:'Sehingga', apply:'Guna', account:'Akaun', debit:'Debit', credit:'Kredit',
+    total:'Jumlah', balanced:'Seimbang', unbalanced:'Tidak seimbang', noData:'Tiada data sehingga tarikh ini'
+  } : {
+    title:'Reports / Trial Balance', asOf:'As of', apply:'Apply', account:'Account', debit:'Debit', credit:'Credit',
+    total:'Total', balanced:'Balanced', unbalanced:'Out of balance', noData:'No data as of this date'
+  }
+  const today = new Date().toISOString().slice(0,10)
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_repTabs('tb')}
+  <div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+    <div class="form-group"><label class="form-label">${t.asOf}</label><input id="tb-asof" type="date" class="form-input" value="${today}"></div>
+    <button class="btn btn-primary btn-sm" onclick="_tbLoad()">${t.apply}</button>
+  </div>
+  <div id="tb-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  await _tbLoad()
+}
+
+async function _tbLoad() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    account:'Akaun', debit:'Debit', credit:'Kredit', total:'Jumlah', balanced:'Seimbang', unbalanced:'Tidak seimbang', noData:'Tiada data sehingga tarikh ini'
+  } : {
+    account:'Account', debit:'Debit', credit:'Credit', total:'Total', balanced:'Balanced', unbalanced:'Out of balance', noData:'No data as of this date'
+  }
+  const asOf = document.getElementById('tb-asof')?.value || new Date().toISOString().slice(0,10)
+  const result = document.getElementById('tb-result')
+  if(!result) return
+  result.innerHTML = `<div class="empty-state" style="padding:40px"><div class="spinner"></div></div>`
+
+  const {data: entries} = await sb.from('journal_entries').select('id')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).lte('entry_date', asOf)
+  const entryIds = (entries||[]).map(e=>e.id)
+  const {data: accounts} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('code')
+  const byAccount = {}
+  if(entryIds.length) {
+    const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+    ;(lines||[]).forEach(l => {
+      if(!byAccount[l.account_id]) byAccount[l.account_id] = {debit:0, credit:0}
+      byAccount[l.account_id].debit += Number(l.debit_amt||0)
+      byAccount[l.account_id].credit += Number(l.credit_amt||0)
+    })
+  }
+  let totalD = 0, totalC = 0
+  const rows = []
+  ;(accounts||[]).forEach(a => {
+    const b = byAccount[a.id] || {debit:0, credit:0}
+    // Net to trial balance side
+    const net = b.debit - b.credit
+    let d = 0, cr = 0
+    if(net > 0.0001) d = net
+    else if(net < -0.0001) cr = -net
+    if(d === 0 && cr === 0) return
+    totalD += d; totalC += cr
+    rows.push({ a, d, cr })
+  })
+  if(!rows.length) {
+    result.innerHTML = `<div class="card"><div class="empty-state" style="padding:48px"><p>${t.noData}</p></div></div>`
+    return
+  }
+  const ok = Math.abs(totalD - totalC) < 0.02
+  result.innerHTML = `
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr><th>${t.account}</th><th style="text-align:right">${t.debit}</th><th style="text-align:right">${t.credit}</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td>${r.a.code} — ${_aiEscapeHtml(r.a.name_en||'')}</td>
+          <td style="text-align:right">${r.d?formatRM(r.d):''}</td>
+          <td style="text-align:right">${r.cr?formatRM(r.cr):''}</td>
+        </tr>`).join('')}
+        <tr style="font-weight:700;border-top:2px solid var(--border)">
+          <td>${t.total}</td>
+          <td style="text-align:right">${formatRM(totalD)}</td>
+          <td style="text-align:right">${formatRM(totalC)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="padding:12px 16px;font-size:13px;color:${ok?'var(--success)':'var(--danger)'}">
+      ${ok ? ('✓ '+t.balanced) : ('⚠ '+t.unbalanced+' — Δ '+formatRM(Math.abs(totalD-totalC)))}
+    </div>
   </div>`
 }
 
