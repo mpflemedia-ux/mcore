@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bj">
+<meta name="nexerp-build" content="2026-08-08-crm-supp-warn">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -5187,10 +5187,33 @@ async function _crmLoad() {
 function _crmPage(dir) { _crmState.page += dir; _crmLoad() }
 
 async function _crmDelete(id, name) {
-  if(!confirm(`Delete customer "${name}"?`)) return
+  const isBm = APP.language==='bm'
+  // Warn if open invoices (unpaid/partial) — prefer warn+allow over hard block
+  try {
+    const {data: openInv, error: qErr} = await sb.from('invoices')
+      .select('id,ref_no,status,total,paid_amt')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('customer_id', id)
+      .is('deleted_at', null)
+      .in('status', ['unpaid','partial'])
+      .limit(20)
+    if(!qErr && openInv && openInv.length) {
+      const list = openInv.slice(0,5).map(i => i.ref_no||i.id).join(', ')
+      const more = openInv.length > 5 ? ` (+${openInv.length-5})` : ''
+      const msg = isBm
+        ? `Pelanggan "${name}" ada ${openInv.length} invois terbuka (${list}${more}). Padam juga?`
+        : `Customer "${name}" has ${openInv.length} open invoice(s) (${list}${more}). Delete anyway?`
+      if(!confirm(msg)) return
+    } else {
+      if(!confirm(isBm ? `Padam pelanggan "${name}"?` : `Delete customer "${name}"?`)) return
+    }
+  } catch(e) {
+    if(!confirm(isBm ? `Padam pelanggan "${name}"?` : `Delete customer "${name}"?`)) return
+  }
   const {error} = await sb.from('customers').update({deleted_at: new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
-  showToast('Customer deleted', 'success')
+  auditLog('delete', 'customers', id)
+  showToast(isBm ? 'Pelanggan dipadam.' : 'Customer deleted.', 'success')
   _crmLoad()
 }
 
@@ -9020,11 +9043,35 @@ async function _suppLoad() {
 
 async function _suppDelete(id, name) {
   const isBm = APP.language==='bm'
-  if(!confirm((isBm?'Padam pembekal ':'Delete supplier ')+`"${name}"?`)) return
-  const {error} = await sb.from('suppliers').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  // Warn if open bills (unpaid/partial) — prefer warn+allow over hard block
+  try {
+    const {data: openBills, error: qErr} = await sb.from('supplier_bills')
+      .select('id,bill_no,ref_no,status,total,paid_amt')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('supplier_id', id)
+      .is('deleted_at', null)
+      .in('status', ['unpaid','partial'])
+      .limit(20)
+    if(!qErr && openBills && openBills.length) {
+      const list = openBills.slice(0,5).map(b => b.bill_no||b.ref_no||b.id).join(', ')
+      const more = openBills.length > 5 ? ` (+${openBills.length-5})` : ''
+      const msg = isBm
+        ? `Pembekal "${name}" ada ${openBills.length} bil terbuka (${list}${more}). Padam juga?`
+        : `Supplier "${name}" has ${openBills.length} open bill(s) (${list}${more}). Delete anyway?`
+      if(!confirm(msg)) return
+    } else {
+      if(!confirm(isBm ? `Padam pembekal "${name}"?` : `Delete supplier "${name}"?`)) return
+    }
+  } catch(e) {
+    if(!confirm(isBm ? `Padam pembekal "${name}"?` : `Delete supplier "${name}"?`)) return
+  }
+  let {error} = await sb.from('suppliers').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error && /deleted_at|column/i.test(error.message||'')) {
+    ;({error} = await sb.from('suppliers').delete().eq('id',id).eq('tenant_id',APP.tenant.id))
+  }
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('delete','suppliers', id)
-  showToast(isBm?'Pembekal dipadam':'Supplier deleted', 'success')
+  showToast(isBm?'Pembekal dipadam.':'Supplier deleted.', 'success')
   _suppLoad()
 }
 
