@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-av">
+<meta name="nexerp-build" content="2026-08-07-aw">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7823,6 +7823,44 @@ async function renderInvForm(id=null) {
     }
   }
   _slRenderItems()
+}
+
+
+async function _invClearPaymentJournals(invoiceId) {
+  if(!invoiceId) return 0
+  try {
+    const {data: entries} = await sb.from('journal_entries').select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('source_table', 'invoices')
+      .eq('source_id', invoiceId)
+      .is('deleted_at', null)
+    const ids = (entries||[]).map(e => e.id)
+    if(!ids.length) return 0
+    await sb.from('journal_lines').delete().in('entry_id', ids)
+    await sb.from('journal_entries').delete().in('id', ids).eq('tenant_id', APP.tenant.id)
+    return ids.length
+  } catch(e) {
+    console.warn('_invClearPaymentJournals', e)
+    return 0
+  }
+}
+
+async function _invClearPayments(invoiceId) {
+  if(!invoiceId) return
+  try {
+    const {data: allocs} = await sb.from('payment_allocations').select('id,payment_id')
+      .eq('invoice_id', invoiceId).eq('tenant_id', APP.tenant.id)
+    const paymentIds = [...new Set((allocs||[]).map(a => a.payment_id).filter(Boolean))]
+    if(allocs && allocs.length) {
+      await sb.from('payment_allocations').delete().eq('invoice_id', invoiceId).eq('tenant_id', APP.tenant.id)
+    }
+    for(const pid of paymentIds) {
+      const {data: other} = await sb.from('payment_allocations').select('id').eq('payment_id', pid).limit(1)
+      if(!other || !other.length) {
+        await sb.from('payments').delete().eq('id', pid).eq('tenant_id', APP.tenant.id)
+      }
+    }
+  } catch(e) { console.warn('_invClearPayments', e) }
 }
 
 async function _invSave(id) {
