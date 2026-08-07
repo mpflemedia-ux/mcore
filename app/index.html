@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-z">
+<meta name="nexerp-build" content="2026-08-07-ab">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -729,9 +729,9 @@ tbody tr:hover{background:var(--bg)}
   font-weight:800;
   color:#0E7490;
 }
-/* SD print signatures — rebuilt clean; only filled names, centered */
-#sd-sig-print {
-  display: none;
+/* SD print signatures — screen hidden; print shows if not empty */
+@media screen {
+  #sd-sig-print { display: none !important; }
 }
 @media print {
   .pdoc-sd-sum-table { display:table !important; width:100% !important; }
@@ -745,7 +745,44 @@ tbody tr:hover{background:var(--bg)}
   }
   .pdoc-sd-sum-table th.budget, .pdoc-sd-sum-table td.budget { color:#0E7490 !important; }
   .pdoc-sd-totals { display:none !important; }
-  /* #sd-sig-print visibility controlled by JS inline style at print time */
+  #sd-sig-print {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+    gap: 24px 48px !important;
+    width: 100% !important;
+    margin-top: 28px !important;
+    page-break-inside: avoid !important;
+    text-align: center !important;
+  }
+  #sd-sig-print:empty { display: none !important; }
+  #sd-sig-print .sd-sig-item {
+    display: block !important;
+    width: 150px !important;
+    max-width: 150px !important;
+    flex: 0 0 150px !important;
+    text-align: center !important;
+  }
+  #sd-sig-print .sd-sig-name {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #0F172A !important;
+    margin-bottom: 4px !important;
+  }
+  #sd-sig-print .sd-sig-line {
+    width: 130px !important;
+    margin: 0 auto 4px !important;
+    border-top: 1.5px solid #334155 !important;
+    height: 0 !important;
+  }
+  #sd-sig-print .sd-sig-role {
+    font-size: 8px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .04em !important;
+    color: #64748B !important;
+  }
 }
 
 @media screen and (max-width:900px){
@@ -11298,6 +11335,10 @@ async function renderSalaryDisbursement(month, year) {
   </div>`
 
   _sdRegisterPrintListeners()
+  _sdBindSigPersist()
+  // Seed print sig block so Chrome print layout always has the nodes
+  const _sigBox0 = document.getElementById('sd-sig-print')
+  if(_sigBox0) _sigBox0.innerHTML = _sdBuildPrintSigsHtml()
 }
 
 // Hides signature fields the staff never filled in so print/PDF output
@@ -11305,46 +11346,47 @@ async function renderSalaryDisbursement(month, year) {
 // Also refreshes each row's print-only allowance/deduction/statutory spans
 // from the CURRENT on-screen input values (not just what was in the DB at
 // render time) — a user may edit a value and print before hitting Save.
+
+// Build HTML for print signatures — only entries with a non-empty name.
+function _sdBuildPrintSigsHtml() {
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const roles = [
+    { k:'preparedBy', fallback:'Prepared By' },
+    { k:'checkedBy', fallback:'Checked By' },
+    { k:'firstApproval', fallback:'First Approval' },
+    { k:'secondApproval', fallback:'Second Approval' },
+  ]
+  const parts = []
+  roles.forEach(r => {
+    const inp = document.getElementById('sig-input-'+r.k)
+    let name = (inp && inp.value) ? String(inp.value).trim() : ''
+    // Fallback to localStorage prefill if input not in DOM yet
+    if(!name) {
+      try {
+        const pref = JSON.parse(localStorage.getItem('nexerp_sd_sigs_'+(APP.tenant&&APP.tenant.id||'x'))||'{}')||{}
+        name = String(pref[r.k]||'').trim()
+      } catch(e) {}
+    }
+    if(!name) return
+    const lab = document.querySelector('#sig-'+r.k+' .form-label')
+    const label = (lab && lab.textContent.trim()) || r.fallback
+    parts.push(
+      '<div class="sd-sig-item">' +
+        '<div class="sd-sig-name">'+esc(name)+'</div>' +
+        '<div class="sd-sig-line"></div>' +
+        '<div class="sd-sig-role">'+esc(label)+'</div>' +
+      '</div>'
+    )
+  })
+  return parts.join('')
+}
+
 function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape', 6);
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
-  // Build print signatures ONLY for filled names (no empty lines)
-  // Signature print: ONLY slots with a typed name. Centered. Inline styles = no CSS wars.
-  ;(function(){
-    const box = document.getElementById('sd-sig-print')
-    if(!box) return
-    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    const roles = [
-      { k:'preparedBy', fallback:'Prepared By' },
-      { k:'checkedBy', fallback:'Checked By' },
-      { k:'firstApproval', fallback:'First Approval' },
-      { k:'secondApproval', fallback:'Second Approval' },
-    ]
-    const filled = []
-    roles.forEach(r => {
-      const inp = document.getElementById('sig-input-'+r.k)
-      const name = (inp && inp.value) ? String(inp.value).trim() : ''
-      if(!name) return
-      const lab = document.querySelector('#sig-'+r.k+' .form-label')
-      filled.push({ name, label: (lab && lab.textContent.trim()) || r.fallback })
-    })
-    if(!filled.length) {
-      box.innerHTML = ''
-      box.setAttribute('style', 'display:none !important')
-      return
-    }
-    box.setAttribute('style',
-      'display:flex !important; justify-content:center !important; align-items:flex-start !important;' +
-      'flex-wrap:wrap !important; gap:24px 48px !important; width:100% !important; margin-top:28px !important;' +
-      'page-break-inside:avoid !important; text-align:center !important;')
-    box.innerHTML = filled.map(f =>
-      '<div style="display:block !important; width:150px !important; max-width:150px !important; text-align:center !important; flex:0 0 150px !important;">' +
-        '<div style="font-size:11px !important; font-weight:600 !important; color:#0F172A !important; margin-bottom:4px !important;">'+esc(f.name)+'</div>' +
-        '<div style="width:130px !important; margin:0 auto 4px !important; border-top:1.5px solid #334155 !important; height:0 !important;"></div>' +
-        '<div style="font-size:8px !important; font-weight:600 !important; text-transform:uppercase !important; letter-spacing:.04em !important; color:#64748B !important;">'+esc(f.label)+'</div>' +
-      '</div>'
-    ).join('')
-  })()
+  // Refresh print signatures from current input values (filled only)
+  const _sigBox = document.getElementById('sd-sig-print')
+  if(_sigBox) _sigBox.innerHTML = _sdBuildPrintSigsHtml()
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
     const set = (id, text) => { const el = document.getElementById(id); if(el) el.innerHTML = text }
@@ -11404,6 +11446,10 @@ function _sdSaveSigs() {
     secondApproval: document.getElementById('sig-input-secondApproval')?.value || ''
   }
   try { localStorage.setItem(_sdSigStorageKey(), JSON.stringify(o)) } catch(e) {}
+  try {
+    const b = document.getElementById('sd-sig-print')
+    if(b) b.innerHTML = _sdBuildPrintSigsHtml()
+  } catch(e) {}
 }
 function _sdBindSigPersist() {
   ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k => {
