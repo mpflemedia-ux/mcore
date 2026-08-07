@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-crm-supp-warn">
+<meta name="nexerp-build" content="2026-08-08-inv-quo-print">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -518,6 +518,8 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-budget-bar { background:linear-gradient(135deg, var(--pdoc-accent), color-mix(in srgb, var(--pdoc-accent) 70%, #0F172A)); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:20px 24px; margin-top:2px; }
 .pdoc-budget-bar .lbl { font-weight:700; font-size:13px; letter-spacing:.1em; text-transform:uppercase; opacity:.95; }
 .pdoc-budget-bar .amt { font-weight:800; font-size:30px; font-family:'Space Grotesk',sans-serif; letter-spacing:-.02em; }
+@media print { .print-only { display:block !important; } }
+@media screen { .print-only { display:none !important; } }
 .pdoc-footer-note { text-align:center; font-size:10px; color:#94A3B8; padding:12px 24px 14px; border-top:1px solid #F1F5F9; }
 .pdoc-payslip-subtitle { font-size:11px; color:var(--pdoc-accent); font-weight:700; letter-spacing:.06em; margin-top:2px; text-transform:uppercase; }
 .pdoc-amt-pos { color:var(--success); }
@@ -8361,8 +8363,9 @@ async function renderInvDetail(id) {
   const {data: allocations} = await sb.from('payment_allocations').select('id,amount,payment_id,payments(id,payment_date,payment_method,ref_no)').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
   const {data: existingDO} = await sb.from('delivery_orders').select('id,do_no,status').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false}).limit(1).maybeSingle()
   const {data: custPhone} = inv.customer_id
-    ? await sb.from('customers').select('phone').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
+    ? await sb.from('customers').select('phone,email,address,city,state,postcode').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
     : {data:null}
+  const custAddr = custPhone ? [custPhone.address, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
   let doCustomerAddr = ''
   if(!existingDO && inv.customer_id) {
     const {data: cust} = await sb.from('customers').select('address_line1,city,postcode,state').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
@@ -8373,34 +8376,84 @@ async function renderInvDetail(id) {
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
   const printFilename = `Invoice_${inv.ref_no}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}`
+  const tn = await _pdocGetTenant()
+  const companyAddr = _pdocAddressLine(tn)
+  const isBm = APP.language==='bm'
 
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div>
+  <div class="page-header no-print"><div>
     <div class="page-title">${inv.ref_no}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{})">← ${t.back}</div>
   </div>
-  <div class="no-print" style="display:flex;gap:8px">
+  <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
-    <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename.replace(/'/g,"\\'")}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <button class="btn btn-outline btn-sm" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilename.replace(/'/g,"\\'")}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendInvWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'},'${(inv.customer_name||'').replace(/'/g,"\\'")}','${formatRM(balance)}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
     <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
   </div></div>
-  <div class="card" style="max-width:900px;padding:20px">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
-      <div><div style="color:var(--text-3);font-size:12px">${t.customer}</div><strong>${inv.customer_name||'-'}</strong></div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.date}</div>${formatDate(inv.issue_date)}</div>
-      <div><div style="color:var(--text-3);font-size:12px">${t.due}</div>${formatDate(inv.due_date)}</div>
-      <div><span style="color:${statusColor(inv.status)};font-weight:700">${statusLabel(inv.status)}</span></div>
+
+  <div class="pdoc" style="--pdoc-accent:#0E7490;max-width:820px;margin:0 auto 24px">
+    <div class="pdoc-header">
+      <div class="pdoc-logo-row">
+        ${_pdocLogoHtml(tn)}
+        <div>
+          <div class="pdoc-company-name">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
+          ${companyAddr?`<div class="pdoc-company-sub">${_aiEscapeHtml(companyAddr)}</div>`:''}
+        </div>
+      </div>
+      <div class="pdoc-meta">
+        ${isBm?'No. Invois':'Invoice No.'}: <strong style="color:#0F172A">${_aiEscapeHtml(inv.ref_no||'-')}</strong><br>
+        ${isBm?'Tarikh':'Date'}: ${formatDate(inv.issue_date)}<br>
+        ${isBm?'Tarikh Akhir':'Due Date'}: ${formatDate(inv.due_date)}<br>
+        ${isBm?'Status':'Status'}: <strong style="color:${statusColor(inv.status)}">${statusLabel(inv.status)}</strong>
+      </div>
     </div>
-    <table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.amount}</th></tr></thead>
-    <tbody>${(items||[]).map(it=>`<tr><td>${it.description}</td><td style="text-align:right">${it.qty}</td><td style="text-align:right">${formatRM(it.unit_price)}</td><td style="text-align:right">${formatRM(it.line_total)}</td></tr>`).join('')}</tbody></table>
-    <div style="text-align:right;margin-top:16px;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-      <div>${Number(inv.tax_amt)>0 ? `${APP.language==='bm'?'Subjumlah':'Subtotal'}: ${formatRM(inv.subtotal|| (Number(inv.total)-Number(inv.tax_amt)))}<br>SST (${((Number(inv.tax_rate)||0)*100).toFixed(0)}%): ${formatRM(inv.tax_amt)}<br>` : ''}${t.total}: <strong>${formatRM(inv.total)}</strong></div>
-      <div style="color:var(--success)">${t.paid}: ${formatRM(inv.paid_amt)}</div>
-      <div style="color:${balance>0?'var(--danger)':'var(--text-2)'}">${t.balance}: <strong>${formatRM(balance)}</strong></div>
+    <div class="pdoc-title-bar">${isBm?'INVOIS':'INVOICE'}</div>
+    <div class="pdoc-band">
+      <div class="pdoc-band-name">${_aiEscapeHtml(inv.customer_name||'-')}</div>
+      ${custAddr?`<div class="pdoc-band-sub">${_aiEscapeHtml(custAddr)}</div>`:''}
+      ${(custPhone&&custPhone.phone)?`<div class="pdoc-band-sub">${_aiEscapeHtml(custPhone.phone)}${custPhone.email?' · '+_aiEscapeHtml(custPhone.email):''}</div>`:''}
     </div>
+    <div style="padding:0 0 8px">
+      <table class="pdoc-table" style="width:100%">
+        <thead>
+          <tr style="background:#F8FAFC">
+            <th style="text-align:left;padding:10px 24px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0">${t.items}</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:70px">${t.qty}</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:110px">${t.price}</th>
+            <th style="text-align:right;padding:10px 24px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:120px">${t.amount}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(items||[]).map(it=>`<tr>
+            <td style="padding:10px 24px;border-bottom:1px solid #F1F5F9">${_aiEscapeHtml(it.description||'')}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${it.qty}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${formatRM(it.unit_price)}</td>
+            <td style="text-align:right;padding:10px 24px;border-bottom:1px solid #F1F5F9;font-weight:600">${formatRM(it.line_total)}</td>
+          </tr>`).join('')||`<tr><td colspan="4" style="padding:16px 24px;color:#94A3B8">${isBm?'Tiada item':'No items'}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
+      <div style="min-width:260px;font-size:13px">
+        ${Number(inv.tax_amt)>0 ? `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;color:#64748B"><span>${isBm?'Subjumlah':'Subtotal'}</span><span>${formatRM(inv.subtotal!=null?inv.subtotal:(Number(inv.total)-Number(inv.tax_amt)))}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;color:#64748B"><span>SST (${((Number(inv.tax_rate)||0)*100).toFixed(0)}%)</span><span>${formatRM(inv.tax_amt)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
+          <span>${t.total}</span><span style="color:#0E7490">${formatRM(inv.total)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;color:#16A34A"><span>${t.paid}</span><span>${formatRM(inv.paid_amt)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-weight:600;color:${balance>0?'#DC2626':'#64748B'}"><span>${t.balance}</span><span>${formatRM(balance)}</span></div>
+      </div>
+    </div>
+    <div style="padding:0 16px 8px">${_pdocSigPrintHtml([
+      {name: (APP.user && (APP.user.name||APP.user.full_name)) || '', role: isBm ? 'Disediakan oleh' : 'Prepared by'},
+      {name: tn.name || APP.tenant.name || '', role: isBm ? 'Bagi pihak syarikat' : 'For the company'}
+    ])}</div>
+    <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · NexERP</div>
   </div>
+
   ${balance>0 ? `
   <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
     <div style="font-weight:600;margin-bottom:12px">${t.recordPayment}</div>
@@ -8729,23 +8782,29 @@ async function renderQuoForm(id=null) {
     const {data: items} = await sb.from('quotation_items').select('*').eq('quotation_id',id)
     if(items && items.length) _slItems = items.map(it=>({product_id:it.product_id||'',description:it.description,qty:it.qty,unit_price:it.unit_price}))
     if(quo.customer_id) {
-      const {data: cp} = await sb.from('customers').select('phone').eq('id',quo.customer_id).eq('tenant_id',APP.tenant.id).single()
+      const {data: cp} = await sb.from('customers').select('phone,email,address,city,state,postcode').eq('id',quo.customer_id).eq('tenant_id',APP.tenant.id).single()
       custPhone = cp
     }
   }
 
   const printFilename = `Quotation_${quo.ref_no}_${_pdocSlug(quo.customer_name)}_${_pdocDateStamp(quo.issue_date)}`.replace(/'/g,"\\'")
 
+  const tn = id ? await _pdocGetTenant() : null
+  const companyAddr = tn ? _pdocAddressLine(tn) : ''
+  const custAddr = custPhone ? [custPhone.address, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
+  const isBmQ = APP.language==='bm'
+  const quoSubtotal = (_slItems||[]).reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
+
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{view:'quo'})">← ${t.back}</div></div>
     ${id?`<div class="no-print" style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>
-      <button class="btn btn-outline btn-sm" onclick="_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline btn-sm" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
       <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendQuoWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'},'${(quo.customer_name||'').replace(/'/g,"\\'")}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
     <button class="btn btn-outline btn-sm" onclick="_quoPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     </div>`:''}</div>
-  <div class="card" style="max-width:900px">
+  <div class="card no-print" style="max-width:900px">
     <div id="quo-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.customer}</label>
@@ -8766,9 +8825,65 @@ async function renderQuoForm(id=null) {
       <button id="qf-save" class="btn btn-primary" onclick="_quoSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
       <button class="btn btn-outline" onclick="openPage('sales',{view:'quo'})">${t.cancel}</button>
     </div>
-  </div>`
+  </div>
+  ${id?`
+  <div class="pdoc print-only" style="--pdoc-accent:#0E7490;max-width:820px;margin:24px auto">
+    <div class="pdoc-header">
+      <div class="pdoc-logo-row">
+        ${_pdocLogoHtml(tn)}
+        <div>
+          <div class="pdoc-company-name">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
+          ${companyAddr?`<div class="pdoc-company-sub">${_aiEscapeHtml(companyAddr)}</div>`:''}
+        </div>
+      </div>
+      <div class="pdoc-meta">
+        ${isBmQ?'No. Sebut Harga':'Quotation No.'}: <strong style="color:#0F172A">${_aiEscapeHtml(quo.ref_no||'-')}</strong><br>
+        ${isBmQ?'Tarikh':'Date'}: ${formatDate(quo.issue_date)}<br>
+        ${quo.valid_until?`${isBmQ?'Sah Sehingga':'Valid Until'}: ${formatDate(quo.valid_until)}<br>`:''}
+      </div>
+    </div>
+    <div class="pdoc-title-bar">${isBmQ?'SEBUT HARGA':'QUOTATION'}</div>
+    <div class="pdoc-band">
+      <div class="pdoc-band-name">${_aiEscapeHtml(quo.customer_name||'-')}</div>
+      ${custAddr?`<div class="pdoc-band-sub">${_aiEscapeHtml(custAddr)}</div>`:''}
+      ${(custPhone&&custPhone.phone)?`<div class="pdoc-band-sub">${_aiEscapeHtml(custPhone.phone)}</div>`:''}
+    </div>
+    <div style="padding:0 0 8px">
+      <table class="pdoc-table" style="width:100%">
+        <thead>
+          <tr style="background:#F8FAFC">
+            <th style="text-align:left;padding:10px 24px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0">${isBmQ?'Item':'Item'}</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:70px">${isBmQ?'Kuantiti':'Qty'}</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:110px">${isBmQ?'Harga':'Price'}</th>
+            <th style="text-align:right;padding:10px 24px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:120px">${isBmQ?'Jumlah':'Amount'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(_slItems||[]).filter(it=>it.description).map(it=>`<tr>
+            <td style="padding:10px 24px;border-bottom:1px solid #F1F5F9">${_aiEscapeHtml(it.description||'')}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${it.qty}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${formatRM(it.unit_price)}</td>
+            <td style="text-align:right;padding:10px 24px;border-bottom:1px solid #F1F5F9;font-weight:600">${formatRM(Number(it.qty||0)*Number(it.unit_price||0))}</td>
+          </tr>`).join('')||`<tr><td colspan="4" style="padding:16px 24px;color:#94A3B8">${isBmQ?'Tiada item':'No items'}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
+      <div style="min-width:240px;font-size:13px">
+        <div style="display:flex;justify-content:space-between;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
+          <span>${isBmQ?'Jumlah Besar':'Grand Total'}</span><span style="color:#0E7490">${formatRM(quo.total!=null?quo.total:quoSubtotal)}</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:0 16px 8px">${_pdocSigPrintHtml([
+      {name: (APP.user && (APP.user.name||APP.user.full_name)) || '', role: isBmQ ? 'Disediakan oleh' : 'Prepared by'},
+      {name: (tn && tn.name) || APP.tenant.name || '', role: isBmQ ? 'Bagi pihak syarikat' : 'For the company'}
+    ])}</div>
+    <div class="pdoc-footer-note">${_aiEscapeHtml((tn&&tn.name)||APP.tenant.name||'')} · NexERP</div>
+  </div>`:''}`
   _slRenderItems()
 }
+
 
 async function _quoSave(id) {
   const t = APP.language==='bm' ? {required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.'} : {required:'Customer and at least one item are required.'}
