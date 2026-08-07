@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-an">
+<meta name="nexerp-build" content="2026-08-07-ao">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -9333,6 +9333,24 @@ async function _billPaySave(billId, balance) {
 // PAYMENT VOUCHERS (PV) — formal payment documents + financial reflection
 // ═══════════════════════════════════════════════════════════════════════════
 
+
+// Print signature blocks: blank space + line + name + role (filled only). Centered.
+function _pdocSigPrintHtml(slots) {
+  // slots: [{name, role}] — empty names skipped
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const filled = (slots||[]).filter(s => s && String(s.name||'').trim())
+  if(!filled.length) return ''
+  const cells = filled.map(s =>
+    '<td style="text-align:center;vertical-align:top;padding:0 12px;border:none;background:transparent">' +
+      '<div style="height:48px"></div>' +
+      '<div style="width:130px;margin:0 auto 6px;border-top:1.5px solid #334155;height:0"></div>' +
+      '<div style="font-size:12px;font-weight:600;color:#0F172A;margin-bottom:2px">'+esc(String(s.name).trim())+'</div>' +
+      '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">'+esc(s.role||'')+'</div>' +
+    '</td>'
+  ).join('')
+  return '<table class="pdoc-sig-print-table" style="width:100%;margin-top:28px;border-collapse:collapse;table-layout:fixed"><tr>'+cells+'</tr></table>'
+}
+
 function renderPaymentVouchers(params={}) {
   if(params.view==='pv-form') { renderPVForm(params.id||null, params.billId||null); return }
   if(params.view==='pv-detail' && params.id) { renderPVDetail(params.id); return }
@@ -9561,14 +9579,19 @@ function _pvDocHtml(v, tn, isBm, accent) {
         <tr><td style="color:#64748B">${isBm?'Status':'Status'}</td><td style="font-weight:700;text-transform:uppercase">${_aiEscapeHtml(v.status||'draft')}</td></tr>
       </tbody></table>
     </div>
-    <div class="pdoc-sig-grid" style="margin:0 16px 20px">
+    <div class="pdoc-sig-grid no-print" style="margin:0 16px 20px">
       <div class="form-group"><label class="form-label">${isBm?'Disediakan':'Prepared By'}</label>
-        <input class="form-input" id="pv-sig-prepared" value="${_aiEscapeHtml(v.prepared_by||APP.user.name||'')}" onchange="_pvSaveSigs('${v.id}')" onblur="_pvSaveSigs('${v.id}')" style="text-align:center;font-weight:600"></div>
+        <input class="form-input" id="pv-sig-prepared" value="${_aiEscapeHtml(v.prepared_by||APP.user.name||'')}" onchange="_pvSaveSigs('${v.id}');_pvRefreshSigPrint()" onblur="_pvSaveSigs('${v.id}');_pvRefreshSigPrint()" style="text-align:center;font-weight:600"></div>
       <div class="form-group"><label class="form-label">${isBm?'Disemak':'Checked By'}</label>
-        <input class="form-input" id="pv-sig-checked" value="${_aiEscapeHtml(v.checked_by||'')}" onchange="_pvSaveSigs('${v.id}')" onblur="_pvSaveSigs('${v.id}')" style="text-align:center;font-weight:600"></div>
+        <input class="form-input" id="pv-sig-checked" value="${_aiEscapeHtml(v.checked_by||'')}" onchange="_pvSaveSigs('${v.id}');_pvRefreshSigPrint()" onblur="_pvSaveSigs('${v.id}');_pvRefreshSigPrint()" style="text-align:center;font-weight:600"></div>
       <div class="form-group"><label class="form-label">${isBm?'Diluluskan':'Approved By'}</label>
-        <input class="form-input" id="pv-sig-approved" value="${_aiEscapeHtml(v.approved_by||'')}" onchange="_pvSaveSigs('${v.id}')" onblur="_pvSaveSigs('${v.id}')" style="text-align:center;font-weight:600"></div>
+        <input class="form-input" id="pv-sig-approved" value="${_aiEscapeHtml(v.approved_by||'')}" onchange="_pvSaveSigs('${v.id}');_pvRefreshSigPrint()" onblur="_pvSaveSigs('${v.id}');_pvRefreshSigPrint()" style="text-align:center;font-weight:600"></div>
     </div>
+    <div id="pv-sig-print" style="padding:0 16px 8px">${_pdocSigPrintHtml([
+      { name: v.prepared_by||APP.user.name||'', role: isBm?'Disediakan':'Prepared By' },
+      { name: v.checked_by||'', role: isBm?'Disemak':'Checked By' },
+      { name: v.approved_by||'', role: isBm?'Diluluskan':'Approved By' },
+    ])}</div>
     <div class="pdoc-footer-note">${isBm?'Baucar bayaran janaan komputer · NexERP / Phion':'Computer-generated payment voucher · NexERP / Phion'}</div>
   </div>`
 }
@@ -9665,6 +9688,16 @@ async function _pvMarkPaid(id) {
 }
 
 
+function _pvRefreshSigPrint() {
+  const isBm = APP.language==='bm'
+  const box = document.getElementById('pv-sig-print')
+  if(!box) return
+  box.innerHTML = _pdocSigPrintHtml([
+    { name: document.getElementById('pv-sig-prepared')?.value||'', role: isBm?'Disediakan':'Prepared By' },
+    { name: document.getElementById('pv-sig-checked')?.value||'', role: isBm?'Disemak':'Checked By' },
+    { name: document.getElementById('pv-sig-approved')?.value||'', role: isBm?'Diluluskan':'Approved By' },
+  ])
+}
 async function _pvSaveSigs(id) {
   if(!id) return
   const payload = {
@@ -9917,18 +9950,33 @@ function _pvdDocHtml(b, lines, tn, isBm, accent) {
       </tr></tfoot>
       </table>
     </div>
-    <div class="pdoc-sig-grid" style="margin:8px 16px 20px">
+    <div class="pdoc-sig-grid no-print" style="margin:8px 16px 20px">
       <div class="form-group"><label class="form-label">${isBm?'Disediakan':'Prepared By'}</label>
-        <input class="form-input" id="pvd-sig-prepared" value="${_aiEscapeHtml(b.prepared_by||APP.user.name||'')}" onchange="_pvdSaveSigs('${b.id}')" onblur="_pvdSaveSigs('${b.id}')" style="text-align:center;font-weight:600"></div>
+        <input class="form-input" id="pvd-sig-prepared" value="${_aiEscapeHtml(b.prepared_by||APP.user.name||'')}" onchange="_pvdSaveSigs('${b.id}');_pvdRefreshSigPrint()" onblur="_pvdSaveSigs('${b.id}');_pvdRefreshSigPrint()" style="text-align:center;font-weight:600"></div>
       <div class="form-group"><label class="form-label">${isBm?'Disemak':'Checked By'}</label>
-        <input class="form-input" id="pvd-sig-checked" value="${_aiEscapeHtml(b.checked_by||'')}" onchange="_pvdSaveSigs('${b.id}')" onblur="_pvdSaveSigs('${b.id}')" style="text-align:center;font-weight:600"></div>
+        <input class="form-input" id="pvd-sig-checked" value="${_aiEscapeHtml(b.checked_by||'')}" onchange="_pvdSaveSigs('${b.id}');_pvdRefreshSigPrint()" onblur="_pvdSaveSigs('${b.id}');_pvdRefreshSigPrint()" style="text-align:center;font-weight:600"></div>
       <div class="form-group"><label class="form-label">${isBm?'Diluluskan':'Approved By'}</label>
-        <input class="form-input" id="pvd-sig-approved" value="${_aiEscapeHtml(b.approved_by||'')}" onchange="_pvdSaveSigs('${b.id}')" onblur="_pvdSaveSigs('${b.id}')" style="text-align:center;font-weight:600"></div>
+        <input class="form-input" id="pvd-sig-approved" value="${_aiEscapeHtml(b.approved_by||'')}" onchange="_pvdSaveSigs('${b.id}');_pvdRefreshSigPrint()" onblur="_pvdSaveSigs('${b.id}');_pvdRefreshSigPrint()" style="text-align:center;font-weight:600"></div>
     </div>
-    <div class="pdoc-footer-note">${isBm?'PV Disbursement · Landscape · NexERP / Phion':'PV Disbursement · Landscape · NexERP / Phion'}</div>
+    <div id="pvd-sig-print" style="padding:0 16px 8px">${_pdocSigPrintHtml([
+      { name: b.prepared_by||APP.user.name||'', role: isBm?'Disediakan':'Prepared By' },
+      { name: b.checked_by||'', role: isBm?'Disemak':'Checked By' },
+      { name: b.approved_by||'', role: isBm?'Diluluskan':'Approved By' },
+    ])}</div>
+    <div class="pdoc-footer-note">${isBm?'Baucar bayaran (penyaluran) · Landskap · NexERP / Phion':'Payment voucher disbursement · Landscape · NexERP / Phion'}</div>
   </div>`
 }
 
+function _pvdRefreshSigPrint() {
+  const isBm = APP.language==='bm'
+  const box = document.getElementById('pvd-sig-print')
+  if(!box) return
+  box.innerHTML = _pdocSigPrintHtml([
+    { name: document.getElementById('pvd-sig-prepared')?.value||'', role: isBm?'Disediakan':'Prepared By' },
+    { name: document.getElementById('pvd-sig-checked')?.value||'', role: isBm?'Disemak':'Checked By' },
+    { name: document.getElementById('pvd-sig-approved')?.value||'', role: isBm?'Diluluskan':'Approved By' },
+  ])
+}
 async function _pvdSaveSigs(id) {
   if(!id) return
   await sb.from('payment_voucher_batches').update({
