@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-s">
+<meta name="nexerp-build" content="2026-08-07-t">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -672,13 +672,14 @@ tbody tr:hover{background:var(--bg)}
   color:#64748B;
   line-height:1.2;
 }
-.pdoc-sd-tot .v {
+.pdoc-sd-tot .v, .pdoc-sd-tot .pdoc-sd-amt {
   font-family:'Space Grotesk',sans-serif;
   font-weight:700;
   font-size:12px;
   letter-spacing:-.01em;
   white-space:nowrap;
   color:#0F172A;
+  display:block;
 }
 .pdoc-sd-tot.budget {
   background:transparent;
@@ -702,7 +703,13 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-swatch { width:20px; height:20px; border-radius:50%; cursor:pointer; border:2px solid transparent; padding:0; }
 .pdoc-swatch.active { border-color:var(--text); }
 @media print {
-  .pdoc { border:none !important; border-radius:0 !important; }
+  .pdoc {
+    border:none !important;
+    border-radius:0 !important;
+    overflow:visible !important;
+    height:auto !important;
+    max-height:none !important;
+  }
   .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td, .pdoc-sd-totals, .pdoc-sd-tot { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid {
     display:flex !important;
@@ -817,13 +824,27 @@ tbody tr:hover{background:var(--bg)}
     border-right:none !important;
   }
   .pdoc-sd-tot:last-child { border-right:none !important; }
-  .pdoc-sd-tot .k { font-size:7px !important; color:#64748B !important; opacity:1 !important; }
-  .pdoc-sd-tot .v { font-size:10.5px !important; color:#0F172A !important; }
+  .pdoc-sd-tot .k { font-size:8px !important; color:#64748B !important; opacity:1 !important; display:block !important; }
+  .pdoc-sd-tot .v {
+    font-size:12px !important;
+    font-weight:700 !important;
+    color:#0F172A !important;
+    display:block !important;
+    visibility:visible !important;
+    opacity:1 !important;
+    min-height:14px !important;
+  }
   .pdoc-sd-tot.budget {
     background:transparent !important;
   }
-  .pdoc-sd-tot.budget .k { color:#0E7490 !important; font-size:7px !important; }
-  .pdoc-sd-tot.budget .v { font-size:12px !important; color:#0E7490 !important; }
+  .pdoc-sd-tot.budget .k { color:#0E7490 !important; font-size:8px !important; display:block !important; }
+  .pdoc-sd-tot.budget .v {
+    font-size:13px !important;
+    font-weight:800 !important;
+    color:#0E7490 !important;
+    display:block !important;
+    visibility:visible !important;
+  }
   /* No divider line under totals; keep space for wet-ink signatures */
   .pdoc-sig-grid {
     display:flex !important;
@@ -11162,12 +11183,12 @@ async function renderSalaryDisbursement(month, year) {
   </div>
     <div class="pdoc-sd-closing">
     <div class="pdoc-sd-totals">
-      <div class="pdoc-sd-tot"><span class="k">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="v" id="sd-grand-total">${formatRM(grandTotal)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">EPF</span><span class="v" id="sd-grand-epf">${formatRM(sumEPF)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">SOCSO</span><span class="v" id="sd-grand-socso">${formatRM(sumSOCSO)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">EIS</span><span class="v" id="sd-grand-eis">${formatRM(sumEIS)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">PCB</span><span class="v" id="sd-grand-pcb">${formatRM(sumPCB)}</span></div>
-      <div class="pdoc-sd-tot budget"><span class="k">${isBm?'Bajet Diperlukan':'Budget Required'}</span><span class="v" id="sd-grand-budget">${formatRM(budgetRequired)}</span></div>
+      <div class="pdoc-sd-tot"><span class="k">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="v pdoc-sd-amt" id="sd-grand-total">${formatRM(grandTotal)}</span></div>
+      <div class="pdoc-sd-tot"><span class="k">EPF</span><span class="v pdoc-sd-amt" id="sd-grand-epf">${formatRM(sumEPF)}</span></div>
+      <div class="pdoc-sd-tot"><span class="k">SOCSO</span><span class="v pdoc-sd-amt" id="sd-grand-socso">${formatRM(sumSOCSO)}</span></div>
+      <div class="pdoc-sd-tot"><span class="k">EIS</span><span class="v pdoc-sd-amt" id="sd-grand-eis">${formatRM(sumEIS)}</span></div>
+      <div class="pdoc-sd-tot"><span class="k">PCB</span><span class="v pdoc-sd-amt" id="sd-grand-pcb">${formatRM(sumPCB)}</span></div>
+      <div class="pdoc-sd-tot budget"><span class="k">${isBm?'Bajet Diperlukan':'Budget Required'}</span><span class="v pdoc-sd-amt" id="sd-grand-budget">${formatRM(budgetRequired)}</span></div>
     </div>
     <div class="pdoc-sig-grid pdoc-sd-sig" style="margin:20px 12px 12px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
