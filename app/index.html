@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-pv-filter">
+<meta name="nexerp-build" content="2026-08-08-exp-filter">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -6813,20 +6813,21 @@ async function renderExpenseClaims(params={}) {
   const t = APP.language==='bm' ? {
     title:'Tuntutan Perbelanjaan', add:'Tuntutan Baru', claimant:'Penuntut', date:'Tarikh',
     desc:'Keterangan', amount:'Jumlah', status:'Status', pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak',
-    noData:'Tiada tuntutan lagi'
+    noData:'Tiada tuntutan lagi', all:'Semua', del:'Padam', paid:'Dibayar'
   } : {
     title:'Expense Claims', add:'New Claim', claimant:'Claimant', date:'Date',
     desc:'Description', amount:'Amount', status:'Status', pending:'Pending', approved:'Approved', rejected:'Rejected',
-    noData:'No expense claims yet'
+    noData:'No expense claims yet', all:'All', del:'Delete', paid:'Paid'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'exp-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_accTabs('expense')}
+  <div id="exp-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="exp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('exp-table-wrap')
-  const {data, error} = await sb.from('expense_claims').select('id,claimed_by,claim_date,description,total_amount,status')
+  const {data, error} = await sb.from('expense_claims').select('id,claimed_by,claim_date,description,total_amount,status,ref_no')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('claim_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
@@ -6838,15 +6839,112 @@ async function renderExpenseClaims(params={}) {
   const claimantMap = {}
   ;(claimants||[]).forEach(c=>{ claimantMap[c.id] = c.full_name })
 
-  const statusColor = s => s==='approved'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
-  const statusLabel = s => s==='approved'?t.approved:s==='rejected'?t.rejected:t.pending
-  wrap.innerHTML = `<table><thead><tr><th>${t.claimant}</th><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(e=>`<tr onclick="openPage('accounting',{view:'exp-form',id:'${e.id}'})" style="cursor:pointer">
-    <td>${claimantMap[e.claimed_by]||'-'}</td><td>${formatDate(e.claim_date)}</td><td style="color:var(--text-2)">${e.description||'-'}</td>
+  window._expListCache = data
+  window._expClaimantMap = claimantMap
+  window._expListT = t
+  if(!window._expStatusFilter) window._expStatusFilter = 'all'
+  _expRenderStatusFilters()
+  _expRenderListTable()
+}
+
+function _expRenderStatusFilters() {
+  const t = window._expListT || {}
+  const bar = document.getElementById('exp-status-filters')
+  if(!bar) return
+  const counts = { all:0, pending:0, approved:0, rejected:0, paid:0 }
+  ;(window._expListCache||[]).forEach(e => {
+    counts.all++
+    const s = String(e.status||'pending').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else counts.pending++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'pending', label:t.pending},
+    {k:'approved', label:t.approved},
+    {k:'rejected', label:t.rejected},
+    {k:'paid', label:t.paid},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._expStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._expStatusFilter='${tab.k}';_expRenderStatusFilters();_expRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _expRenderListTable() {
+  const t = window._expListT || {}
+  const wrap = document.getElementById('exp-table-wrap')
+  if(!wrap) return
+  const filter = window._expStatusFilter || 'all'
+  let rows = window._expListCache || []
+  if(filter !== 'all') rows = rows.filter(e => String(e.status||'pending').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
+  const claimantMap = window._expClaimantMap || {}
+  const statusColor = s => s==='approved'||s==='paid'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
+  const statusLabel = s => t[s]||s||t.pending
+  wrap.innerHTML = `<table><thead><tr><th>${t.claimant}</th><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
+  <tbody>${rows.map(e=>`<tr onclick="openPage('accounting',{view:'exp-form',id:'${e.id}'})" style="cursor:pointer">
+    <td>${_aiEscapeHtml(claimantMap[e.claimed_by]||'-')}</td>
+    <td>${formatDate(e.claim_date)}</td>
+    <td>${_aiEscapeHtml(e.description||e.ref_no||'-')}</td>
     <td style="text-align:right">${formatRM(e.total_amount)}</td>
-    <td><span style="color:${statusColor(e.status)}">${statusLabel(e.status)}</span></td>
+    <td><span style="color:${statusColor(e.status)};font-weight:600">${statusLabel(e.status)}</span></td>
+    <td style="text-align:center" onclick="event.stopPropagation()">
+      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+        onclick="_expDelete('${e.id}','${(e.ref_no||e.description||'').replace(/'/g,"\\'")}','${String(e.status||'pending').replace(/'/g,"\\'")}')" title="${t.del||'Delete'}">
+        <i class="ti ti-trash"></i>
+      </button>
+    </td>
   </tr>`).join('')}</tbody></table>`
 }
+
+async function _expClearJournals(claimId) {
+  if(!claimId) return 0
+  try {
+    const {data: entries} = await sb.from('journal_entries').select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('source_table', 'expense_claims')
+      .eq('source_id', claimId)
+      .is('deleted_at', null)
+    const ids = (entries||[]).map(e => e.id)
+    if(!ids.length) return 0
+    await sb.from('journal_lines').delete().in('entry_id', ids)
+    await sb.from('journal_entries').delete().in('id', ids).eq('tenant_id', APP.tenant.id)
+    return ids.length
+  } catch(e) {
+    console.warn('_expClearJournals', e)
+    return 0
+  }
+}
+
+async function _expDelete(id, refLabel, status) {
+  const isBm = APP.language==='bm'
+  const st = String(status||'').toLowerCase()
+  if(st === 'approved' || st === 'paid') {
+    if(!confirm(isBm
+      ? `Tuntutan ${refLabel||''} sudah ${st}. Padam dan bersihkan jurnal berkaitan?`
+      : `Claim ${refLabel||''} is ${st}. Delete and clear related journals?`)) return
+  } else {
+    if(!confirm(isBm ? `Padam tuntutan ${refLabel||''}?` : `Delete claim ${refLabel||''}?`)) return
+  }
+  try {
+    if(st === 'approved' || st === 'paid') await _expClearJournals(id)
+    let {error} = await sb.from('expense_claims').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(error && /deleted_at|column/i.test(error.message||'')) {
+      ;({error} = await sb.from('expense_claims').delete().eq('id', id).eq('tenant_id', APP.tenant.id))
+    }
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    auditLog('delete', 'expense_claims', id)
+    showToast(isBm?'Tuntutan dipadam.':'Claim deleted.', 'success')
+    renderExpenseClaims({})
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
+}
+
 
 async function renderExpenseForm(id=null) {
   const t = APP.language==='bm' ? {
@@ -6965,6 +7063,10 @@ async function _expSave(id) {
         console.warn('Expense claim journal post skipped (missing Cash/Expense default account)')
       }
     } catch(e) { console.error('Expense claim journal post failed:', e) }
+  }
+  // If moving off approved/paid → clear related journals for integrity
+  if(claimId && prevStatus && (prevStatus==='approved'||prevStatus==='paid') && payload.status!=='approved' && payload.status!=='paid') {
+    await _expClearJournals(claimId)
   }
 
   showToast(APP.language==='bm'?'Tuntutan disimpan!':'Claim saved!', 'success')
