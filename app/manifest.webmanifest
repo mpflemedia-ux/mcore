@@ -1,7 +1,7 @@
 {
   "name": "NexERP",
   "short_name": "NexERP",
-  "description": "ERP That Understands Your Business — Phion Sdn Bhd",
+  "description": "ERP That Understands Your Business \u2014 Phion Sdn Bhd",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -10,7 +10,13 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "https://mpflemedia-ux.github.io/nexerp/app/Phion%20Background%20Image.png",
+      "src": "favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "apple-touch-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
