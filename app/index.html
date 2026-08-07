@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-aq">
+<meta name="nexerp-build" content="2026-08-07-ar">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -13137,7 +13137,21 @@ async function _bsLoad() {
     <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code?r.a.code+' - ':''}${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div>`
 
+  const negCash = assets.rows.some(r => r.amt < -0.01) || assets.total < -0.01
+  const isBm = APP.language==='bm'
+  const cashHint = negCash ? `
+    <div style="margin-bottom:14px;padding:12px 14px;border-radius:8px;border:1px solid var(--warning);background:color-mix(in srgb, var(--warning) 12%, transparent);font-size:13px;line-height:1.45;color:var(--text-2)">
+      <strong style="color:var(--warning)"><i class="ti ti-alert-triangle"></i> ${isBm?'Tunai/aset negatif':'Negative cash/assets'}</strong>
+      <div style="margin-top:6px">${isBm
+        ? 'Ini biasa jika gaji/bayaran sudah dijournal tetapi <b>baki pembukaan/modal</b> belum dicatat. Bukan bug sistem.'
+        : 'This is common when payroll/payments are journalled but <b>opening capital</b> has not been posted yet. Not a system bug.'}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:10px" onclick="openPage('accounting',{view:'opening-balance'})">
+        <i class="ti ti-building-bank"></i> ${isBm?'Buka Baki Pembukaan':'Open Opening Balance'}
+      </button>
+    </div>` : ''
+
   result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
+    ${cashHint}
     ${section(t.assets, assets)}
     <div style="display:flex;justify-content:space-between;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span>${formatRM(assets.total)}</span></div>
     ${section(t.liabilities, liab)}
