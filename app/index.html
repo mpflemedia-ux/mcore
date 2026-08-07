@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-x">
+<meta name="nexerp-build" content="2026-08-07-y">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -462,6 +462,7 @@ tbody tr:hover{background:var(--bg)}
   body, html { background:#fff !important; }
   .card { box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
   .print-only { display:inline !important; }
+  .print-only.pdoc-sd-sig-print { display:flex !important; }
 }
 
 /* ── Printable letterhead documents (Payslip / Salary Disbursement) ──
@@ -745,13 +746,19 @@ tbody tr:hover{background:var(--bg)}
 }
 .pdoc-sd-sig-line {
   border-top:1.5px solid #334155;
-  margin:36px 8px 6px;
+  width:140px;
+  max-width:100%;
+  margin:28px auto 6px;
 }
 .pdoc-sd-sig-name {
   font-size:11px;
   font-weight:600;
   color:#0F172A;
   min-height:14px;
+  margin-top:20px;
+}
+.pdoc-sd-sig-print .pdoc-sd-sig-line {
+  margin-top:4px;
 }
 .pdoc-sd-sig-role {
   font-size:8px;
@@ -772,31 +779,33 @@ tbody tr:hover{background:var(--bg)}
     print-color-adjust:exact !important;
   }
   .pdoc-sd-sum-table th.budget, .pdoc-sd-sum-table td.budget { color:#0E7490 !important; }
+  .print-only.pdoc-sd-sig-print,
   .pdoc-sd-sig-print {
     display:flex !important;
     justify-content:center !important;
+    align-items:flex-start !important;
     flex-wrap:wrap !important;
-    gap:12px 32px !important;
+    gap:12px 40px !important;
     visibility:visible !important;
     page-break-inside:avoid !important;
+    width:100% !important;
   }
   .pdoc-sd-sig-slot {
     display:block !important;
-    width:auto !important;
-    min-width:120px !important;
-    max-width:180px !important;
-    flex:0 1 160px !important;
+    width:160px !important;
+    min-width:160px !important;
+    max-width:160px !important;
+    flex:0 0 160px !important;
+    text-align:center !important;
+  }
+  .pdoc-sd-sig-line {
+    width:140px !important;
+    max-width:140px !important;
+    margin:28px auto 6px !important;
+    border-top:1.5px solid #334155 !important;
   }
   .pdoc-sd-sig-slot.pdoc-sd-sig-empty {
     display:none !important;
-    visibility:hidden !important;
-    width:0 !important;
-    min-width:0 !important;
-    max-width:0 !important;
-    margin:0 !important;
-    padding:0 !important;
-    overflow:hidden !important;
-    flex:0 0 0 !important;
   }
   .pdoc-sd-totals { display:none !important; }
 }
@@ -11387,8 +11396,8 @@ function _sdPreparePrint() {
       sigPrint.style.display = ''
       sigPrint.innerHTML = filled.map(f =>
         '<div class="pdoc-sd-sig-slot">' +
-          '<div class="pdoc-sd-sig-line"></div>' +
           '<div class="pdoc-sd-sig-name">'+f.name.replace(/</g,'&lt;')+'</div>' +
+          '<div class="pdoc-sd-sig-line"></div>' +
           '<div class="pdoc-sd-sig-role">'+f.label.replace(/</g,'&lt;')+'</div>' +
         '</div>'
       ).join('')
