@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bd">
+<meta name="nexerp-build" content="2026-08-08-be">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -8551,15 +8551,16 @@ function _sendPosWhatsApp(receiptNo, total, method, linesText, tender, change) {
 async function renderQuoList() {
   const t = APP.language==='bm' ? {
     title:'Sebut Harga', add:'Sebut Harga Baru', quoNo:'No. Sebut Harga', customer:'Pelanggan', date:'Tarikh',
-    total:'Jumlah', status:'Status', draft:'Draf', noData:'Tiada sebut harga lagi'
+    total:'Jumlah', status:'Status', draft:'Draf', converted:'Ditukar', all:'Semua', noData:'Tiada sebut harga lagi'
   } : {
     title:'Quotations', add:'New Quotation', quoNo:'Quotation No.', customer:'Customer', date:'Date',
-    total:'Total', status:'Status', draft:'Draft', noData:'No quotations yet'
+    total:'Total', status:'Status', draft:'Draft', converted:'Converted', all:'All', noData:'No quotations yet'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('sales',{view:'quo-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_salesTabs('quo')}
+  <div id="quo-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="quo-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('quo-list-wrap')
@@ -8567,10 +8568,55 @@ async function renderQuoList() {
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('issue_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._quoListCache = data
+  window._quoListT = t
+  if(typeof window._quoStatusFilter === 'undefined' || window._quoStatusFilter === null) window._quoStatusFilter = 'all'
+  _quoRenderStatusFilters()
+  _quoRenderListTable()
+}
+
+function _quoRenderStatusFilters() {
+  const t = window._quoListT || {}
+  const bar = document.getElementById('quo-status-filters')
+  if(!bar) return
+  const counts = { all:0, draft:0, converted:0 }
+  ;(window._quoListCache||[]).forEach(q => {
+    counts.all++
+    const s = String(q.status||'draft').toLowerCase()
+    if(s === 'converted') counts.converted++
+    else counts.draft++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'draft', label:t.draft||'Draft'},
+    {k:'converted', label:t.converted||'Converted'},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._quoStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._quoStatusFilter='${tab.k}';_quoRenderStatusFilters();_quoRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _quoRenderListTable() {
+  const t = window._quoListT || {}
+  const wrap = document.getElementById('quo-list-wrap')
+  if(!wrap) return
+  const filter = window._quoStatusFilter || 'all'
+  let rows = window._quoListCache || []
+  if(filter === 'converted') rows = rows.filter(q => String(q.status||'').toLowerCase() === 'converted')
+  else if(filter === 'draft') rows = rows.filter(q => String(q.status||'draft').toLowerCase() !== 'converted')
+  if(!rows.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`
+    return
+  }
+  const statusLabel = s => String(s||'').toLowerCase()==='converted' ? (t.converted||'Converted') : (t.draft||'Draft')
   wrap.innerHTML = `<table><thead><tr><th>${t.quoNo}</th><th>${t.customer}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(q=>`<tr onclick="openPage('sales',{view:'quo-form',id:'${q.id}'})" style="cursor:pointer">
+  <tbody>${rows.map(q=>`<tr onclick="openPage('sales',{view:'quo-form',id:'${q.id}'})" style="cursor:pointer">
     <td><strong>${q.ref_no||'-'}</strong></td><td>${q.customer_name||'-'}</td><td>${formatDate(q.issue_date)}</td>
-    <td style="text-align:right">${formatRM(q.total)}</td><td>${q.status||t.draft}</td>
+    <td style="text-align:right">${formatRM(q.total)}</td><td>${statusLabel(q.status)}</td>
   </tr>`).join('')}</tbody></table>`
 }
 
