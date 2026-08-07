@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ap">
+<meta name="nexerp-build" content="2026-08-07-aq">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -5779,19 +5779,37 @@ async function renderOpeningBalance() {
       <button class="btn btn-primary" onclick="_obPost()"><i class="ti ti-check"></i> ${t.save}</button>
     </div>
   </div>`
-  const {data: coa} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type')
+  let {data: coa} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('is_active',true).order('code')
+  coa = coa || []
+  // Ensure at least one equity/capital account exists for Opening Balance
+  let equity = coa.filter(a => a.account_type==='equity' || /capital|modal|equity|owner/i.test(a.name_en||'') || String(a.code||'').startsWith('3'))
+  if(!equity.length) {
+    const payload = {
+      tenant_id: APP.tenant.id,
+      code: '3000',
+      name_en: 'Capital',
+      name_bm: 'Modal',
+      account_type: 'equity',
+      is_active: true,
+    }
+    const {data: created, error} = await sb.from('chart_of_accounts').insert(payload).select('id,code,name_en,account_type').single()
+    if(!error && created) {
+      coa = [...coa, created]
+      equity = [created]
+      showToast(isBm?'Akaun Modal (3000) dicipta automatik.':'Capital account (3000) was created automatically.', 'success')
+    }
+  }
   const cashDef = await _getDefaultAccountId('cash')
   const opts = (list, selected) => {
     const ph = `<option value="">${t.select}</option>`
     return ph + (list||[]).map(a => `<option value="${a.id}" ${selected&&selected===a.id?'selected':''}>${a.code} — ${a.name_en||''}</option>`).join('')
   }
-  const assets = (coa||[]).filter(a => a.account_type==='asset')
-  const equity = (coa||[]).filter(a => a.account_type==='equity' || /capital|modal|equity|owner/i.test(a.name_en||'') || String(a.code||'').startsWith('3'))
+  const assets = coa.filter(a => a.account_type==='asset')
   const cashEl = document.getElementById('ob-cash')
   const capEl = document.getElementById('ob-capital')
   if(cashEl) cashEl.innerHTML = opts(assets.length?assets:coa, cashDef)
-  if(capEl) capEl.innerHTML = opts(equity.length?equity:coa, null)
+  if(capEl) capEl.innerHTML = opts(equity.length?equity:coa, equity[0]?.id||null)
 }
 
 async function _obPost() {
