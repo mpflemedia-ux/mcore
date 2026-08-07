@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-overdue-csv">
+<meta name="nexerp-build" content="2026-08-08-recon">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7550,8 +7550,28 @@ function _recoRenderResults() {
 }
 
 function _recoSetState(i, state) {
-  if(_recoTxns[i]) _recoTxns[i]._state = state
+  if(!_recoTxns[i]) return
+  const isBm = APP.language==='bm'
+  if(state === 'confirmed') {
+    const m = _recoMatches[i]
+    const cand = m && m.candidate
+    // Prevent double-match of the same ERP record onto two bank lines (session-local)
+    if(cand && cand.id) {
+      const taken = _recoTxns.findIndex((t, j) =>
+        j !== i && t._state === 'confirmed' &&
+        _recoMatches[j]?.candidate?.id === cand.id &&
+        _recoMatches[j]?.candidate?.type === cand.type)
+      if(taken >= 0) {
+        showToast(isBm
+          ? `Rekod ${cand.ref_no||cand.id} sudah dipadankan pada baris lain.`
+          : `Record ${cand.ref_no||cand.id} is already matched on another line.`, 'warning')
+        return
+      }
+    }
+  }
+  _recoTxns[i]._state = state
   _recoRenderResults()
+  if(state === 'confirmed') showToast(isBm?'Padanan disahkan (tempatan sahaja).':'Match confirmed (local only).', 'success')
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
