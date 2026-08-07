@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-inv-quo-print">
+<meta name="nexerp-build" content="2026-08-08-pos-sales">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2807,7 +2807,11 @@ async function loadDashboardData() {
   const thisMonth = thisMonthAll.filter(_salesEligible)
   const lastMonth = lastMonthAll.filter(_salesEligible)
 
-  // POS completed sales (same period) — dashboard previously ignored these
+  // POS completed sales (same period).
+  // CASH vs ACCRUAL (code comment only):
+  // - Invoice recognised sales / collected = sum(paid_amt) on status Paid|Partial only (cash-recognised).
+  // - POS completed sale total is cash at the counter → counted fully in Total Sales AND Net Collected.
+  // - Accrual revenue (full invoice total when issued) is NOT used for these KPIs.
   let posThis = 0, posLast = 0, posPaidThis = 0, posPaidLast = 0
   let posCogsThis = 0, posCogsLast = 0
   try {
@@ -13767,41 +13771,70 @@ async function renderSalesReport() {
 async function _salesRepLoad() {
   const t = APP.language==='bm' ? {
     sales:'Jualan Diiktiraf', invoiced:'Jumlah Dikeluarkan', collected:'Jumlah Kutipan', outstanding:'Tertunggak',
-    count:'Bil. Paid/Partial', countAll:'Semua Invois', noData:'Tiada invois untuk tempoh ini',
-    note:'Jualan diiktiraf = jumlah dibayar pada invois Paid & Partial (sama Dashboard).'
+    count:'Bil. Paid/Partial', countAll:'Semua Invois', noData:'Tiada data jualan untuk tempoh ini',
+    note:'Jualan diiktiraf = paid_amt invois Paid/Partial + jumlah POS selesai (tunai). Selaras Dashboard.',
+    pos:'POS (selesai)'
   } : {
     sales:'Recognised Sales', invoiced:'Total Issued', collected:'Total Collected', outstanding:'Outstanding',
-    count:'Paid/Partial Count', countAll:'All Invoices', noData:'No invoices for this period',
-    note:'Recognised sales = amount paid on Paid & Partial invoices (same as Dashboard).'
+    count:'Paid/Partial Count', countAll:'All Invoices', noData:'No sales data for this period',
+    note:'Recognised sales = paid_amt on Paid/Partial invoices + completed POS totals (cash). Aligned with Dashboard.',
+    pos:'POS (completed)'
   }
   const from = document.getElementById('sales-from')?.value
   const to = document.getElementById('sales-to')?.value
   const result = document.getElementById('sales-rep-result')
 
+  // Invoice leg (cash-recognised via paid_amt on Paid|Partial only)
   const {data} = await sb.from('invoices').select('total,paid_amt,status').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('issue_date',from).lte('issue_date',to)
-  if(!data || data.length===0) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`; return }
+  const invRows = data || []
 
-  const active = data.filter(i => String(i.status||'').toLowerCase() !== 'cancelled')
+  // POS leg — completed sales are cash at counter; count full total (same as Dashboard)
+  let posTotal = 0, posCount = 0
+  try {
+    const {data: posRows} = await sb.from('pos_transactions')
+      .select('id,total,status,txn_type,created_at')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('status', 'completed')
+      .gte('created_at', from + 'T00:00:00')
+      .lte('created_at', to + 'T23:59:59.999')
+    ;(posRows||[]).forEach(p => {
+      if(p.txn_type && p.txn_type !== 'sale') return
+      posTotal += Number(p.total||0)
+      posCount++
+    })
+  } catch(e) { console.warn('_salesRepLoad POS', e) }
+
+  if(!invRows.length && !posCount) {
+    result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`
+    return
+  }
+
+  const active = invRows.filter(i => String(i.status||'').toLowerCase() !== 'cancelled')
   const eligible = active.filter(i => {
     const s = String(i.status||'').toLowerCase()
     return s === 'paid' || s === 'partial'
   })
   const totalIssued = active.reduce((s,i)=>s+Number(i.total||0),0)
-  const totalPaid = active.reduce((s,i)=>s+Number(i.paid_amt||0),0)
-  const recognised = eligible.reduce((s,i)=>s+Number(i.paid_amt||0),0)
+  const invPaid = active.reduce((s,i)=>s+Number(i.paid_amt||0),0)
+  const invRecognised = eligible.reduce((s,i)=>s+Number(i.paid_amt||0),0)
   const outstanding = active.reduce((s,i)=>s+Math.max(0, Number(i.total||0)-Number(i.paid_amt||0)),0)
+  // Combined KPIs (aligned with Dashboard loadDashboardData)
+  const recognised = invRecognised + posTotal
+  const totalPaid = invPaid + posTotal
 
   result.innerHTML = `
-  <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">${t.note}</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px">
-    <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.sales}</div><div style="font-size:22px;font-weight:700;color:var(--primary)">${formatRM(recognised)}</div></div>
+  <p style="font-size:12px;color:var(--text-3);margin:0 0 12px">${t.note}</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+    <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.sales}</div><div style="font-size:22px;font-weight:700;color:var(--primary,#0E7490)">${formatRM(recognised)}</div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.invoiced}</div><div style="font-size:22px;font-weight:700">${formatRM(totalIssued)}</div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.collected}</div><div style="font-size:22px;font-weight:700;color:var(--success)">${formatRM(totalPaid)}</div></div>
+    <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.pos||'POS'}</div><div style="font-size:22px;font-weight:700">${formatRM(posTotal)} <span style="font-size:12px;color:var(--text-3)">(${posCount})</span></div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.outstanding}</div><div style="font-size:22px;font-weight:700;color:var(--danger)">${formatRM(outstanding)}</div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.count}</div><div style="font-size:22px;font-weight:700">${eligible.length}</div></div>
     <div class="card" style="padding:20px"><div style="color:var(--text-3);font-size:12px">${t.countAll}</div><div style="font-size:22px;font-weight:700">${active.length}</div></div>
   </div>`
 }
+
 
 // ─── Custom Report Builder ───────────────────────────────────────────────────
 const _repCustomSources = {
