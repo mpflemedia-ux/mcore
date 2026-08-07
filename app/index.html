@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ac">
+<meta name="nexerp-build" content="2026-08-07-ad">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -729,46 +729,17 @@ tbody tr:hover{background:var(--bg)}
   font-weight:800;
   color:#0E7490;
 }
-/* SD signatures: off-screen on screen (still in layout tree for print), table on print */
-.sd-sig-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 32px;
-  table-layout: fixed;
-}
-.sd-sig-table td {
+/* Signature row lives inside sum table (same element that already prints) */
+.pdoc-sd-sum-table tr.sd-sig-row td {
   text-align: center;
-  vertical-align: top;
-  padding: 0 12px;
   border: none;
-}
-.sd-sig-table .sd-sig-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: #0F172A;
-  padding-bottom: 4px;
-}
-.sd-sig-table .sd-sig-line {
-  border-top: 1.5px solid #334155;
-  width: 130px;
-  margin: 0 auto 4px;
-}
-.sd-sig-table .sd-sig-role {
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: #64748B;
+  background: transparent;
+  padding-top: 28px;
+  font-weight: 400;
 }
 @media screen {
-  .sd-sig-table {
-    position: absolute !important;
-    left: -99999px !important;
-    top: 0 !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-  }
+  /* Keep visible under totals so user can confirm names will print */
+  .pdoc-sd-sum-table tr.sd-sig-row td { padding-top: 20px; }
 }
 @media print {
   .pdoc-sd-sum-table { display:table !important; width:100% !important; }
@@ -781,19 +752,10 @@ tbody tr:hover{background:var(--bg)}
   }
   .pdoc-sd-sum-table th.budget, .pdoc-sd-sum-table td.budget { color:#0E7490 !important; }
   .pdoc-sd-totals { display:none !important; }
-  .sd-sig-table {
-    display: table !important;
-    position: static !important;
-    left: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    margin-top: 28px !important;
-    page-break-inside: avoid !important;
-  }
-  .sd-sig-table td {
+  .pdoc-sd-sum-table tr.sd-sig-row td {
     display: table-cell !important;
     visibility: visible !important;
+    padding-top: 28px !important;
   }
 }
 
@@ -11310,14 +11272,19 @@ async function renderSalaryDisbursement(month, year) {
         <th>PCB</th>
         <th class="budget">${isBm?'Bajet Diperlukan':'Budget Required'}</th>
       </tr></thead>
-      <tbody><tr>
+      <tbody>
+      <tr>
         <td id="sd-grand-total">${formatRM(grandTotal)}</td>
         <td id="sd-grand-epf">${formatRM(sumEPF)}</td>
         <td id="sd-grand-socso">${formatRM(sumSOCSO)}</td>
         <td id="sd-grand-eis">${formatRM(sumEIS)}</td>
         <td id="sd-grand-pcb">${formatRM(sumPCB)}</td>
         <td class="budget" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
-      </tr></tbody>
+      </tr>
+      <tr class="sd-sig-row" id="sd-sig-row">
+        <td colspan="6" id="sd-sig-cell" style="padding-top:28px;text-align:center"></td>
+      </tr>
+      </tbody>
     </table>
     <div class="pdoc-sig-grid pdoc-sd-sig no-print" style="margin:20px 12px 12px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
@@ -11325,7 +11292,6 @@ async function renderSalaryDisbursement(month, year) {
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
     </div>
-    <div id="sd-sig-print"></div>
     </div>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
       <div style="font-size:11px;color:#64748B;max-width:520px;line-height:1.45">${t.sessionHint}</div>
@@ -11346,9 +11312,7 @@ async function renderSalaryDisbursement(month, year) {
 
   _sdRegisterPrintListeners()
   _sdBindSigPersist()
-  // Seed print sig block so Chrome print layout always has the nodes
-  const _sigBox0 = document.getElementById('sd-sig-print')
-  if(_sigBox0) _sigBox0.innerHTML = _sdBuildPrintSigsHtml()
+  _sdRefreshSigRow()
 }
 
 // Hides signature fields the staff never filled in so print/PDF output
@@ -11368,7 +11332,7 @@ function _sdBuildPrintSigsHtml() {
   ]
   let pref = {}
   try { pref = JSON.parse(localStorage.getItem('nexerp_sd_sigs_'+(APP.tenant&&APP.tenant.id||'x'))||'{}')||{} } catch(e) {}
-  const cells = []
+  const items = []
   roles.forEach(r => {
     const inp = document.getElementById('sig-input-'+r.k)
     let name = (inp && inp.value) ? String(inp.value).trim() : ''
@@ -11376,24 +11340,29 @@ function _sdBuildPrintSigsHtml() {
     if(!name) return
     const lab = document.querySelector('#sig-'+r.k+' .form-label')
     const label = (lab && lab.textContent.trim()) || r.fallback
-    cells.push(
-      '<td>' +
-        '<div class="sd-sig-name">'+esc(name)+'</div>' +
-        '<div class="sd-sig-line"></div>' +
-        '<div class="sd-sig-role">'+esc(label)+'</div>' +
-      '</td>'
+    items.push(
+      '<div style="display:inline-block;width:150px;text-align:center;vertical-align:top;margin:0 16px">' +
+        '<div style="font-size:12px;font-weight:600;color:#0F172A;margin-bottom:4px">'+esc(name)+'</div>' +
+        '<div style="width:130px;margin:0 auto 4px;border-top:1.5px solid #334155;height:0"></div>' +
+        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">'+esc(label)+'</div>' +
+      '</div>'
     )
   })
-  if(!cells.length) return ''
-  return '<table class="sd-sig-table"><tr>'+cells.join('')+'</tr></table>'
+  return items.join('')
+}
+function _sdRefreshSigRow() {
+  const cell = document.getElementById('sd-sig-cell')
+  const row = document.getElementById('sd-sig-row')
+  if(!cell || !row) return
+  const html = _sdBuildPrintSigsHtml()
+  cell.innerHTML = html
+  row.style.display = html ? '' : 'none'
 }
 
 function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape', 6);
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
-  // Refresh print signatures from current input values (filled only)
-  const _sigBox = document.getElementById('sd-sig-print')
-  if(_sigBox) _sigBox.innerHTML = _sdBuildPrintSigsHtml()
+  _sdRefreshSigRow()
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
     const set = (id, text) => { const el = document.getElementById(id); if(el) el.innerHTML = text }
@@ -11453,10 +11422,7 @@ function _sdSaveSigs() {
     secondApproval: document.getElementById('sig-input-secondApproval')?.value || ''
   }
   try { localStorage.setItem(_sdSigStorageKey(), JSON.stringify(o)) } catch(e) {}
-  try {
-    const b = document.getElementById('sd-sig-print')
-    if(b) b.innerHTML = _sdBuildPrintSigsHtml()
-  } catch(e) {}
+  try { _sdRefreshSigRow() } catch(e) {}
 }
 function _sdBindSigPersist() {
   ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k => {
