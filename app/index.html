@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ao">
+<meta name="nexerp-build" content="2026-08-07-ap">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -3820,6 +3820,7 @@ async function renderSettings() {
   let tenantRow = {}
   let coaAccounts = []
   let acctMappings = {}
+  let glCheck = { coa:0, maps:0, mapsNeed:9, employees:0, customers:0, products:0, opening:false, invoice:false, payroll:false }
   if(isAdmin) {
     const {data} = await sb.from('tenants').select('*').eq('id',APP.tenant.id).single()
     tenantRow = data || {}
@@ -3827,6 +3828,30 @@ async function renderSettings() {
     coaAccounts = coaData || []
     const {data: mapData} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
     ;(mapData||[]).forEach(m => { acctMappings[m.mapping_key] = m.account_id })
+    glCheck.coa = coaAccounts.length
+    const need = ['cash','sales_revenue','accounts_payable','general_expense','salary_expense','epf_payable','socso_payable','eis_payable','pcb_payable']
+    glCheck.mapsNeed = need.length
+    glCheck.maps = need.filter(k => !!acctMappings[k]).length
+    try {
+      const [{count:ec},{count:cc},{count:pc}] = await Promise.all([
+        sb.from('employees').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null),
+        sb.from('customers').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null),
+        sb.from('products').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null),
+      ])
+      glCheck.employees = ec||0; glCheck.customers = cc||0; glCheck.products = pc||0
+    } catch(e) {}
+    try {
+      const {data: ob} = await sb.from('journal_entries').select('id').eq('tenant_id',APP.tenant.id).eq('source_table','opening_balance').is('deleted_at',null).limit(1)
+      glCheck.opening = !!(ob&&ob.length)
+    } catch(e) {}
+    try {
+      const {data: inv} = await sb.from('invoices').select('id').eq('tenant_id',APP.tenant.id).is('deleted_at',null).limit(1)
+      glCheck.invoice = !!(inv&&inv.length)
+    } catch(e) {}
+    try {
+      const {data: pr} = await sb.from('payroll_records').select('id').eq('tenant_id',APP.tenant.id).limit(1)
+      glCheck.payroll = !!(pr&&pr.length)
+    } catch(e) {}
   }
   const da = APP.language==='bm' ? {
     title:'Akaun Default', note:'Tetapkan akaun buku besar (GL) default sekali sahaja di sini — auto-posting jurnal (bayaran invois, POS, tuntutan perbelanjaan, bil pembekal, gaji) akan guna tetapan ni, jadi tak perlu pilih akaun setiap kali buat transaksi.',
@@ -3951,6 +3976,41 @@ async function renderSettings() {
 
       <button class="btn btn-primary" onclick="_cpSave()"><i class="ti ti-check"></i> ${c.save}</button>
       <div id="cp-save-msg" style="margin-top:8px;font-size:12px"></div>
+    </div>
+  </div>` : ''}
+  ${isAdmin ? `
+  <div class="card" style="max-width:700px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Senarai Semak Go-Live':'Go-Live Checklist'}</div></div>
+    <div style="padding:16px">
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5">${APP.language==='bm'
+        ? 'Tandakan item sebelum client guna sistem secara langsung. Status dikemas kini automatik.'
+        : 'Complete these items before the client uses the system live. Status updates automatically.'}</div>
+      ${(() => {
+        const isBm = APP.language==='bm'
+        const row = (ok, label, hint, link) => {
+          const icon = ok ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--warning)">○</span>'
+          const go = link ? ` <a href="#" onclick="event.preventDefault();${link}" style="font-size:12px;margin-left:6px">${isBm?'Buka':'Open'} →</a>` : ''
+          return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:16px;line-height:1.2">${icon}</div>
+            <div style="flex:1"><div style="font-size:13px;font-weight:600;color:var(--text)">${label}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:2px">${hint}${go}</div></div>
+          </div>`
+        }
+        const mapsOk = glCheck.maps >= glCheck.mapsNeed
+        return [
+          row(glCheck.coa>0, isBm?'Carta Akaun':'Chart of Accounts', isBm?(glCheck.coa+' akaun'):(glCheck.coa+' accounts'), "openPage('accounting',{})"),
+          row(mapsOk, isBm?'Akaun Lalai (wajib)':'Default Accounts (required)', isBm?(glCheck.maps+'/'+glCheck.mapsNeed+' lengkap'):(glCheck.maps+'/'+glCheck.mapsNeed+' complete'), null),
+          row(glCheck.opening, isBm?'Baki Pembukaan / Modal':'Opening Balance / Capital', isBm?'Debit tunai, kredit modal':'Debit cash, credit capital', "openPage('accounting',{view:'opening-balance'})"),
+          row(glCheck.employees>0, isBm?'Pekerja':'Employees', isBm?(glCheck.employees+' rekod'):(glCheck.employees+' records'), "openPage('hr',{})"),
+          row(glCheck.customers>0, isBm?'Pelanggan (jualan)':'Customers (sales)', isBm?(glCheck.customers+' rekod'):(glCheck.customers+' records'), "openPage('crm',{})"),
+          row(glCheck.products>0, isBm?'Produk (POS/stok)':'Products (POS/stock)', isBm?(glCheck.products+' rekod'):(glCheck.products+' records'), "openPage('inventory',{})"),
+          row(glCheck.invoice, isBm?'Ujian invois / jualan':'Test invoice / sale', isBm?'Sekurang-kurangnya 1 invois':'At least 1 invoice', "openPage('sales',{})"),
+          row(glCheck.payroll, isBm?'Ujian penggajian':'Test payroll', isBm?'Sekurang-kurangnya 1 rekod gaji':'At least 1 payroll record', "openPage('hr',{view:'payroll-run'})"),
+        ].join('')
+      })()}
+      <div style="margin-top:12px;font-size:12px;color:var(--text-2)">${APP.language==='bm'
+        ? 'Selepas lengkap: semak Dashboard (Hasil / Perbelanjaan / Untung) dan Laporan → Imbangan Duga.'
+        : 'When complete: check Dashboard (Revenue / Expenses / Net) and Reports → Trial Balance.'}</div>
     </div>
   </div>` : ''}
   ${isAdmin ? `
