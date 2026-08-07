@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-j">
+<meta name="nexerp-build" content="2026-08-07-k">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -635,30 +635,32 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-sd-totals {
   display:grid;
   grid-template-columns:repeat(6,minmax(0,1fr));
-  gap:1px;
-  background:var(--pdoc-accent);
-  border:1px solid var(--pdoc-accent);
+  gap:0;
+  background:transparent;
+  border:1px solid #E2E8F0;
+  border-left:none;
+  border-right:none;
   margin:0;
 }
 .pdoc-sd-tot {
-  background:var(--pdoc-accent, #0E7490);
-  color:#fff;
-  padding:10px 8px;
+  background:transparent;
+  color:#0F172A;
+  padding:12px 8px;
   text-align:center;
   display:flex;
   flex-direction:column;
   gap:4px;
   justify-content:center;
   min-width:0;
-  -webkit-print-color-adjust:exact;
-  print-color-adjust:exact;
+  border-right:1px solid #E2E8F0;
 }
+.pdoc-sd-tot:last-child { border-right:none; }
 .pdoc-sd-tot .k {
   font-size:9px;
   font-weight:600;
   letter-spacing:.06em;
   text-transform:uppercase;
-  opacity:.88;
+  color:#64748B;
   line-height:1.2;
 }
 .pdoc-sd-tot .v {
@@ -667,13 +669,13 @@ tbody tr:hover{background:var(--bg)}
   font-size:13px;
   letter-spacing:-.01em;
   white-space:nowrap;
+  color:#0F172A;
 }
 .pdoc-sd-tot.budget {
-  background:#0C4A6E;
-  background:color-mix(in srgb, var(--pdoc-accent) 42%, #0F172A);
+  background:transparent;
 }
-.pdoc-sd-tot.budget .k { opacity:.95; font-size:9px; }
-.pdoc-sd-tot.budget .v { font-size:15px; font-weight:800; }
+.pdoc-sd-tot.budget .k { color:#0E7490; font-size:9px; }
+.pdoc-sd-tot.budget .v { font-size:15px; font-weight:800; color:#0E7490; }
 @media (max-width:900px){
   .pdoc-sd-totals { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
@@ -760,26 +762,25 @@ tbody tr:hover{background:var(--bg)}
   .pdoc-sd-employer-note { display:none !important; }
   .pdoc-sd-totals {
     page-break-inside:avoid !important;
-    background:#0E7490 !important;
-    border-color:#0E7490 !important;
-    -webkit-print-color-adjust:exact !important;
-    print-color-adjust:exact !important;
+    background:transparent !important;
+    border:1px solid #CBD5E1 !important;
+    border-left:none !important;
+    border-right:none !important;
   }
   .pdoc-sd-tot {
     padding:8px 6px !important;
-    background:#0E7490 !important;
-    color:#ffffff !important;
-    -webkit-print-color-adjust:exact !important;
-    print-color-adjust:exact !important;
+    background:transparent !important;
+    color:#0F172A !important;
+    border-right:1px solid #E2E8F0 !important;
   }
-  .pdoc-sd-tot .k { font-size:7.5px !important; color:#ffffff !important; opacity:0.9 !important; }
-  .pdoc-sd-tot .v { font-size:12px !important; color:#ffffff !important; }
+  .pdoc-sd-tot:last-child { border-right:none !important; }
+  .pdoc-sd-tot .k { font-size:7.5px !important; color:#64748B !important; opacity:1 !important; }
+  .pdoc-sd-tot .v { font-size:12px !important; color:#0F172A !important; }
   .pdoc-sd-tot.budget {
-    background:#0C4A6E !important;
-    -webkit-print-color-adjust:exact !important;
-    print-color-adjust:exact !important;
+    background:transparent !important;
   }
-  .pdoc-sd-tot.budget .v { font-size:14px !important; color:#ffffff !important; }
+  .pdoc-sd-tot.budget .k { color:#0E7490 !important; }
+  .pdoc-sd-tot.budget .v { font-size:14px !important; color:#0E7490 !important; }
   .pdoc-sd-closing { page-break-inside:avoid !important; break-inside:avoid !important; }
   /* Space between totals strip and signature lines — room for wet-ink */
   .pdoc-sig-grid {
