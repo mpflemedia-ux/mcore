@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ab">
+<meta name="nexerp-build" content="2026-08-07-ac">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -729,59 +729,71 @@ tbody tr:hover{background:var(--bg)}
   font-weight:800;
   color:#0E7490;
 }
-/* SD print signatures — screen hidden; print shows if not empty */
+/* SD signatures: off-screen on screen (still in layout tree for print), table on print */
+.sd-sig-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 32px;
+  table-layout: fixed;
+}
+.sd-sig-table td {
+  text-align: center;
+  vertical-align: top;
+  padding: 0 12px;
+  border: none;
+}
+.sd-sig-table .sd-sig-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0F172A;
+  padding-bottom: 4px;
+}
+.sd-sig-table .sd-sig-line {
+  border-top: 1.5px solid #334155;
+  width: 130px;
+  margin: 0 auto 4px;
+}
+.sd-sig-table .sd-sig-role {
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #64748B;
+}
 @media screen {
-  #sd-sig-print { display: none !important; }
+  .sd-sig-table {
+    position: absolute !important;
+    left: -99999px !important;
+    top: 0 !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+  }
 }
 @media print {
   .pdoc-sd-sum-table { display:table !important; width:100% !important; }
   .pdoc-sd-sum-table th, .pdoc-sd-sum-table td {
     display:table-cell !important;
     visibility:visible !important;
-    opacity:1 !important;
     color:#0F172A !important;
     -webkit-print-color-adjust:exact !important;
     print-color-adjust:exact !important;
   }
   .pdoc-sd-sum-table th.budget, .pdoc-sd-sum-table td.budget { color:#0E7490 !important; }
   .pdoc-sd-totals { display:none !important; }
-  #sd-sig-print {
-    display: flex !important;
-    justify-content: center !important;
-    align-items: flex-start !important;
-    flex-wrap: wrap !important;
-    gap: 24px 48px !important;
+  .sd-sig-table {
+    display: table !important;
+    position: static !important;
+    left: auto !important;
     width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
     margin-top: 28px !important;
     page-break-inside: avoid !important;
-    text-align: center !important;
   }
-  #sd-sig-print:empty { display: none !important; }
-  #sd-sig-print .sd-sig-item {
-    display: block !important;
-    width: 150px !important;
-    max-width: 150px !important;
-    flex: 0 0 150px !important;
-    text-align: center !important;
-  }
-  #sd-sig-print .sd-sig-name {
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    color: #0F172A !important;
-    margin-bottom: 4px !important;
-  }
-  #sd-sig-print .sd-sig-line {
-    width: 130px !important;
-    margin: 0 auto 4px !important;
-    border-top: 1.5px solid #334155 !important;
-    height: 0 !important;
-  }
-  #sd-sig-print .sd-sig-role {
-    font-size: 8px !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: .04em !important;
-    color: #64748B !important;
+  .sd-sig-table td {
+    display: table-cell !important;
+    visibility: visible !important;
   }
 }
 
@@ -879,8 +891,6 @@ tbody tr:hover{background:var(--bg)}
     visibility:visible !important;
     page-break-before:auto !important;
     break-before:auto !important;
-    page-break-inside:avoid !important;
-    break-inside:avoid !important;
   }
   .pdoc-sd-totals {
     display:grid !important;
@@ -11356,29 +11366,26 @@ function _sdBuildPrintSigsHtml() {
     { k:'firstApproval', fallback:'First Approval' },
     { k:'secondApproval', fallback:'Second Approval' },
   ]
-  const parts = []
+  let pref = {}
+  try { pref = JSON.parse(localStorage.getItem('nexerp_sd_sigs_'+(APP.tenant&&APP.tenant.id||'x'))||'{}')||{} } catch(e) {}
+  const cells = []
   roles.forEach(r => {
     const inp = document.getElementById('sig-input-'+r.k)
     let name = (inp && inp.value) ? String(inp.value).trim() : ''
-    // Fallback to localStorage prefill if input not in DOM yet
-    if(!name) {
-      try {
-        const pref = JSON.parse(localStorage.getItem('nexerp_sd_sigs_'+(APP.tenant&&APP.tenant.id||'x'))||'{}')||{}
-        name = String(pref[r.k]||'').trim()
-      } catch(e) {}
-    }
+    if(!name) name = String(pref[r.k]||'').trim()
     if(!name) return
     const lab = document.querySelector('#sig-'+r.k+' .form-label')
     const label = (lab && lab.textContent.trim()) || r.fallback
-    parts.push(
-      '<div class="sd-sig-item">' +
+    cells.push(
+      '<td>' +
         '<div class="sd-sig-name">'+esc(name)+'</div>' +
         '<div class="sd-sig-line"></div>' +
         '<div class="sd-sig-role">'+esc(label)+'</div>' +
-      '</div>'
+      '</td>'
     )
   })
-  return parts.join('')
+  if(!cells.length) return ''
+  return '<table class="sd-sig-table"><tr>'+cells.join('')+'</tr></table>'
 }
 
 function _sdPreparePrint() {
