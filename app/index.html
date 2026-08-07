@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ai">
+<meta name="nexerp-build" content="2026-08-07-aj">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2894,7 +2894,10 @@ async function loadDashboardData() {
   Object.entries(kpis).forEach(([k,v]) => {
     const lbl = document.getElementById('db-lbl-'+k), val = document.getElementById('db-val-'+k), foot = document.getElementById('db-delta-'+k)
     if(lbl) lbl.textContent = v.label
-    if(val) val.textContent = v.value
+    if(val) {
+      val.textContent = v.value
+      val.style.color = v.valueColor || ''
+    }
     if(foot) {
       if(v.delta === null) {
         // Collection Rate: status badge only
