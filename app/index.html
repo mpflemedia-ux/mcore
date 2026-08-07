@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-aw">
+<meta name="nexerp-build" content="2026-08-08-ba">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2794,8 +2794,16 @@ async function loadDashboardData() {
   _dbInvCache = inv
   const ms = monthStart.toISOString().slice(0,10)
   const lms = lastMonthStart.toISOString().slice(0,10)
-  const thisMonth = inv.filter(i => i.issue_date >= ms)
-  const lastMonth = inv.filter(i => i.issue_date >= lms && i.issue_date < ms)
+  // All invoices in period (for status charts etc.)
+  const thisMonthAll = inv.filter(i => i.issue_date >= ms)
+  const lastMonthAll = inv.filter(i => i.issue_date >= lms && i.issue_date < ms)
+  // Sales KPIs: only Paid + Partial (exclude Unpaid / Cancelled)
+  const _salesEligible = i => {
+    const s = String(i.status||'').toLowerCase()
+    return s === 'paid' || s === 'partial'
+  }
+  const thisMonth = thisMonthAll.filter(_salesEligible)
+  const lastMonth = lastMonthAll.filter(_salesEligible)
 
   // POS completed sales (same period) — dashboard previously ignored these
   let posThis = 0, posLast = 0, posPaidThis = 0, posPaidLast = 0
@@ -2936,7 +2944,7 @@ async function loadDashboardData() {
   })
 
   _dbRenderGrowthChart(inv)
-  _dbRenderStatusDonut(thisMonth)
+  _dbRenderStatusDonut(thisMonthAll)
   _dbRenderBreakdown(thisMonth)
   _dbRenderCustomerDonut(thisMonth)
   _dbRenderMonthlyBar(inv)
