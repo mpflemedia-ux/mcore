@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-p">
+<meta name="nexerp-build" content="2026-08-07-r">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -685,7 +685,7 @@ tbody tr:hover{background:var(--bg)}
 }
 .pdoc-sd-tot.budget .k { color:#0E7490; font-size:8px; }
 .pdoc-sd-tot.budget .v { font-size:13px; font-weight:800; color:#0E7490; }
-@media (max-width:900px){
+@media screen and (max-width:900px){
   .pdoc-sd-totals { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 
@@ -760,32 +760,37 @@ tbody tr:hover{background:var(--bg)}
   .pdoc-company-sub { font-size:8px !important; line-height:1.25 !important; }
   .pdoc-meta { font-size:8px !important; }
   .pdoc-title-bar { padding:5px 8px !important; font-size:11px !important; letter-spacing:.03em !important; }
-  .pdoc-sd-scroll { overflow:visible !important; }
+  .pdoc-sd-scroll { overflow:visible !important; height:auto !important; max-height:none !important; }
   /* Max 5 employee rows per printed page; thead repeats on each page */
   .pdoc-sd-table thead { display:table-header-group !important; }
   .pdoc-sd-table tbody { display:table-row-group !important; }
   .pdoc-sd-table tr { page-break-inside:avoid !important; break-inside:avoid !important; }
   .pdoc-sd-row-break { page-break-after:always !important; break-after:page !important; }
+  /* Totals + signatures stay on the same page as remaining staff (no forced extra page) */
   .pdoc-sd-closing {
-    page-break-inside:avoid !important;
-    break-inside:avoid !important;
     display:block !important;
     visibility:visible !important;
-  }
-  /* >5 staff: totals+signatures on a clean final page (never clipped mid-strip) */
-  .pdoc-sd-closing-break {
-    page-break-before:always !important;
-    break-before:page !important;
+    page-break-before:auto !important;
+    break-before:auto !important;
+    page-break-inside:auto !important;
   }
   .pdoc-sd-totals {
     display:grid !important;
     grid-template-columns:repeat(6,minmax(0,1fr)) !important;
     visibility:visible !important;
+    page-break-inside:avoid !important;
+    width:100% !important;
+    max-width:100% !important;
   }
-  .pdoc-sd-tot { visibility:visible !important; }
-  .pdoc-sig-grid {
+  .pdoc-sd-tot {
+    visibility:visible !important;
+    display:flex !important;
+  }
+  .pdoc-sig-grid, .pdoc-sd-sig {
     display:flex !important;
     visibility:visible !important;
+    page-break-inside:avoid !important;
+    margin-top:14px !important;
   }
 
   .pdoc-sd-meta { padding:3px 8px !important; font-size:8px !important; }
@@ -823,12 +828,12 @@ tbody tr:hover{background:var(--bg)}
     visibility:visible !important;
     page-break-inside:avoid !important;
     break-inside:avoid !important;
-    margin-top:24px !important;
+    margin-top:16px !important;
     padding-top:0 !important;
     border:none !important;
     border-top:none !important;
     background:transparent !important;
-    gap:12px 24px !important;
+    gap:10px 16px !important;
   }
   .pdoc-sig-grid .form-group { flex:1 1 0 !important; max-width:none !important; }
   .pdoc-sig-grid .form-input {
@@ -11142,7 +11147,7 @@ async function renderSalaryDisbursement(month, year) {
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`}).join('')}</tbody>
     </table>
-    <div class="pdoc-sd-closing${data.length > 5 ? ' pdoc-sd-closing-break' : ''}">
+    <div class="pdoc-sd-closing">
     <div class="pdoc-sd-totals">
       <div class="pdoc-sd-tot"><span class="k">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="v" id="sd-grand-total">${formatRM(grandTotal)}</span></div>
       <div class="pdoc-sd-tot"><span class="k">EPF</span><span class="v" id="sd-grand-epf">${formatRM(sumEPF)}</span></div>
@@ -11151,7 +11156,7 @@ async function renderSalaryDisbursement(month, year) {
       <div class="pdoc-sd-tot"><span class="k">PCB</span><span class="v" id="sd-grand-pcb">${formatRM(sumPCB)}</span></div>
       <div class="pdoc-sd-tot budget"><span class="k">${isBm?'Bajet Diperlukan':'Budget Required'}</span><span class="v" id="sd-grand-budget">${formatRM(budgetRequired)}</span></div>
     </div>
-    <div class="pdoc-sig-grid" style="margin:28px 12px 12px">
+    <div class="pdoc-sig-grid pdoc-sd-sig" style="margin:20px 12px 12px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
