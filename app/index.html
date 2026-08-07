@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-ba">
+<meta name="nexerp-build" content="2026-08-08-bb">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2847,15 +2847,17 @@ async function loadDashboardData() {
 
   const sum = arr => arr.reduce((s,i)=>s+Number(i.total||0),0)
   const sumPaid = arr => arr.reduce((s,i)=>s+Number(i.paid_amt||0),0)
+  // Sales amount: Paid = full total (via paid_amt), Partial = amount actually paid only
+  const sumSalesAmt = arr => arr.reduce((s,i)=>s+Number(i.paid_amt||0),0)
   const pctChange = (cur,prev) => prev===0 ? (cur>0?100:0) : ((cur-prev)/prev*100)
 
-  const curSales = sum(thisMonth) + posThis, prevSales = sum(lastMonth) + posLast
+  const curSales = sumSalesAmt(thisMonth) + posThis, prevSales = sumSalesAmt(lastMonth) + posLast
   const curPaid = sumPaid(thisMonth) + posPaidThis, prevPaid = sumPaid(lastMonth) + posPaidLast
   const curRate = curSales ? (curPaid/curSales*100) : 0
   const prevRate = prevSales ? (prevPaid/prevSales*100) : 0
   const invCountThis = thisMonth.length, invCountLast = lastMonth.length
-  const curAvg = invCountThis ? sum(thisMonth)/invCountThis : 0
-  const prevAvg = invCountLast ? sum(lastMonth)/invCountLast : 0
+  const curAvg = invCountThis ? sumSalesAmt(thisMonth)/invCountThis : 0
+  const prevAvg = invCountLast ? sumSalesAmt(lastMonth)/invCountLast : 0
   const curCount = invCountThis, prevCount = invCountLast
 
   // Gross Profit = Sales - COGS (qty × products.unit_cost per invoice line).
@@ -2873,9 +2875,17 @@ async function loadDashboardData() {
       .select('invoice_id,qty,product_id,products(unit_cost)')
       .eq('tenant_id', APP.tenant.id)
       .in('invoice_id', allRelevantIds)
+    const invById = {}
+    ;[...thisMonth, ...lastMonth].forEach(i => { invById[i.id] = i })
     const thisSet = new Set(thisMonthIds), lastSet = new Set(lastMonthIds)
     ;(items||[]).forEach(it => {
-      const cost = Number(it.qty||0) * Number(it.products?.unit_cost||0)
+      let cost = Number(it.qty||0) * Number(it.products?.unit_cost||0)
+      const inv = invById[it.invoice_id]
+      if(inv) {
+        const tot = Number(inv.total||0)
+        const paid = Number(inv.paid_amt||0)
+        if(tot > 0.005 && paid < tot - 0.005) cost = cost * (paid / tot) // partial: pro-rate COGS
+      }
       if(thisSet.has(it.invoice_id)) curCOGS += cost
       else if(lastSet.has(it.invoice_id)) prevCOGS += cost
     })
