@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bi">
+<meta name="nexerp-build" content="2026-08-08-bj">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7767,12 +7767,41 @@ function _invRenderListTable(t) {
     <td style="white-space:nowrap" onclick="event.stopPropagation()">
       ${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i></button>`:''}
       <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
-        onclick="_invDelete('${i.id}','${(i.ref_no||'').replace(/'/g,"\\'")}',${Number(i.paid_amt||0)})" title="${t.del||'Delete'}">
+        onclick="_invoiceDelete('${i.id}','${(i.ref_no||'').replace(/'/g,"\\'")}',${Number(i.paid_amt||0)})" title="${t.del||'Delete'}">
         <i class="ti ti-trash"></i>
       </button>
     </td>
   </tr>`
   }).join('')}</tbody></table>`
+}
+
+
+async function _invoiceDelete(id, refNo, paidAmt) {
+  const isBm = APP.language==='bm'
+  if(Number(paidAmt||0) > 0.005) {
+    if(!confirm(isBm
+      ? `Invois ${refNo||''} ada bayaran. Padam juga akan clear bayaran & journal berkaitan. Teruskan?`
+      : `Invoice ${refNo||''} has payments. Delete will also clear related payments & journals. Continue?`)) return
+  } else {
+    if(!confirm(isBm
+      ? `Padam invois ${refNo||''}? Tindakan ini tidak boleh dibatalkan.`
+      : `Delete invoice ${refNo||''}? This cannot be undone.`)) return
+  }
+  try {
+    if(typeof _invClearPayments === 'function') await _invClearPayments(id)
+    if(typeof _invClearPaymentJournals === 'function') await _invClearPaymentJournals(id)
+    let {error} = await sb.from('invoices').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(error && /deleted_at|column/i.test(error.message||'')) {
+      ;({error} = await sb.from('invoices').delete().eq('id', id).eq('tenant_id', APP.tenant.id))
+    }
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    try { await sb.from('invoice_items').delete().eq('invoice_id', id) } catch(e) {}
+    auditLog('delete', 'invoices', id)
+    showToast(isBm?'Invois dipadam.':'Invoice deleted.', 'success')
+    renderInvList()
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 async function _invDraftReminder(invId) {
@@ -9054,29 +9083,95 @@ async function _suppSave(id) {
 async function renderPOList() {
   const t = APP.language==='bm' ? {
     title:'Pesanan Belian', add:'PO Baru', poNo:'No. PO', supplier:'Pembekal', date:'Tarikh', status:'Status', total:'Jumlah',
-    draft:'Draf', sent:'Dihantar', partial:'Sebahagian', received:'Diterima', cancelled:'Dibatalkan', noData:'Tiada PO lagi'
+    draft:'Draf', sent:'Dihantar', partial:'Sebahagian', received:'Diterima', cancelled:'Dibatalkan', all:'Semua', del:'Padam', noData:'Tiada PO lagi'
   } : {
     title:'Purchase Orders', add:'New PO', poNo:'PO No.', supplier:'Supplier', date:'Date', status:'Status', total:'Total',
-    draft:'Draft', sent:'Sent', partial:'Partial', received:'Received', cancelled:'Cancelled', noData:'No purchase orders yet'
+    draft:'Draft', sent:'Sent', partial:'Partial', received:'Received', cancelled:'Cancelled', all:'All', del:'Delete', noData:'No purchase orders yet'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'po-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_purchTabs('po')}
+  <div id="po-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="po-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('po-list-wrap')
   const {data, error} = await sb.from('purchase_orders').select('id,po_no,order_date,status,total,suppliers(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('order_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._poListCache = data
+  window._poListT = t
+  if(!window._poStatusFilter) window._poStatusFilter = 'all'
+  _poRenderStatusFilters()
+  _poRenderListTable()
+}
+
+function _poRenderStatusFilters() {
+  const t = window._poListT || {}
+  const bar = document.getElementById('po-status-filters')
+  if(!bar) return
+  const keys = ['all','draft','sent','partial','received','cancelled']
+  const counts = Object.fromEntries(keys.map(k => [k, 0]))
+  ;(window._poListCache||[]).forEach(p => {
+    counts.all++
+    const s = String(p.status||'draft').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else counts.draft++
+  })
+  const tabs = keys.map(k => ({k, label: t[k]||k}))
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._poStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._poStatusFilter='${tab.k}';_poRenderStatusFilters();_poRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _poRenderListTable() {
+  const t = window._poListT || {}
+  const wrap = document.getElementById('po-list-wrap')
+  if(!wrap) return
+  const filter = window._poStatusFilter || 'all'
+  let rows = window._poListCache || []
+  if(filter !== 'all') rows = rows.filter(p => String(p.status||'draft').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='received'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--danger)':'var(--text-3)'
   const statusLabel = s => t[s]||s
-  wrap.innerHTML = `<table><thead><tr><th>${t.poNo}</th><th>${t.supplier}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(p=>`<tr onclick="openPage('purchasing',{view:'po-detail',id:'${p.id}'})" style="cursor:pointer">
-    <td><strong>${p.po_no}</strong></td><td>${p.suppliers?.name||'-'}</td><td>${formatDate(p.order_date)}</td>
+  wrap.innerHTML = `<table><thead><tr><th>${t.poNo}</th><th>${t.supplier}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
+  <tbody>${rows.map(p=>`<tr onclick="openPage('purchasing',{view:'po-detail',id:'${p.id}'})" style="cursor:pointer">
+    <td><strong>${p.po_no||'-'}</strong></td><td>${p.suppliers?.name||'-'}</td><td>${formatDate(p.order_date)}</td>
     <td style="text-align:right">${formatRM(p.total)}</td>
     <td><span style="color:${statusColor(p.status)};font-weight:600">${statusLabel(p.status)}</span></td>
+    <td style="text-align:center" onclick="event.stopPropagation()">
+      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+        onclick="_poDelete('${p.id}','${(p.po_no||'').replace(/'/g,"\\'")}','${String(p.status||'').replace(/'/g,"\\'")}')" title="${t.del||'Delete'}">
+        <i class="ti ti-trash"></i>
+      </button>
+    </td>
   </tr>`).join('')}</tbody></table>`
+}
+
+async function _poDelete(id, poNo, status) {
+  const isBm = APP.language==='bm'
+  const st = String(status||'').toLowerCase()
+  const risky = st === 'partial' || st === 'received'
+  const msg = risky
+    ? (isBm ? `PO ${poNo||''} sudah ada penerimaan. Padam juga?` : `PO ${poNo||''} already has receipts. Delete anyway?`)
+    : (isBm ? `Padam PO ${poNo||''}?` : `Delete PO ${poNo||''}?`)
+  if(!confirm(msg)) return
+  try {
+    let {error} = await sb.from('purchase_orders').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(error && /deleted_at|column/i.test(error.message||'')) {
+      ;({error} = await sb.from('purchase_orders').delete().eq('id', id).eq('tenant_id', APP.tenant.id))
+    }
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    auditLog('delete', 'purchase_orders', id)
+    showToast(isBm?'PO dipadam.':'PO deleted.', 'success')
+    renderPOList()
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 // ─── Purchase Orders: Form (line items — dedicated _po* state, separate from
