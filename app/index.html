@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-stock">
+<meta name="nexerp-build" content="2026-08-08-roles">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -1356,14 +1356,33 @@ const NAV_ITEMS = [
 ]
 
 // CORE FUNCTIONS
+function isTenantAdmin() {
+  const role = (APP.user && APP.user.role) || ''
+  return role === 'owner' || role === 'admin' || isPlatformAdmin()
+}
+
+// Default module map when tenant has not configured custom role permissions yet
+const _DEFAULT_ROLE_MODULES = {
+  manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','accounting'],
+  accountant: ['accounting','reports','purchasing','sales'],
+  cashier: ['pos','sales'],
+  staff: ['crm','sales','inventory','pos'],
+}
+
 function canAccess(module) {
   const role = APP.user.role
   if(!role) return false
-  if(role==='owner' || role==='admin') return true
-  if(module==='core') return true
+  if(role==='owner' || role==='admin' || isPlatformAdmin()) return true
+  // Admin console: owner/admin/platform only
   if(module==='admin') return false
-  const allowed = APP.tenantConfig.roles[role]
-  return Array.isArray(allowed) && allowed.includes(module)
+  // Core shell (dashboard + basic settings profile) always allowed for authenticated users
+  if(module==='core') return true
+  const configured = APP.tenantConfig && APP.tenantConfig.roles && APP.tenantConfig.roles[role]
+  if(Array.isArray(configured) && configured.length) return configured.includes(module)
+  // Fallback defaults so roles without custom map are not full-access
+  const fallback = _DEFAULT_ROLE_MODULES[role]
+  if(Array.isArray(fallback)) return fallback.includes(module)
+  return false
 }
 function isPlatformAdmin() {
   const email = (APP.user.email || '').toLowerCase()
@@ -3525,7 +3544,7 @@ let _rolePermsState = {}
 // ADMIN — Tenant team + (platform) client list
 // ═══════════════════════════════════════════════════════════════════════════
 function renderAdmin(params={}) {
-  if(!(APP.user.role==='owner' || APP.user.role==='admin' || isPlatformAdmin())) {
+  if(!(isTenantAdmin() || isPlatformAdmin())) {
     renderAccessDenied(); return
   }
   if(params.view==='tenant' && params.id) { renderAdminTenantDetail(params.id); return }
@@ -3837,7 +3856,7 @@ async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
   const t = LANG[APP.language].settings
   const c = LANG[APP.language].common
-  const isAdmin = APP.user.role==='owner' || APP.user.role==='admin'
+  const isAdmin = isTenantAdmin()
   const rp = APP.language==='bm' ? {
     title:'Kebenaran Peranan', note:'Peranan owner dan admin sentiasa ada akses penuh. Tetapkan modul untuk peranan lain di bawah.',
     newRole:'Nama peranan baru (cth: staff)', addRole:'Tambah Peranan', noRoles:'Tiada peranan custom lagi.',
@@ -4262,6 +4281,7 @@ async function _settingsAuditPreview() {
 }
 
 async function renderAuditLogViewer() {
+  if(!isTenantAdmin()) { renderAccessDenied(); return }
   const isBm = APP.language==='bm'
   const t = isBm
     ? { title:'Log Audit', back:'Tetapan', when:'Masa', action:'Tindakan', table:'Jadual', user:'Pengguna', noData:'Tiada log audit untuk tenant ini.', refresh:'Muat Semula' }
@@ -13193,7 +13213,7 @@ async function _leaveSave() {
 
 async function _leaveLoadTable() {
   const isBm = APP.language==='bm'
-  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  const isAdminOwner = isTenantAdmin()
   const t = isBm ? {
     employee:'Pekerja', leaveType:'Jenis Cuti', annual:'Tahunan', medical:'Sakit', emergency:'Kecemasan', unpaid:'Tanpa Gaji',
     startDate:'Tarikh Mula', endDate:'Tarikh Tamat', days:'Hari', status:'Status', actionedBy:'Diluluskan/Ditolak Oleh',
@@ -13263,7 +13283,7 @@ async function _leaveLoadBalances(employees) {
 
 async function _leaveSetStatus(id, status) {
   const isBm = APP.language==='bm'
-  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  const isAdminOwner = isTenantAdmin()
   if(!isAdminOwner) { showToast(isBm?'Tiada kebenaran':'Not permitted', 'error'); return }
   const {error} = await sb.from('leave_requests').update({status, approved_by:APP.user.id}).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
@@ -13480,7 +13500,7 @@ function _posRenderShiftStatus() {
 // close (or shift handover) can be resolved without a DB console.
 async function _posLoadOtherOpenSessions() {
   _posOtherSessions = []
-  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  const isAdminOwner = isTenantAdmin()
   if(!isAdminOwner) return
   try {
     const {data: sessions, error} = await sb.from('pos_sessions').select('*')
@@ -13525,7 +13545,7 @@ function _posOpenEndShiftModal(sessionId) {
   if(!session) { showToast(APP.language==='bm'?'Sesi tidak ditemui.':'Session not found.', 'error'); return }
 
   const isOwn = String(session.cashier_id)===String(APP.user.id)
-  const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+  const isAdminOwner = isTenantAdmin()
   if(!isOwn && !isAdminOwner) { showToast(APP.language==='bm'?'Tiada kebenaran untuk tutup shift ini.':'Not permitted to close this shift.', 'error'); return }
 
   _posEndShiftTarget = session
@@ -13835,7 +13855,7 @@ async function _posCheckout() {
     // The session check itself failed (network/RPC error) — never let that fully
     // block POS for admin/owner. Fall back to any open session for the tenant so
     // a bug in the shift-check logic can't stop sales outright.
-    const isAdminOwner = APP.user.role==='owner' || APP.user.role==='admin'
+    const isAdminOwner = isTenantAdmin()
     if(isAdminOwner) {
       try {
         const {data} = await sb.from('pos_sessions').select('*')
