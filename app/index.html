@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-at">
+<meta name="nexerp-build" content="2026-08-07-au">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7751,12 +7751,14 @@ function _invCopyReminder() {
 async function renderInvForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Invois Baru', editTitle:'Edit Invois', back:'Invois',
-    customer:'Pelanggan *', date:'Tarikh *', due:'Tarikh Akhir', addLine:'Tambah Item',
-    save:'Simpan', cancel:'Batal', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.'
+    customer:'Pelanggan *', date:'Tarikh *', due:'Tarikh Akhir', status:'Status', addLine:'Tambah Item',
+    save:'Simpan', cancel:'Batal', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.',
+    stUnpaid:'Belum dibayar', stPartial:'Separa', stPaid:'Lunas', stCancelled:'Dibatalkan'
   } : {
     addTitle:'New Invoice', editTitle:'Edit Invoice', back:'Invoices',
-    customer:'Customer *', date:'Date *', due:'Due Date', addLine:'Add Item',
-    save:'Save', cancel:'Cancel', required:'Customer and at least one item are required.'
+    customer:'Customer *', date:'Date *', due:'Due Date', status:'Status', addLine:'Add Item',
+    save:'Save', cancel:'Cancel', required:'Customer and at least one item are required.',
+    stUnpaid:'Unpaid', stPartial:'Partial', stPaid:'Paid', stCancelled:'Cancelled'
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
@@ -7774,7 +7776,7 @@ async function renderInvForm(id=null) {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{})">← ${t.back}</div></div></div>
   <div class="card" style="max-width:900px">
     <div id="inv-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
-    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.customer}</label>
         <select id="if-customer" class="form-select">
           <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
@@ -7783,6 +7785,14 @@ async function renderInvForm(id=null) {
       </div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="if-date" type="date" class="form-input" value="${inv.issue_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.due}</label><input id="if-due" type="date" class="form-input" value="${inv.due_date||''}"></div>
+      <div class="form-group"><label class="form-label">${t.status}</label>
+        <select id="if-status" class="form-select">
+          <option value="unpaid" ${(inv.status||'unpaid')==='unpaid'?'selected':''}>${t.stUnpaid}</option>
+          <option value="partial" ${inv.status==='partial'?'selected':''}>${t.stPartial}</option>
+          <option value="paid" ${inv.status==='paid'?'selected':''}>${t.stPaid}</option>
+          <option value="cancelled" ${inv.status==='cancelled'?'selected':''}>${t.stCancelled}</option>
+        </select>
+      </div>
     </div>
     <div style="padding:0 20px">
       <table>${_slItemsTableHead()}<tbody id="sl-items-body"></tbody></table>
@@ -7828,12 +7838,18 @@ async function _invSave(id) {
   const total = Math.round((subtotal + taxAmt) * 100) / 100
 
   const customerName = document.getElementById('if-customer').selectedOptions[0]?.textContent || ''
+  const status = document.getElementById('if-status')?.value || 'unpaid'
   const payload = {
     tenant_id: APP.tenant.id, customer_id: customerId, customer_name: customerName,
     issue_date: document.getElementById('if-date').value,
     due_date: document.getElementById('if-due').value||null,
-    total: total, updated_at: new Date().toISOString()
+    total: total, status: status, updated_at: new Date().toISOString()
   }
+  // Keep paid_amt consistent with status when user changes status manually
+  if(status === 'paid') payload.paid_amt = total
+  else if(status === 'unpaid' || status === 'cancelled') payload.paid_amt = 0
+  // partial: leave paid_amt as-is on update; on create stay 0
+  else if(!id) payload.paid_amt = 0
   // Optional tax columns — ignore if schema belum ada
   payload.subtotal = subtotal
   payload.tax_rate = rate
