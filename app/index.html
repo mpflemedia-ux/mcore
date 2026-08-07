@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ag">
+<meta name="nexerp-build" content="2026-08-07-ah">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -10161,12 +10161,12 @@ async function renderEmployeeList() {
   const t = isBm ? {
     title:'SDM & Gaji', addEmployee:'Tambah Pekerja', runPayroll:'Jalankan Payroll', noData:'Tiada rekod pekerja lagi',
     name:'Nama', position:'Jawatan', salary:'Gaji Pokok', ic:'No. IC', payrollHistory:'Sejarah Payroll',
-    period:'Tempoh', netPay:'Gaji Bersih', noPayroll:'Tiada payroll dijana lagi', salaryDisbursement:'Penyaluran Gaji',
+    period:'Tempoh', netPay:'Gaji Bersih', noPayroll:'Tiada payroll dijana lagi', salaryDisbursement:'Penyaluran Gaji', del:'Padam', delConfirm:'Padam rekod gaji ni? Journal berkaitan (jika ada) akan dipadam sekali.', delOk:'Rekod gaji dipadam.',
     attendance:'Kehadiran', leave:'Cuti'
   } : {
     title:'HR & Payroll', addEmployee:'Add Employee', runPayroll:'Run Payroll', noData:'No employee records yet',
     name:'Name', position:'Position', salary:'Basic Salary', ic:'IC No.', payrollHistory:'Payroll History',
-    period:'Period', netPay:'Net Pay', noPayroll:'No payroll generated yet', salaryDisbursement:'Salary Disbursement',
+    period:'Period', netPay:'Net Pay', noPayroll:'No payroll generated yet', salaryDisbursement:'Salary Disbursement', del:'Delete', delConfirm:'Delete this payroll record? Related journal entries (if any) will also be removed.', delOk:'Payroll record deleted.',
     attendance:'Attendance', leave:'Leave'
   }
   document.getElementById('main').innerHTML = `
@@ -10203,12 +10203,18 @@ async function renderEmployeeList() {
   const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,net_pay,generated_at,employees(name)')
     .eq('tenant_id',APP.tenant.id).order('generated_at',{ascending:false}).limit(20)
   const historyHtml = (!payrolls || payrolls.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noPayroll}</p></div>` : `
-    <table><thead><tr><th>${t.period}</th><th>${t.name}</th><th style="text-align:right">${t.netPay}</th></tr></thead>
-    <tbody>${payrolls.map(p=>`<tr onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">
-      <td>${p.month}/${p.year}</td>
-      <td>${_aiEscapeHtml(p.employees?.name||'-')}</td>
-      <td style="text-align:right">${formatRM(p.net_pay)}</td>
-    </tr>`).join('')}</tbody></table>`
+    <table><thead><tr><th>${t.period}</th><th>${t.name}</th><th style="text-align:right">${t.netPay}</th><th style="width:56px"></th></tr></thead>
+    <tbody>${payrolls.map(p=>{
+      const nm = (p.employees?.name||'-').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+      return `<tr>
+      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${p.month}/${p.year}</td>
+      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${_aiEscapeHtml(p.employees?.name||'-')}</td>
+      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="text-align:right;cursor:pointer">${formatRM(p.net_pay)}</td>
+      <td style="white-space:nowrap;text-align:center">
+        <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" title="${t.del}"
+          onclick="event.stopPropagation();_payrollRecordDelete('${p.id}','${nm}','${p.month}','${p.year}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`}).join('')}</tbody></table>`
   document.getElementById('main').insertAdjacentHTML('beforeend', `
   <div class="card" style="margin-top:16px">
     <div class="card-header"><div class="card-title">${t.payrollHistory}</div></div>
@@ -10348,6 +10354,36 @@ async function _employeeSave(id, fromApplicantId) {
   auditLog(id?'update':'create','employees', id||newId)
   showToast(isBm?'Pekerja disimpan!':'Employee saved!', 'success')
   openPage('hr',{})
+}
+
+
+async function _payrollRecordDelete(id, name, month, year) {
+  const isBm = APP.language==='bm'
+  const label = (name||'-') + ' — ' + String(month).padStart(2,'0') + '/' + year
+  const msg = isBm
+    ? ('Padam rekod gaji ' + label + '?\n\nJournal berkaitan (jika ada) akan dipadam sekali. Tindakan ni tak boleh undo.')
+    : ('Delete payroll record ' + label + '?\n\nRelated journal entries (if any) will also be removed. This cannot be undone.')
+  if(!confirm(msg)) return
+  try {
+    // Remove linked auto-posted journals first (lines then headers)
+    const {data: entries} = await sb.from('journal_entries')
+      .select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('source_table', 'payroll_records')
+      .eq('source_id', id)
+    const entryIds = (entries||[]).map(e => e.id)
+    if(entryIds.length) {
+      await sb.from('journal_lines').delete().in('entry_id', entryIds)
+      await sb.from('journal_entries').delete().in('id', entryIds).eq('tenant_id', APP.tenant.id)
+    }
+    const {error} = await sb.from('payroll_records').delete().eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    auditLog('delete', 'payroll_records', id)
+    showToast(isBm ? 'Rekod gaji dipadam.' : 'Payroll record deleted.', 'success')
+    openPage('hr', {})
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 async function _employeeDelete(id, name) {
