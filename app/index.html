@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-v">
+<meta name="nexerp-build" content="2026-08-07-w">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -777,6 +777,17 @@ tbody tr:hover{background:var(--bg)}
     min-width:120px !important;
     max-width:180px !important;
     flex:0 1 160px !important;
+  }
+  .pdoc-sd-sig-slot.pdoc-sd-sig-empty {
+    display:none !important;
+    visibility:hidden !important;
+    width:0 !important;
+    min-width:0 !important;
+    max-width:0 !important;
+    margin:0 !important;
+    padding:0 !important;
+    overflow:hidden !important;
+    flex:0 0 0 !important;
   }
   .pdoc-sd-totals { display:none !important; }
 }
@@ -11302,10 +11313,10 @@ async function renderSalaryDisbursement(month, year) {
       <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
     </div>
     <div class="pdoc-sd-sig-print print-only">
-      <div class="pdoc-sd-sig-slot" id="sd-print-slot-preparedBy"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-preparedBy">${_aiEscapeHtml(_sigPrep)}</div><div class="pdoc-sd-sig-role">${t.preparedBy}</div></div>
-      <div class="pdoc-sd-sig-slot" id="sd-print-slot-checkedBy"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-checkedBy">${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}</div><div class="pdoc-sd-sig-role">${t.checkedBy}</div></div>
-      <div class="pdoc-sd-sig-slot" id="sd-print-slot-firstApproval"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-firstApproval">${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}</div><div class="pdoc-sd-sig-role">${t.firstApproval}</div></div>
-      <div class="pdoc-sd-sig-slot" id="sd-print-slot-secondApproval"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-secondApproval">${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}</div><div class="pdoc-sd-sig-role">${t.secondApproval}</div></div>
+      <div class="pdoc-sd-sig-slot${_sigPrep && String(_sigPrep).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-preparedBy"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-preparedBy">${_aiEscapeHtml(_sigPrep)}</div><div class="pdoc-sd-sig-role">${t.preparedBy}</div></div>
+      <div class="pdoc-sd-sig-slot${_sdSigsPrefill.checkedBy && String(_sdSigsPrefill.checkedBy).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-checkedBy"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-checkedBy">${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}</div><div class="pdoc-sd-sig-role">${t.checkedBy}</div></div>
+      <div class="pdoc-sd-sig-slot${_sdSigsPrefill.firstApproval && String(_sdSigsPrefill.firstApproval).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-firstApproval"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-firstApproval">${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}</div><div class="pdoc-sd-sig-role">${t.firstApproval}</div></div>
+      <div class="pdoc-sd-sig-slot${_sdSigsPrefill.secondApproval && String(_sdSigsPrefill.secondApproval).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-secondApproval"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-secondApproval">${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}</div><div class="pdoc-sd-sig-role">${t.secondApproval}</div></div>
     </div>
     </div>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
@@ -11337,13 +11348,14 @@ function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape', 6);
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
   // Sync signature names; hide slots that have no name filled
+  // (use class — print CSS uses display:!important so inline style loses)
   ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
     const inp = document.getElementById('sig-input-'+k)
     const out = document.getElementById('sd-print-sig-'+k)
     const slot = document.getElementById('sd-print-slot-'+k)
     const name = (inp && inp.value) ? String(inp.value).trim() : ''
     if(out) out.textContent = name
-    if(slot) slot.style.display = name ? '' : 'none'
+    if(slot) slot.classList.toggle('pdoc-sd-sig-empty', !name)
   })
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
