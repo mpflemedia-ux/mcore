@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-r">
+<meta name="nexerp-build" content="2026-08-07-s">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -765,14 +765,16 @@ tbody tr:hover{background:var(--bg)}
   .pdoc-sd-table thead { display:table-header-group !important; }
   .pdoc-sd-table tbody { display:table-row-group !important; }
   .pdoc-sd-table tr { page-break-inside:avoid !important; break-inside:avoid !important; }
-  .pdoc-sd-row-break { page-break-after:always !important; break-after:page !important; }
+  .pdoc-sd-chunk-break { page-break-after:always !important; break-after:page !important; display:block !important; }
+  .pdoc-sd-chunk { display:block !important; }
   /* Totals + signatures stay on the same page as remaining staff (no forced extra page) */
   .pdoc-sd-closing {
     display:block !important;
     visibility:visible !important;
     page-break-before:auto !important;
     break-before:auto !important;
-    page-break-inside:auto !important;
+    page-break-inside:avoid !important;
+    break-inside:avoid !important;
   }
   .pdoc-sd-totals {
     display:grid !important;
@@ -11072,7 +11074,9 @@ async function renderSalaryDisbursement(month, year) {
   </div>
 
   <div class="pdoc-sd-scroll" style="overflow-x:auto">
-    <table class="pdoc-sd-table"><thead><tr>
+    ${(() => {
+      const _sdPageSize = 5
+      const _sdThead = `<thead><tr>
       <th style="width:36px">${t.no}</th>
       <th style="width:16%">${t.payee}</th>
       <th style="width:12%">${isBm?'Bank':'Bank'}</th>
@@ -11082,13 +11086,11 @@ async function renderSalaryDisbursement(month, year) {
       <th style="width:14%">${isBm?'Caruman':'Statutory'}</th>
       <th style="width:12%">${isBm?'Potongan Lain':'Other Ded.'}</th>
       <th style="width:10%;text-align:right">${t.netPay}</th>
-    </tr></thead>
-    <tbody>${data.map((r,i)=>{
+    </tr></thead>`
+      const _sdRowHtml = (r, i) => {
       const bankName = r.employees?.bank_name ? _aiEscapeHtml(r.employees.bank_name) : '—'
       const bankAcc = r.employees?.bank_account_no ? _aiEscapeHtml(r.employees.bank_account_no) : '—'
-      // Print: max 5 staff per page — page-break after 5th, 10th, … (not after final row)
-      const rowBreak = ((i + 1) % 5 === 0 && i < data.length - 1) ? ' class="pdoc-sd-row-break"' : ''
-      return `<tr${rowBreak}>
+      return `<tr>
       <td style="color:#94A3B8;font-size:11px">${i+1}</td>
       <td>
         <div class="pdoc-sd-payee">${_aiEscapeHtml(r.employees?.name||'-')}</div>
@@ -11145,8 +11147,19 @@ async function renderSalaryDisbursement(month, year) {
         <span class="print-only" id="sd-print-d2-${r.id}" style="display:none"></span>
       </td>
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
-    </tr>`}).join('')}</tbody>
-    </table>
+    </tr>`
+      }
+      let _sdTables = ''
+      for (let _s = 0; _s < data.length; _s += _sdPageSize) {
+        const _chunk = data.slice(_s, _s + _sdPageSize)
+        const _more = _s + _sdPageSize < data.length
+        _sdTables += `<div class="pdoc-sd-chunk${_more ? ' pdoc-sd-chunk-break' : ''}"><table class="pdoc-sd-table">${_sdThead}<tbody>`
+        _sdTables += _chunk.map((r, j) => _sdRowHtml(r, _s + j)).join('')
+        _sdTables += `</tbody></table></div>`
+      }
+      return _sdTables
+    })()}
+  </div>
     <div class="pdoc-sd-closing">
     <div class="pdoc-sd-totals">
       <div class="pdoc-sd-tot"><span class="k">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="v" id="sd-grand-total">${formatRM(grandTotal)}</span></div>
