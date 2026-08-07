@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-pos-sales">
+<meta name="nexerp-build" content="2026-08-08-pv-filter">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -10032,8 +10032,8 @@ function renderPaymentVouchers(params={}) {
 async function renderPVList() {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal' }
-    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void' }
+    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal', all:'Semua', del:'Padam' }
+    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void', all:'All', del:'Delete' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div>
     <div style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm?'Single PV (portrait) · Disbursement = multi bayaran (landscape)':'Single PV (portrait) · Disbursement = multi-payee batch (landscape)'}</div>
@@ -10044,6 +10044,7 @@ async function renderPVList() {
     </div>
   </div>
   ${_accTabs('pv')}
+  <div id="pv-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="pv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('pv-list-wrap')
   const {data, error} = await sb.from('payment_vouchers').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('voucher_date',{ascending:false}).order('created_at',{ascending:false}).limit(200)
@@ -10053,18 +10054,102 @@ async function renderPVList() {
     return
   }
   if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._pvListCache = data
+  window._pvListT = t
+  if(!window._pvStatusFilter) window._pvStatusFilter = 'all'
+  _pvRenderStatusFilters()
+  _pvRenderListTable()
+}
+
+function _pvRenderStatusFilters() {
+  const t = window._pvListT || {}
+  const bar = document.getElementById('pv-status-filters')
+  if(!bar) return
+  const counts = { all:0, draft:0, approved:0, paid:0, void:0 }
+  ;(window._pvListCache||[]).forEach(v => {
+    counts.all++
+    const s = String(v.status||'draft').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else counts.draft++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'draft', label:t.draft},
+    {k:'approved', label:t.approved},
+    {k:'paid', label:t.paid},
+    {k:'void', label:t.void},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._pvStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._pvStatusFilter='${tab.k}';_pvRenderStatusFilters();_pvRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _pvRenderListTable() {
+  const t = window._pvListT || {}
+  const wrap = document.getElementById('pv-list-wrap')
+  if(!wrap) return
+  const filter = window._pvStatusFilter || 'all'
+  let rows = window._pvListCache || []
+  if(filter !== 'all') rows = rows.filter(v => String(v.status||'draft').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const stColor = s => s==='paid'?'var(--success)':s==='approved'?'#3B82F6':s==='void'?'var(--danger)':'var(--warning)'
   const stLabel = s => t[s]||s
-  wrap.innerHTML = `<table><thead><tr><th>${t.ref}</th><th>${t.date}</th><th>${t.payee}</th><th>${t.method}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(v=>`<tr onclick="openPage('vouchers',{view:'pv-detail',id:'${v.id}'})" style="cursor:pointer">
+  wrap.innerHTML = `<table><thead><tr><th>${t.ref}</th><th>${t.date}</th><th>${t.payee}</th><th>${t.method}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
+  <tbody>${rows.map(v=>`<tr onclick="openPage('vouchers',{view:'pv-detail',id:'${v.id}'})" style="cursor:pointer">
     <td><strong>${_aiEscapeHtml(v.ref_no||'-')}</strong></td>
     <td>${formatDate(v.voucher_date)}</td>
     <td>${_aiEscapeHtml(v.payee_name||'-')}</td>
     <td>${_aiEscapeHtml(v.payment_method||'-')}</td>
     <td style="text-align:right">${formatRM(v.amount)}</td>
     <td><span style="color:${stColor(v.status)};font-weight:600">${stLabel(v.status)}</span></td>
+    <td style="text-align:center" onclick="event.stopPropagation()">
+      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+        onclick="_pvVoidFromList('${v.id}','${(v.ref_no||'').replace(/'/g,"\\'")}','${String(v.status||'draft').replace(/'/g,"\\'")}')" title="${t.void||'Void'}">
+        <i class="ti ti-ban"></i>
+      </button>
+    </td>
   </tr>`).join('')}</tbody></table>`
 }
+
+async function _pvClearJournals(pvId) {
+  if(!pvId) return 0
+  try {
+    const {data: entries} = await sb.from('journal_entries').select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('source_table', 'payment_vouchers')
+      .eq('source_id', pvId)
+      .is('deleted_at', null)
+    const ids = (entries||[]).map(e => e.id)
+    if(!ids.length) return 0
+    await sb.from('journal_lines').delete().in('entry_id', ids)
+    await sb.from('journal_entries').delete().in('id', ids).eq('tenant_id', APP.tenant.id)
+    return ids.length
+  } catch(e) {
+    console.warn('_pvClearJournals', e)
+    return 0
+  }
+}
+
+async function _pvVoidFromList(id, refNo, status) {
+  const isBm = APP.language==='bm'
+  const st = String(status||'').toLowerCase()
+  if(st === 'void') {
+    showToast(isBm?'Baucar sudah dibatalkan.':'Voucher already void.', 'info')
+    return
+  }
+  const msg = st === 'paid'
+    ? (isBm ? `Batalkan baucar ${refNo||''}? Jurnal berkaitan akan dibersihkan.` : `Void voucher ${refNo||''}? Related journals will be cleared.`)
+    : (isBm ? `Batalkan baucar ${refNo||''}?` : `Void voucher ${refNo||''}?`)
+  if(!confirm(msg)) return
+  await _pvSetStatus(id, 'void')
+  // _pvSetStatus refreshes detail; if we're on list, re-render list
+  if(document.getElementById('pv-list-wrap')) renderPVList()
+}
+
 
 async function renderPVForm(id, billId) {
   const isBm = APP.language==='bm'
@@ -10267,14 +10352,30 @@ function _pvDocHtml(v, tn, isBm, accent) {
 
 async function _pvSetStatus(id, status) {
   const isBm = APP.language==='bm'
+  if(status === 'void') {
+    const {data: cur} = await sb.from('payment_vouchers').select('status,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(cur && String(cur.status||'').toLowerCase() === 'paid') {
+      if(!confirm(isBm
+        ? `Baucar ${cur.ref_no||''} sudah dibayar. Batalkan dan bersihkan jurnal?`
+        : `Voucher ${cur.ref_no||''} is paid. Void and clear related journals?`)) return
+    } else if(cur && String(cur.status||'').toLowerCase() === 'void') {
+      showToast(isBm?'Sudah dibatalkan.':'Already void.','info'); return
+    } else if(!confirm(isBm ? 'Batalkan baucar ini?' : 'Void this voucher?')) return
+  }
   const patch = { status, updated_at: new Date().toISOString() }
   if(status==='approved') patch.approved_by = APP.user.name || APP.user.email
   if(status==='draft') { /* noop */ }
   const {error} = await sb.from('payment_vouchers').update(patch).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message,'error'); return }
+  // When voiding, reverse / clear auto-posted journals for this PV
+  if(status === 'void') {
+    const n = await _pvClearJournals(id)
+    if(n) console.info('PV void cleared journals:', n)
+  }
   auditLog('update','payment_vouchers', id)
-  showToast(isBm?'Status dikemaskini.':'Status updated.','success')
-  renderPVDetail(id)
+  showToast(isBm ? (status==='void'?'Baucar dibatalkan.':'Status dikemaskini.') : (status==='void'?'Voucher voided.':'Status updated.'), 'success')
+  if(document.getElementById('pv-list-wrap')) renderPVList()
+  else renderPVDetail(id)
 }
 
 async function _pvMarkPaid(id) {
