@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bc">
+<meta name="nexerp-build" content="2026-08-08-bd">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7675,16 +7675,19 @@ async function renderInvList() {
   const t = APP.language==='bm' ? {
     title:'Invois', add:'Invois Baru', invNo:'No. Invois', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
     total:'Jumlah', paid:'Dibayar', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', noData:'Tiada invois lagi',
-    draftReminder:'Draf Peringatan', close:'Tutup', copy:'Salin'
+    draftReminder:'Draf Peringatan', close:'Tutup', copy:'Salin',
+    all:'Semua', cancelled:'Dibatalkan', filter:'Tapis'
   } : {
     title:'Invoices', add:'New Invoice', invNo:'Invoice No.', customer:'Customer', date:'Date', due:'Due Date',
     total:'Total', paid:'Paid', status:'Status', unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', noData:'No invoices yet',
-    draftReminder:'Draft Reminder', close:'Close', copy:'Copy'
+    draftReminder:'Draft Reminder', close:'Close', copy:'Copy',
+    all:'All', cancelled:'Cancelled', filter:'Filter'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('sales',{view:'inv-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_salesTabs('inv')}
+  <div id="inv-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="inv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
 
   <div class="modal-overlay" id="reminder-modal-overlay">
@@ -7707,12 +7710,54 @@ async function renderInvList() {
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
   _invListCache = data
+  if(typeof _invStatusFilter === 'undefined' || _invStatusFilter === null) window._invStatusFilter = 'all'
+  _invRenderStatusFilters(t)
+  _invRenderListTable(t)
+}
+
+function _invRenderStatusFilters(t) {
+  const bar = document.getElementById('inv-status-filters')
+  if(!bar) return
+  const counts = { all:0, unpaid:0, partial:0, paid:0, cancelled:0 }
+  ;(_invListCache||[]).forEach(i => {
+    counts.all++
+    const s = String(i.status||'unpaid').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else if(s !== 'cancelled') counts.unpaid++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'unpaid', label:t.unpaid},
+    {k:'partial', label:t.partial},
+    {k:'paid', label:t.paidFull},
+    {k:'cancelled', label:t.cancelled||'Cancelled'},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._invStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._invStatusFilter='${tab.k}';_invRenderStatusFilters(window._invListT);_invRenderListTable(window._invListT)">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _invRenderListTable(t) {
+  const wrap = document.getElementById('inv-list-wrap')
+  if(!wrap) return
+  window._invListT = t
+  const filter = window._invStatusFilter || 'all'
+  let rows = _invListCache || []
+  if(filter !== 'all') rows = rows.filter(i => String(i.status||'unpaid').toLowerCase() === filter)
+  if(!rows.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`
+    return
+  }
   const today = new Date().toISOString().slice(0,10)
-  const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
-  const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
+  const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--text-3)':'var(--danger)'
+  const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:s==='cancelled'?(t.cancelled||'Cancelled'):t.unpaid
   wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th><th></th></tr></thead>
-  <tbody>${data.map(i=>{
-    const overdue = i.status!=='paid' && i.due_date && i.due_date < today
+  <tbody>${rows.map(i=>{
+    const overdue = i.status!=='paid' && i.status!=='cancelled' && i.due_date && i.due_date < today
     return `<tr onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})" style="cursor:pointer">
     <td><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
     <td>${formatDate(i.issue_date)}</td><td>${formatDate(i.due_date)}</td>
