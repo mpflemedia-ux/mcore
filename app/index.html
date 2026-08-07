@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-t">
+<meta name="nexerp-build" content="2026-08-07-u">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -686,6 +686,90 @@ tbody tr:hover{background:var(--bg)}
 }
 .pdoc-sd-tot.budget .k { color:#0E7490; font-size:8px; }
 .pdoc-sd-tot.budget .v { font-size:13px; font-weight:800; color:#0E7490; }
+.pdoc-sd-sum-table {
+  width:100%;
+  border-collapse:collapse;
+  margin:0;
+  table-layout:fixed;
+  border-top:1px solid #E2E8F0;
+}
+.pdoc-sd-sum-table th {
+  font-size:8px;
+  font-weight:600;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  color:#64748B;
+  text-align:center;
+  padding:10px 4px 2px;
+  background:transparent;
+  border:none;
+}
+.pdoc-sd-sum-table th.budget { color:#0E7490; }
+.pdoc-sd-sum-table td {
+  font-family:'Space Grotesk',sans-serif;
+  font-weight:700;
+  font-size:13px;
+  color:#0F172A;
+  text-align:center;
+  padding:2px 4px 10px;
+  border:none;
+  white-space:nowrap;
+}
+.pdoc-sd-sum-table td.budget {
+  font-size:14px;
+  font-weight:800;
+  color:#0E7490;
+}
+.pdoc-sd-sig-print {
+  display:none;
+  margin-top:28px;
+  padding:0 8px;
+}
+.pdoc-sd-sig-slot {
+  display:inline-block;
+  width:22%;
+  text-align:center;
+  vertical-align:top;
+  margin:0 1%;
+}
+.pdoc-sd-sig-line {
+  border-top:1.5px solid #334155;
+  margin:36px 8px 6px;
+}
+.pdoc-sd-sig-name {
+  font-size:11px;
+  font-weight:600;
+  color:#0F172A;
+  min-height:14px;
+}
+.pdoc-sd-sig-role {
+  font-size:8px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:#64748B;
+  margin-top:2px;
+}
+@media print {
+  .pdoc-sd-sum-table { display:table !important; width:100% !important; }
+  .pdoc-sd-sum-table th, .pdoc-sd-sum-table td {
+    display:table-cell !important;
+    visibility:visible !important;
+    opacity:1 !important;
+    color:#0F172A !important;
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+  .pdoc-sd-sum-table th.budget, .pdoc-sd-sum-table td.budget { color:#0E7490 !important; }
+  .pdoc-sd-sig-print {
+    display:block !important;
+    visibility:visible !important;
+    page-break-inside:avoid !important;
+  }
+  .pdoc-sd-sig-slot { display:inline-block !important; }
+  .pdoc-sd-totals { display:none !important; }
+}
+
 @media screen and (max-width:900px){
   .pdoc-sd-totals { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
@@ -11182,19 +11266,35 @@ async function renderSalaryDisbursement(month, year) {
     })()}
   </div>
     <div class="pdoc-sd-closing">
-    <div class="pdoc-sd-totals">
-      <div class="pdoc-sd-tot"><span class="k">${isBm?'Gaji Bersih':'Net Pay'}</span><span class="v pdoc-sd-amt" id="sd-grand-total">${formatRM(grandTotal)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">EPF</span><span class="v pdoc-sd-amt" id="sd-grand-epf">${formatRM(sumEPF)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">SOCSO</span><span class="v pdoc-sd-amt" id="sd-grand-socso">${formatRM(sumSOCSO)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">EIS</span><span class="v pdoc-sd-amt" id="sd-grand-eis">${formatRM(sumEIS)}</span></div>
-      <div class="pdoc-sd-tot"><span class="k">PCB</span><span class="v pdoc-sd-amt" id="sd-grand-pcb">${formatRM(sumPCB)}</span></div>
-      <div class="pdoc-sd-tot budget"><span class="k">${isBm?'Bajet Diperlukan':'Budget Required'}</span><span class="v pdoc-sd-amt" id="sd-grand-budget">${formatRM(budgetRequired)}</span></div>
-    </div>
-    <div class="pdoc-sig-grid pdoc-sd-sig" style="margin:20px 12px 12px">
+    <table class="pdoc-sd-sum-table">
+      <thead><tr>
+        <th>${isBm?'Gaji Bersih':'Net Pay'}</th>
+        <th>EPF</th>
+        <th>SOCSO</th>
+        <th>EIS</th>
+        <th>PCB</th>
+        <th class="budget">${isBm?'Bajet Diperlukan':'Budget Required'}</th>
+      </tr></thead>
+      <tbody><tr>
+        <td id="sd-grand-total">${formatRM(grandTotal)}</td>
+        <td id="sd-grand-epf">${formatRM(sumEPF)}</td>
+        <td id="sd-grand-socso">${formatRM(sumSOCSO)}</td>
+        <td id="sd-grand-eis">${formatRM(sumEIS)}</td>
+        <td id="sd-grand-pcb">${formatRM(sumPCB)}</td>
+        <td class="budget" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
+      </tr></tbody>
+    </table>
+    <div class="pdoc-sig-grid pdoc-sd-sig no-print" style="margin:20px 12px 12px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
+    </div>
+    <div class="pdoc-sd-sig-print print-only">
+      <div class="pdoc-sd-sig-slot"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-preparedBy">${_aiEscapeHtml(_sigPrep)}</div><div class="pdoc-sd-sig-role">${t.preparedBy}</div></div>
+      <div class="pdoc-sd-sig-slot"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-checkedBy">${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}</div><div class="pdoc-sd-sig-role">${t.checkedBy}</div></div>
+      <div class="pdoc-sd-sig-slot"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-firstApproval">${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}</div><div class="pdoc-sd-sig-role">${t.firstApproval}</div></div>
+      <div class="pdoc-sd-sig-slot"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-secondApproval">${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}</div><div class="pdoc-sd-sig-role">${t.secondApproval}</div></div>
     </div>
     </div>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
@@ -11225,10 +11325,11 @@ async function renderSalaryDisbursement(month, year) {
 function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape', 6);
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
-  // Always show signature slots on print (empty = space for wet-ink / stamp)
+  // Sync signature names into print-only slots
   ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
-    const wrapper = document.getElementById('sig-'+k)
-    if(wrapper) wrapper.style.display = ''
+    const inp = document.getElementById('sig-input-'+k)
+    const out = document.getElementById('sd-print-sig-'+k)
+    if(out) out.textContent = (inp && inp.value) ? inp.value : ''
   })
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
