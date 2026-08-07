@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-be">
+<meta name="nexerp-build" content="2026-08-08-bf">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -8551,10 +8551,10 @@ function _sendPosWhatsApp(receiptNo, total, method, linesText, tender, change) {
 async function renderQuoList() {
   const t = APP.language==='bm' ? {
     title:'Sebut Harga', add:'Sebut Harga Baru', quoNo:'No. Sebut Harga', customer:'Pelanggan', date:'Tarikh',
-    total:'Jumlah', status:'Status', draft:'Draf', converted:'Ditukar', all:'Semua', noData:'Tiada sebut harga lagi'
+    total:'Jumlah', status:'Status', draft:'Draf', converted:'Ditukar', all:'Semua', del:'Padam', noData:'Tiada sebut harga lagi'
   } : {
     title:'Quotations', add:'New Quotation', quoNo:'Quotation No.', customer:'Customer', date:'Date',
-    total:'Total', status:'Status', draft:'Draft', converted:'Converted', all:'All', noData:'No quotations yet'
+    total:'Total', status:'Status', draft:'Draft', converted:'Converted', all:'All', del:'Delete', noData:'No quotations yet'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
@@ -8613,11 +8613,39 @@ function _quoRenderListTable() {
     return
   }
   const statusLabel = s => String(s||'').toLowerCase()==='converted' ? (t.converted||'Converted') : (t.draft||'Draft')
-  wrap.innerHTML = `<table><thead><tr><th>${t.quoNo}</th><th>${t.customer}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
+  wrap.innerHTML = `<table><thead><tr><th>${t.quoNo}</th><th>${t.customer}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
   <tbody>${rows.map(q=>`<tr onclick="openPage('sales',{view:'quo-form',id:'${q.id}'})" style="cursor:pointer">
     <td><strong>${q.ref_no||'-'}</strong></td><td>${q.customer_name||'-'}</td><td>${formatDate(q.issue_date)}</td>
     <td style="text-align:right">${formatRM(q.total)}</td><td>${statusLabel(q.status)}</td>
+    <td style="text-align:center">
+      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+        onclick="event.stopPropagation();_quoDelete('${q.id}','${(q.ref_no||'').replace(/'/g,"\\'")}')" title="${t.del||'Delete'}">
+        <i class="ti ti-trash"></i>
+      </button>
+    </td>
   </tr>`).join('')}</tbody></table>`
+}
+
+async function _quoDelete(id, refNo) {
+  const isBm = APP.language==='bm'
+  const msg = isBm
+    ? `Padam sebut harga ${refNo||''}? Tindakan ini tidak boleh dibatalkan.`
+    : `Delete quotation ${refNo||''}? This cannot be undone.`
+  if(!confirm(msg)) return
+  try {
+    // Soft-delete if column exists; fallback hard delete
+    let {error} = await sb.from('quotations').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(error && /deleted_at|column/i.test(error.message||'')) {
+      ;({error} = await sb.from('quotations').delete().eq('id', id).eq('tenant_id', APP.tenant.id))
+    }
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    try { await sb.from('quotation_items').delete().eq('quotation_id', id) } catch(e) {}
+    auditLog('delete', 'quotations', id)
+    showToast(isBm?'Sebut harga dipadam.':'Quotation deleted.', 'success')
+    renderQuoList()
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 async function renderQuoForm(id=null) {
