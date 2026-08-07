@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bf">
+<meta name="nexerp-build" content="2026-08-08-bg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7676,12 +7676,12 @@ async function renderInvList() {
     title:'Invois', add:'Invois Baru', invNo:'No. Invois', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
     total:'Jumlah', paid:'Dibayar', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', noData:'Tiada invois lagi',
     draftReminder:'Draf Peringatan', close:'Tutup', copy:'Salin',
-    all:'Semua', cancelled:'Dibatalkan', filter:'Tapis'
+    all:'Semua', cancelled:'Dibatalkan', filter:'Tapis', del:'Padam'
   } : {
     title:'Invoices', add:'New Invoice', invNo:'Invoice No.', customer:'Customer', date:'Date', due:'Due Date',
     total:'Total', paid:'Paid', status:'Status', unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', noData:'No invoices yet',
     draftReminder:'Draft Reminder', close:'Close', copy:'Copy',
-    all:'All', cancelled:'Cancelled', filter:'Filter'
+    all:'All', cancelled:'Cancelled', filter:'Filter', del:'Delete'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
@@ -7764,7 +7764,13 @@ function _invRenderListTable(t) {
     <td style="text-align:right">${formatRM(i.total)}</td>
     <td style="text-align:right">${formatRM(i.paid_amt)}</td>
     <td><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
-    <td>${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;white-space:nowrap" onclick="event.stopPropagation();_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i> ${t.draftReminder}</button>`:''}</td>
+    <td style="white-space:nowrap" onclick="event.stopPropagation()">
+      ${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i></button>`:''}
+      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+        onclick="_invDelete('${i.id}','${(i.ref_no||'').replace(/'/g,"\\'")}',${Number(i.paid_amt||0)})" title="${t.del||'Delete'}">
+        <i class="ti ti-trash"></i>
+      </button>
+    </td>
   </tr>`
   }).join('')}</tbody></table>`
 }
