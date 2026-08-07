@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-y">
+<meta name="nexerp-build" content="2026-08-07-z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -462,7 +462,6 @@ tbody tr:hover{background:var(--bg)}
   body, html { background:#fff !important; }
   .card { box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
   .print-only { display:inline !important; }
-  .print-only.pdoc-sd-sig-print { display:flex !important; }
 }
 
 /* ── Printable letterhead documents (Payslip / Salary Disbursement) ──
@@ -730,43 +729,9 @@ tbody tr:hover{background:var(--bg)}
   font-weight:800;
   color:#0E7490;
 }
-.pdoc-sd-sig-print {
-  display:none;
-  margin-top:28px;
-  padding:0 8px;
-}
-.pdoc-sd-sig-slot {
-  display:inline-block;
-  min-width:140px;
-  width:22%;
-  max-width:24%;
-  text-align:center;
-  vertical-align:top;
-  margin:0 1%;
-}
-.pdoc-sd-sig-line {
-  border-top:1.5px solid #334155;
-  width:140px;
-  max-width:100%;
-  margin:28px auto 6px;
-}
-.pdoc-sd-sig-name {
-  font-size:11px;
-  font-weight:600;
-  color:#0F172A;
-  min-height:14px;
-  margin-top:20px;
-}
-.pdoc-sd-sig-print .pdoc-sd-sig-line {
-  margin-top:4px;
-}
-.pdoc-sd-sig-role {
-  font-size:8px;
-  font-weight:600;
-  text-transform:uppercase;
-  letter-spacing:.04em;
-  color:#64748B;
-  margin-top:2px;
+/* SD print signatures — rebuilt clean; only filled names, centered */
+#sd-sig-print {
+  display: none;
 }
 @media print {
   .pdoc-sd-sum-table { display:table !important; width:100% !important; }
@@ -779,35 +744,8 @@ tbody tr:hover{background:var(--bg)}
     print-color-adjust:exact !important;
   }
   .pdoc-sd-sum-table th.budget, .pdoc-sd-sum-table td.budget { color:#0E7490 !important; }
-  .print-only.pdoc-sd-sig-print,
-  .pdoc-sd-sig-print {
-    display:flex !important;
-    justify-content:center !important;
-    align-items:flex-start !important;
-    flex-wrap:wrap !important;
-    gap:12px 40px !important;
-    visibility:visible !important;
-    page-break-inside:avoid !important;
-    width:100% !important;
-  }
-  .pdoc-sd-sig-slot {
-    display:block !important;
-    width:160px !important;
-    min-width:160px !important;
-    max-width:160px !important;
-    flex:0 0 160px !important;
-    text-align:center !important;
-  }
-  .pdoc-sd-sig-line {
-    width:140px !important;
-    max-width:140px !important;
-    margin:28px auto 6px !important;
-    border-top:1.5px solid #334155 !important;
-  }
-  .pdoc-sd-sig-slot.pdoc-sd-sig-empty {
-    display:none !important;
-  }
   .pdoc-sd-totals { display:none !important; }
+  /* #sd-sig-print visibility controlled by JS inline style at print time */
 }
 
 @media screen and (max-width:900px){
@@ -11340,12 +11278,7 @@ async function renderSalaryDisbursement(month, year) {
       <div class="form-group" id="sig-firstApproval"><label class="form-label">${t.firstApproval}</label><input id="sig-input-firstApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-secondApproval"><label class="form-label">${t.secondApproval}</label><input id="sig-input-secondApproval" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
     </div>
-    <div class="pdoc-sd-sig-print print-only">
-      <div class="pdoc-sd-sig-slot${_sigPrep && String(_sigPrep).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-preparedBy"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-preparedBy">${_aiEscapeHtml(_sigPrep)}</div><div class="pdoc-sd-sig-role">${t.preparedBy}</div></div>
-      <div class="pdoc-sd-sig-slot${_sdSigsPrefill.checkedBy && String(_sdSigsPrefill.checkedBy).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-checkedBy"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-checkedBy">${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}</div><div class="pdoc-sd-sig-role">${t.checkedBy}</div></div>
-      <div class="pdoc-sd-sig-slot${_sdSigsPrefill.firstApproval && String(_sdSigsPrefill.firstApproval).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-firstApproval"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-firstApproval">${_aiEscapeHtml(_sdSigsPrefill.firstApproval||'')}</div><div class="pdoc-sd-sig-role">${t.firstApproval}</div></div>
-      <div class="pdoc-sd-sig-slot${_sdSigsPrefill.secondApproval && String(_sdSigsPrefill.secondApproval).trim() ? '' : ' pdoc-sd-sig-empty'}" id="sd-print-slot-secondApproval"><div class="pdoc-sd-sig-line"></div><div class="pdoc-sd-sig-name" id="sd-print-sig-secondApproval">${_aiEscapeHtml(_sdSigsPrefill.secondApproval||'')}</div><div class="pdoc-sd-sig-role">${t.secondApproval}</div></div>
-    </div>
+    <div id="sd-sig-print"></div>
     </div>
     <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:12px 24px 16px;gap:12px;flex-wrap:wrap">
       <div style="font-size:11px;color:#64748B;max-width:520px;line-height:1.45">${t.sessionHint}</div>
@@ -11376,33 +11309,42 @@ function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape', 6);
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
   // Build print signatures ONLY for filled names (no empty lines)
-  const sigPrint = document.querySelector('.pdoc-sd-sig-print')
-  if(sigPrint) {
+  // Signature print: ONLY slots with a typed name. Centered. Inline styles = no CSS wars.
+  ;(function(){
+    const box = document.getElementById('sd-sig-print')
+    if(!box) return
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     const roles = [
-      { k:'preparedBy', label:(document.querySelector('#sig-preparedBy .form-label')||{}).textContent || 'Prepared By' },
-      { k:'checkedBy', label:(document.querySelector('#sig-checkedBy .form-label')||{}).textContent || 'Checked By' },
-      { k:'firstApproval', label:(document.querySelector('#sig-firstApproval .form-label')||{}).textContent || 'First Approval' },
-      { k:'secondApproval', label:(document.querySelector('#sig-secondApproval .form-label')||{}).textContent || 'Second Approval' },
+      { k:'preparedBy', fallback:'Prepared By' },
+      { k:'checkedBy', fallback:'Checked By' },
+      { k:'firstApproval', fallback:'First Approval' },
+      { k:'secondApproval', fallback:'Second Approval' },
     ]
-    const filled = roles.map(r => {
+    const filled = []
+    roles.forEach(r => {
       const inp = document.getElementById('sig-input-'+r.k)
       const name = (inp && inp.value) ? String(inp.value).trim() : ''
-      return name ? { name, label: (r.label||'').trim() } : null
-    }).filter(Boolean)
-    if(filled.length === 0) {
-      sigPrint.innerHTML = ''
-      sigPrint.style.display = 'none'
-    } else {
-      sigPrint.style.display = ''
-      sigPrint.innerHTML = filled.map(f =>
-        '<div class="pdoc-sd-sig-slot">' +
-          '<div class="pdoc-sd-sig-name">'+f.name.replace(/</g,'&lt;')+'</div>' +
-          '<div class="pdoc-sd-sig-line"></div>' +
-          '<div class="pdoc-sd-sig-role">'+f.label.replace(/</g,'&lt;')+'</div>' +
-        '</div>'
-      ).join('')
+      if(!name) return
+      const lab = document.querySelector('#sig-'+r.k+' .form-label')
+      filled.push({ name, label: (lab && lab.textContent.trim()) || r.fallback })
+    })
+    if(!filled.length) {
+      box.innerHTML = ''
+      box.setAttribute('style', 'display:none !important')
+      return
     }
-  }
+    box.setAttribute('style',
+      'display:flex !important; justify-content:center !important; align-items:flex-start !important;' +
+      'flex-wrap:wrap !important; gap:24px 48px !important; width:100% !important; margin-top:28px !important;' +
+      'page-break-inside:avoid !important; text-align:center !important;')
+    box.innerHTML = filled.map(f =>
+      '<div style="display:block !important; width:150px !important; max-width:150px !important; text-align:center !important; flex:0 0 150px !important;">' +
+        '<div style="font-size:11px !important; font-weight:600 !important; color:#0F172A !important; margin-bottom:4px !important;">'+esc(f.name)+'</div>' +
+        '<div style="width:130px !important; margin:0 auto 4px !important; border-top:1.5px solid #334155 !important; height:0 !important;"></div>' +
+        '<div style="font-size:8px !important; font-weight:600 !important; text-transform:uppercase !important; letter-spacing:.04em !important; color:#64748B !important;">'+esc(f.label)+'</div>' +
+      '</div>'
+    ).join('')
+  })()
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
     const set = (id, text) => { const el = document.getElementById(id); if(el) el.innerHTML = text }
