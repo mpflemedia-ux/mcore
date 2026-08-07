@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-af">
+<meta name="nexerp-build" content="2026-08-07-ag">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -457,6 +457,17 @@ tbody tr:hover{background:var(--bg)}
 
 @media print {
   #sidebar, #header, .no-print { display:none !important; }
+  /* Form signature inputs — never print (print uses sd-sig-row only) */
+  .pdoc-sig-grid,
+  .pdoc-sd-sig,
+  #sig-preparedBy, #sig-checkedBy, #sig-firstApproval, #sig-secondApproval {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   #main-area { margin:0 !important; }
   #main { padding:0 !important; }
   body, html { background:#fff !important; }
@@ -866,12 +877,8 @@ tbody tr:hover{background:var(--bg)}
     visibility:visible !important;
     display:flex !important;
   }
-  .pdoc-sig-grid, .pdoc-sd-sig {
-    display:flex !important;
-    visibility:visible !important;
-    page-break-inside:avoid !important;
-    margin-top:14px !important;
-  }
+  /* pdoc-sig-grid print rules removed — form never prints */
+
 
   .pdoc-sd-meta { padding:3px 8px !important; font-size:8px !important; }
   .pdoc-sd-table { font-size:8.5px !important; table-layout:auto !important; }
@@ -927,27 +934,10 @@ tbody tr:hover{background:var(--bg)}
     visibility:visible !important;
   }
   /* No divider line under totals; keep space for wet-ink signatures */
-  .pdoc-sig-grid {
-    display:flex !important;
-    visibility:visible !important;
-    page-break-inside:avoid !important;
-    break-inside:avoid !important;
-    margin-top:16px !important;
-    padding-top:0 !important;
-    border:none !important;
-    border-top:none !important;
-    background:transparent !important;
-    gap:10px 16px !important;
-  }
+  /* pdoc-sig-grid print rules removed — form never prints */
+
   .pdoc-sig-grid .form-group { flex:1 1 0 !important; max-width:none !important; }
-  .pdoc-sig-grid .form-input {
-    margin-top:36px !important;
-    font-size:10px !important;
-    padding:4px 2px 0 !important;
-    border-top:1.5px solid #334155 !important;
-  }
-  .pdoc-sig-grid .form-label { font-size:8px !important; margin-top:4px !important; }
-  .pdoc-sig-grid .form-group { display:flex !important; visibility:visible !important; }
+  /* form sig inputs hidden via .no-print */
   .pdoc-sig-grid .form-input {
     -webkit-print-color-adjust:exact !important;
     color:#0F172A !important;
