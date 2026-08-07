@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-audit">
+<meta name="nexerp-build" content="2026-08-08-wizard-mobile">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -948,6 +948,36 @@ tbody tr:hover{background:var(--bg)}
     color:#0F172A !important;
     min-height:18px !important;
   }
+}
+
+/* mobile polish — filter chips wrap, tables scroll, primary actions reachable */
+@media (max-width: 640px) {
+  #inv-status-filters, #quo-status-filters, #bill-status-filters, #po-status-filters,
+  #pv-status-filters, #exp-status-filters {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-bottom: 10px !important;
+  }
+  #inv-status-filters .btn, #quo-status-filters .btn, #bill-status-filters .btn,
+  #po-status-filters .btn, #pv-status-filters .btn, #exp-status-filters .btn {
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+  }
+  .page-header {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+  .page-header .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+  .card [style*="overflow-x"], #inv-list-wrap, #po-list-wrap, #pv-list-wrap,
+  #exp-table-wrap, #bill-list-wrap, #crm-table-wrap, #supp-table-wrap, #audit-log-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  table { min-width: 520px; }
 }
 </style>
 </head>
@@ -4008,8 +4038,13 @@ async function renderSettings(params={}) {
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Senarai Semak Go-Live':'Go-Live Checklist'}</div></div>
     <div style="padding:16px">
       <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5">${APP.language==='bm'
-        ? 'Tandakan item sebelum client guna sistem secara langsung. Status dikemas kini automatik.'
-        : 'Complete these items before the client uses the system live. Status updates automatically.'}</div>
+        ? 'Wizard ringkas (ikut turutan): 1) Benih COA → 2) Akaun Lalai → 3) Baki Pembukaan. Status dikemas kini automatik.'
+        : 'Lightweight wizard (in order): 1) Seed COA → 2) Default Accounts → 3) Opening Balance. Status updates automatically.'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openPage('accounting',{})"><i class="ti ti-list-numbers"></i> ${APP.language==='bm'?'1. Carta Akaun':'1. Chart of Accounts'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('dam-cash')?.scrollIntoView({behavior:'smooth',block:'center'})"><i class="ti ti-link"></i> ${APP.language==='bm'?'2. Akaun Lalai':'2. Default Accounts'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openPage('accounting',{view:'opening-balance'})"><i class="ti ti-scale"></i> ${APP.language==='bm'?'3. Baki Pembukaan':'3. Opening Balance'}</button>
+      </div>
       ${(() => {
         const isBm = APP.language==='bm'
         const row = (ok, label, hint, link) => {
