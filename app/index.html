@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-au">
+<meta name="nexerp-build" content="2026-08-07-av">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7889,6 +7889,12 @@ async function _invSave(id) {
   const {error: itemsErr} = await sb.from('invoice_items').insert(itemsPayload)
   if(itemsErr) { errEl.textContent='Error: '+itemsErr.message; errEl.style.display='block'; return }
 
+  // If unpaid/cancelled — clear payments + related sale journals so Dashboard P&L matches
+  if(invId && (status === 'unpaid' || status === 'cancelled')) {
+    await _invClearPayments(invId)
+    await _invClearPaymentJournals(invId)
+  }
+
   auditLog(id?'update':'create','invoices', invId)
   showToast(APP.language==='bm'?'Invois disimpan!':'Invoice saved!', 'success')
   openPage('sales',{view:'inv-detail',id:invId})
@@ -8337,19 +8343,11 @@ async function _payVoid(invoiceId, allocationId, paymentId, amount) {
     else if(newPaid > 0.005) newStatus = 'partial'
     await sb.from('invoices').update({ paid_amt: newPaid, status: newStatus }).eq('id', invoiceId).eq('tenant_id', APP.tenant.id)
 
-    // Best-effort: remove auto journal posted for this invoice payment (source invoices)
-    try {
-      const {data: entries} = await sb.from('journal_entries').select('id')
-        .eq('tenant_id', APP.tenant.id)
-        .eq('source_table', 'invoices')
-        .eq('source_id', invoiceId)
-        .ilike('description', '%Payment%')
-      const ids = (entries||[]).map(e=>e.id)
-      if(ids.length) {
-        await sb.from('journal_lines').delete().in('entry_id', ids)
-        await sb.from('journal_entries').delete().in('id', ids).eq('tenant_id', APP.tenant.id)
-      }
-    } catch(je) { console.warn('journal reverse', je) }
+    // After void: if invoice fully unpaid, clear all related sale journals
+    const {data: inv2} = await sb.from('invoices').select('paid_amt').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
+    if(inv2 && Number(inv2.paid_amt||0) < 0.005) {
+      await _invClearPaymentJournals(invoiceId)
+    }
 
     auditLog('delete', 'payments', paymentId||allocationId)
     showToast(isBm?'Bayaran dibatalkan.':'Payment voided.', 'success')
