@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-wizard-mobile">
+<meta name="nexerp-build" content="2026-08-08-bill-pay">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -10116,42 +10116,51 @@ async function renderSupplierBillDetail(id) {
   const t = APP.language==='bm' ? {
     back:'Bil Pembekal', edit:'Edit', supplier:'Pembekal', billDate:'Tarikh Bil', dueDate:'Tarikh Akhir',
     total:'Jumlah', paid:'Dibayar', balance:'Baki', recordPayment:'Rekod Bayaran', payDate:'Tarikh Bayaran', payAmount:'Jumlah Bayaran', payMethod:'Kaedah', save:'Simpan',
-    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi', notFound:'Bil tidak dijumpai.'
+    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi', notFound:'Bil tidak dijumpai.',
+    voidPay:'Batal', voidPayConfirm:'Batalkan bayaran ini? Baki bil akan dipulihkan dan jurnal berkaitan dibersihkan.',
+    methodCash:'Tunai', methodBank:'Pindahan Bank', methodOnline:'Perbankan Dalam Talian', methodCard:'Kad'
   } : {
     back:'Supplier Bills', edit:'Edit', supplier:'Supplier', billDate:'Bill Date', dueDate:'Due Date',
     total:'Total', paid:'Paid', balance:'Balance', recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
-    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet', notFound:'Bill not found.'
+    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet', notFound:'Bill not found.',
+    voidPay:'Void', voidPayConfirm:'Void this payment? Bill balance will be restored and related journals cleared.',
+    methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card'
   }
   const {data: bill} = await sb.from('supplier_bills').select('*,suppliers(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!bill) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
-  const {data: payments} = await sb.from('supplier_payments').select('*').eq('bill_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
-  const balance = Number(bill.total||0) - Number(bill.paid_amt||0)
+  let payments = []
+  try {
+    const {data: p} = await sb.from('supplier_payments').select('*').eq('bill_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
+    payments = p || []
+  } catch(e) { console.warn('supplier_payments query', e) }
+  const balance = Math.max(0, Number(bill.total||0) - Number(bill.paid_amt||0))
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
+  const methodLabel = m => ({cash:t.methodCash, bank_transfer:t.methodBank, online_banking:t.methodOnline, card:t.methodCard}[m]||m||'-')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
-    <div class="page-title">${bill.bill_no}</div>
+    <div class="page-title">${_aiEscapeHtml(bill.bill_no||bill.ref_no||'-')}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'bills'})">← ${t.back}</div>
   </div>
-  <div style="display:flex;gap:8px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pv-form',billId:'${id}'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Baucar Bayaran':'Payment Voucher'}</button>
     <button class="btn btn-outline btn-sm" onclick="openPage('purchasing',{view:'bill-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
   </div></div>
   <div class="card" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
-      <div><div style="color:var(--text-3);font-size:12px">${t.supplier}</div><strong>${bill.suppliers?.name||'-'}</strong></div>
+      <div><div style="color:var(--text-3);font-size:12px">${t.supplier}</div><strong>${_aiEscapeHtml(bill.suppliers?.name||'-')}</strong></div>
       <div><div style="color:var(--text-3);font-size:12px">${t.billDate}</div>${formatDate(bill.bill_date)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.dueDate}</div>${formatDate(bill.due_date)}</div>
       <div><span style="color:${statusColor(bill.status)};font-weight:700">${statusLabel(bill.status)}</span></div>
     </div>
     <div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
       <div>${t.total}: <strong>${formatRM(bill.total)}</strong></div>
-      <div style="color:var(--warning)">${t.paid}: ${formatRM(bill.paid_amt)}</div>
+      <div style="color:var(--success)">${t.paid}: ${formatRM(bill.paid_amt)}</div>
       <div style="color:${balance>0?'var(--danger)':'var(--text-2)'}">${t.balance}: <strong>${formatRM(balance)}</strong></div>
     </div>
   </div>
-  ${balance>0 ? `
+  ${balance>0.005 ? `
   <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
     <div style="font-weight:600;margin-bottom:12px">${t.recordPayment}</div>
     <div id="bill-pay-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
@@ -10159,7 +10168,12 @@ async function renderSupplierBillDetail(id) {
       <div class="form-group"><label class="form-label">${t.payDate}</label><input id="bill-pay-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="form-group"><label class="form-label">${t.payAmount}</label><input id="bill-pay-amount" type="number" step="0.01" class="form-input" value="${balance.toFixed(2)}"></div>
       <div class="form-group"><label class="form-label">${t.payMethod}</label>
-        <select id="bill-pay-method" class="form-select"><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="online_banking">Online Banking</option><option value="card">Card</option></select>
+        <select id="bill-pay-method" class="form-select">
+          <option value="cash">${t.methodCash}</option>
+          <option value="bank_transfer">${t.methodBank}</option>
+          <option value="online_banking">${t.methodOnline}</option>
+          <option value="card">${t.methodCard}</option>
+        </select>
       </div>
       <button class="btn btn-primary" onclick="_billPaySave('${id}', ${balance})">${t.save}</button>
     </div>
@@ -10167,52 +10181,126 @@ async function renderSupplierBillDetail(id) {
   <div class="card" style="max-width:900px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
     ${(!payments||payments.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
-    `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th></tr></thead>
-    <tbody>${payments.map(p=>`<tr><td>${formatDate(p.payment_date)}</td><td style="text-align:right">${formatRM(p.amount)}</td><td>${p.method||'-'}</td></tr>`).join('')}</tbody></table>`}
+    `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th><th style="width:48px"></th></tr></thead>
+    <tbody>${payments.map(p=>`<tr>
+      <td>${formatDate(p.payment_date)}</td>
+      <td style="text-align:right">${formatRM(p.amount)}</td>
+      <td>${methodLabel(p.method)}</td>
+      <td style="text-align:center">
+        <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+          onclick="_billPayVoid('${id}','${p.id}',${Number(p.amount||0)})" title="${t.voidPay}">
+          <i class="ti ti-ban"></i>
+        </button>
+      </td>
+    </tr>`).join('')}</tbody></table>`}
   </div>`
+}
+
+async function _billPayClearJournals(paymentId, billId) {
+  // Prefer journals keyed to this payment; also clear legacy journals that used bill as source_id only when no other payments remain
+  let cleared = 0
+  try {
+    if(paymentId) {
+      const {data: entries} = await sb.from('journal_entries').select('id')
+        .eq('tenant_id', APP.tenant.id)
+        .eq('source_table', 'supplier_payments')
+        .eq('source_id', paymentId)
+        .is('deleted_at', null)
+      const ids = (entries||[]).map(e => e.id)
+      if(ids.length) {
+        await sb.from('journal_lines').delete().in('entry_id', ids)
+        await sb.from('journal_entries').delete().in('id', ids).eq('tenant_id', APP.tenant.id)
+        cleared += ids.length
+      }
+    }
+  } catch(e) { console.warn('_billPayClearJournals payment', e) }
+  try {
+    // Legacy: journals posted with source_table=supplier_bills + source_id=billId
+    const {data: remaining} = await sb.from('supplier_payments').select('id').eq('bill_id', billId).eq('tenant_id', APP.tenant.id).limit(1)
+    if(!remaining || !remaining.length) {
+      const {data: entries} = await sb.from('journal_entries').select('id')
+        .eq('tenant_id', APP.tenant.id)
+        .eq('source_table', 'supplier_bills')
+        .eq('source_id', billId)
+        .is('deleted_at', null)
+      const ids = (entries||[]).map(e => e.id)
+      if(ids.length) {
+        await sb.from('journal_lines').delete().in('entry_id', ids)
+        await sb.from('journal_entries').delete().in('id', ids).eq('tenant_id', APP.tenant.id)
+        cleared += ids.length
+      }
+    }
+  } catch(e) { console.warn('_billPayClearJournals legacy', e) }
+  return cleared
+}
+
+async function _billPayVoid(billId, paymentId, amount) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm
+    ? 'Batalkan bayaran ini? Baki bil akan dipulihkan dan jurnal berkaitan dibersihkan.'
+    : 'Void this payment? Bill balance will be restored and related journals cleared.')) return
+  try {
+    const {data: bill} = await sb.from('supplier_bills').select('id,total,paid_amt,status').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
+    if(!bill) { showToast(isBm?'Bil tidak dijumpai.':'Bill not found.', 'error'); return }
+    const {error: delErr} = await sb.from('supplier_payments').delete().eq('id', paymentId).eq('tenant_id', APP.tenant.id)
+    if(delErr) { showToast('Error: '+delErr.message, 'error'); return }
+    const newPaid = Math.max(0, Number(bill.paid_amt||0) - Number(amount||0))
+    const newStatus = newPaid < 0.005 ? 'unpaid' : (newPaid >= Number(bill.total)-0.005 ? 'paid' : 'partial')
+    await sb.from('supplier_bills').update({ paid_amt: newPaid, status: newStatus }).eq('id', billId).eq('tenant_id', APP.tenant.id)
+    await _billPayClearJournals(paymentId, billId)
+    auditLog('delete', 'supplier_payments', paymentId)
+    showToast(isBm?'Bayaran dibatalkan.':'Payment voided.', 'success')
+    renderSupplierBillDetail(billId)
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 async function _billPaySave(billId, balance) {
   const isBm = APP.language==='bm'
   const amount = Number(document.getElementById('bill-pay-amount').value||0)
   const errEl = document.getElementById('bill-pay-form-err')
-  errEl.style.display='none'
+  errEl.style.display = 'none'
   if(amount<=0 || amount>balance+0.005) { errEl.textContent = isBm?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
 
-  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt,ref_no').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
+  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt,ref_no,bill_no').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
   if(!bill) { errEl.textContent='Bill not found.'; errEl.style.display='block'; return }
 
-  const {error} = await sb.from('supplier_payments').insert({
+  const payDate = document.getElementById('bill-pay-date').value
+  const method = document.getElementById('bill-pay-method').value
+  const {data: payRow, error} = await sb.from('supplier_payments').insert({
     tenant_id: APP.tenant.id, bill_id: billId,
-    payment_date: document.getElementById('bill-pay-date').value,
-    amount, method: document.getElementById('bill-pay-method').value,
-  })
+    payment_date: payDate,
+    amount, method,
+  }).select('id').single()
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
 
   const newPaid = Number(bill.paid_amt||0) + amount
   const newStatus = newPaid >= Number(bill.total) - 0.005 ? 'paid' : 'partial'
   await sb.from('supplier_bills').update({paid_amt:newPaid, status:newStatus}).eq('id',billId).eq('tenant_id',APP.tenant.id)
 
+  // Double-entry: Dr Accounts Payable, Cr Cash — balanced; source = this payment for clean void
   try {
     const apAcc = await _getDefaultAccountId('accounts_payable')
     const cashAcc = await _getDefaultAccountId('cash')
     if(apAcc && cashAcc) {
       await _postJournalEntry({
-        description: `Supplier Bill Payment ${bill.ref_no||billId}`,
-        entryDate: document.getElementById('bill-pay-date').value,
+        description: `Supplier Bill Payment ${bill.bill_no||bill.ref_no||billId}`,
+        entryDate: payDate,
         entryType: 'auto',
         lines: [
           { account_id: apAcc, debit: amount, credit: 0 },
           { account_id: cashAcc, debit: 0, credit: amount },
         ],
-        sourceTable: 'supplier_bills', sourceId: billId,
+        sourceTable: 'supplier_payments', sourceId: payRow?.id || billId,
       })
     } else {
       console.warn('Supplier bill payment journal post skipped (missing AP/Cash default account)')
+      showToast(isBm?'Bayaran disimpan, tetapi akaun lalai AP/Tunai belum ditetapkan — jurnal dilangkau.':'Payment saved, but default AP/Cash accounts not set — journal skipped.', 'warning')
     }
   } catch(e) { console.error('Supplier bill payment journal post failed:', e) }
 
-  auditLog('create','supplier_payments', billId)
+  auditLog('create','supplier_payments', payRow?.id || billId)
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
   renderSupplierBillDetail(billId)
 }
