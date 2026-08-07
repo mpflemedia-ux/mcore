@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-w">
+<meta name="nexerp-build" content="2026-08-07-x">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -515,7 +515,16 @@ tbody tr:hover{background:var(--bg)}
 .pdoc-sd-table tfoot td { font-weight:700; background:var(--pdoc-accent); color:#fff; padding:12px; font-family:'Space Grotesk',sans-serif; }
 .pdoc-sd-table tfoot td#sd-grand-total,
 .pdoc-sd-table tfoot .pdoc-sd-net { color:#fff !important; text-align:right; font-size:14px; }
-.pdoc-sd-payee { font-weight:600; font-size:13px; color:#0F172A; line-height:1.35; }
+.pdoc-sd-payee {
+  font-weight:600;
+  font-size:13px;
+  color:#0F172A;
+  line-height:1.35;
+  white-space:normal;
+  overflow:visible;
+  word-break:break-word;
+  overflow-wrap:anywhere;
+}
 .pdoc-sd-bank { font-size:11px; color:#64748B; margin-top:3px; line-height:1.35; }
 .pdoc-sd-stack { display:flex; flex-direction:column; gap:6px; }
 .pdoc-sd-line { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
@@ -909,10 +918,20 @@ tbody tr:hover{background:var(--bg)}
   }
 
   .pdoc-sd-meta { padding:3px 8px !important; font-size:8px !important; }
-  .pdoc-sd-table { font-size:8.5px !important; }
+  .pdoc-sd-table { font-size:8.5px !important; table-layout:auto !important; }
   .pdoc-sd-table th { padding:4px 4px !important; font-size:7.5px !important; }
-  .pdoc-sd-table td { padding:3px 4px !important; line-height:1.25 !important; }
-  .pdoc-sd-payee { font-size:9px !important; }
+  .pdoc-sd-table td {
+    padding:3px 4px !important;
+    line-height:1.3 !important;
+    overflow:visible !important;
+    white-space:normal !important;
+  }
+  .pdoc-sd-payee {
+    font-size:9px !important;
+    white-space:normal !important;
+    overflow:visible !important;
+    word-break:break-word !important;
+  }
   .pdoc-sd-basic, .pdoc-sd-net { font-size:10px !important; }
   .pdoc-sd-print-line { font-size:8px !important; line-height:1.25 !important; }
   .pdoc-sd-employer-note { display:block !important; font-size:7px !important; line-height:1.25 !important; margin-top:2px !important; padding-top:2px !important; color:#64748B !important; border-top:1px dashed #CBD5E1 !important; }
@@ -11204,14 +11223,14 @@ async function renderSalaryDisbursement(month, year) {
     ${(() => {
       const _sdPageSize = 5
       const _sdThead = `<thead><tr>
-      <th style="width:36px">${t.no}</th>
-      <th style="width:16%">${t.payee}</th>
-      <th style="width:12%">${isBm?'Bank':'Bank'}</th>
-      <th style="width:12%">${isBm?'No. Akaun':'Account No.'}</th>
-      <th style="width:10%;text-align:right">${t.salary}</th>
-      <th style="width:18%">${isBm?'Elaun':'Allowances'}</th>
+      <th style="width:28px">${t.no}</th>
+      <th style="width:20%">${t.payee}</th>
+      <th style="width:11%">${isBm?'Bank':'Bank'}</th>
+      <th style="width:11%">${isBm?'No. Akaun':'Account No.'}</th>
+      <th style="width:9%;text-align:right">${t.salary}</th>
+      <th style="width:14%">${isBm?'Elaun':'Allowances'}</th>
       <th style="width:14%">${isBm?'Caruman':'Statutory'}</th>
-      <th style="width:12%">${isBm?'Potongan Lain':'Other Ded.'}</th>
+      <th style="width:10%">${isBm?'Potongan Lain':'Other Ded.'}</th>
       <th style="width:10%;text-align:right">${t.netPay}</th>
     </tr></thead>`
       const _sdRowHtml = (r, i) => {
@@ -11347,16 +11366,34 @@ async function renderSalaryDisbursement(month, year) {
 function _sdPreparePrint() {
   _pdocSetPageOrientation('landscape', 6);
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
-  // Sync signature names; hide slots that have no name filled
-  // (use class — print CSS uses display:!important so inline style loses)
-  ;['preparedBy','checkedBy','firstApproval','secondApproval'].forEach(k=>{
-    const inp = document.getElementById('sig-input-'+k)
-    const out = document.getElementById('sd-print-sig-'+k)
-    const slot = document.getElementById('sd-print-slot-'+k)
-    const name = (inp && inp.value) ? String(inp.value).trim() : ''
-    if(out) out.textContent = name
-    if(slot) slot.classList.toggle('pdoc-sd-sig-empty', !name)
-  })
+  // Build print signatures ONLY for filled names (no empty lines)
+  const sigPrint = document.querySelector('.pdoc-sd-sig-print')
+  if(sigPrint) {
+    const roles = [
+      { k:'preparedBy', label:(document.querySelector('#sig-preparedBy .form-label')||{}).textContent || 'Prepared By' },
+      { k:'checkedBy', label:(document.querySelector('#sig-checkedBy .form-label')||{}).textContent || 'Checked By' },
+      { k:'firstApproval', label:(document.querySelector('#sig-firstApproval .form-label')||{}).textContent || 'First Approval' },
+      { k:'secondApproval', label:(document.querySelector('#sig-secondApproval .form-label')||{}).textContent || 'Second Approval' },
+    ]
+    const filled = roles.map(r => {
+      const inp = document.getElementById('sig-input-'+r.k)
+      const name = (inp && inp.value) ? String(inp.value).trim() : ''
+      return name ? { name, label: (r.label||'').trim() } : null
+    }).filter(Boolean)
+    if(filled.length === 0) {
+      sigPrint.innerHTML = ''
+      sigPrint.style.display = 'none'
+    } else {
+      sigPrint.style.display = ''
+      sigPrint.innerHTML = filled.map(f =>
+        '<div class="pdoc-sd-sig-slot">' +
+          '<div class="pdoc-sd-sig-line"></div>' +
+          '<div class="pdoc-sd-sig-name">'+f.name.replace(/</g,'&lt;')+'</div>' +
+          '<div class="pdoc-sd-sig-role">'+f.label.replace(/</g,'&lt;')+'</div>' +
+        '</div>'
+      ).join('')
+    }
+  }
   ;(_sdRecords||[]).forEach(r => {
     const v = _sdRowValues(r)
     const set = (id, text) => { const el = document.getElementById(id); if(el) el.innerHTML = text }
