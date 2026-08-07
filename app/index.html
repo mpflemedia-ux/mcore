@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ah">
+<meta name="nexerp-build" content="2026-08-07-ai">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2593,7 +2593,8 @@ function renderDashboard() {
         {k:'collected', icon:'ti-cash'},
         {k:'rate', icon:'ti-percentage'},
         {k:'avg', icon:'ti-receipt'},
-        {k:'count', icon:'ti-file-invoice'}
+        {k:'count', icon:'ti-file-invoice'},
+        {k:'netPL', icon:'ti-scale'}
       ].map(({k,icon})=>`
       <div class="db-kpi-card">
         <div class="db-kpi-head">
@@ -2729,6 +2730,41 @@ function _dbSetPeriod(p) {
 }
 
 
+
+async function _dbMonthPnL(fromDate, toDateExclusive) {
+  // Net P&L from journal_lines for revenue/expense accounts in [from, to)
+  try {
+    let q = sb.from('journal_entries').select('id')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .gte('entry_date', fromDate)
+    if(toDateExclusive) q = q.lt('entry_date', toDateExclusive)
+    const {data: entries} = await q
+    const entryIds = (entries||[]).map(e=>e.id)
+    if(!entryIds.length) return { revenue:0, expense:0, net:0 }
+    const {data: accounts} = await sb.from('chart_of_accounts')
+      .select('id,account_type')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .in('account_type', ['revenue','expense'])
+    const accMap = {}
+    ;(accounts||[]).forEach(a => { accMap[a.id] = a.account_type })
+    const {data: lines} = await sb.from('journal_lines')
+      .select('account_id,debit_amt,credit_amt')
+      .in('entry_id', entryIds)
+    let revenue = 0, expense = 0
+    ;(lines||[]).forEach(l => {
+      const t = accMap[l.account_id]
+      if(!t) return
+      const d = Number(l.debit_amt||0), cr = Number(l.credit_amt||0)
+      if(t === 'revenue') revenue += (cr - d)
+      else if(t === 'expense') expense += (d - cr)
+    })
+    return { revenue, expense, net: revenue - expense }
+  } catch(e) {
+    console.warn('_dbMonthPnL', e)
+    return { revenue:0, expense:0, net:0 }
+  }
+}
+
 async function loadDashboardData() {
   if(!APP.tenant.id) return
   const isBm = APP.language==='bm'
@@ -2833,6 +2869,12 @@ async function loadDashboardData() {
   const curGP = curSales - curCOGS - posCogsThis
   const prevGP = prevSales - prevCOGS - posCogsLast
 
+  // Net P&L from journals (same basis as Reports → Income Statement)
+  const plThis = await _dbMonthPnL(ms, null)
+  const plLast = await _dbMonthPnL(lms, ms)
+  const curNetPL = plThis.net
+  const prevNetPL = plLast.net
+
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
     grossProfit: { label: isBm?'Untung Kasar':'Gross Profit', value: formatRM(curGP), delta: pctChange(curGP,prevGP), color:'#14B8A6' },
@@ -2840,6 +2882,13 @@ async function loadDashboardData() {
     rate:    { label: isBm?'Kadar Kutipan':'Collection Rate', value: curRate.toFixed(1)+'%', delta: null, sub: curRate>=80?(isBm?'Baik':'Good'):curRate>=50?(isBm?'Sederhana':'Fair'):(isBm?'Perlu Perhatian':'Needs Attention'), color:'#A855F7' },
     avg:     { label: isBm?'Purata Nilai Invois':'Avg Invoice Value', value: formatRM(curAvg), delta: pctChange(curAvg,prevAvg), color:'#F59E0B' },
     count:   { label: t_dash('invoices').charAt(0).toUpperCase()+t_dash('invoices').slice(1), value: String(curCount), delta: pctChange(curCount,prevCount), color:'#38BDF8' },
+    netPL:   {
+      label: isBm?'Untung/(Rugi) Bersih':'Net Profit/(Loss)',
+      value: formatRM(curNetPL),
+      delta: pctChange(curNetPL, prevNetPL),
+      color: curNetPL >= 0 ? '#22C55E' : '#EF4444',
+      valueColor: curNetPL >= 0 ? '#22C55E' : '#EF4444'
+    },
   }
 
   Object.entries(kpis).forEach(([k,v]) => {
