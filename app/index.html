@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bill-pay">
+<meta name="nexerp-build" content="2026-08-08-stock">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -8281,6 +8281,22 @@ async function _invSave(id) {
     await _invClearPaymentJournals(invId)
   }
 
+  // Stock: on create (or when not cancelled), deduct product-linked lines once.
+  // Updates: skip re-deduct to avoid double-hit; user can adjust stock manually if lines change.
+  if(!id && status !== 'cancelled') {
+    const stockOk = await _stockWarnIfInsufficient(validItems.map(it => ({ product_id: it.product_id, qty: it.qty, name: it.description })))
+    if(stockOk) {
+      for(const it of validItems) {
+        if(!it.product_id) continue
+        try {
+          await _stockAdjust(it.product_id, -Number(it.qty||0), 'out', 'INV '+(payload.ref_no||invId))
+        } catch(e) { console.warn('INV stock adjust', e) }
+      }
+    } else {
+      showToast(APP.language==='bm'?'Invois disimpan tanpa potongan stok (dibatalkan pengguna).':'Invoice saved without stock deduction (user cancelled).', 'warning')
+    }
+  }
+
   auditLog(id?'update':'create','invoices', invId)
   showToast(APP.language==='bm'?'Invois disimpan!':'Invoice saved!', 'success')
   openPage('sales',{view:'inv-detail',id:invId})
@@ -13271,6 +13287,48 @@ let _posCurrentSession = null
 let _posOtherSessions = []
 let _posEndShiftTarget = null
 
+
+// ─── Stock helpers (POS / Invoice / GRN) ─────────────────────────────────────
+// qtyDelta: positive = increase stock (in), negative = decrease (out)
+// Never silently go negative without user warning (allow if confirmed earlier).
+async function _stockAdjust(productId, qtyDelta, type, note) {
+  if(!productId || !qtyDelta) return { ok:true, newStock:null }
+  const {data: p, error} = await sb.from('products').select('id,stock_qty,name_en,name_bm').eq('id',productId).eq('tenant_id',APP.tenant.id).single()
+  if(error || !p) return { ok:false, error: error?.message || 'product not found' }
+  const newStock = Number(p.stock_qty||0) + Number(qtyDelta)
+  await sb.from('products').update({ stock_qty: newStock }).eq('id', productId).eq('tenant_id', APP.tenant.id)
+  try {
+    await sb.from('stock_movements').insert({
+      tenant_id: APP.tenant.id,
+      product_id: productId,
+      type: type || (qtyDelta >= 0 ? 'in' : 'out'),
+      qty: Math.abs(Number(qtyDelta)),
+      note: note || null
+    })
+  } catch(e) { console.warn('stock_movements insert', e) }
+  return { ok:true, newStock, name: prodName(p) }
+}
+
+async function _stockWarnIfInsufficient(lines) {
+  // lines: [{product_id, qty, name}]
+  const isBm = APP.language==='bm'
+  const shortages = []
+  for(const line of (lines||[])) {
+    if(!line.product_id) continue
+    const need = Number(line.qty||0)
+    if(need <= 0) continue
+    const {data: p} = await sb.from('products').select('id,stock_qty,name_en,name_bm').eq('id',line.product_id).eq('tenant_id',APP.tenant.id).single()
+    if(!p) continue
+    const stock = Number(p.stock_qty||0)
+    if(stock < need) shortages.push({ name: line.name || prodName(p), stock, need })
+  }
+  if(!shortages.length) return true
+  const list = shortages.map(s => `${s.name}: ${s.stock} < ${s.need}`).join('\\n')
+  return confirm(isBm
+    ? `Stok tidak mencukupi:\\n${list}\\n\\nTeruskan jualan? Stok boleh jadi negatif.`
+    : `Insufficient stock:\\n${list}\\n\\nContinue sale? Stock may go negative.`)
+}
+
 async function renderPOS() {
   const t = APP.language==='bm' ? {
     title:'Titik Jualan', search:'Cari produk...', cart:'Troli', empty:'Troli kosong',
@@ -13797,6 +13855,9 @@ async function _posCheckout() {
   const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
   const method = document.getElementById('pos-method').value
 
+  const stockOk = await _stockWarnIfInsufficient(_posCart.map(c => ({ product_id: c.product_id, qty: c.qty, name: c.name })))
+  if(!stockOk) return
+
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).then(r=>r, ()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
     tenant_id: APP.tenant.id, session_id: session.id, receipt_no: refData || await _genFallbackRefNo('pos_transactions','receipt_no','POS'),
@@ -13806,6 +13867,14 @@ async function _posCheckout() {
 
   const itemsPayload = _posCart.map(c => ({ tenant_id: APP.tenant.id, txn_id: trans.id, product_id: c.product_id, name: c.name, qty: c.qty, unit_price: c.unit_price, line_total: c.qty*Number(c.unit_price||0) }))
   await sb.from('pos_transaction_items').insert(itemsPayload)
+
+  // Deduct stock for product-linked lines; warn already handled pre-checkout
+  for(const c of _posCart) {
+    if(!c.product_id) continue
+    try {
+      await _stockAdjust(c.product_id, -Number(c.qty||0), 'out', 'POS '+(refData||trans.id))
+    } catch(e) { console.warn('POS stock adjust', e) }
+  }
 
   const receiptNo = refData || trans.id
 
