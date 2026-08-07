@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-aj">
+<meta name="nexerp-build" content="2026-08-07-ak">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2594,6 +2594,8 @@ function renderDashboard() {
         {k:'rate', icon:'ti-percentage'},
         {k:'avg', icon:'ti-receipt'},
         {k:'count', icon:'ti-file-invoice'},
+        {k:'revenue', icon:'ti-trending-up'},
+        {k:'expenses', icon:'ti-receipt-2'},
         {k:'netPL', icon:'ti-scale'}
       ].map(({k,icon})=>`
       <div class="db-kpi-card">
@@ -2882,6 +2884,20 @@ async function loadDashboardData() {
     rate:    { label: isBm?'Kadar Kutipan':'Collection Rate', value: curRate.toFixed(1)+'%', delta: null, sub: curRate>=80?(isBm?'Baik':'Good'):curRate>=50?(isBm?'Sederhana':'Fair'):(isBm?'Perlu Perhatian':'Needs Attention'), color:'#A855F7' },
     avg:     { label: isBm?'Purata Nilai Invois':'Avg Invoice Value', value: formatRM(curAvg), delta: pctChange(curAvg,prevAvg), color:'#F59E0B' },
     count:   { label: t_dash('invoices').charAt(0).toUpperCase()+t_dash('invoices').slice(1), value: String(curCount), delta: pctChange(curCount,prevCount), color:'#38BDF8' },
+    revenue: {
+      label: isBm?'Hasil (P&L)':'Revenue (P&L)',
+      value: formatRM(plThis.revenue),
+      delta: pctChange(plThis.revenue, plLast.revenue),
+      color: '#22C55E',
+      valueColor: ''
+    },
+    expenses: {
+      label: isBm?'Perbelanjaan (P&L)':'Expenses (P&L)',
+      value: formatRM(plThis.expense),
+      delta: pctChange(plThis.expense, plLast.expense),
+      color: '#F59E0B',
+      valueColor: ''
+    },
     netPL:   {
       label: isBm?'Untung/(Rugi) Bersih':'Net Profit/(Loss)',
       value: formatRM(curNetPL),
