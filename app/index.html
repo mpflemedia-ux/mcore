@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-n">
+<meta name="nexerp-build" content="2026-08-07-o">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <meta name="mobile-web-app-capable" content="yes">
@@ -761,6 +761,13 @@ tbody tr:hover{background:var(--bg)}
   .pdoc-meta { font-size:8px !important; }
   .pdoc-title-bar { padding:5px 8px !important; font-size:11px !important; letter-spacing:.03em !important; }
   .pdoc-sd-scroll { overflow:visible !important; }
+  /* Max 5 employee rows per printed page; thead repeats on each page */
+  .pdoc-sd-table thead { display:table-header-group !important; }
+  .pdoc-sd-table tbody { display:table-row-group !important; }
+  .pdoc-sd-table tr { page-break-inside:avoid !important; break-inside:avoid !important; }
+  .pdoc-sd-row-break { page-break-after:always !important; break-after:page !important; }
+  .pdoc-sd-closing { page-break-inside:avoid !important; break-inside:avoid !important; }
+
   .pdoc-sd-meta { padding:3px 8px !important; font-size:8px !important; }
   .pdoc-sd-table { font-size:8.5px !important; }
   .pdoc-sd-table th { padding:4px 4px !important; font-size:7.5px !important; }
@@ -11055,7 +11062,9 @@ async function renderSalaryDisbursement(month, year) {
     <tbody>${data.map((r,i)=>{
       const bankName = r.employees?.bank_name ? _aiEscapeHtml(r.employees.bank_name) : '—'
       const bankAcc = r.employees?.bank_account_no ? _aiEscapeHtml(r.employees.bank_account_no) : '—'
-      return `<tr>
+      // Print: max 5 staff per page — page-break after 5th, 10th, … (not after final row)
+      const rowBreak = ((i + 1) % 5 === 0 && i < data.length - 1) ? ' class="pdoc-sd-row-break"' : ''
+      return `<tr${rowBreak}>
       <td style="color:#94A3B8;font-size:11px">${i+1}</td>
       <td>
         <div class="pdoc-sd-payee">${_aiEscapeHtml(r.employees?.name||'-')}</div>
