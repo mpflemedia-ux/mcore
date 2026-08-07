@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-07-ar">
+<meta name="nexerp-build" content="2026-08-07-as">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2591,17 +2591,17 @@ function renderDashboard() {
 
     <div class="db-kpi-grid" id="db-kpi-grid">
       ${[
-        {k:'sales', icon:'ti-currency-dollar'},
-        {k:'grossProfit', icon:'ti-chart-arrows-vertical'},
-        {k:'collected', icon:'ti-cash'},
-        {k:'rate', icon:'ti-percentage'},
-        {k:'avg', icon:'ti-receipt'},
-        {k:'count', icon:'ti-file-invoice'},
-        {k:'revenue', icon:'ti-trending-up'},
-        {k:'expenses', icon:'ti-receipt-2'},
-        {k:'netPL', icon:'ti-scale'}
-      ].map(({k,icon})=>`
-      <div class="db-kpi-card">
+        {k:'sales', icon:'ti-currency-dollar', go:"openPage('sales',{})"},
+        {k:'grossProfit', icon:'ti-chart-arrows-vertical', go:"openPage('sales',{})"},
+        {k:'collected', icon:'ti-cash', go:"openPage('sales',{})"},
+        {k:'rate', icon:'ti-percentage', go:"openPage('sales',{})"},
+        {k:'avg', icon:'ti-receipt', go:"openPage('sales',{})"},
+        {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
+        {k:'revenue', icon:'ti-trending-up', go:"openPage('reports',{})"},
+        {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
+        {k:'netPL', icon:'ti-scale', go:"openPage('reports',{})"}
+      ].map(({k,icon,go})=>`
+      <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer" title="${k==='revenue'||k==='expenses'||k==='netPL'?(APP.language==='bm'?'Buka Penyata Pendapatan':'Open Income Statement'):(APP.language==='bm'?'Buka Jualan':'Open Sales')}">
         <div class="db-kpi-head">
           <div class="db-kpi-icon"><i class="ti ${icon}"></i></div>
           <div class="db-kpi-label" id="db-lbl-${k}">-</div>
