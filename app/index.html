@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-roles">
+<meta name="nexerp-build" content="2026-08-08-overdue-csv">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -4188,7 +4188,12 @@ async function renderSettings(params={}) {
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
         ?'Muat turun data tenant (pelanggan, produk, invois, PO, pekerja) sebagai fail JSON. Untuk arkib / migrasi — bukan restore automatik.'
         :'Download tenant data (customers, products, invoices, POs, employees) as JSON. For archive / migration — not automatic restore.'}</p>
-      <button id="backup-export-btn" class="btn btn-primary btn-sm" onclick="_exportTenantBackup()"><i class="ti ti-download"></i> ${APP.language==='bm'?'Muat Turun Backup':'Download Backup'}</button>
+      <button id="backup-export-btn" class="btn btn-primary btn-sm" onclick="_exportTenantBackup()"><i class="ti ti-download"></i> ${APP.language==='bm'?'Muat Turun Backup JSON':'Download JSON Backup'}</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn btn-outline btn-sm" onclick="_exportTableCsv('customers')"><i class="ti ti-file-spreadsheet"></i> ${APP.language==='bm'?'CSV Pelanggan':'Customers CSV'}</button>
+        <button class="btn btn-outline btn-sm" onclick="_exportTableCsv('invoices')"><i class="ti ti-file-spreadsheet"></i> ${APP.language==='bm'?'CSV Invois':'Invoices CSV'}</button>
+        <button class="btn btn-outline btn-sm" onclick="_exportTableCsv('products')"><i class="ti ti-file-spreadsheet"></i> ${APP.language==='bm'?'CSV Produk':'Products CSV'}</button>
+      </div>
       <div id="backup-export-status" style="margin-top:10px;font-size:12px;color:var(--text-3)"></div>
     </div>
   </div>
@@ -4500,6 +4505,63 @@ async function _exportTenantBackup() {
   }
   if(btn) btn.disabled = false
 }
+
+async function _exportTableCsv(kind) {
+  const isBm = APP.language==='bm'
+  const st = document.getElementById('backup-export-status')
+  if(st) st.textContent = isBm ? 'Menjana CSV…' : 'Generating CSV…'
+  try {
+    const specs = {
+      customers: {
+        table: 'customers',
+        cols: ['name','email','phone','city','state','postcode','created_at'],
+        headers: isBm ? ['Nama','Emel','Telefon','Bandar','Negeri','Poskod','Dicipta'] : ['Name','Email','Phone','City','State','Postcode','Created'],
+        file: 'customers'
+      },
+      invoices: {
+        table: 'invoices',
+        cols: ['ref_no','customer_name','issue_date','due_date','total','paid_amt','status'],
+        headers: isBm ? ['No.Invois','Pelanggan','Tarikh','Tarikh Akhir','Jumlah','Dibayar','Status'] : ['Invoice No','Customer','Issue Date','Due Date','Total','Paid','Status'],
+        file: 'invoices'
+      },
+      products: {
+        table: 'products',
+        cols: ['code','name_en','name_bm','unit_price','unit_cost','stock_qty','unit','reorder_point'],
+        headers: isBm ? ['SKU','Nama EN','Nama BM','Harga','Kos','Stok','Unit','Pesan Semula'] : ['SKU','Name EN','Name BM','Price','Cost','Stock','Unit','Reorder'],
+        file: 'products'
+      }
+    }
+    const spec = specs[kind]
+    if(!spec) throw new Error('Unknown export')
+    const {data, error} = await sb.from(spec.table).select(spec.cols.join(','))
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(5000)
+    if(error) throw error
+    const rows = data || []
+    const esc = v => {
+      const s = v==null ? '' : String(v)
+      if(/[",\\n\\r]/.test(s)) return '"' + s.replace(/"/g,'""') + '"'
+      return s
+    }
+    const lines = [spec.headers.join(',')]
+    rows.forEach(r => {
+      lines.push(spec.cols.map(c => esc(r[c])).join(','))
+    })
+    const blob = new Blob([lines.join('\\n')], {type:'text/csv;charset=utf-8'})
+    const a = document.createElement('a')
+    const stamp = new Date().toISOString().slice(0,10)
+    a.href = URL.createObjectURL(blob)
+    a.download = `nexerp-${spec.file}-${(APP.tenant.code||'tenant')}-${stamp}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    if(st) st.textContent = isBm ? `CSV ${spec.file} dimuat turun (${rows.length} rekod).` : `CSV ${spec.file} downloaded (${rows.length} rows).`
+    showToast(isBm?'CSV siap':'CSV ready', 'success')
+  } catch(e) {
+    console.error(e)
+    if(st) st.textContent = 'Error: '+(e.message||e)
+    showToast('Error: '+(e.message||e), 'error')
+  }
+}
+
 
 async function _fraudScan() {
   const isBm = APP.language==='bm'
