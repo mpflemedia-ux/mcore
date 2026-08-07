@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-bg">
+<meta name="nexerp-build" content="2026-08-08-bi">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -9414,29 +9414,103 @@ async function _grnSave(poId) {
 async function renderSupplierBills() {
   const t = APP.language==='bm' ? {
     title:'Bil Pembekal', add:'Bil Baru', billNo:'No. Bil', supplier:'Pembekal', billDate:'Tarikh Bil', dueDate:'Tarikh Akhir',
-    total:'Jumlah', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paid:'Selesai', noData:'Tiada bil lagi'
+    total:'Jumlah', status:'Status', unpaid:'Belum Dibayar', partial:'Separa', paid:'Selesai', all:'Semua', del:'Padam', noData:'Tiada bil lagi'
   } : {
     title:'Supplier Bills', add:'New Bill', billNo:'Bill No.', supplier:'Supplier', billDate:'Bill Date', dueDate:'Due Date',
-    total:'Total', status:'Status', unpaid:'Unpaid', partial:'Partial', paid:'Paid', noData:'No bills yet'
+    total:'Total', status:'Status', unpaid:'Unpaid', partial:'Partial', paid:'Paid', all:'All', del:'Delete', noData:'No bills yet'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'bill-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_purchTabs('bills')}
+  <div id="bill-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="bill-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('bill-list-wrap')
-  const {data, error} = await sb.from('supplier_bills').select('id,bill_no,bill_date,due_date,total,status,suppliers(name)')
+  const {data, error} = await sb.from('supplier_bills').select('id,bill_no,bill_date,due_date,total,paid_amt,status,suppliers(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('bill_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._billListCache = data
+  window._billListT = t
+  if(!window._billStatusFilter) window._billStatusFilter = 'all'
+  _billRenderStatusFilters()
+  _billRenderListTable()
+}
+
+function _billRenderStatusFilters() {
+  const t = window._billListT || {}
+  const bar = document.getElementById('bill-status-filters')
+  if(!bar) return
+  const counts = { all:0, unpaid:0, partial:0, paid:0 }
+  ;(window._billListCache||[]).forEach(b => {
+    counts.all++
+    const s = String(b.status||'unpaid').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else counts.unpaid++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'unpaid', label:t.unpaid},
+    {k:'partial', label:t.partial},
+    {k:'paid', label:t.paid},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._billStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._billStatusFilter='${tab.k}';_billRenderStatusFilters();_billRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _billRenderListTable() {
+  const t = window._billListT || {}
+  const wrap = document.getElementById('bill-list-wrap')
+  if(!wrap) return
+  const filter = window._billStatusFilter || 'all'
+  let rows = window._billListCache || []
+  if(filter !== 'all') rows = rows.filter(b => String(b.status||'unpaid').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paid:s==='partial'?t.partial:t.unpaid
-  wrap.innerHTML = `<table><thead><tr><th>${t.billNo}</th><th>${t.supplier}</th><th>${t.billDate}</th><th>${t.dueDate}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(b=>`<tr onclick="openPage('purchasing',{view:'bill-detail',id:'${b.id}'})" style="cursor:pointer">
-    <td><strong>${b.bill_no}</strong></td><td>${b.suppliers?.name||'-'}</td><td>${formatDate(b.bill_date)}</td><td>${formatDate(b.due_date)}</td>
+  wrap.innerHTML = `<table><thead><tr><th>${t.billNo}</th><th>${t.supplier}</th><th>${t.billDate}</th><th>${t.dueDate}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
+  <tbody>${rows.map(b=>`<tr onclick="openPage('purchasing',{view:'bill-detail',id:'${b.id}'})" style="cursor:pointer">
+    <td><strong>${b.bill_no||b.ref_no||'-'}</strong></td><td>${b.suppliers?.name||'-'}</td><td>${formatDate(b.bill_date)}</td><td>${formatDate(b.due_date)}</td>
     <td style="text-align:right">${formatRM(b.total)}</td>
     <td><span style="color:${statusColor(b.status)};font-weight:600">${statusLabel(b.status)}</span></td>
+    <td style="text-align:center" onclick="event.stopPropagation()">
+      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+        onclick="_billDelete('${b.id}','${(b.bill_no||b.ref_no||'').replace(/'/g,"\\'")}',${Number(b.paid_amt||0)})" title="${t.del||'Delete'}">
+        <i class="ti ti-trash"></i>
+      </button>
+    </td>
   </tr>`).join('')}</tbody></table>`
+}
+
+async function _billDelete(id, refNo, paidAmt) {
+  const isBm = APP.language==='bm'
+  if(Number(paidAmt||0) > 0.005) {
+    if(!confirm(isBm
+      ? `Bil ${refNo||''} ada bayaran. Padam juga?`
+      : `Bill ${refNo||''} has payments. Delete anyway?`)) return
+  } else {
+    if(!confirm(isBm
+      ? `Padam bil ${refNo||''}?`
+      : `Delete bill ${refNo||''}?`)) return
+  }
+  try {
+    let {error} = await sb.from('supplier_bills').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(error && /deleted_at|column/i.test(error.message||'')) {
+      ;({error} = await sb.from('supplier_bills').delete().eq('id', id).eq('tenant_id', APP.tenant.id))
+    }
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    try { await sb.from('supplier_bill_items').delete().eq('bill_id', id) } catch(e) {}
+    auditLog('delete', 'supplier_bills', id)
+    showToast(isBm?'Bil dipadam.':'Bill deleted.', 'success')
+    renderSupplierBills()
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
 }
 
 // ─── Supplier Bills: Form ───────────────────────────────────────────────────
