@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-fix-intro">
+<meta name="nexerp-build" content="2026-08-08-soa-v2">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -5569,24 +5569,28 @@ async function renderCustomerSOA(id) {
     inv:'Invois', date:'Tarikh', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
     status:'Status', noData:'Tiada invois untuk pelanggan ini.', outstanding:'Jumlah Hutang',
     current:'Semasa', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari',
-    aging:'Analisis Umur Hutang'
+    aging:'Analisis Umur Hutang', payments:'Sejarah Bayaran', method:'Kaedah', noPay:'Tiada bayaran direkod.', notes:'Nota'
   } : {
     title:'Customer Statement of Account', back:'Customer', print:'Print', whatsapp:'WhatsApp',
     inv:'Invoice', date:'Date', due:'Due', total:'Total', paid:'Paid', balance:'Balance',
     status:'Status', noData:'No invoices for this customer.', outstanding:'Total Outstanding',
     current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days',
-    aging:'Aging Analysis'
+    aging:'Aging Analysis', payments:'Payment History', method:'Method', noPay:'No payments recorded.', notes:'Notes'
   }
 
   document.getElementById('main').innerHTML = '<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>'
 
-  const [{data:cust}, {data:invs}] = await Promise.all([
+  const [{data:cust}, {data:invs}, payRes] = await Promise.all([
     sb.from('customers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(),
     sb.from('invoices').select('id,ref_no,issue_date,due_date,total,paid_amt,status')
       .eq('customer_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
-      .order('issue_date',{ascending:true})
+      .order('issue_date',{ascending:true}),
+    sb.from('payments').select('id,ref_no,payment_date,amount,payment_method,notes,status')
+      .eq('customer_id',id).eq('tenant_id',APP.tenant.id)
+      .order('payment_date',{ascending:true}).limit(200)
   ])
   if(!cust) { document.getElementById('main').innerHTML='<div class="empty-state"><p>Customer not found</p></div>'; return }
+  const pays = (payRes && payRes.data) ? payRes.data : []
 
   const rows = (invs||[]).map(inv => {
     const bal = Math.max(0, Number(inv.total||0) - Number(inv.paid_amt||0))
@@ -5698,9 +5702,38 @@ async function renderCustomerSOA(id) {
         </tfoot>
       </table>
     </div>`}
+
+    <div style="margin-top:28px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--primary)">${t.payments}</div>
+      ${(!pays||!pays.length) ? `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${t.noPay}</div>` : `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--bg)">
+          <th style="padding:10px;text-align:left">${t.date}</th>
+          <th style="padding:10px;text-align:left">Ref</th>
+          <th style="padding:10px;text-align:left">${t.method}</th>
+          <th style="padding:10px;text-align:left">${t.notes}</th>
+          <th style="padding:10px;text-align:right">${t.paid}</th>
+        </tr></thead>
+        <tbody>
+          ${pays.map(p=>`<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:9px 10px">${formatDate(p.payment_date)}</td>
+            <td style="padding:9px 10px;font-weight:600">${_aiEscapeHtml(p.ref_no||'-')}</td>
+            <td style="padding:9px 10px">${_aiEscapeHtml(p.payment_method||'-')}</td>
+            <td style="padding:9px 10px;color:var(--text-3)">${_aiEscapeHtml(p.notes||'')}</td>
+            <td style="padding:9px 10px;text-align:right;font-weight:600;color:var(--success)">${formatRM(p.amount)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--bg);font-weight:700">
+            <td colspan="4" style="padding:12px 10px;text-align:right">${t.paid}</td>
+            <td style="padding:12px 10px;text-align:right;color:var(--success)">${formatRM(pays.reduce((s,p)=>s+Number(p.amount||0),0))}</td>
+          </tr>
+        </tfoot>
+      </table>`}
+    </div>
   </div>`
 
-  window._soaCache = { id, cust, outstanding, rows, aging }
+  window._soaCache = { id, cust, outstanding, rows, aging, pays }
 }
 
 function _soaWhatsApp(custId) {
@@ -5837,7 +5870,7 @@ async function _custFollowUpSuggest(custId) {
 
 function renderAccessDenied() {
   const t = APP.language==='bm'
-    ? { title:'Akses Ditolak', msg:'Kau tiada kebenaran untuk akses bahagian ini.', back:'Kembali ke Papan Pemuka' }
+    ? { title:'Akses Ditolak', msg:'Anda tidak mempunyai kebenaran untuk mengakses bahagian ini.', back:'Kembali ke Papan Pemuka' }
     : { title:'Access Denied', msg:"You don't have permission to access this section.", back:'Back to Dashboard' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div class="page-title">${t.title}</div></div>
@@ -9509,6 +9542,7 @@ async function _doLoadSuggestion(id) {
 function renderPurchasing(params={}) {
   if(params.view==='suppliers') { renderSuppliers(); return }
   if(params.view==='supplier-form') { renderSupplierForm(params.id||null); return }
+  if(params.view==='supplier-soa' && params.id) { renderSupplierSOA(params.id); return }
   if(params.view==='po-form') { renderPOForm(params.id||null); return }
   if(params.view==='po-detail') { renderPODetail(params.id); return }
   if(params.view==='grn-form') { renderGRNForm(params.poId); return }
@@ -9572,6 +9606,7 @@ async function _suppLoad() {
     <td>${s.phone||'-'}</td>
     <td>${s.email||'-'}</td>
     <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" title="${APP.language==='bm'?'Penyata Akaun':'Statement'}" onclick="openPage('purchasing',{view:'supplier-soa',id:'${s.id}'})"><i class="ti ti-file-analytics"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('purchasing',{view:'supplier-form',id:'${s.id}'})"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_suppDelete('${s.id}','${s.name.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td>
@@ -9610,6 +9645,117 @@ async function _suppDelete(id, name) {
   auditLog('delete','suppliers', id)
   showToast(isBm?'Pembekal dipadam.':'Supplier deleted.', 'success')
   _suppLoad()
+}
+
+
+async function renderSupplierSOA(id) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Penyata Akaun Pembekal', back:'Pembekal', print:'Cetak',
+    bill:'Bil', date:'Tarikh', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
+    status:'Status', noData:'Tiada bil untuk pembekal ini.', outstanding:'Jumlah Hutang',
+    current:'Semasa', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari',
+    aging:'Analisis Umur Hutang'
+  } : {
+    title:'Supplier Statement of Account', back:'Supplier', print:'Print',
+    bill:'Bill', date:'Date', due:'Due', total:'Total', paid:'Paid', balance:'Balance',
+    status:'Status', noData:'No bills for this supplier.', outstanding:'Total Outstanding',
+    current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days',
+    aging:'Aging Analysis'
+  }
+  document.getElementById('main').innerHTML = '<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>'
+  const [{data:sup}, {data:bills}] = await Promise.all([
+    sb.from('suppliers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(),
+    sb.from('supplier_bills').select('id,bill_no,bill_date,due_date,total,paid_amt,status')
+      .eq('supplier_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+      .order('bill_date',{ascending:true})
+  ])
+  if(!sup) { document.getElementById('main').innerHTML='<div class="empty-state"><p>Supplier not found</p></div>'; return }
+  const rows = (bills||[]).map(b => {
+    const bal = Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
+    return {...b, balance: bal}
+  })
+  const outstanding = rows.reduce((s,r)=>s+r.balance, 0)
+  const today = new Date(); today.setHours(0,0,0,0)
+  const aging = { current:0, d30:0, d60:0, d90:0, d90p:0 }
+  rows.forEach(r => {
+    if(r.balance <= 0.005) return
+    const due = r.due_date ? new Date(r.due_date) : (r.bill_date ? new Date(r.bill_date) : today)
+    due.setHours(0,0,0,0)
+    const days = Math.floor((today - due) / 86400000)
+    if(days <= 0) aging.current += r.balance
+    else if(days <= 30) aging.d30 += r.balance
+    else if(days <= 60) aging.d60 += r.balance
+    else if(days <= 90) aging.d90 += r.balance
+    else aging.d90p += r.balance
+  })
+  const statusLabel = s => s==='paid'?(isBm?'Lunas':'Paid'):s==='partial'?(isBm?'Separa':'Partial'):(isBm?'Belum bayar':'Unpaid')
+  const co = (APP.tenant && APP.tenant.name) || 'NexERP'
+  document.getElementById('main').innerHTML = `
+  <div class="page-header no-print">
+    <div>
+      <div class="page-title">${t.title}</div>
+      <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'suppliers'})">← ${t.back}: ${_aiEscapeHtml(sup.name||'')}</div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+  </div>
+  <div class="card" style="max-width:960px;padding:24px" id="sup-soa-doc">
+    <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;border-bottom:2px solid var(--primary);padding-bottom:16px">
+      <div>
+        <div style="font-weight:700;font-size:18px;color:var(--primary);font-family:'Space Grotesk',sans-serif">${_aiEscapeHtml(co)}</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:4px">${t.title}</div>
+      </div>
+      <div style="text-align:right;font-size:13px">
+        <div><strong>${_aiEscapeHtml(sup.name||'')}</strong></div>
+        <div style="color:var(--text-3)">${[sup.phone,sup.email].filter(Boolean).join(' · ')||''}</div>
+        <div style="color:var(--text-3);margin-top:4px">${isBm?'Dicetak':'Printed'}: ${formatDate(new Date().toISOString().slice(0,10))}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px">
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.outstanding}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;color:var(--danger)">${formatRM(outstanding)}</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text-3)">${t.aging}</div>
+        <div style="font-size:11px;margin-top:4px;line-height:1.5">
+          ${t.current}: ${formatRM(aging.current)}<br>
+          ${t.d30}: ${formatRM(aging.d30)} · ${t.d60}: ${formatRM(aging.d60)}<br>
+          ${t.d90}: ${formatRM(aging.d90)} · ${t.d90p}: ${formatRM(aging.d90p)}
+        </div>
+      </div>
+    </div>
+    ${(!rows.length) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:var(--bg)">
+        <th style="padding:10px;text-align:left">${t.bill}</th>
+        <th style="padding:10px;text-align:left">${t.date}</th>
+        <th style="padding:10px;text-align:left">${t.due}</th>
+        <th style="padding:10px;text-align:right">${t.total}</th>
+        <th style="padding:10px;text-align:right">${t.paid}</th>
+        <th style="padding:10px;text-align:right">${t.balance}</th>
+        <th style="padding:10px;text-align:left">${t.status}</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r=>`<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:9px 10px;font-weight:600">${_aiEscapeHtml(r.bill_no||'-')}</td>
+          <td style="padding:9px 10px">${formatDate(r.bill_date)}</td>
+          <td style="padding:9px 10px">${formatDate(r.due_date)}</td>
+          <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
+          <td style="padding:9px 10px;text-align:right">${formatRM(r.paid_amt)}</td>
+          <td style="padding:9px 10px;text-align:right;font-weight:600;color:${r.balance>0.005?'var(--danger)':'var(--success)'}">${formatRM(r.balance)}</td>
+          <td style="padding:9px 10px">${statusLabel(r.status)}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="background:var(--bg);font-weight:700">
+          <td colspan="5" style="padding:12px 10px;text-align:right">${t.outstanding}</td>
+          <td style="padding:12px 10px;text-align:right;color:var(--danger)">${formatRM(outstanding)}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>`}
+  </div>`
 }
 
 async function renderSupplierForm(id=null) {
