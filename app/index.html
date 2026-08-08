@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-di">
+<meta name="nexerp-build" content="2026-08-09-dj">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -1258,9 +1258,9 @@ tbody tr:hover{background:var(--bg)}
         <div class="dropdown">
           <div class="user-avatar" style="width:32px;height:32px;font-size:12px;cursor:pointer" id="user-avatar-header" onclick="toggleUserDropdown()">U</div>
           <div class="dropdown-menu" id="user-dropdown">
-            <div class="dropdown-item" onclick="openPage('settings')"><i class="ti ti-settings"></i> Settings</div>
+            <div class="dropdown-item" onclick="closeUserDropdown();openPage('settings')"><i class="ti ti-settings"></i> Settings</div>
             <div class="dropdown-divider"></div>
-            <div class="dropdown-item danger" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</div>
+            <div class="dropdown-item danger" onclick="closeUserDropdown();doLogout()"><i class="ti ti-logout"></i> Sign Out</div>
           </div>
         </div>
       </div>
@@ -1647,7 +1647,9 @@ document.addEventListener('keydown', function(e) {
   if(e.key === 'Escape') closeGlobalSearch()
 })
 
-function openPage(page, params={}) {
+function openPage(page, params={
+  try{closeUserDropdown()}catch(e){}
+}) {
   const item = NAV_ITEMS.find(n=>n.id===page)
   if(item && !canAccess(item.module)) { renderAccessDenied(); return }
   // Drop any page-specific global listeners (eg. Salary Disbursement's
@@ -2674,9 +2676,24 @@ async function toggleLang() {
     await sb.from('user_profiles').update({language: APP.language}).eq('id', APP.user.id)
   }
 }
-function toggleUserDropdown() { document.getElementById('user-dropdown').classList.toggle('open') }
-
-document.addEventListener('click',e=>{ if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('active')) })
+function closeUserDropdown() {
+  document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('open'))
+}
+function toggleUserDropdown(ev) {
+  if(ev) ev.stopPropagation()
+  const menu = document.getElementById('user-dropdown')
+  if(!menu) return
+  const willOpen = !menu.classList.contains('open')
+  closeUserDropdown()
+  if(willOpen) menu.classList.add('open')
+}
+// Close user menu on outside click (class must match toggle: "open", not "active")
+document.addEventListener('click', e => {
+  if(!e.target.closest('.dropdown')) closeUserDropdown()
+})
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') closeUserDropdown()
+})
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&document.getElementById('form-login').style.display!=='none')doLogin() })
 
 // PAGES — DASHBOARD (dark analytics theme, inspired by trading dashboard reference)
