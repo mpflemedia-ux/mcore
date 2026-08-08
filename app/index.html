@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-cj">
+<meta name="nexerp-build" content="2026-08-08-ck">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -6178,9 +6178,11 @@ async function renderFixedAssets() {
     </div>
   </div>
   ${_accTabs('fa')}
+  <div id="fa-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div id="fa-run-summary"></div>
   <div class="card"><div id="fa-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
   ${_faRunModalHtml()}`
+  if(!window._faStatusFilter) window._faStatusFilter = 'all'
   await _faLoadList()
 }
 
@@ -6197,9 +6199,34 @@ async function _faLoadList() {
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const bar = document.getElementById('fa-status-filters')
+  if(bar) {
+    const counts = { all: data.length, active:0, disposed:0 }
+    data.forEach(a => {
+      const s = String(a.status||'active').toLowerCase()
+      if(s==='disposed') counts.disposed++
+      else counts.active++
+    })
+    bar.innerHTML = [
+      {k:'all', label: APP.language==='bm'?'Semua':'All'},
+      {k:'active', label:t.active},
+      {k:'disposed', label:t.disposed},
+    ].map(tab => {
+      const active = (window._faStatusFilter||'all') === tab.k
+      return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+        onclick="window._faStatusFilter='${tab.k}';_faLoadList()">
+        ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+      </button>`
+    }).join('')
+  }
+  const filter = window._faStatusFilter || 'all'
+  let rows = data
+  if(filter==='active') rows = data.filter(a => String(a.status||'active').toLowerCase() !== 'disposed')
+  else if(filter==='disposed') rows = data.filter(a => String(a.status||'').toLowerCase() === 'disposed')
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.assetNo}</th><th>${t.name}</th><th>${t.category}</th><th>${t.purchaseDate}</th>
     <th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.accumDep}</th><th style="text-align:right">${t.nbv}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(a=>{
+  <tbody>${rows.map(a=>{
     const nbv = Number(a.purchase_price) - Number(a.accumulated_dep||0)
     return `<tr onclick="openPage('accounting',{view:'fa-detail',id:'${a.id}'})" style="cursor:pointer">
       <td><strong>${a.asset_no}</strong></td><td>${a.name}</td><td>${a.category||'-'}</td><td>${formatDate(a.purchase_date)}</td>
@@ -8036,24 +8063,65 @@ async function _prodSave(id) {
 }
 
 async function renderStockMovements() {
-  const t = APP.language==='bm' ? { title:'Pergerakan Stok', date:'Tarikh', product:'Produk', type:'Jenis', qty:'Kuantiti', note:'Nota', in:'Masuk', out:'Keluar', noData:'Tiada pergerakan stok lagi' }
-    : { title:'Stock Movements', date:'Date', product:'Product', type:'Type', qty:'Qty', note:'Note', in:'In', out:'Out', noData:'No stock movements yet' }
+  const t = APP.language==='bm' ? { title:'Pergerakan Stok', date:'Tarikh', product:'Produk', type:'Jenis', qty:'Kuantiti', note:'Nota', in:'Masuk', out:'Keluar', noData:'Tiada pergerakan stok lagi', all:'Semua' }
+    : { title:'Stock Movements', date:'Date', product:'Product', type:'Type', qty:'Qty', note:'Note', in:'In', out:'Out', noData:'No stock movements yet', all:'All' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_invTabs('stock')}
+  <div id="stock-type-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="stock-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('stock-table-wrap')
   const {data, error} = await sb.from('stock_movements').select('id,type,qty,note,created_at,products(name_en,name_bm)')
-    .eq('tenant_id', APP.tenant.id).order('created_at',{ascending:false}).limit(100)
+    .eq('tenant_id', APP.tenant.id).order('created_at',{ascending:false}).limit(200)
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+  window._stockListCache = data
+  window._stockListT = t
+  if(!window._stockTypeFilter) window._stockTypeFilter = 'all'
+  _stockRenderFilters()
+  _stockRenderTable()
+}
+
+function _stockRenderFilters() {
+  const t = window._stockListT || {}
+  const bar = document.getElementById('stock-type-filters')
+  if(!bar) return
+  const counts = { all:0, in:0, out:0 }
+  ;(window._stockListCache||[]).forEach(m => {
+    counts.all++
+    const ty = String(m.type||'').toLowerCase()
+    if(ty==='in') counts.in++
+    else counts.out++
+  })
+  ;[['all',t.all||'All'],['in',t.in],['out',t.out]].forEach(([k,lab]) => {})
+  bar.innerHTML = [
+    {k:'all', label:t.all||'All'},
+    {k:'in', label:t.in},
+    {k:'out', label:t.out},
+  ].map(tab => {
+    const active = (window._stockTypeFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._stockTypeFilter='${tab.k}';_stockRenderFilters();_stockRenderTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _stockRenderTable() {
+  const t = window._stockListT || {}
+  const wrap = document.getElementById('stock-table-wrap')
+  if(!wrap) return
+  const filter = window._stockTypeFilter || 'all'
+  let rows = window._stockListCache || []
+  if(filter !== 'all') rows = rows.filter(m => String(m.type||'').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.product}</th><th>${t.type}</th><th style="text-align:right">${t.qty}</th><th>${t.note}</th></tr></thead>
-  <tbody>${data.map(m=>`<tr>
+  <tbody>${rows.map(m=>`<tr>
     <td style="color:var(--text-3);font-size:12px">${m.created_at?new Date(m.created_at).toLocaleString('en-MY'):'-'}</td>
     <td>${m.products?prodName(m.products):'-'}</td>
     <td><span style="color:${m.type==='in'?'var(--success)':'var(--danger)'}">${m.type==='in'?t.in:t.out}</span></td>
     <td style="text-align:right">${m.qty}</td>
-    <td style="color:var(--text-2)">${m.note||'-'}</td>
+    <td style="color:var(--text-2)">${_aiEscapeHtml(m.note||'-')}</td>
   </tr>`).join('')}</tbody></table>`
 }
 
