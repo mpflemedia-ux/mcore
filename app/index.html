@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-da">
+<meta name="nexerp-build" content="2026-08-09-db-dedupe">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2732,7 +2732,7 @@ function renderDashboard() {
       </div>`).join('')}
     </div>
 
-    <!-- Row 3: Top Customers + Overdue -->
+    <!-- Row 3: Top Customers + Low stock (Overdue only in KPI strip) -->
     <div class="db-ops-row">
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
@@ -2740,10 +2740,10 @@ function renderDashboard() {
       </div>
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-          <div class="db-card-title"><i class="ti ti-alert-triangle"></i> ${isBm?'Invois Tertunggak':'Overdue Invoices'}</div>
-          <button class="db-btn" style="font-size:11px" onclick="window._invStatusFilter='overdue';openPage('sales',{})">${isBm?'Lihat semua':'View all'}</button>
+          <div class="db-card-title"><i class="ti ti-box"></i> ${isBm?'Stok Rendah':'Low Stock'}</div>
+          <button class="db-btn" style="font-size:11px" onclick="openPage('inventory',{})">${isBm?'Inventori':'Inventory'}</button>
         </div>
-        <div id="db-overdue-table"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+        <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
     </div>
 
@@ -3052,7 +3052,7 @@ async function loadDashboardData() {
   _dbRenderGrowthChart(inv)
   _dbRenderStatusDonut(thisMonthAll)
   _dbRenderTopCustomers(thisMonth)
-  _dbRenderOverdueTable(overdueList)
+  _dbRenderLowStock()
   _dbLoadPeople()
   _dbLoadRecentActivity()
 }
@@ -3544,6 +3544,43 @@ function _dbRenderTopCustomers(eligibleMonth) {
       </div>
     </div>`
   }).join('')
+}
+
+
+async function _dbRenderLowStock() {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('db-low-stock')
+  if(!el) return
+  try {
+    const {data: products} = await sb.from('products').select('id,name_en,name_bm,stock_qty,reorder_point,unit')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(300)
+    const low = (products||[])
+      .filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+      .sort((a,b) => Number(a.stock_qty) - Number(b.stock_qty))
+      .slice(0, 5)
+    if(!low.length) {
+      el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:20px 0;text-align:center">${isBm?'Tiada produk stok rendah':'No low-stock products'}</div>`
+      return
+    }
+    el.innerHTML = `<div class="db-table-scroll"><table class="db-mini-table">
+      <thead><tr>
+        <th>${isBm?'Produk':'Product'}</th>
+        <th style="text-align:right">${isBm?'Stok':'Stock'}</th>
+        <th style="text-align:right">${isBm?'Pesan semula':'Reorder'}</th>
+      </tr></thead>
+      <tbody>${low.map(p => {
+        const name = (typeof prodName==='function') ? prodName(p) : (p.name_en||p.name_bm||'-')
+        return `<tr data-href="1" onclick="openPage('inventory',{view:'product-form',id:'${p.id}'})">
+          <td style="font-weight:600;color:var(--db-text)">${_aiEscapeHtml(name)}</td>
+          <td style="text-align:right;color:#EF4444;font-weight:600">${Number(p.stock_qty||0)} ${p.unit||''}</td>
+          <td style="text-align:right;color:var(--db-text3)">${p.reorder_point ?? 5}</td>
+        </tr>`
+      }).join('')}</tbody>
+    </table></div>`
+  } catch(e) {
+    console.warn('db low stock', e)
+    el.innerHTML = `<div style="color:var(--db-text4);font-size:13px">${isBm?'Gagal muat stok':'Failed to load stock'}</div>`
+  }
 }
 
 function _dbRenderOverdueTable(list) {
