@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-ch">
+<meta name="nexerp-build" content="2026-08-08-ci">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -13765,8 +13765,10 @@ async function renderLeave(params={}) {
     <div class="card-header"><div class="card-title">${t.balance}</div></div>
     <div id="lv-balance-wrap" style="overflow-x:auto;padding:16px"><div class="spinner"></div></div>
   </div>
+  <div id="lv-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="lv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
+  if(!window._leaveStatusFilter) window._leaveStatusFilter = 'all'
   await _leaveLoadTable()
   await _leaveLoadBalances(employees||[])
 }
@@ -13827,7 +13829,36 @@ async function _leaveLoadTable() {
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _leaveRequests = data || []
-  if(_leaveRequests.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  const allRows = _leaveRequests
+  // status filter chips
+  const bar = document.getElementById('lv-status-filters')
+  if(bar) {
+    const counts = { all:0, pending:0, approved:0, rejected:0 }
+    allRows.forEach(l => {
+      counts.all++
+      const s = String(l.status||'pending').toLowerCase()
+      if(counts[s] !== undefined) counts[s]++
+      else counts.pending++
+    })
+    const tabs = [
+      {k:'all', label: isBm?'Semua':'All'},
+      {k:'pending', label:t.pending},
+      {k:'approved', label:t.approved},
+      {k:'rejected', label:t.rejected},
+    ]
+    bar.innerHTML = tabs.map(tab => {
+      const active = (window._leaveStatusFilter||'all') === tab.k
+      return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+        onclick="window._leaveStatusFilter='${tab.k}';_leaveLoadTable()">
+        ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+      </button>`
+    }).join('')
+  }
+  const filter = window._leaveStatusFilter || 'all'
+  const filtered = filter==='all' ? allRows : allRows.filter(l => String(l.status||'pending').toLowerCase()===filter)
+  if(allRows.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  if(filtered.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`; return }
+  _leaveRequests = filtered
 
   const approverIds = [...new Set(_leaveRequests.map(l=>l.approved_by).filter(Boolean))]
   const {data: approvers} = approverIds.length
