@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-harden-abc">
+<meta name="nexerp-build" content="2026-08-09-db-exec">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -409,16 +409,26 @@ tbody tr:hover{background:var(--bg)}
 .db-btn{background:var(--db-card);border:1px solid var(--db-border2);color:var(--db-text2);padding:8px 14px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
 .db-btn:hover{filter:brightness(1.15)}
 .db-btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
-.db-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
-@media (max-width:900px){.db-kpi-grid{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:560px){.db-kpi-grid{grid-template-columns:1fr}}
-.db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:18px 18px 16px 20px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s}
+.db-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:12px;padding:12px 12px 10px 14px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s}
+.db-hero-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:900px){.db-hero-row{grid-template-columns:1fr}}
+.db-ops-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:900px){.db-ops-row{grid-template-columns:1fr}}
+.db-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.db-mini-table{width:100%;border-collapse:collapse;font-size:12px}
+.db-mini-table th{text-align:left;padding:8px 6px;color:var(--db-text4);font-weight:600;border-bottom:1px solid var(--db-border);white-space:nowrap}
+.db-mini-table td{padding:8px 6px;border-bottom:1px solid var(--db-border);color:var(--db-text2)}
+.db-mini-table tr[data-href]{cursor:pointer}
+.db-mini-table tr[data-href]:hover td{background:color-mix(in srgb,var(--primary) 8%,transparent)}
+.db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:6px}
+
 .db-kpi-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--primary);opacity:.85;border-radius:14px 0 0 14px}
 .db-kpi-card:hover{border-color:var(--primary);box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 25%,transparent),0 8px 24px -12px color-mix(in srgb,var(--primary) 35%,transparent)}
 .db-kpi-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .db-kpi-icon{width:28px;height:28px;border-radius:8px;background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
 .db-kpi-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--db-text4);line-height:1.2}
-.db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:10px}
+.db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:6px}
 .db-kpi-footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .db-kpi-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;line-height:1.3}
 .db-kpi-pill.up{background:rgba(22,163,74,.12);color:#16A34A}
@@ -2665,27 +2675,54 @@ function renderDashboard() {
   document.getElementById('main').innerHTML = `
   <div id="dashboard-wrap">
     <div class="db-topbar">
-      <div><div class="db-title">${t.title}</div><div class="db-subtitle">${t.welcome}, ${APP.user.name||''} 👋 — ${isBm?'Pantau prestasi jualan dan pertumbuhan perniagaan anda':'Track your sales performance and business growth'}</div></div>
-      <div style="display:flex;gap:8px">
+      <div>
+        <div class="db-title">${t.title}</div>
+        <div class="db-subtitle">${t.welcome}, ${APP.user.name||''} — ${isBm?'Prestasi operasi & kutipan':'Ops performance & collections'}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="db-btn"><i class="ti ti-calendar"></i> ${monthLabel}</button>
-        <button class="db-btn primary"><i class="ti ti-download"></i> ${t.export}</button>
       </div>
     </div>
 
+    <!-- Row 1 Hero: Sales Growth + Invoice Status -->
+    <div class="db-hero-row">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="db-card-title"><i class="ti ti-chart-line"></i> ${isBm?'Pertumbuhan Jualan':'Sales Growth'}</div>
+          <div class="db-toggle-group" id="db-period-toggle">
+            <div class="db-toggle active" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
+            <div class="db-toggle" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
+            <div class="db-toggle" data-p="monthly" onclick="_dbSetPeriod('monthly')">${isBm?'Bulanan':'Monthly'}</div>
+          </div>
+        </div>
+        <div style="position:relative;min-height:180px">
+          <canvas id="db-growth-chart" height="90"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Berdasarkan paid_amt (Paid/Partial) + POS':'Based on paid_amt (Paid/Partial) + POS'}</div>
+      </div>
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut"></i> ${isBm?'Status Invois':'Invoice Status'}</div>
+        <div class="db-donut-wrap"><canvas id="db-status-donut" width="170" height="170"></canvas>
+          <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
+        </div>
+        <div id="db-status-legend"></div>
+      </div>
+    </div>
+
+    <!-- Row 2 KPI strip (compact) -->
     <div class="db-kpi-grid" id="db-kpi-grid">
       ${[
         {k:'sales', icon:'ti-currency-dollar', go:"openPage('sales',{})"},
         {k:'grossProfit', icon:'ti-chart-arrows-vertical', go:"openPage('sales',{})"},
         {k:'collected', icon:'ti-cash', go:"openPage('sales',{})"},
-        {k:'overdue', icon:'ti-alert-triangle', go:"window._invStatusFilter='overdue';openPage('sales',{})"},
         {k:'rate', icon:'ti-percentage', go:"openPage('sales',{})"},
-        {k:'avg', icon:'ti-receipt', go:"openPage('sales',{})"},
+        {k:'overdue', icon:'ti-alert-triangle', go:"window._invStatusFilter='overdue';openPage('sales',{})"},
         {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
         {k:'revenue', icon:'ti-trending-up', go:"openPage('reports',{})"},
         {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
         {k:'netPL', icon:'ti-scale', go:"openPage('reports',{})"}
       ].map(({k,icon,go})=>`
-      <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer" title="${k==='overdue'?(APP.language==='bm'?'Buka invois tertunggak':'Open overdue invoices'):(k==='revenue'||k==='expenses'||k==='netPL'?(APP.language==='bm'?'Buka Penyata Pendapatan':'Open Income Statement'):(APP.language==='bm'?'Buka Jualan':'Open Sales'))}">
+      <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer">
         <div class="db-kpi-head">
           <div class="db-kpi-icon"><i class="ti ${icon}"></i></div>
           <div class="db-kpi-label" id="db-lbl-${k}">-</div>
@@ -2695,48 +2732,22 @@ function renderDashboard() {
       </div>`).join('')}
     </div>
 
-    <div class="db-row">
+    <!-- Row 3: Top Customers + Overdue -->
+    <div class="db-ops-row">
       <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="db-card-title"><i class="ti ti-chart-line"></i> ${isBm?'Pertumbuhan Jualan':'Sales Growth'}</div>
-          <div class="db-toggle-group" id="db-period-toggle">
-            <div class="db-toggle active" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
-            <div class="db-toggle" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
-            <div class="db-toggle" data-p="monthly" onclick="_dbSetPeriod('monthly')">${isBm?'Bulanan':'Monthly'}</div>
-          </div>
-        </div>
-        <div style="position:relative">
-          <canvas id="db-growth-chart" height="90"></canvas>
-        </div>
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
+        <div id="db-top-customers"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
       <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-chart-donut"></i> ${isBm?'Status Invois':'Invoice Status'}</div>
-        <div class="db-donut-wrap"><canvas id="db-status-donut" width="170" height="170"></canvas>
-          <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+          <div class="db-card-title"><i class="ti ti-alert-triangle"></i> ${isBm?'Invois Tertunggak':'Overdue Invoices'}</div>
+          <button class="db-btn" style="font-size:11px" onclick="window._invStatusFilter='overdue';openPage('sales',{})">${isBm?'Lihat semua':'View all'}</button>
         </div>
-        <div id="db-status-legend"></div>
+        <div id="db-overdue-table"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
     </div>
 
-    <div class="db-bottom-row">
-      <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:8px"><i class="ti ti-report-analytics"></i> ${isBm?'Ringkasan Prestasi':'Performance Breakdown'}</div>
-        <div id="db-breakdown"></div>
-      </div>
-      <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-users-group"></i> ${isBm?'Jualan mengikut Pelanggan':'Sales by Customer'}</div>
-        <div class="db-donut-wrap"><canvas id="db-customer-donut" width="150" height="150"></canvas>
-          <div class="db-donut-center"><div style="font-size:11px;color:var(--db-text4)">${isBm?'Jumlah':'Total'}</div><div style="font-size:15px;font-weight:700;color:var(--db-text)" id="db-customer-total">RM 0</div></div>
-        </div>
-        <div id="db-customer-legend"></div>
-      </div>
-      <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-chart-bar"></i> ${isBm?'Prestasi Bulanan':'Monthly Performance'}</div>
-        <canvas id="db-monthly-bar" height="150"></canvas>
-      </div>
-    </div>
-
-    <!-- People + Recent Activity -->
+    <!-- Row 4: People + Recent Activity -->
     <div class="db-people-row">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -2757,101 +2768,26 @@ function renderDashboard() {
         </div>
       </div>
     </div>
-
-    <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
-      <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="db-card-title"><i class="ti ti-sparkles"></i> ${isBm?'Wawasan Perniagaan AI':'AI Business Insight'}</div>
-          <button id="db-insight-btn" class="db-btn primary" onclick="_dbLoadAiInsight()"><i class="ti ti-refresh"></i> ${isBm?'Jana':'Generate'}</button>
-        </div>
-        <div id="db-insight-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan wawasan AI berdasarkan data perniagaan semasa.':'Click "Generate" to get AI insights based on your current business data.'}</div>
-      </div>
-    </div>
-
-    <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
-      <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="db-card-title"><i class="ti ti-speakerphone"></i> ${isBm?'Penasihat Pemasaran AI':'AI Marketing Advisor'}</div>
-          <button id="db-marketing-btn" class="db-btn primary" onclick="_dbLoadMarketingAdvice()"><i class="ti ti-refresh"></i> ${isBm?'Jana':'Generate'}</button>
-        </div>
-        <div id="db-marketing-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik "Jana" untuk dapatkan idea pemasaran berdasarkan data jualan semasa.':'Click "Generate" to get marketing ideas based on your current sales data.'}</div>
-      </div>
-    </div>
-
-    <div class="db-row" style="grid-template-columns:1fr;margin-top:14px">
-      <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="db-card-title"><i class="ti ti-list-check"></i> ${isBm?'Ringkasan Harian':'Daily Digest'}</div>
-          <button id="db-digest-btn" class="db-btn primary" onclick="_dbLoadDailyDigest()"><i class="ti ti-refresh"></i> ${isBm?'Jana Item Tindakan Hari Ni':"Generate Today's Action Items"}</button>
-        </div>
-        <div id="db-digest-out" style="font-size:13px;color:var(--db-text3);line-height:1.6">${isBm?'Klik butang untuk gabungkan invois overdue, stok rendah, dan deadline pematuhan jadi satu senarai tindakan hari ni.':"Click the button to combine overdue invoices, low stock, and compliance deadlines into one list of today's action items."}</div>
-      </div>
-    </div>
   </div>`
 
+  _dbSyncGlobalTheme()
   _dbSyncGlobalTheme()
   loadDashboardData()
 }
 
-let _dbPeriod = 'daily'
-let _dbCharts = {}
-let _dbInvCache = []
-
-function _dbDestroy(key) { if(_dbCharts[key]) { _dbCharts[key].destroy(); delete _dbCharts[key] } }
-
-function _dbColors() {
-  const wrap = document.getElementById('dashboard-wrap')
-  const day = wrap ? wrap.classList.contains('day') : (APP.theme==='light')
-  return { grid: day?'rgba(0,0,0,.06)':'rgba(255,255,255,.05)', text: '#64748B', tooltipBg: day?'#1E293B':'#1a2030' }
+// Dashboard sales formula (LOCKED — keep charts/KPIs aligned):
+// Recognised sales / collected = sum(paid_amt) on invoices status Paid|Partial only (+ POS completed totals).
+// Outstanding = total - paid_amt for unpaid|partial (exclude cancelled).
+// Invoice KPI count = number of Paid+Partial invoices in period (same set as sales).
+function _dbIsSalesEligible(i) {
+  const s = String(i.status||'').toLowerCase()
+  return s === 'paid' || s === 'partial'
 }
-
-// Keeps the dashboard's dark-analytics styling in sync with the app-wide
-// light/dark toggle (header sun/moon button) — no separate control needed.
-function _dbSyncGlobalTheme() {
-  const wrap = document.getElementById('dashboard-wrap')
-  if(wrap) wrap.classList.toggle('day', APP.theme==='light')
-}
-
-function _dbSetPeriod(p) {
-  _dbPeriod = p
-  document.querySelectorAll('#db-period-toggle .db-toggle').forEach(el=>el.classList.toggle('active', el.dataset.p===p))
-  _dbRenderGrowthChart(_dbInvCache)
-}
-
-
-
-async function _dbMonthPnL(fromDate, toDateExclusive) {
-  // Net P&L from journal_lines for revenue/expense accounts in [from, to)
-  try {
-    let q = sb.from('journal_entries').select('id')
-      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-      .gte('entry_date', fromDate)
-    if(toDateExclusive) q = q.lt('entry_date', toDateExclusive)
-    const {data: entries} = await q
-    const entryIds = (entries||[]).map(e=>e.id)
-    if(!entryIds.length) return { revenue:0, expense:0, net:0 }
-    const {data: accounts} = await sb.from('chart_of_accounts')
-      .select('id,account_type')
-      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-      .in('account_type', ['revenue','expense'])
-    const accMap = {}
-    ;(accounts||[]).forEach(a => { accMap[a.id] = a.account_type })
-    const {data: lines} = await sb.from('journal_lines')
-      .select('account_id,debit_amt,credit_amt')
-      .in('entry_id', entryIds)
-    let revenue = 0, expense = 0
-    ;(lines||[]).forEach(l => {
-      const t = accMap[l.account_id]
-      if(!t) return
-      const d = Number(l.debit_amt||0), cr = Number(l.credit_amt||0)
-      if(t === 'revenue') revenue += (cr - d)
-      else if(t === 'expense') expense += (d - cr)
-    })
-    return { revenue, expense, net: revenue - expense }
-  } catch(e) {
-    console.warn('_dbMonthPnL', e)
-    return { revenue:0, expense:0, net:0 }
-  }
+function _dbPaidAmt(i) { return Number(i.paid_amt||0) }
+function _dbOutstanding(i) {
+  const s = String(i.status||'').toLowerCase()
+  if(s === 'cancelled' || s === 'paid') return 0
+  return Math.max(0, Number(i.total||0) - Number(i.paid_amt||0))
 }
 
 async function loadDashboardData() {
@@ -2881,13 +2817,9 @@ async function loadDashboardData() {
   // All invoices in period (for status charts etc.)
   const thisMonthAll = inv.filter(i => i.issue_date >= ms)
   const lastMonthAll = inv.filter(i => i.issue_date >= lms && i.issue_date < ms)
-  // Sales KPIs: only Paid + Partial (exclude Unpaid / Cancelled)
-  const _salesEligible = i => {
-    const s = String(i.status||'').toLowerCase()
-    return s === 'paid' || s === 'partial'
-  }
-  const thisMonth = thisMonthAll.filter(_salesEligible)
-  const lastMonth = lastMonthAll.filter(_salesEligible)
+  // Sales KPIs: only Paid + Partial (exclude Unpaid / Cancelled) — see _dbIsSalesEligible
+  const thisMonth = thisMonthAll.filter(_dbIsSalesEligible)
+  const lastMonth = lastMonthAll.filter(_dbIsSalesEligible)
 
   // POS completed sales (same period).
   // CASH vs ACCRUAL (code comment only):
@@ -2990,16 +2922,23 @@ async function loadDashboardData() {
   // Overdue invoices (unpaid/partial past due_date)
   const todayStrDash = now.toISOString().slice(0,10)
   let overdueCount = 0, overdueAmt = 0
+  let overdueList = []
   try {
-    const {data: odRows} = await sb.from('invoices').select('total,paid_amt,status,due_date')
+    const {data: odRows} = await sb.from('invoices').select('id,ref_no,customer_name,total,paid_amt,status,due_date')
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
       .neq('status', 'paid').neq('status', 'cancelled')
-      .lt('due_date', todayStrDash).limit(500)
+      .lt('due_date', todayStrDash).order('due_date',{ascending:true}).limit(500)
     ;(odRows||[]).forEach(i => {
+      const bal = _dbOutstanding(i)
+      if(bal <= 0.005) return
       overdueCount++
-      overdueAmt += Math.max(0, Number(i.total||0) - Number(i.paid_amt||0))
+      overdueAmt += bal
+      overdueList.push(i)
     })
   } catch(e) { console.warn('dashboard overdue', e) }
+  window._dbOverdueList = overdueList
+  window._dbThisMonthEligible = thisMonth
+  window._dbThisMonthAll = thisMonthAll
 
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
@@ -3062,9 +3001,8 @@ async function loadDashboardData() {
 
   _dbRenderGrowthChart(inv)
   _dbRenderStatusDonut(thisMonthAll)
-  _dbRenderBreakdown(thisMonth)
-  _dbRenderCustomerDonut(thisMonth)
-  _dbRenderMonthlyBar(inv)
+  _dbRenderTopCustomers(thisMonth)
+  _dbRenderOverdueTable(overdueList)
   _dbLoadPeople()
   _dbLoadRecentActivity()
 }
@@ -3423,6 +3361,30 @@ function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
   })
 }
 
+
+let _dbPeriod = 'daily'
+let _dbCharts = {}
+let _dbInvCache = []
+
+function _dbDestroy(key) { if(_dbCharts[key]) { _dbCharts[key].destroy(); delete _dbCharts[key] } }
+
+function _dbColors() {
+  const wrap = document.getElementById('dashboard-wrap')
+  const day = wrap ? wrap.classList.contains('day') : (APP.theme==='light')
+  return { grid: day?'rgba(0,0,0,.06)':'rgba(255,255,255,.05)', text: '#64748B', tooltipBg: day?'#1E293B':'#1a2030' }
+}
+
+function _dbSyncGlobalTheme() {
+  const wrap = document.getElementById('dashboard-wrap')
+  if(wrap) wrap.classList.toggle('day', APP.theme==='light')
+}
+
+function _dbSetPeriod(p) {
+  _dbPeriod = p
+  document.querySelectorAll('#db-period-toggle .db-toggle').forEach(el=>el.classList.toggle('active', el.dataset.p===p))
+  _dbRenderGrowthChart(_dbInvCache)
+}
+
 function _dbRenderGrowthChart(inv) {
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-growth-chart')
@@ -3437,7 +3399,7 @@ function _dbRenderGrowthChart(inv) {
     let running = 0
     for(let d=1; d<=daysInMonth; d++) {
       const dayStr = new Date(now.getFullYear(), now.getMonth(), d).toISOString().slice(0,10)
-      const dayTotal = inv.filter(i=>i.issue_date===dayStr).reduce((s,i)=>s+Number(i.total||0),0)
+      const dayTotal = inv.filter(i=>i.issue_date===dayStr && _dbIsSalesEligible(i)).reduce((s,i)=>s+_dbPaidAmt(i),0)
       running += dayTotal
       labels.push(String(d)); data.push(running)
     }
@@ -3445,7 +3407,7 @@ function _dbRenderGrowthChart(inv) {
     for(let w=7; w>=0; w--) {
       const end = new Date(now); end.setDate(now.getDate()-w*7)
       const start = new Date(end); start.setDate(end.getDate()-6)
-      const total = inv.filter(i=>i.issue_date>=start.toISOString().slice(0,10) && i.issue_date<=end.toISOString().slice(0,10)).reduce((s,i)=>s+Number(i.total||0),0)
+      const total = inv.filter(i=>i.issue_date>=start.toISOString().slice(0,10) && i.issue_date<=end.toISOString().slice(0,10) && _dbIsSalesEligible(i)).reduce((s,i)=>s+_dbPaidAmt(i),0)
       labels.push((isBm?'Mgu ':'Wk ')+(8-w)); data.push(total)
     }
   } else {
@@ -3453,7 +3415,7 @@ function _dbRenderGrowthChart(inv) {
       const d = new Date(now.getFullYear(), now.getMonth()-m, 1)
       const start = d.toISOString().slice(0,10)
       const end = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString().slice(0,10)
-      const total = inv.filter(i=>i.issue_date>=start && i.issue_date<end).reduce((s,i)=>s+Number(i.total||0),0)
+      const total = inv.filter(i=>i.issue_date>=start && i.issue_date<end && _dbIsSalesEligible(i)).reduce((s,i)=>s+_dbPaidAmt(i),0)
       labels.push(d.toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'short'})); data.push(total)
     }
   }
@@ -3473,32 +3435,93 @@ function _dbRenderGrowthChart(inv) {
   })
 }
 
-function _dbRenderStatusDonut(thisMonth) {
+function _dbRenderStatusDonut(thisMonthAll) {
+  // Counts ALL invoices in the KPI period (same as thisMonthAll) by status.
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-status-donut')
   if(!ctx) return
   _dbDestroy('status')
-  const paid = thisMonth.filter(i=>i.status==='paid').length
-  const partial = thisMonth.filter(i=>i.status==='partial').length
-  const unpaid = thisMonth.filter(i=>i.status==='unpaid').length
-  const total = paid+partial+unpaid
+  const norm = i => String(i.status||'unpaid').toLowerCase()
+  const paid = thisMonthAll.filter(i=>norm(i)==='paid').length
+  const partial = thisMonthAll.filter(i=>norm(i)==='partial').length
+  const unpaid = thisMonthAll.filter(i=>norm(i)==='unpaid' || (norm(i)!=='paid' && norm(i)!=='partial' && norm(i)!=='cancelled')).length
+  const cancelled = thisMonthAll.filter(i=>norm(i)==='cancelled').length
+  const total = paid + partial + unpaid + cancelled
 
   const totalEl = document.getElementById('db-status-total')
   if(totalEl) totalEl.textContent = total
 
+  const labels = [isBm?'Lunas':'Paid', isBm?'Separa':'Partial', isBm?'Belum bayar':'Unpaid', isBm?'Dibatalkan':'Cancelled']
+  const values = [paid, partial, unpaid, cancelled]
+  const colors = ['#22C55E','#F59E0B','#EF4444','#64748B']
+
   _dbCharts['status'] = new Chart(ctx, {
     type:'doughnut',
-    data:{ labels:[isBm?'Telah Dibayar':'Paid', isBm?'Bayaran Separa':'Partial', isBm?'Belum Dibayar':'Unpaid'], datasets:[{ data:[paid,partial,unpaid], backgroundColor:['#22C55E','#F59E0B','#EF4444'], borderWidth:0 }] },
-    options:{ responsive:false, maintainAspectRatio:false, cutout:'72%', plugins:{legend:{display:false}} }
+    data:{ labels, datasets:[{ data: values, backgroundColor: colors, borderWidth:0 }] },
+    options:{ responsive:true, maintainAspectRatio:true, cutout:'68%', plugins:{ legend:{display:false}, tooltip:{callbacks:{label:cx=>`${cx.label}: ${cx.parsed}`}} } }
   })
-
   const legend = document.getElementById('db-status-legend')
-  const rows = [
-    {label:isBm?'Telah Dibayar':'Paid', n:paid, color:'#22C55E'},
-    {label:isBm?'Bayaran Separa':'Partial', n:partial, color:'#F59E0B'},
-    {label:isBm?'Belum Dibayar':'Unpaid', n:unpaid, color:'#EF4444'},
-  ]
-  if(legend) legend.innerHTML = rows.map(r=>`<div class="db-legend-item"><span class="db-legend-dot" style="background:${r.color}"></span>${r.label} <span style="margin-left:auto;color:var(--db-text);font-weight:600">${r.n} (${total?((r.n/total*100).toFixed(1)):0}%)</span></div>`).join('')
+  if(legend) {
+    legend.innerHTML = labels.map((l,i)=>`<div class="db-legend-item"><span class="db-legend-dot" style="background:${colors[i]}"></span>${l} <span style="margin-left:auto;font-weight:600;color:var(--db-text)">${values[i]}</span></div>`).join('')
+  }
+}
+
+function _dbRenderTopCustomers(eligibleMonth) {
+  // Top 5 by collected (paid_amt) this period — same formula as Net Collected KPI.
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('db-top-customers')
+  if(!el) return
+  const by = {}
+  ;(eligibleMonth||[]).forEach(i => {
+    const name = i.customer_name || (isBm?'Tanpa Nama':'Unnamed')
+    by[name] = (by[name]||0) + _dbPaidAmt(i)
+  })
+  const top = Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,5)
+  const max = top.length ? top[0][1] : 0
+  if(!top.length) {
+    el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:20px 0;text-align:center">${isBm?'Tiada kutipan bulan ini':'No collections this period'}</div>`
+    return
+  }
+  el.innerHTML = top.map(([name, amt]) => {
+    const pct = max > 0 ? Math.round(amt/max*100) : 0
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span style="color:var(--db-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${_aiEscapeHtml(name)}</span>
+        <span style="color:var(--db-text2);font-weight:600">${formatRM(amt)}</span>
+      </div>
+      <div style="height:6px;background:var(--db-bg);border-radius:99px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:#0E7490;border-radius:99px"></div>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function _dbRenderOverdueTable(list) {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('db-overdue-table')
+  if(!el) return
+  const rows = (list||[]).slice(0,5)
+  if(!rows.length) {
+    el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:20px 0;text-align:center">${isBm?'Tiada invois tertunggak':'No overdue invoices'}</div>`
+    return
+  }
+  el.innerHTML = `<div class="db-table-scroll"><table class="db-mini-table">
+    <thead><tr>
+      <th>${isBm?'No.':'Ref'}</th>
+      <th>${isBm?'Pelanggan':'Customer'}</th>
+      <th>${isBm?'Tarikh Akhir':'Due'}</th>
+      <th style="text-align:right">${isBm?'Baki':'Balance'}</th>
+    </tr></thead>
+    <tbody>${rows.map(i => {
+      const bal = _dbOutstanding(i)
+      return `<tr data-href="1" onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})">
+        <td style="font-weight:600;color:var(--db-text)">${_aiEscapeHtml(i.ref_no||'-')}</td>
+        <td>${_aiEscapeHtml(i.customer_name||'-')}</td>
+        <td>${formatDate(i.due_date)}</td>
+        <td style="text-align:right;color:#EF4444;font-weight:600">${formatRM(bal)}</td>
+      </tr>`
+    }).join('')}</tbody>
+  </table></div>`
 }
 
 function _dbRenderBreakdown(thisMonth) {
