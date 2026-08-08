@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dj">
+<meta name="nexerp-build" content="2026-08-09-dk">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -1039,7 +1039,7 @@ tbody tr:hover{background:var(--bg)}
 <button id="intro-sound" onclick="toggleIntroSound()" style="display:none;position:fixed;bottom:32px;left:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
   <i class="ti ti-volume-off"></i> Click for Sound
 </button>
-<button id="intro-skip" onclick="skipIntro()" style="display:none;position:fixed;bottom:32px;right:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
+<button id="intro-skip" onclick="skipIntro()" style="display:flex;position:fixed;bottom:32px;right:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
   Skip <i class="ti ti-player-skip-forward"></i>
 </button>
 
@@ -16780,20 +16780,29 @@ let _introTimer = null
 let _hardTimer = null
 
 function skipIntro() {
-  clearTimeout(_introTimer)
+  try { clearTimeout(_introTimer) } catch(e) {}
+  try { clearTimeout(_hardTimer) } catch(e) {}
   _finishIntro()
 }
 
 function _finishIntro() {
   const screen = document.getElementById('intro-screen')
-  if(!screen || screen.classList.contains('hidden')) return
+  if(!screen) return
+  if(screen.classList.contains('hidden')) return
   screen.classList.add('fade-out')
-  // Hide buttons
   const bs = document.getElementById('intro-sound')
   const bk = document.getElementById('intro-skip')
   if(bs) bs.style.display='none'
   if(bk) bk.style.display='none'
-  setTimeout(() => { screen.classList.add('hidden') }, 700)
+  // Force-hide even if CSS transition fails
+  setTimeout(() => {
+    screen.classList.add('hidden')
+    screen.style.display = 'none'
+  }, 500)
+  // Absolute fallback
+  setTimeout(() => {
+    if(screen) { screen.classList.add('hidden'); screen.style.display = 'none' }
+  }, 1200)
 }
 
 function _startProgressBar(durationMs) {
@@ -16853,34 +16862,54 @@ window.onYouTubeIframeAPIReady = function() {
 }
 
 ;(async function(){
-  const { data: { session } } = await sb.auth.getSession()
   const screen = document.getElementById('intro-screen')
+  // Always show Skip quickly so user is never trapped
+  setTimeout(() => {
+    const bs = document.getElementById('intro-sound')
+    const bk = document.getElementById('intro-skip')
+    if(bs) bs.style.display = 'flex'
+    if(bk) bk.style.display = 'flex'
+  }, 400)
+  // Absolute max: force dismiss intro after 8s no matter what
+  _hardTimer = setTimeout(() => { try { _finishIntro() } catch(e) {} }, 8000)
+  document.addEventListener('keydown', function _introEsc(e) {
+    if(e.key === 'Escape') { skipIntro(); document.removeEventListener('keydown', _introEsc) }
+  })
+
+  let session = null
+  try {
+    const result = await Promise.race([
+      sb.auth.getSession(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('session timeout')), 4000))
+    ])
+    session = result?.data?.session || null
+  } catch(e) {
+    console.warn('intro session check', e)
+    session = null
+  }
+
   if(session?.user) {
-    // Already logged in (eg. refreshing the dashboard) — skip straight past
-    // the intro, no video load.
-    if(screen) screen.classList.add('hidden')
+    // Already logged in — skip intro immediately
+    try { clearTimeout(_hardTimer) } catch(e) {}
+    if(screen) {
+      screen.classList.add('hidden')
+      screen.style.display = 'none'
+    }
   } else {
-    // Not logged in — always play the intro, regardless of past visits.
-    // Independent safety timer — buttons + fade guaranteed even if YT API fails
-    setTimeout(() => {
-      const bs = document.getElementById('intro-sound')
-      const bk = document.getElementById('intro-skip')
-      if(bs) bs.style.display='flex'
-      if(bk) bk.style.display='flex'
-    }, 1500)
-
-    _hardTimer = setTimeout(() => { _finishIntro() }, INTRO_VIDEO_DURATION)
-
-    // Load YouTube IFrame API
+    // Guest — play intro; hard timer already running
+    try {
+      const fb = document.getElementById('intro-fallback')
+      const ov = document.getElementById('intro-logo-overlay')
+      if(fb) fb.style.display = 'none'
+      if(ov) ov.style.display = 'flex'
+    } catch(e) {}
     ;(function() {
-      const tag = document.createElement('script')
-      tag.src = 'https://www.youtube.com/iframe_api'
-      document.head.appendChild(tag)
+      try {
+        const tag = document.createElement('script')
+        tag.src = 'https://www.youtube.com/iframe_api'
+        document.head.appendChild(tag)
+      } catch(e) {}
     })()
-
-    // Hide fallback, show logo overlay
-    document.getElementById('intro-fallback').style.display = 'none'
-    document.getElementById('intro-logo-overlay').style.display = 'flex'
   }
 })()
 init()
