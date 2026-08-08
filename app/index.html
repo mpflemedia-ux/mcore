@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dc">
+<meta name="nexerp-build" content="2026-08-09-dd">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2683,20 +2683,24 @@ function renderDashboard() {
         <div class="db-subtitle">${t.welcome}, ${APP.user.name||''} — ${isBm?'Hasil, trend jualan & untung/rugi':'Revenue, sales trend & P&L'}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="db-btn" style="pointer-events:none;opacity:.9"><i class="ti ti-calendar"></i> ${monthLabel}</span>
+        <div class="db-toggle-group" id="db-range-toggle" title="${isBm?'Tempoh KPI & carta':'KPI & chart period'}">
+          <div class="db-toggle" data-r="day" onclick="_dbSetRange('day')">${isBm?'Hari':'Day'}</div>
+          <div class="db-toggle" data-r="week" onclick="_dbSetRange('week')">${isBm?'Minggu':'Week'}</div>
+          <div class="db-toggle active" data-r="month" onclick="_dbSetRange('month')">${isBm?'Bulan':'Month'}</div>
+          <div class="db-toggle" data-r="year" onclick="_dbSetRange('year')">${isBm?'Tahun':'Year'}</div>
+        </div>
+        <span class="db-btn" style="pointer-events:none;opacity:.9" id="db-range-label"><i class="ti ti-calendar"></i> ${monthLabel}</span>
       </div>
     </div>
 
     <!-- Focus KPI: Revenue / Sales / GP / Net P&L -->
-    <div class="db-kpi-grid db-kpi-focus" id="db-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:14px">
+    <div class="db-kpi-grid db-kpi-focus" id="db-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">
       ${[
         {k:'revenue', icon:'ti-trending-up', go:"openPage('reports',{})"},
-        {k:'sales', icon:'ti-currency-dollar', go:"openPage('sales',{})"},
-        {k:'grossProfit', icon:'ti-chart-arrows-vertical', go:"openPage('sales',{})"},
         {k:'netPL', icon:'ti-scale', go:"openPage('reports',{})"},
         {k:'collected', icon:'ti-cash', go:"openPage('sales',{})"},
-        {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
         {k:'rate', icon:'ti-percentage', go:"openPage('sales',{})"},
+        {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
         {k:'overdue', icon:'ti-alert-triangle', go:"window._invStatusFilter='overdue';openPage('sales',{})"},
         {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
         {k:'posSales', icon:'ti-device-desktop', go:"openPage('pos',{view:'history'})"},
@@ -2857,14 +2861,19 @@ async function loadDashboardData() {
   _warnIfDefaultAccountsMissing()
   const isBm = APP.language==='bm'
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
+  const bounds = _dbRangeBounds(now)
+  const ms = bounds.start   // period start (replaces monthStart ISO)
+  const periodEnd = bounds.end
+  const lms = bounds.prevStart
+  const prevEnd = bounds.prevEnd
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth()-5, 1)
+  const yearStart = new Date(now.getFullYear(), 0, 1)
+  const fetchFrom = _dbFmtYMD(yearStart < sixMonthsAgo ? yearStart : sixMonthsAgo)
 
   const {data: allInv, error: invError} = await sb.from('invoices')
     .select('id,ref_no,issue_date,total,paid_amt,status,customer_id,customer_name')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-    .gte('issue_date', sixMonthsAgo.toISOString().slice(0,10))
+    .gte('issue_date', fetchFrom)
     .order('issue_date', {ascending:true})
 
   if(invError) {
@@ -2874,11 +2883,9 @@ async function loadDashboardData() {
 
   const inv = allInv || []
   _dbInvCache = inv
-  const ms = monthStart.toISOString().slice(0,10)
-  const lms = lastMonthStart.toISOString().slice(0,10)
-  // All invoices in period (for status charts etc.)
-  const thisMonthAll = inv.filter(i => i.issue_date >= ms)
-  const lastMonthAll = inv.filter(i => i.issue_date >= lms && i.issue_date < ms)
+  // All invoices in selected range (for status charts etc.)
+  const thisMonthAll = inv.filter(i => i.issue_date >= ms && i.issue_date <= periodEnd)
+  const lastMonthAll = inv.filter(i => i.issue_date >= lms && i.issue_date <= prevEnd)
   // Sales KPIs: only Paid + Partial (exclude Unpaid / Cancelled) — see _dbIsSalesEligible
   const thisMonth = thisMonthAll.filter(_dbIsSalesEligible)
   const lastMonth = lastMonthAll.filter(_dbIsSalesEligible)
@@ -2905,12 +2912,12 @@ async function loadDashboardData() {
     pos.forEach(p => {
       if(p.txn_type && p.txn_type !== 'sale') return
       const t = Number(p.total||0)
-      if(inMonth(p.created_at, ms, null)) { posThis += t; posPaidThis += t }
-      else if(inMonth(p.created_at, lms, ms)) { posLast += t; posPaidLast += t }
+      if(inMonth(p.created_at, ms, null) && p.created_at.slice(0,10) <= periodEnd) { posThis += t; posPaidThis += t }
+      else if(inMonth(p.created_at, lms, null) && p.created_at.slice(0,10) <= prevEnd && p.created_at.slice(0,10) >= lms) { posLast += t; posPaidLast += t }
     })
     // POS COGS from line items × product unit_cost
-    const posIdsThis = pos.filter(p => inMonth(p.created_at, ms, null)).map(p=>p.id)
-    const posIdsLast = pos.filter(p => inMonth(p.created_at, lms, ms)).map(p=>p.id)
+    const posIdsThis = pos.filter(p => p.created_at && p.created_at.slice(0,10) >= ms && p.created_at.slice(0,10) <= periodEnd).map(p=>p.id)
+    const posIdsLast = pos.filter(p => p.created_at && p.created_at.slice(0,10) >= lms && p.created_at.slice(0,10) <= prevEnd).map(p=>p.id)
     const posIds = [...posIdsThis, ...posIdsLast]
     if(posIds.length) {
       const {data: pItems} = await sb.from('pos_transaction_items')
@@ -2975,12 +2982,9 @@ async function loadDashboardData() {
   const curGP = curSales - curCOGS - posCogsThis
   const prevGP = prevSales - prevCOGS - posCogsLast
 
-  // Net P&L from journals (same basis as Reports → Income Statement) — inclusive dates, local YYYY-MM-DD
-  const todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
-  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-  const prevEndStr = prevMonthEnd.getFullYear() + '-' + String(prevMonthEnd.getMonth()+1).padStart(2,'0') + '-' + String(prevMonthEnd.getDate()).padStart(2,'0')
-  const plThis = await _dbMonthPnL(ms, todayStr)
-  const plLast = await _dbMonthPnL(lms, prevEndStr)
+  // Net P&L from journals — same window as KPI range
+  const plThis = await _dbMonthPnL(ms, periodEnd)
+  const plLast = await _dbMonthPnL(lms, prevEnd)
   const curNetPL = plThis.net
   const prevNetPL = plLast.net
 
@@ -3084,6 +3088,16 @@ async function loadDashboardData() {
       color: '#8B5CF6'
     },
   }
+
+  // sync range label
+  try {
+    const lab = document.getElementById('db-range-label')
+    if(lab) {
+      const names = isBm ? {day:'Hari',week:'Minggu',month:'Bulan',year:'Tahun'} : {day:'Day',week:'Week',month:'Month',year:'Year'}
+      lab.innerHTML = `<i class="ti ti-calendar"></i> ${names[_dbRange]||_dbRange}: ${ms} → ${periodEnd}`
+    }
+    document.querySelectorAll('#db-range-toggle .db-toggle').forEach(el => el.classList.toggle('active', el.dataset.r === (_dbRange||'month')))
+  } catch(e) {}
 
   Object.entries(kpis).forEach(([k,v]) => {
     const lbl = document.getElementById('db-lbl-'+k), val = document.getElementById('db-val-'+k), foot = document.getElementById('db-delta-'+k)
@@ -3480,6 +3494,7 @@ function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
 
 
 let _dbPeriod = 'daily'
+let _dbRange = 'month' // day|week|month|year — KPI / P&L window
 let _dbCharts = {}
 let _dbInvCache = []
 
@@ -3496,7 +3511,56 @@ function _dbSyncGlobalTheme() {
   if(wrap) wrap.classList.toggle('day', APP.theme==='light')
 }
 
+
+function _dbFmtYMD(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+}
+/** Current + previous window for KPI based on _dbRange */
+function _dbRangeBounds(now = new Date()) {
+  const range = _dbRange || 'month'
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate()) // today local
+  let start, prevStart, prevEnd
+  if(range === 'day') {
+    start = new Date(end)
+    prevEnd = new Date(end); prevEnd.setDate(prevEnd.getDate()-1)
+    prevStart = new Date(prevEnd)
+  } else if(range === 'week') {
+    const day = end.getDay() // 0 Sun
+    const diff = (day + 6) % 7 // Mon=0
+    start = new Date(end); start.setDate(end.getDate() - diff)
+    prevEnd = new Date(start); prevEnd.setDate(prevEnd.getDate()-1)
+    prevStart = new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-6)
+  } else if(range === 'year') {
+    start = new Date(end.getFullYear(), 0, 1)
+    prevStart = new Date(end.getFullYear()-1, 0, 1)
+    prevEnd = new Date(end.getFullYear()-1, 11, 31)
+  } else { // month
+    start = new Date(end.getFullYear(), end.getMonth(), 1)
+    prevStart = new Date(end.getFullYear(), end.getMonth()-1, 1)
+    prevEnd = new Date(end.getFullYear(), end.getMonth(), 0)
+  }
+  return {
+    start: _dbFmtYMD(start),
+    end: _dbFmtYMD(end),
+    prevStart: _dbFmtYMD(prevStart),
+    prevEnd: _dbFmtYMD(prevEnd),
+    label: range
+  }
+}
+function _dbSetRange(r) {
+  _dbRange = r
+  document.querySelectorAll('#db-range-toggle .db-toggle').forEach(el => el.classList.toggle('active', el.dataset.r === r))
+  const isBm = APP.language==='bm'
+  const b = _dbRangeBounds()
+  const lab = document.getElementById('db-range-label')
+  if(lab) {
+    const names = isBm ? {day:'Hari',week:'Minggu',month:'Bulan',year:'Tahun'} : {day:'Day',week:'Week',month:'Month',year:'Year'}
+    lab.innerHTML = `<i class="ti ti-calendar"></i> ${names[r]||r}: ${b.start} → ${b.end}`
+  }
+  loadDashboardData()
+}
 function _dbSetPeriod(p) {
+
   _dbPeriod = p
   document.querySelectorAll('#db-period-toggle .db-toggle').forEach(el=>el.classList.toggle('active', el.dataset.p===p))
   _dbRenderGrowthChart(_dbInvCache)
