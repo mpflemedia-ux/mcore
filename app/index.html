@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dh">
+<meta name="nexerp-build" content="2026-08-09-di">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -3197,12 +3197,16 @@ async function loadDashboardData() {
           foot.innerHTML = `<span class="db-kpi-pill ${cls}">${v.sub}</span>`
         }
       } else {
-        const up = v.delta >= 0
+        // Cost KPIs: higher = worse → red when up, green when down
+        const costKeys = { expenses:1, payroll:1 }
+        const rose = v.delta >= 0
         const flat = Math.abs(v.delta) < 0.005
         if(flat) {
           foot.innerHTML = `<span class="db-kpi-pill neutral">0.00%</span>`
         } else {
-          foot.innerHTML = `<span class="db-kpi-pill ${up?'up':'down'}"><i class="ti ti-trending-${up?'up':'down'}"></i> ${up?'+':''}${v.delta.toFixed(2)}%</span>`
+          const good = costKeys[k] ? !rose : rose
+          const arrow = rose ? 'up' : 'down'
+          foot.innerHTML = `<span class="db-kpi-pill ${good?'up':'down'}"><i class="ti ti-trending-${arrow}"></i> ${rose?'+':''}${v.delta.toFixed(2)}%</span>`
         }
       }
     }
