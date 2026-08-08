@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-db-exec">
+<meta name="nexerp-build" content="2026-08-09-da">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2788,6 +2788,56 @@ function _dbOutstanding(i) {
   const s = String(i.status||'').toLowerCase()
   if(s === 'cancelled' || s === 'paid') return 0
   return Math.max(0, Number(i.total||0) - Number(i.paid_amt||0))
+}
+
+
+/** Dashboard month P&L from journals (revenue/expense accounts). end exclusive if provided. */
+async function _dbMonthPnL(fromDate, endExclusive) {
+  const empty = { revenue: 0, expense: 0, net: 0 }
+  try {
+    if(!APP.tenant?.id || !fromDate) return empty
+    let q = sb.from('journal_entries').select('id')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .gte('entry_date', fromDate)
+    if(endExclusive) q = q.lt('entry_date', endExclusive)
+    else {
+      // through end of current calendar month of fromDate
+      const d = new Date(fromDate + 'T00:00:00')
+      const end = new Date(d.getFullYear(), d.getMonth()+1, 0)
+      q = q.lte('entry_date', end.toISOString().slice(0,10))
+    }
+    const {data: entries, error} = await q
+    if(error) { console.warn('_dbMonthPnL entries', error); return empty }
+    const entryIds = (entries||[]).map(e=>e.id)
+    if(!entryIds.length) return empty
+
+    const {data: accounts} = await sb.from('chart_of_accounts')
+      .select('id,account_type')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .in('account_type', ['revenue','expense'])
+    if(!accounts?.length) return empty
+
+    // chunk entry ids if large
+    const {data: lines} = await sb.from('journal_lines')
+      .select('account_id,debit_amt,credit_amt')
+      .in('entry_id', entryIds.slice(0, 2000))
+    const byAccount = {}
+    ;(lines||[]).forEach(l => {
+      if(!byAccount[l.account_id]) byAccount[l.account_id] = {debit:0,credit:0}
+      byAccount[l.account_id].debit += Number(l.debit_amt||0)
+      byAccount[l.account_id].credit += Number(l.credit_amt||0)
+    })
+    let revenue = 0, expense = 0
+    accounts.forEach(a => {
+      const b = byAccount[a.id] || {debit:0,credit:0}
+      if(a.account_type === 'revenue') revenue += (b.credit - b.debit)
+      else if(a.account_type === 'expense') expense += (b.debit - b.credit)
+    })
+    return { revenue, expense, net: revenue - expense }
+  } catch(e) {
+    console.warn('_dbMonthPnL failed', e)
+    return empty
+  }
 }
 
 async function loadDashboardData() {
