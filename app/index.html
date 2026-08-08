@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-cg">
+<meta name="nexerp-build" content="2026-08-08-ch">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -12285,27 +12285,70 @@ async function renderApplicantList() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Permohonan Kerja', add:'Tambah Permohonan', name:'Nama', position:'Jawatan Dipohon', appliedDate:'Tarikh Mohon',
-    status:'Status', interviewDate:'Tarikh Temuduga', noData:'Tiada permohonan kerja lagi', del:'Padam',
+    status:'Status', interviewDate:'Tarikh Temuduga', noData:'Tiada permohonan kerja lagi', del:'Padam', all:'Semua',
     pending:'Menunggu', interviewed:'Ditemuduga', approved:'Diluluskan', rejected:'Ditolak'
   } : {
     title:'Job Applicants', add:'Add Applicant', name:'Name', position:'Position Applied', appliedDate:'Applied Date',
-    status:'Status', interviewDate:'Interview Date', noData:'No job applicants yet', del:'Delete',
+    status:'Status', interviewDate:'Interview Date', noData:'No job applicants yet', del:'Delete', all:'All',
     pending:'Pending', interviewed:'Interviewed', approved:'Approved', rejected:'Rejected'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary" onclick="openPage('applicants',{view:'applicant-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
   </div>
+  <div id="app-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="app-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('app-list-wrap')
   const {data, error} = await sb.from('job_applicants').select('id,full_name,position_applied,created_at,status,interview_date')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._appListCache = data
+  window._appListT = t
+  if(!window._appStatusFilter) window._appStatusFilter = 'all'
+  _appRenderStatusFilters()
+  _appRenderListTable()
+}
+
+function _appRenderStatusFilters() {
+  const t = window._appListT || {}
+  const bar = document.getElementById('app-status-filters')
+  if(!bar) return
+  const counts = { all:0, pending:0, interviewed:0, approved:0, rejected:0 }
+  ;(window._appListCache||[]).forEach(a => {
+    counts.all++
+    const s = String(a.status||'pending').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else counts.pending++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'pending', label:t.pending},
+    {k:'interviewed', label:t.interviewed},
+    {k:'approved', label:t.approved},
+    {k:'rejected', label:t.rejected},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._appStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._appStatusFilter='${tab.k}';_appRenderStatusFilters();_appRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _appRenderListTable() {
+  const t = window._appListT || {}
+  const wrap = document.getElementById('app-list-wrap')
+  if(!wrap) return
+  const filter = window._appStatusFilter || 'all'
+  let rows = window._appListCache || []
+  if(filter !== 'all') rows = rows.filter(a => String(a.status||'pending').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='approved'?'var(--success)':s==='interviewed'?'#3B82F6':s==='rejected'?'var(--danger)':'var(--warning)'
   const statusLabel = s => t[s]||s
   wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.position}</th><th>${t.appliedDate}</th><th>${t.status}</th><th>${t.interviewDate}</th><th style="width:60px"></th></tr></thead>
-  <tbody>${data.map(a=>`<tr onclick="openPage('applicants',{view:'applicant-form',id:'${a.id}'})" style="cursor:pointer">
+  <tbody>${rows.map(a=>`<tr onclick="openPage('applicants',{view:'applicant-form',id:'${a.id}'})" style="cursor:pointer">
     <td><strong>${_aiEscapeHtml(a.full_name)}</strong></td>
     <td>${_aiEscapeHtml(a.position_applied||'-')}</td>
     <td>${formatDate(a.created_at)}</td>
