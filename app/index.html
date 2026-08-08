@@ -2,8 +2,16 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dm">
+<meta name="nexerp-build" content="2026-08-09-dn">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+/* Intro OFF by default — only guest first-visit turns it on (avoids flash on refresh) */
+(function(){try{
+  if(localStorage.getItem('nexerp_intro_done')==='1'){
+    document.documentElement.setAttribute('data-skip-intro','1');
+  }
+}catch(e){}})();
+</script>
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="shortcut icon" type="image/png" href="favicon.png">
@@ -1006,7 +1014,7 @@ tbody tr:hover{background:var(--bg)}
 </head>
 <body>
 <!-- ─── INTRO VIDEO SCREEN ─────────────────────────────────────────────────── -->
-<div id="intro-screen">
+<div id="intro-screen" class="hidden" style="display:none">
   <!-- YouTube iframe embed — fullscreen cover -->
   <div style="position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0">
     <iframe id="intro-video"
@@ -16872,40 +16880,62 @@ window.onYouTubeIframeAPIReady = function() {
 
 ;(async function(){
   const screen = document.getElementById('intro-screen')
-  const introDone = (() => { try { return localStorage.getItem('nexerp_intro_done') === '1' } catch(e) { return false } })()
+  function markIntroDone() {
+    try { localStorage.setItem('nexerp_intro_done', '1') } catch(e) {}
+  }
+  function mustSkipIntro() {
+    try {
+      if(localStorage.getItem('nexerp_intro_done') === '1') return true
+      if(document.documentElement.getAttribute('data-skip-intro') === '1') return true
+    } catch(e) {}
+    return false
+  }
 
-  // Flow: Landing → Client Login → /app/ → intro (once) → login → dashboard
-  // Refresh while logged in OR intro already seen → never show intro/buttons
+  // Always start hidden; never flash on refresh
+  try { _hideIntroAll() } catch(e) {
+    if(screen) { screen.classList.add('hidden'); screen.style.display = 'none' }
+    const bs = document.getElementById('intro-sound'), bk = document.getElementById('intro-skip')
+    if(bs) bs.style.display = 'none'
+    if(bk) bk.style.display = 'none'
+  }
+
+  if(mustSkipIntro()) return
+
   let session = null
   try {
     const result = await Promise.race([
       sb.auth.getSession(),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('session timeout')), 3500))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('session timeout')), 3000))
     ])
     session = result?.data?.session || null
   } catch(e) {
-    console.warn('intro session check', e)
-    session = null
+    console.warn('intro session', e)
   }
 
-  if(session?.user || introDone) {
-    _hideIntroAll()
+  // Logged in → never intro; mark done so future loads are instant
+  if(session?.user) {
+    markIntroDone()
+    try { _hideIntroAll() } catch(e) {}
     return
   }
 
-  // Guest, first visit only — play intro
+  // Guest + first visit only → show intro
+  if(screen) {
+    screen.classList.remove('hidden', 'fade-out')
+    screen.style.display = 'flex'
+    screen.style.pointerEvents = ''
+  }
   document.addEventListener('keydown', function _introEsc(e) {
     if(e.key === 'Escape') { skipIntro(); document.removeEventListener('keydown', _introEsc) }
   })
   setTimeout(() => {
-    // only show buttons if intro still visible
     const sc = document.getElementById('intro-screen')
     if(!sc || sc.classList.contains('hidden') || sc.style.display === 'none') return
     const bs = document.getElementById('intro-sound')
     const bk = document.getElementById('intro-skip')
     if(bs) { bs.style.display = 'flex'; bs.style.visibility = 'visible' }
     if(bk) { bk.style.display = 'flex'; bk.style.visibility = 'visible' }
-  }, 600)
+  }, 500)
   _hardTimer = setTimeout(() => { try { _finishIntro() } catch(e) {} }, 8000)
   try {
     const fb = document.getElementById('intro-fallback')
