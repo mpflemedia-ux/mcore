@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-cl">
+<meta name="nexerp-build" content="2026-08-08-harden-abc">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -1367,6 +1367,38 @@ const _DEFAULT_ROLE_MODULES = {
   accountant: ['accounting','reports','purchasing','sales'],
   cashier: ['pos','sales'],
   staff: ['crm','sales','inventory','pos'],
+}
+
+
+// ─── Soft period lock (localStorage per tenant; TODO: migrate to tenants.config) ───
+function _booksLockKey() {
+  return 'nexerp_books_lock_' + (APP.tenant?.id || 'none')
+}
+function getBooksLockDate() {
+  try {
+    const v = localStorage.getItem(_booksLockKey())
+    return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null
+  } catch(e) { return null }
+}
+function setBooksLockDate(dateStr) {
+  try {
+    if(!dateStr) localStorage.removeItem(_booksLockKey())
+    else localStorage.setItem(_booksLockKey(), dateStr)
+  } catch(e) {}
+}
+/** Returns false if date is locked (entry/issue date <= lock date). Shows toast. */
+function assertNotPeriodLocked(dateStr) {
+  const lock = getBooksLockDate()
+  if(!lock || !dateStr) return true
+  if(String(dateStr).slice(0,10) <= lock) {
+    const isBm = APP.language==='bm'
+    showToast(isBm
+      ? ('Tempoh dikunci sehingga '+formatDate(lock)+'. Tidak boleh siarkan transaksi pada/sebelum tarikh ini.')
+      : ('Books locked through '+formatDate(lock)+'. Cannot post transactions on or before this date.'),
+      'error')
+    return false
+  }
+  return true
 }
 
 function canAccess(module) {
@@ -4098,7 +4130,7 @@ async function renderSettings(params={}) {
         const mapsOk = glCheck.maps >= glCheck.mapsNeed
         return [
           row(glCheck.coa>0, isBm?'Carta Akaun':'Chart of Accounts', isBm?(glCheck.coa+' akaun'):(glCheck.coa+' accounts'), "openPage('accounting',{})"),
-          row(mapsOk, isBm?'Akaun Lalai (wajib)':'Default Accounts (required)', isBm?(glCheck.maps+'/'+glCheck.mapsNeed+' lengkap'):(glCheck.maps+'/'+glCheck.mapsNeed+' complete'), null),
+          row(mapsOk, isBm?'Akaun Lalai (wajib)':'Default Accounts (required)', isBm?(glCheck.maps+'/'+glCheck.mapsNeed+' lengkap'):(glCheck.maps+'/'+glCheck.mapsNeed+' complete'), "document.getElementById('dam-cash')?.scrollIntoView({behavior:'smooth',block:'center'})"),
           row(glCheck.opening, isBm?'Baki Pembukaan / Modal':'Opening Balance / Capital', isBm?'Debit tunai, kredit modal':'Debit cash, credit capital', "openPage('accounting',{view:'opening-balance'})"),
           row(glCheck.employees>0, isBm?'Pekerja':'Employees', isBm?(glCheck.employees+' rekod'):(glCheck.employees+' records'), "openPage('hr',{})"),
           row(glCheck.customers>0, isBm?'Pelanggan (jualan)':'Customers (sales)', isBm?(glCheck.customers+' rekod'):(glCheck.customers+' records'), "openPage('crm',{})"),
@@ -4185,6 +4217,21 @@ async function renderSettings(params={}) {
       <button id="doc-generate-btn" class="btn btn-primary btn-sm" onclick="_docGenerate()"><i class="ti ti-file-text"></i> ${APP.language==='bm'?'Jana Draf':'Generate Draft'}</button>
     </div>
   </div>
+  ${isAdmin ? `
+  <div class="card" style="max-width:500px;margin-top:16px">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Kunci Tempoh (lembut)':'Period Lock (soft)'}</div></div>
+    <div style="padding:16px">
+      <p style="font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.5">${APP.language==='bm'
+        ? 'Transaksi dengan tarikh pada atau sebelum tarikh kunci tidak boleh disiarkan (jurnal, invois, bayaran). Disimpan setempat per tenant sehingga migrasi ke server.'
+        : 'Transactions dated on or before the lock date cannot be posted (journals, invoices, payments). Stored locally per tenant until a server migration.'}</p>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Dikunci sehingga':'Locked through'}</label>
+        <input type="date" id="books-lock-date" class="form-input" value="${getBooksLockDate()||''}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-primary btn-sm" onclick="_saveBooksLock()"><i class="ti ti-lock"></i> ${APP.language==='bm'?'Simpan Kunci':'Save Lock'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('books-lock-date').value='';_saveBooksLock()"><i class="ti ti-lock-open"></i> ${APP.language==='bm'?'Buka Kunci':'Clear Lock'}</button>
+      </div>
+    </div>
+  </div>` : ''}
   <div class="card" style="max-width:500px;margin-top:16px">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'PIN Keselamatan (2FA)':'Security PIN (2FA)'}</div></div>
     <div style="padding:16px">
@@ -4477,6 +4524,16 @@ function _docCopyDraft() {
 // schema, so the scan works off what's actually tracked (amount, timing, payment
 // method, entry type) rather than the discount/void examples mentioned in the
 // original spec — flagged to the user as a scope adjustment.
+
+function _saveBooksLock() {
+  const v = (document.getElementById('books-lock-date')?.value || '').trim()
+  setBooksLockDate(v || null)
+  const isBm = APP.language==='bm'
+  showToast(v
+    ? (isBm ? ('Tempoh dikunci sehingga '+formatDate(v)) : ('Books locked through '+formatDate(v)))
+    : (isBm ? 'Kunci tempoh dibuka.' : 'Period lock cleared.'),
+    'success')
+}
 
 async function _exportTenantBackup() {
   const isBm = APP.language==='bm'
@@ -5076,6 +5133,8 @@ async function _postSaleJournal({ description, entryDate, amount, cogsAmount, so
 // code path), but never touches journal_entries/journal_lines — used by
 // the backfill's dry-run mode to preview totals with zero risk of writing.
 async function _postJournalEntry({ description, entryDate, entryType, lines, sourceTable, sourceId, dryRun }) {
+  if(!dryRun && entryDate && !assertNotPeriodLocked(entryDate)) return null
+
   const totalDebit = lines.reduce((s,l)=>s+Number(l.debit||0), 0)
   const totalCredit = lines.reduce((s,l)=>s+Number(l.credit||0), 0)
   if(Math.round((totalDebit-totalCredit)*100) !== 0) {
@@ -6836,6 +6895,41 @@ async function _jnlLoadTable(t) {
 let _jnlLines = []
 let _jnlAccounts = []
 
+
+async function _jnlReverse(entryId) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm
+    ? 'Cipta entri pembalikan untuk jurnal ini? Debit/kredit akan diterbalikkan.'
+    : 'Create a reversing entry for this journal? Debits and credits will be swapped.')) return
+  const {data: entry} = await sb.from('journal_entries').select('*').eq('id',entryId).eq('tenant_id',APP.tenant.id).single()
+  if(!entry) { showToast('Not found','error'); return }
+  const {data: lines} = await sb.from('journal_lines').select('*').eq('entry_id',entryId).order('line_no')
+  if(!lines || lines.length < 2) { showToast(isBm?'Baris jurnal tidak lengkap.':'Incomplete journal lines.','error'); return }
+  const today = new Date().toISOString().slice(0,10)
+  if(!assertNotPeriodLocked(today)) return
+  const revLines = lines.map(l => ({
+    account_id: l.account_id,
+    debit: Number(l.credit_amt||0),
+    credit: Number(l.debit_amt||0)
+  })).filter(l => l.debit > 0 || l.credit > 0)
+  const desc = (isBm ? 'Pembalikan ' : 'Reversal of ') + (entry.ref_no || entryId) + (entry.description ? ' — ' + entry.description : '')
+  try {
+    const res = await _postJournalEntry({
+      description: desc.slice(0, 200),
+      entryDate: today,
+      entryType: 'manual',
+      lines: revLines,
+      sourceTable: entry.source_table || 'journal_reversal',
+      sourceId: entryId
+    })
+    if(res === null && getBooksLockDate()) return
+    showToast(isBm?'Entri pembalikan dicipta.':'Reversing entry created.', 'success')
+    openPage('accounting',{view:'journal'})
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  }
+}
+
 async function renderJournalForm(id=null) {
   const t = APP.language==='bm' ? {
     addTitle:'Entri Jurnal Baru', editTitle:'Edit Entri Jurnal', back:'Entri Jurnal',
@@ -6869,6 +6963,7 @@ async function renderJournalForm(id=null) {
       <div class="page-title">${id ? t.editTitle : t.addTitle}</div>
       <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('accounting',{view:'journal'})">← ${t.back}</div>
     </div>
+    ${id ? `<button class="btn btn-outline btn-sm" onclick="_jnlReverse('${id}')"><i class="ti ti-switch-horizontal"></i> ${APP.language==='bm'?'Balik Jurnal':'Reverse Entry'}</button>` : ''}
   </div>
   <div class="card" style="max-width:800px">
     <div id="jnl-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
@@ -6977,11 +7072,14 @@ async function _jnlSave(id) {
   if(validLines.length !== _jnlLines.length) { errEl.textContent=t.accErr; errEl.style.display='block'; return }
   if(debit===0 || Math.abs(debit-credit)>=0.005) { errEl.textContent=t.balanceErr; errEl.style.display='block'; return }
 
+  const jnlDate = document.getElementById('jf-date').value
+  if(!assertNotPeriodLocked(jnlDate)) return
+
   btn.disabled=true; btn.innerHTML='<div class="spinner"></div>'
 
   const entryPayload = {
     tenant_id: APP.tenant.id,
-    entry_date: document.getElementById('jf-date').value,
+    entry_date: jnlDate,
     description: document.getElementById('jf-desc').value.trim()||null,
     updated_at: new Date().toISOString()
   }
@@ -8063,16 +8161,51 @@ async function _prodSave(id) {
 }
 
 async function renderStockMovements() {
-  const t = APP.language==='bm' ? { title:'Pergerakan Stok', date:'Tarikh', product:'Produk', type:'Jenis', qty:'Kuantiti', note:'Nota', in:'Masuk', out:'Keluar', noData:'Tiada pergerakan stok lagi', all:'Semua' }
-    : { title:'Stock Movements', date:'Date', product:'Product', type:'Type', qty:'Qty', note:'Note', in:'In', out:'Out', noData:'No stock movements yet', all:'All' }
+  const t = APP.language==='bm' ? {
+    title:'Pergerakan Stok', date:'Tarikh', product:'Produk', type:'Jenis', qty:'Kuantiti', note:'Nota',
+    in:'Masuk', out:'Keluar', noData:'Tiada pergerakan stok lagi', all:'Semua',
+    from:'Dari', to:'Hingga', apply:'Tapis'
+  } : {
+    title:'Stock Movements', date:'Date', product:'Product', type:'Type', qty:'Qty', note:'Note',
+    in:'In', out:'Out', noData:'No stock movements yet', all:'All',
+    from:'From', to:'To', apply:'Filter'
+  }
+  const today = new Date().toISOString().slice(0,10)
+  const monthStart = today.slice(0,8)+'01'
+  if(!window._stockDateFilter) window._stockDateFilter = { from: monthStart, to: today }
+  const f = window._stockDateFilter
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_invTabs('stock')}
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label><input id="stock-from" type="date" class="form-input" value="${f.from||''}"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label><input id="stock-to" type="date" class="form-input" value="${f.to||''}"></div>
+    <button class="btn btn-primary btn-sm" onclick="_stockApplyDates()">${t.apply}</button>
+  </div>
   <div id="stock-type-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="stock-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  await _stockLoadData(t)
+}
+
+function _stockApplyDates() {
+  window._stockDateFilter = {
+    from: document.getElementById('stock-from')?.value || '',
+    to: document.getElementById('stock-to')?.value || ''
+  }
+  renderStockMovements()
+}
+
+async function _stockLoadData(t) {
   const wrap = document.getElementById('stock-table-wrap')
-  const {data, error} = await sb.from('stock_movements').select('id,type,qty,note,created_at,products(name_en,name_bm)')
-    .eq('tenant_id', APP.tenant.id).order('created_at',{ascending:false}).limit(200)
+  if(!wrap) return
+  t = t || window._stockListT || {}
+  const f = window._stockDateFilter || {}
+  let q = sb.from('stock_movements').select('id,type,qty,note,created_at,products(name_en,name_bm)')
+    .eq('tenant_id', APP.tenant.id).order('created_at',{ascending:false}).limit(500)
+  // Filter by created_at date portion
+  if(f.from) q = q.gte('created_at', f.from + 'T00:00:00')
+  if(f.to) q = q.lte('created_at', f.to + 'T23:59:59')
+  const {data, error} = await q
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   window._stockListCache = data
@@ -8297,7 +8430,11 @@ function _invRenderListTable(t) {
   let rows = _invListCache || []
   if(filter !== 'all') rows = rows.filter(i => String(i.status||'unpaid').toLowerCase() === filter)
   if(!rows.length) {
-    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`
+    const isBm = APP.language==='bm'
+    const cta = (filter==='all' || !filter)
+      ? `<button class="btn btn-primary btn-sm" style="margin-top:14px" onclick="openPage('sales',{view:'inv-form'})"><i class="ti ti-plus"></i> ${t.add||(isBm?'Invois Baru':'New Invoice')}</button>`
+      : ''
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p>${cta}</div>`
     return
   }
   const today = new Date().toISOString().slice(0,10)
@@ -8523,9 +8660,11 @@ async function _invSave(id) {
 
   const customerName = document.getElementById('if-customer').selectedOptions[0]?.textContent || ''
   const status = document.getElementById('if-status')?.value || 'unpaid'
+  const issueDate = document.getElementById('if-date').value
+  if(issueDate && !assertNotPeriodLocked(issueDate)) return
   const payload = {
     tenant_id: APP.tenant.id, customer_id: customerId, customer_name: customerName,
-    issue_date: document.getElementById('if-date').value,
+    issue_date: issueDate,
     due_date: document.getElementById('if-due').value||null,
     total: total, status: status, updated_at: new Date().toISOString()
   }
@@ -9114,6 +9253,9 @@ async function _paySave(invoiceId, balance) {
   const errEl = document.getElementById('pay-form-err')
   errEl.style.display='none'
   if(amount<=0 || amount>balance+0.005) { errEl.textContent = APP.language==='bm'?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
+
+  const payDate = document.getElementById('pay-date')?.value
+  if(payDate && !assertNotPeriodLocked(payDate)) return
 
   const {data: inv} = await sb.from('invoices').select('ref_no,customer_id,customer_name,total,paid_amt,status').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { errEl.textContent='Invoice not found.'; errEl.style.display='block'; return }
@@ -14936,7 +15078,9 @@ async function _pnlLoad() {
   const revRows = revAccounts.map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt=b.credit-b.debit; totalRev+=amt; return {a,amt} }).filter(r=>r.amt!==0)
   const expRows = expAccounts.map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt=b.debit-b.credit; totalExp+=amt; return {a,amt} }).filter(r=>r.amt!==0)
 
+  const periodLabel = (APP.language==='bm' ? 'Tempoh' : 'Period') + ': ' + formatDate(from) + ' — ' + formatDate(to)
   result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
+    <div style="font-size:13px;color:var(--text-3);margin-bottom:14px">${periodLabel}</div>
     <div style="font-weight:700;margin-bottom:8px">${t.revenue}</div>
     <table><tbody>${revRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.revenue}</span><span>${formatRM(totalRev)}</span></div>
@@ -15038,6 +15182,7 @@ async function _bsLoad() {
     </div>` : ''
 
   result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
+    <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">${t.asOf}: ${formatDate(asOf)}</div>
     ${cashHint}
     ${section(t.assets, assets)}
     <div style="display:flex;justify-content:space-between;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span>${formatRM(assets.total)}</span></div>
