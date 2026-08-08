@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-df">
+<meta name="nexerp-build" content="2026-08-09-dg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -423,7 +423,15 @@ tbody tr:hover{background:var(--bg)}
 .db-mini-table tr[data-href]:hover td{background:color-mix(in srgb,var(--primary) 8%,transparent)}
 
 .db-card-glow{box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 20%,transparent),0 12px 40px -16px color-mix(in srgb,var(--primary) 45%,transparent)}
-.db-kpi-focus .db-kpi-value{font-size:20px}
+.db-kpi-focus .db-kpi-value{font-size:15px;line-height:1.2}
+.db-kpi-value.is-text{font-size:12px!important;font-weight:600!important;letter-spacing:0!important;font-family:Inter,system-ui,sans-serif!important;line-height:1.25!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;max-height:2.6em}
+.db-range-pick-wrap{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.db-range-pick-wrap input[type=date],
+.db-range-pick-wrap input[type=month],
+.db-range-pick-wrap select{
+  background:var(--db-card,#0f172a);border:1px solid var(--db-border,rgba(148,163,184,.25));
+  color:var(--db-text,#e2e8f0);border-radius:8px;padding:7px 10px;font-size:12px;min-width:130px;height:34px;
+}
 .db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:6px}
 
 .db-kpi-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--primary);opacity:.85;border-radius:14px 0 0 14px}
@@ -2682,14 +2690,15 @@ function renderDashboard() {
         <div class="db-title">${t.title}</div>
         <div class="db-subtitle">${t.welcome}, ${APP.user.name||''} — ${isBm?'Hasil, trend jualan & untung/rugi':'Revenue, sales trend & P&L'}</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="db-range-pick-wrap">
         <div class="db-toggle-group" id="db-range-toggle" title="${isBm?'Tempoh KPI & carta':'KPI & chart period'}">
           <div class="db-toggle" data-r="day" onclick="_dbSetRange('day')">${isBm?'Hari':'Day'}</div>
           <div class="db-toggle" data-r="week" onclick="_dbSetRange('week')">${isBm?'Minggu':'Week'}</div>
           <div class="db-toggle active" data-r="month" onclick="_dbSetRange('month')">${isBm?'Bulan':'Month'}</div>
           <div class="db-toggle" data-r="year" onclick="_dbSetRange('year')">${isBm?'Tahun':'Year'}</div>
         </div>
-        <span class="db-btn" style="pointer-events:none;opacity:.9" id="db-range-label"><i class="ti ti-calendar"></i> ${monthLabel}</span>
+        <span id="db-range-picker-slot"></span>
+        <span class="db-btn" style="pointer-events:none;opacity:.9;font-size:12px" id="db-range-label"><i class="ti ti-calendar"></i> ${monthLabel}</span>
       </div>
     </div>
 
@@ -2864,7 +2873,7 @@ async function loadDashboardData() {
   _warnIfDefaultAccountsMissing()
   const isBm = APP.language==='bm'
   const now = new Date()
-  const bounds = _dbRangeBounds(now)
+  const bounds = _dbRangeBounds()
   const ms = bounds.start   // period start (replaces monthStart ISO)
   const periodEnd = bounds.end
   const lms = bounds.prevStart
@@ -3154,8 +3163,9 @@ async function loadDashboardData() {
     },
   }
 
-  // sync range label
+  // sync range label + calendar/dropdown
   try {
+    _dbRenderRangePicker()
     const lab = document.getElementById('db-range-label')
     if(lab) {
       const names = isBm ? {day:'Hari',week:'Minggu',month:'Bulan',year:'Tahun'} : {day:'Day',week:'Week',month:'Month',year:'Year'}
@@ -3582,29 +3592,46 @@ function _dbSyncGlobalTheme() {
 function _dbFmtYMD(d) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
-/** Current + previous window for KPI based on _dbRange */
-function _dbRangeBounds(now = new Date()) {
+function _dbAnchorDate() {
+  if(window._dbAnchor && /^\d{4}-\d{2}-\d{2}$/.test(window._dbAnchor)) {
+    const p = window._dbAnchor.split('-').map(Number)
+    return new Date(p[0], p[1]-1, p[2])
+  }
+  return new Date()
+}
+function _dbRangeBounds() {
   const range = _dbRange || 'month'
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate()) // today local
-  let start, prevStart, prevEnd
+  const now = _dbAnchorDate()
+  let start, end, prevStart, prevEnd
   if(range === 'day') {
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     start = new Date(end)
     prevEnd = new Date(end); prevEnd.setDate(prevEnd.getDate()-1)
     prevStart = new Date(prevEnd)
   } else if(range === 'week') {
-    const day = end.getDay() // 0 Sun
-    const diff = (day + 6) % 7 // Mon=0
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const day = end.getDay()
+    const diff = (day + 6) % 7
     start = new Date(end); start.setDate(end.getDate() - diff)
+    end = new Date(start); end.setDate(start.getDate() + 6)
     prevEnd = new Date(start); prevEnd.setDate(prevEnd.getDate()-1)
     prevStart = new Date(prevEnd); prevStart.setDate(prevEnd.getDate()-6)
   } else if(range === 'year') {
-    start = new Date(end.getFullYear(), 0, 1)
-    prevStart = new Date(end.getFullYear()-1, 0, 1)
-    prevEnd = new Date(end.getFullYear()-1, 11, 31)
-  } else { // month
-    start = new Date(end.getFullYear(), end.getMonth(), 1)
-    prevStart = new Date(end.getFullYear(), end.getMonth()-1, 1)
-    prevEnd = new Date(end.getFullYear(), end.getMonth(), 0)
+    const y = window._dbAnchorYear ? Number(window._dbAnchorYear) : now.getFullYear()
+    start = new Date(y, 0, 1)
+    end = new Date(y, 11, 31)
+    prevStart = new Date(y-1, 0, 1)
+    prevEnd = new Date(y-1, 11, 31)
+  } else {
+    let y = now.getFullYear(), m = now.getMonth()
+    if(window._dbAnchorMonth && /^\d{4}-\d{2}$/.test(window._dbAnchorMonth)) {
+      const p = window._dbAnchorMonth.split('-').map(Number)
+      y = p[0]; m = p[1]-1
+    }
+    start = new Date(y, m, 1)
+    end = new Date(y, m+1, 0)
+    prevStart = new Date(y, m-1, 1)
+    prevEnd = new Date(y, m, 0)
   }
   return {
     start: _dbFmtYMD(start),
@@ -3614,16 +3641,34 @@ function _dbRangeBounds(now = new Date()) {
     label: range
   }
 }
+function _dbRenderRangePicker() {
+  const slot = document.getElementById('db-range-picker-slot')
+  if(!slot) return
+  const range = _dbRange || 'month'
+  const isBm = APP.language==='bm'
+  const today = _dbFmtYMD(new Date())
+  const anchor = window._dbAnchor || today
+  if(range === 'day') {
+    slot.innerHTML = `<input type="date" id="db-pick" value="${anchor}" aria-label="${isBm?'Pilih hari':'Pick day'}" onchange="window._dbAnchor=this.value;window._dbAnchorMonth=null;window._dbAnchorYear=null;loadDashboardData()">`
+  } else if(range === 'week') {
+    slot.innerHTML = `<input type="date" id="db-pick" value="${anchor}" aria-label="${isBm?'Pilih tarikh dalam minggu':'Pick date in week'}" onchange="window._dbAnchor=this.value;window._dbAnchorMonth=null;window._dbAnchorYear=null;loadDashboardData()">`
+  } else if(range === 'month') {
+    const ym = window._dbAnchorMonth || anchor.slice(0,7)
+    slot.innerHTML = `<input type="month" id="db-pick" value="${ym}" aria-label="${isBm?'Pilih bulan':'Pick month'}" onchange="window._dbAnchorMonth=this.value;window._dbAnchor=this.value+'-01';window._dbAnchorYear=null;loadDashboardData()">`
+  } else {
+    const y = window._dbAnchorYear || anchor.slice(0,4)
+    const cy = new Date().getFullYear()
+    let opts = ''
+    for(let yy = cy - 5; yy <= cy + 1; yy++) {
+      opts += `<option value="${yy}" ${String(yy)===String(y)?'selected':''}>${yy}</option>`
+    }
+    slot.innerHTML = `<select id="db-pick" aria-label="${isBm?'Pilih tahun':'Pick year'}" onchange="window._dbAnchorYear=this.value;window._dbAnchor=this.value+'-12-31';window._dbAnchorMonth=null;loadDashboardData()">${opts}</select>`
+  }
+}
 function _dbSetRange(r) {
   _dbRange = r
   document.querySelectorAll('#db-range-toggle .db-toggle').forEach(el => el.classList.toggle('active', el.dataset.r === r))
-  const isBm = APP.language==='bm'
-  const b = _dbRangeBounds()
-  const lab = document.getElementById('db-range-label')
-  if(lab) {
-    const names = isBm ? {day:'Hari',week:'Minggu',month:'Bulan',year:'Tahun'} : {day:'Day',week:'Week',month:'Month',year:'Year'}
-    lab.innerHTML = `<i class="ti ti-calendar"></i> ${names[r]||r}: ${b.start} → ${b.end}`
-  }
+  _dbRenderRangePicker()
   loadDashboardData()
 }
 function _dbSetPeriod(p) {
