@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-cb">
+<meta name="nexerp-build" content="2026-08-08-cd">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -11561,23 +11561,65 @@ async function _woCreate(productId) {
 async function renderWOList() {
   const t = APP.language==='bm' ? {
     title:'Work Order', noData:'Tiada work order lagi', product:'Produk', qty:'Kuantiti', assignedTo:'Ditugaskan', status:'Status', date:'Tarikh',
-    pending:'Menunggu', inProgress:'Dalam Proses', completed:'Selesai'
+    pending:'Menunggu', inProgress:'Dalam Proses', completed:'Selesai', all:'Semua'
   } : {
     title:'Work Orders', noData:'No work orders yet', product:'Product', qty:'Quantity', assignedTo:'Assigned To', status:'Status', date:'Date',
-    pending:'Pending', inProgress:'In Progress', completed:'Completed'
+    pending:'Pending', inProgress:'In Progress', completed:'Completed', all:'All'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div id="wo-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="wo-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('wo-list-wrap')
   const {data, error} = await sb.from('work_orders').select('id,qty_to_produce,status,created_at,products(name_en,name_bm),user_profiles(full_name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._woListCache = data
+  window._woListT = t
+  if(!window._woStatusFilter) window._woStatusFilter = 'all'
+  _woRenderStatusFilters()
+  _woRenderListTable()
+}
+
+function _woRenderStatusFilters() {
+  const t = window._woListT || {}
+  const bar = document.getElementById('wo-status-filters')
+  if(!bar) return
+  const counts = { all:0, pending:0, in_progress:0, completed:0 }
+  ;(window._woListCache||[]).forEach(w => {
+    counts.all++
+    const s = String(w.status||'pending').toLowerCase()
+    if(counts[s] !== undefined) counts[s]++
+    else counts.pending++
+  })
+  const tabs = [
+    {k:'all', label:t.all||'All'},
+    {k:'pending', label:t.pending},
+    {k:'in_progress', label:t.inProgress},
+    {k:'completed', label:t.completed},
+  ]
+  bar.innerHTML = tabs.map(tab => {
+    const active = (window._woStatusFilter||'all') === tab.k
+    return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+      onclick="window._woStatusFilter='${tab.k}';_woRenderStatusFilters();_woRenderListTable()">
+      ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+    </button>`
+  }).join('')
+}
+
+function _woRenderListTable() {
+  const t = window._woListT || {}
+  const wrap = document.getElementById('wo-list-wrap')
+  if(!wrap) return
+  const filter = window._woStatusFilter || 'all'
+  let rows = window._woListCache || []
+  if(filter !== 'all') rows = rows.filter(w => String(w.status||'pending').toLowerCase() === filter)
+  if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='completed'?'var(--success)':s==='in_progress'?'var(--warning)':'var(--text-3)'
   const statusLabel = s => s==='completed'?t.completed:s==='in_progress'?t.inProgress:t.pending
   wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.product}</th><th>${t.qty}</th><th>${t.assignedTo}</th><th>${t.status}</th></tr></thead>
-  <tbody>${data.map(w=>`<tr onclick="openPage('production',{view:'wo-detail',id:'${w.id}'})" style="cursor:pointer">
+  <tbody>${rows.map(w=>`<tr onclick="openPage('production',{view:'wo-detail',id:'${w.id}'})" style="cursor:pointer">
     <td>${formatDate(w.created_at)}</td>
     <td>${prodName(w.products)}</td>
     <td>${w.qty_to_produce}</td>
