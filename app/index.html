@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-db">
+<meta name="nexerp-build" content="2026-08-09-dc">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2698,7 +2698,10 @@ function renderDashboard() {
         {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
         {k:'rate', icon:'ti-percentage', go:"openPage('sales',{})"},
         {k:'overdue', icon:'ti-alert-triangle', go:"window._invStatusFilter='overdue';openPage('sales',{})"},
-        {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"}
+        {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
+        {k:'posSales', icon:'ti-device-desktop', go:"openPage('pos',{view:'history'})"},
+        {k:'payroll', icon:'ti-wallet', go:"openPage('hr',{})"},
+        {k:'customers', icon:'ti-users', go:"openPage('crm',{})"}
       ].map(({k,icon,go})=>`
       <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer">
         <div class="db-kpi-head">
@@ -2800,21 +2803,21 @@ function _dbOutstanding(i) {
 
 
 /** Dashboard month P&L from journals (revenue/expense accounts). end exclusive if provided. */
-async function _dbMonthPnL(fromDate, endExclusive) {
+async function _dbMonthPnL(fromDate, toDateInclusive) {
+  /** Inclusive from/to YYYY-MM-DD — same basis as Reports → Income Statement (_pnlLoad). */
   const empty = { revenue: 0, expense: 0, net: 0 }
   try {
     if(!APP.tenant?.id || !fromDate) return empty
-    let q = sb.from('journal_entries').select('id')
+    let to = toDateInclusive
+    if(!to) {
+      const p = fromDate.split('-').map(Number)
+      const last = new Date(p[0], p[1], 0) // day 0 of next month = last of from month
+      to = last.getFullYear() + '-' + String(last.getMonth()+1).padStart(2,'0') + '-' + String(last.getDate()).padStart(2,'0')
+    }
+    const {data: entries, error} = await sb.from('journal_entries').select('id')
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
       .gte('entry_date', fromDate)
-    if(endExclusive) q = q.lt('entry_date', endExclusive)
-    else {
-      // through end of current calendar month of fromDate
-      const d = new Date(fromDate + 'T00:00:00')
-      const end = new Date(d.getFullYear(), d.getMonth()+1, 0)
-      q = q.lte('entry_date', end.toISOString().slice(0,10))
-    }
-    const {data: entries, error} = await q
+      .lte('entry_date', to)
     if(error) { console.warn('_dbMonthPnL entries', error); return empty }
     const entryIds = (entries||[]).map(e=>e.id)
     if(!entryIds.length) return empty
@@ -2825,22 +2828,23 @@ async function _dbMonthPnL(fromDate, endExclusive) {
       .in('account_type', ['revenue','expense'])
     if(!accounts?.length) return empty
 
-    // chunk entry ids if large
-    const {data: lines} = await sb.from('journal_lines')
-      .select('account_id,debit_amt,credit_amt')
-      .in('entry_id', entryIds.slice(0, 2000))
-    const byAccount = {}
-    ;(lines||[]).forEach(l => {
-      if(!byAccount[l.account_id]) byAccount[l.account_id] = {debit:0,credit:0}
-      byAccount[l.account_id].debit += Number(l.debit_amt||0)
-      byAccount[l.account_id].credit += Number(l.credit_amt||0)
-    })
+    const acctSet = new Set(accounts.map(a=>a.id))
     let revenue = 0, expense = 0
-    accounts.forEach(a => {
-      const b = byAccount[a.id] || {debit:0,credit:0}
-      if(a.account_type === 'revenue') revenue += (b.credit - b.debit)
-      else if(a.account_type === 'expense') expense += (b.debit - b.credit)
-    })
+    // chunk to avoid URL limits
+    for(let i=0; i<entryIds.length; i+=200) {
+      const chunk = entryIds.slice(i, i+200)
+      const {data: lines} = await sb.from('journal_lines')
+        .select('account_id,debit_amt,credit_amt')
+        .in('entry_id', chunk)
+      const typeById = {}
+      accounts.forEach(a => { typeById[a.id] = a.account_type })
+      ;(lines||[]).forEach(l => {
+        if(!acctSet.has(l.account_id)) return
+        const deb = Number(l.debit_amt||0), cre = Number(l.credit_amt||0)
+        if(typeById[l.account_id] === 'revenue') revenue += (cre - deb)
+        else if(typeById[l.account_id] === 'expense') expense += (deb - cre)
+      })
+    }
     return { revenue, expense, net: revenue - expense }
   } catch(e) {
     console.warn('_dbMonthPnL failed', e)
@@ -2971,9 +2975,12 @@ async function loadDashboardData() {
   const curGP = curSales - curCOGS - posCogsThis
   const prevGP = prevSales - prevCOGS - posCogsLast
 
-  // Net P&L from journals (same basis as Reports → Income Statement)
-  const plThis = await _dbMonthPnL(ms, null)
-  const plLast = await _dbMonthPnL(lms, ms)
+  // Net P&L from journals (same basis as Reports → Income Statement) — inclusive dates, local YYYY-MM-DD
+  const todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
+  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+  const prevEndStr = prevMonthEnd.getFullYear() + '-' + String(prevMonthEnd.getMonth()+1).padStart(2,'0') + '-' + String(prevMonthEnd.getDate()).padStart(2,'0')
+  const plThis = await _dbMonthPnL(ms, todayStr)
+  const plLast = await _dbMonthPnL(lms, prevEndStr)
   const curNetPL = plThis.net
   const prevNetPL = plLast.net
 
@@ -2997,6 +3004,36 @@ async function loadDashboardData() {
   window._dbOverdueList = overdueList
   window._dbThisMonthEligible = thisMonth
   window._dbThisMonthAll = thisMonthAll
+
+  // Payroll cost this calendar month (sum net_pay + employer contrib if columns exist)
+  let payrollCost = 0, payrollCostPrev = 0
+  try {
+    const y = now.getFullYear(), m = now.getMonth() + 1
+    const periodLike = y + '-' + String(m).padStart(2,'0')
+    const prevP = new Date(now.getFullYear(), now.getMonth()-1, 1)
+    const prevLike = prevP.getFullYear() + '-' + String(prevP.getMonth()+1).padStart(2,'0')
+    const {data: pr} = await sb.from('payroll_records')
+      .select('net_pay,period,employer_epf,employer_socso,employer_eis,gross_pay,total_employer')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .or(`period.ilike.${periodLike}%,period.ilike.${prevLike}%`)
+    ;(pr||[]).forEach(r => {
+      const per = String(r.period||'')
+      const emp = Number(r.total_employer||0) || (Number(r.employer_epf||0)+Number(r.employer_socso||0)+Number(r.employer_eis||0))
+      const cost = Number(r.gross_pay||0) || (Number(r.net_pay||0) + emp)
+      // Prefer company cost ≈ net + statutory employee+employer simplified: use gross_pay if set else net_pay+employer
+      const line = Number(r.gross_pay||0) > 0 ? Number(r.gross_pay||0) + emp : Number(r.net_pay||0) + emp
+      if(per.startsWith(periodLike)) payrollCost += line
+      else if(per.startsWith(prevLike)) payrollCostPrev += line
+    })
+  } catch(e) { console.warn('dashboard payroll', e) }
+
+  // Customers count + value (collected this month / active customers)
+  let custCount = 0, custValue = 0
+  try {
+    const {count} = await sb.from('customers').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+    custCount = count || 0
+    custValue = custCount ? (curPaid / custCount) : 0
+  } catch(e) { console.warn('dashboard customers', e) }
 
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
@@ -3027,6 +3064,25 @@ async function loadDashboardData() {
       color: curNetPL >= 0 ? '#22C55E' : '#EF4444',
       valueColor: curNetPL >= 0 ? '#22C55E' : '#EF4444'
     },
+    posSales: {
+      label: isBm?'Jualan POS':'POS Sales',
+      value: formatRM(posThis),
+      delta: pctChange(posThis, posLast),
+      color: '#06B6D4'
+    },
+    payroll: {
+      label: isBm?'Kos Gaji':'Payroll Cost',
+      value: formatRM(payrollCost),
+      delta: pctChange(payrollCost, payrollCostPrev),
+      color: '#F97316'
+    },
+    customers: {
+      label: isBm?'Pelanggan':'Customers',
+      value: String(custCount),
+      delta: null,
+      sub: isBm ? ('Purata kutipan '+formatRM(custValue)) : ('Avg collected '+formatRM(custValue)),
+      color: '#8B5CF6'
+    },
   }
 
   Object.entries(kpis).forEach(([k,v]) => {
@@ -3040,6 +3096,8 @@ async function loadDashboardData() {
       if(v.delta === null) {
         if(k === 'overdue') {
           foot.innerHTML = `<span class="db-kpi-pill warn">${v.sub||''} ${isBm?'baki':'outstanding'}</span>`
+        } else if(k === 'customers') {
+          foot.innerHTML = `<span class="db-kpi-pill neutral">${v.sub||''}</span>`
         } else {
           // Collection Rate: status badge only
           const cls = curRate>=80 ? 'up' : curRate>=50 ? 'neutral' : 'warn'
@@ -3508,10 +3566,11 @@ async function _dbRenderPnLChart() {
   const revData = [], expData = [], netData = []
   for(let m=5; m>=0; m--) {
     const d = new Date(now.getFullYear(), now.getMonth()-m, 1)
-    const start = d.toISOString().slice(0,10)
-    const endEx = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString().slice(0,10)
+    const start = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01'
+    const lastD = new Date(d.getFullYear(), d.getMonth()+1, 0)
+    const endInc = lastD.getFullYear() + '-' + String(lastD.getMonth()+1).padStart(2,'0') + '-' + String(lastD.getDate()).padStart(2,'0')
     labels.push(d.toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'short'}))
-    const pl = await _dbMonthPnL(start, endEx)
+    const pl = await _dbMonthPnL(start, endInc)
     revData.push(Math.max(0, pl.revenue))
     expData.push(Math.max(0, pl.expense))
     netData.push(pl.net)
