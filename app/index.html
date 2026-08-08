@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-ck">
+<meta name="nexerp-build" content="2026-08-08-cl">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -1611,7 +1611,7 @@ function openPage(page, params={}) {
       case 'dashboard':  renderDashboard(); break
       case 'crm':        renderCRM(params); break
       case 'sales':      renderSales(params); break
-      case 'pos':        renderPOS(); break
+      case 'pos':        renderPOS(params); break
       case 'inventory':  renderInventory(params); break
       case 'logistics':  renderLogistics(params); break
       case 'purchasing': renderPurchasing(params); break
@@ -14098,7 +14098,48 @@ async function _stockWarnIfInsufficient(lines) {
     : `Insufficient stock:\\n${list}\\n\\nContinue sale? Stock may go negative.`)
 }
 
-async function renderPOS() {
+
+async function renderPOSHistory() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Sejarah POS', back:'Titik Jualan', receipt:'No. Resit', date:'Tarikh', total:'Jumlah', method:'Kaedah', status:'Status',
+    noData:'Tiada transaksi POS lagi'
+  } : {
+    title:'POS History', back:'Point of Sale', receipt:'Receipt No.', date:'Date', total:'Total', method:'Method', status:'Status',
+    noData:'No POS transactions yet'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header">
+    <div>
+      <div class="page-title">${t.title}</div>
+      <div style="font-size:13px;color:var(--text-3);cursor:pointer;margin-top:2px" onclick="openPage('pos')">← ${t.back}</div>
+    </div>
+  </div>
+  <div class="card"><div id="pos-hist-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('pos-hist-wrap')
+  const {data, error} = await sb.from('pos_transactions')
+    .select('id,receipt_no,total,payment_method,txn_type,status,created_at')
+    .eq('tenant_id', APP.tenant.id)
+    .order('created_at', {ascending:false})
+    .limit(100)
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${_aiEscapeHtml(error.message)}</p></div>`; return }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.receipt}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.method}</th><th>${t.status}</th>
+  </tr></thead><tbody>
+  ${data.map(r=>`<tr>
+    <td><strong>${_aiEscapeHtml(r.receipt_no||'-')}</strong></td>
+    <td>${r.created_at ? new Date(r.created_at).toLocaleString('en-MY') : '-'}</td>
+    <td style="text-align:right;font-weight:600">${formatRM(r.total)}</td>
+    <td>${_aiEscapeHtml(r.payment_method||'-')}</td>
+    <td>${_aiEscapeHtml(r.status||r.txn_type||'-')}</td>
+  </tr>`).join('')}
+  </tbody></table>`
+}
+
+async function renderPOS(params={}) {
+  if(params.view==='history') { renderPOSHistory(); return }
+
   const t = APP.language==='bm' ? {
     title:'Titik Jualan', search:'Cari produk...', cart:'Troli', empty:'Troli kosong',
     total:'Jumlah Besar', checkout:'Bayar', clear:'Kosongkan', method:'Kaedah Bayaran',
@@ -14120,7 +14161,10 @@ async function renderPOS() {
   document.getElementById('main').innerHTML = `
   <div class="page-header">
     <div><div class="page-title">${t.title}</div></div>
-    <div id="pos-shift-status" style="font-size:13px"></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="openPage('pos',{view:'history'})"><i class="ti ti-history"></i> ${isBm?'Sejarah':'History'}</button>
+      <div id="pos-shift-status" style="font-size:13px"></div>
+    </div>
   </div>
   <div id="pos-other-shifts" style="margin-bottom:12px"></div>
   <div class="pos-wrap">
