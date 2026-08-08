@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-ci">
+<meta name="nexerp-build" content="2026-08-08-cj">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -6700,11 +6700,18 @@ let _jnlState = { data:[] }
 async function renderJournalList() {
   const t = APP.language==='bm' ? {
     title:'Entri Jurnal', add:'Entri Baru', entryNo:'No. Entri', date:'Tarikh', desc:'Keterangan',
-    debit:'Jumlah Debit', credit:'Jumlah Kredit', noData:'Tiada entri jurnal lagi'
+    debit:'Jumlah Debit', credit:'Jumlah Kredit', noData:'Tiada entri jurnal lagi',
+    from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis', source:'Sumber'
   } : {
     title:'Journal Entries', add:'New Entry', entryNo:'Entry No.', date:'Date', desc:'Description',
-    debit:'Total Debit', credit:'Total Credit', noData:'No journal entries yet'
+    debit:'Total Debit', credit:'Total Credit', noData:'No journal entries yet',
+    from:'From', to:'To', apply:'Filter', clear:'Clear', source:'Source'
   }
+
+  const today = new Date()
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10)
+  const monthEnd = today.toISOString().slice(0,10)
+  if(!window._jnlFilter) window._jnlFilter = { from: monthStart, to: monthEnd }
 
   document.getElementById('main').innerHTML = `
   <div class="page-header">
@@ -6712,15 +6719,48 @@ async function renderJournalList() {
     <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'journal-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
   </div>
   ${_accTabs('journal')}
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="jnl-from" class="form-input" value="${window._jnlFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="jnl-to" class="form-input" value="${window._jnlFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_jnlApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._jnlFilter={from:'',to:''};renderJournalList()">${t.clear}</button>
+  </div>
   <div class="card" style="margin-bottom:0">
     <div id="jnl-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:60px"><div class="spinner"></div></div></div>
   </div>`
 
+  await _jnlLoadTable(t)
+}
+
+function _jnlApplyFilter() {
+  window._jnlFilter = {
+    from: document.getElementById('jnl-from')?.value || '',
+    to: document.getElementById('jnl-to')?.value || ''
+  }
+  renderJournalList()
+}
+
+async function _jnlLoadTable(t) {
   if(!APP.tenant.id) return
   const wrap = document.getElementById('jnl-table-wrap')
+  if(!wrap) return
 
-  const {data: entries, error} = await sb.from('journal_entries').select('id,ref_no,entry_date,description')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('entry_date', {ascending:false})
+  let q = sb.from('journal_entries').select('id,ref_no,entry_date,description,source_table')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('entry_date', {ascending:false}).limit(500)
+  const f = window._jnlFilter || {}
+  if(f.from) q = q.gte('entry_date', f.from)
+  if(f.to) q = q.lte('entry_date', f.to)
+
+  let {data: entries, error} = await q
+  if(error && /source_table/i.test(error.message||'')) {
+    q = sb.from('journal_entries').select('id,ref_no,entry_date,description')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('entry_date', {ascending:false}).limit(500)
+    if(f.from) q = q.gte('entry_date', f.from)
+    if(f.to) q = q.lte('entry_date', f.to)
+    ;({data: entries, error} = await q)
+  }
 
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!entries || entries.length===0) {
@@ -6737,14 +6777,27 @@ async function renderJournalList() {
     totals[l.entry_id].credit += Number(l.credit_amt||0)
   })
 
+  const srcLabel = s => {
+    if(!s) return '-'
+    const map = APP.language==='bm' ? {
+      invoices:'Invois', payments:'Bayaran', supplier_bills:'Bil', payroll_records:'Gaji',
+      payment_vouchers:'Baucar', opening_balance:'Baki Awal', expense_claims:'Tuntutan', credit_notes:'Nota Kredit'
+    } : {
+      invoices:'Invoice', payments:'Payment', supplier_bills:'Bill', payroll_records:'Payroll',
+      payment_vouchers:'PV', opening_balance:'Opening', expense_claims:'Expense', credit_notes:'Credit Note'
+    }
+    return map[s] || s
+  }
+
   wrap.innerHTML = `<table>
-    <thead><tr><th>${t.entryNo}</th><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.debit}</th><th style="text-align:right">${t.credit}</th></tr></thead>
+    <thead><tr><th>${t.entryNo}</th><th>${t.date}</th><th>${t.desc}</th><th>${t.source||'Source'}</th><th style="text-align:right">${t.debit}</th><th style="text-align:right">${t.credit}</th></tr></thead>
     <tbody>${entries.map(e => {
       const tot = totals[e.id] || {debit:0,credit:0}
       return `<tr onclick="openPage('accounting',{view:'journal-form',id:'${e.id}'})" style="cursor:pointer">
         <td><strong>${e.ref_no||'-'}</strong></td>
         <td style="color:var(--text-2)">${formatDate(e.entry_date)}</td>
-        <td style="color:var(--text-2)">${e.description||'-'}</td>
+        <td style="color:var(--text-2)">${_aiEscapeHtml(e.description||'-')}</td>
+        <td style="font-size:12px;color:var(--text-3)">${srcLabel(e.source_table)}</td>
         <td style="text-align:right">${formatRM(tot.debit)}</td>
         <td style="text-align:right">${formatRM(tot.credit)}</td>
       </tr>`
