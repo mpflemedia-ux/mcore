@@ -2,15 +2,32 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dn">
+<meta name="nexerp-build" content="2026-08-09-do">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
-/* Intro OFF by default — only guest first-visit turns it on (avoids flash on refresh) */
-(function(){try{
-  if(localStorage.getItem('nexerp_intro_done')==='1'){
-    document.documentElement.setAttribute('data-skip-intro','1');
-  }
-}catch(e){}})();
+/* Sync intro skip — phone-friendly, no console needed */
+(function(){
+  try {
+    var skip = localStorage.getItem('nexerp_intro_done') === '1';
+    if(!skip) {
+      for(var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if(!k || k.indexOf('auth-token') === -1) continue;
+        try {
+          var raw = localStorage.getItem(k);
+          if(raw && raw.indexOf('access_token') !== -1) { skip = true; break; }
+        } catch(e2) {}
+      }
+    }
+    if(skip) {
+      try { localStorage.setItem('nexerp_intro_done', '1'); } catch(e3) {}
+      document.documentElement.setAttribute('data-skip-intro', '1');
+      var st = document.createElement('style');
+      st.textContent = '#intro-screen,.intro-floating-btn,#intro-sound,#intro-skip{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+      document.documentElement.appendChild(st);
+    }
+  } catch(e) {}
+})();
 </script>
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -343,7 +360,17 @@ tbody tr:hover{background:var(--bg)}
   transition: opacity .7s ease;
 }
 #intro-screen.fade-out { opacity: 0; pointer-events: none; }
-#intro-screen.hidden { display: none; }
+#intro-screen.hidden { display: none !important; }
+#shell.active ~ #intro-screen,
+#shell.active ~ #intro-sound,
+#shell.active ~ #intro-skip,
+html[data-skip-intro="1"] #intro-screen,
+html[data-skip-intro="1"] #intro-sound,
+html[data-skip-intro="1"] #intro-skip {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 
 #intro-video {
   width: 100%; height: 100%;
@@ -1044,10 +1071,10 @@ tbody tr:hover{background:var(--bg)}
 <!-- ─── END INTRO ──────────────────────────────────────────────────────────── -->
 
 <!-- Intro buttons — LUAR intro-screen supaya iframe YouTube tak block clicks -->
-<button id="intro-sound" onclick="toggleIntroSound()" style="display:none;position:fixed;bottom:32px;left:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
+<button id="intro-sound" class="intro-floating-btn" onclick="toggleIntroSound()" style="display:none;position:fixed;bottom:32px;left:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
   <i class="ti ti-volume-off"></i> Click for Sound
 </button>
-<button id="intro-skip" onclick="skipIntro()" style="display:none;position:fixed;bottom:32px;right:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
+<button id="intro-skip" class="intro-floating-btn" onclick="skipIntro()" style="display:none;position:fixed;bottom:32px;right:32px;z-index:100000;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-family:var(--font);padding:9px 20px;border-radius:99px;font-size:13px;font-weight:500;cursor:pointer;align-items:center;gap:8px">
   Skip <i class="ti ti-player-skip-forward"></i>
 </button>
 
@@ -2597,9 +2624,12 @@ function showAuthPage() {
 }
 
 function showShell() {
+  try { localStorage.setItem('nexerp_intro_done', '1') } catch(e) {}
+  document.documentElement.setAttribute('data-skip-intro', '1')
   const alreadyActive = document.getElementById('shell').classList.contains('active')
   document.getElementById('auth-page').style.display='none'
-  document.getElementById('shell').classList.add('active');try{if(typeof _hideIntroAll==='function')_hideIntroAll()}catch(e){}; try{_hideIntroAll()}catch(e){}
+  document.getElementById('shell').classList.add('active')
+  try{ if(typeof _hideIntroAll==='function') _hideIntroAll() }catch(e){}
   if(!alreadyActive) {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
     buildSidebar()
