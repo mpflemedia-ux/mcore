@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-cd">
+<meta name="nexerp-build" content="2026-08-08-fix-intro">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -10071,8 +10071,8 @@ async function _grnSave(poId) {
   // Re-read live qty_received from DB to prevent double-receive races
   for(const it of toReceive) {
     const {data: liveItem} = await sb.from('purchase_order_items').select('id,qty,qty_received').eq('id', it.po_item_id).single()
-    const ordered = Number(liveItem?.qty ?? it.qty || 0)
-    const already = Number(liveItem?.qty_received ?? it.qty_received || 0)
+    const ordered = Number(liveItem?.qty ?? it.qty ?? 0)
+    const already = Number(liveItem?.qty_received ?? it.qty_received ?? 0)
     const receiveNow = Number(it.receive_now||0)
     const remaining = Math.max(0, ordered - already)
     if(receiveNow > remaining + 0.0001) {
