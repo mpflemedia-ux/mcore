@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-cf">
+<meta name="nexerp-build" content="2026-08-08-cg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -7660,7 +7660,7 @@ function _invTabs(active) {
   </div>`
 }
 
-let _invState = { search:'', data:[] }
+let _invState = { search:'', data:[], lowOnly:false }
 
 async function renderProductList() {
   const t = APP.language==='bm' ? {
@@ -7678,10 +7678,11 @@ async function renderProductList() {
   ${_invTabs('products')}
   <div id="inv-lowstock-wrap" style="margin-bottom:16px"></div>
   <div class="card" style="margin-bottom:0">
-    <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
-      <div class="input-group" style="flex:1"><i class="ti ti-search input-icon"></i>
+    <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="input-group" style="flex:1;min-width:180px"><i class="ti ti-search input-icon"></i>
         <input id="inv-search" type="text" class="form-input" placeholder="${t.search}" value="${_invState.search}" oninput="_invSearch(this.value)">
       </div>
+      <button type="button" class="btn btn-sm ${_invState.lowOnly?'btn-primary':'btn-outline'}" onclick="_invState.lowOnly=!_invState.lowOnly;_invLoad()"><i class="ti ti-alert-triangle"></i> ${t.low}</button>
       <button class="btn btn-outline" onclick="_invScanBarcode()"><i class="ti ti-barcode"></i> ${t.scan}</button>
     </div>
     <div id="inv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
@@ -7723,13 +7724,17 @@ async function _invLoad() {
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name_en')
   if(_invState.search) { const s=_invState.search.trim(); q = q.or(`code.ilike.%${s}%,name_en.ilike.%${s}%,barcode.ilike.%${s}%`) }
   const {data, error} = await q
-  _invState.data = data || []
+  let list = data || []
+  if(_invState.lowOnly) {
+    list = list.filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+  }
+  _invState.data = list
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _invRenderLowStockAlert()
-  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_invState.search?t.noResult:t.noData}</p></div>`; return }
+  if(!list.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_invState.search||_invState.lowOnly?t.noResult:t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.sku}</th><th>${t.name}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.stock}</th><th style="width:100px"></th></tr></thead>
-  <tbody>${data.map(p=>{
+  <tbody>${list.map(p=>{
     const rp = p.reorder_point ?? 5
     const isLow = Number(p.stock_qty) <= Number(rp)
     return `<tr>
@@ -14496,20 +14501,22 @@ function renderReports(params={}) {
   if(params.view==='trial-balance') { renderTrialBalance(); return }
   if(params.view==='sales') { renderSalesReport(); return }
   if(params.view==='ar-aging' || params.view==='aging') { renderArAgingReport(); return }
+  if(params.view==='ap-aging') { renderApAgingReport(); return }
   if(params.view==='custom') { renderCustomReport(); return }
   if(params.view==='sst') { renderSstReport(); return }
   renderPnL()
 }
 
 function _repTabs(active) {
-  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', tb:'Imbangan Duga', sales:'Laporan Jualan', aging:'Aging Hutang', sst:'SST', custom:'Laporan Tersendiri' }
-    : { pnl:'Income Statement', bs:'Balance Sheet', tb:'Trial Balance', sales:'Sales Report', aging:'AR Aging', sst:'SST', custom:'Custom Report' }
+  const t = APP.language==='bm' ? { pnl:'Penyata Pendapatan', bs:'Kunci Kira-kira', tb:'Imbangan Duga', sales:'Laporan Jualan', aging:'Aging Hutang', apAging:'Aging Hutang Belian', sst:'SST', custom:'Laporan Tersendiri' }
+    : { pnl:'Income Statement', bs:'Balance Sheet', tb:'Trial Balance', sales:'Sales Report', aging:'AR Aging', apAging:'AP Aging', sst:'SST', custom:'Custom Report' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='pnl'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{})"><i class="ti ti-report-money"></i> ${t.pnl}</button>
     <button class="btn btn-sm ${active==='bs'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'balance-sheet'})"><i class="ti ti-scale"></i> ${t.bs}</button>
     <button class="btn btn-sm ${active==='tb'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'trial-balance'})"><i class="ti ti-sum"></i> ${t.tb}</button>
     <button class="btn btn-sm ${active==='sales'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sales'})"><i class="ti ti-chart-bar"></i> ${t.sales}</button>
     <button class="btn btn-sm ${active==='aging'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'ar-aging'})"><i class="ti ti-clock-hour-4"></i> ${t.aging}</button>
+    <button class="btn btn-sm ${active==='ap-aging'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'ap-aging'})"><i class="ti ti-truck"></i> ${t.apAging}</button>
     <button class="btn btn-sm ${active==='sst'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'sst'})"><i class="ti ti-receipt-tax"></i> ${t.sst}</button>
     <button class="btn btn-sm ${active==='custom'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('reports',{view:'custom'})"><i class="ti ti-table"></i> ${t.custom}</button>
   </div>`
@@ -14804,6 +14811,89 @@ async function _bsLoad() {
 }
 
 // ─── Sales Report ──────────────────────────────────────────────────────────────
+
+
+async function renderApAgingReport() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Laporan Aging Hutang Belian (AP)', asOf:'Sehingga', noData:'Tiada baki hutang pembekal.',
+    supplier:'Pembekal', bill:'Bil', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
+    current:'Belum tiba', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari', grand:'Jumlah Besar',
+    print:'Cetak'
+  } : {
+    title:'AP Aging Report', asOf:'As of', noData:'No outstanding supplier balances.',
+    supplier:'Supplier', bill:'Bill', due:'Due Date', total:'Total', paid:'Paid', balance:'Balance',
+    current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days', grand:'Grand Total',
+    print:'Print'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3)">${t.asOf}: ${formatDate(new Date().toISOString().slice(0,10))}</div></div>
+    <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
+  ${_repTabs('ap-aging')}
+  <div id="ap-aging-body"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+
+  const {data, error} = await sb.from('supplier_bills')
+    .select('id,bill_no,ref_no,bill_date,due_date,total,paid_amt,status,suppliers(name)')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  const body = document.getElementById('ap-aging-body')
+  if(error) { body.innerHTML = `<div class="card"><p style="color:var(--danger);padding:24px">${_aiEscapeHtml(error.message)}</p></div>`; return }
+
+  const today = new Date(); today.setHours(0,0,0,0)
+  const rows = []
+  const buckets = { current:0, d30:0, d60:0, d90:0, d90p:0 }
+  ;(data||[]).forEach(b => {
+    if(String(b.status||'').toLowerCase() === 'cancelled') return
+    const bal = Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
+    if(bal <= 0.005) return
+    const due = b.due_date ? new Date(b.due_date) : (b.bill_date ? new Date(b.bill_date) : today)
+    due.setHours(0,0,0,0)
+    const days = Math.floor((today - due) / 86400000)
+    let bucket = 'current'
+    if(days > 90) bucket = 'd90p'
+    else if(days > 60) bucket = 'd90'
+    else if(days > 30) bucket = 'd60'
+    else if(days > 0) bucket = 'd30'
+    buckets[bucket] += bal
+    rows.push({...b, balance: bal, days: Math.max(0, days), name: b.suppliers?.name || '-'})
+  })
+  rows.sort((a,b) => b.days - a.days || (a.name||'').localeCompare(b.name||''))
+
+  if(!rows.length) {
+    body.innerHTML = `<div class="card"><div class="empty-state" style="padding:60px"><p>${t.noData}</p></div></div>`
+    return
+  }
+  const grand = rows.reduce((s,r)=>s+r.balance,0)
+  body.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">
+    ${[['current',t.current],['d30',t.d30],['d60',t.d60],['d90',t.d90],['d90p',t.d90p]].map(([k,lab])=>`
+      <div class="card" style="padding:14px"><div style="font-size:11px;color:var(--text-3)">${lab}</div>
+      <div style="font-size:18px;font-weight:700;${k!=='current'?'color:var(--danger)':''}">${formatRM(buckets[k])}</div></div>`).join('')}
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table><thead><tr>
+      <th>${t.supplier}</th><th>${t.bill}</th><th>${t.due}</th>
+      <th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th>
+      <th style="text-align:right">${t.balance}</th><th style="text-align:right">${isBm?'Hari':'Days'}</th>
+    </tr></thead>
+    <tbody>
+    ${rows.map(r=>`<tr style="cursor:pointer" onclick="openPage('purchasing',{view:'bill-detail',id:'${r.id}'})">
+      <td>${_aiEscapeHtml(r.name)}</td>
+      <td><strong>${_aiEscapeHtml(r.bill_no||r.ref_no||'-')}</strong></td>
+      <td>${formatDate(r.due_date||r.bill_date)}</td>
+      <td style="text-align:right">${formatRM(r.total)}</td>
+      <td style="text-align:right">${formatRM(r.paid_amt)}</td>
+      <td style="text-align:right;font-weight:600;color:var(--danger)">${formatRM(r.balance)}</td>
+      <td style="text-align:right">${r.days}</td>
+    </tr>`).join('')}
+    <tr style="border-top:2px solid var(--border)">
+      <td colspan="5" style="font-weight:700">${t.grand}</td>
+      <td style="text-align:right;font-weight:700;color:var(--danger)">${formatRM(grand)}</td>
+      <td></td>
+    </tr>
+    </tbody></table>
+  </div>`
+}
 
 async function renderArAgingReport() {
   const isBm = APP.language==='bm'
