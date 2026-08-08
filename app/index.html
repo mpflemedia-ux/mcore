@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-de">
+<meta name="nexerp-build" content="2026-08-09-df">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2789,6 +2789,7 @@ function renderDashboard() {
   </div>`
 
   _dbSyncGlobalTheme()
+  try { _dbRenderRangePicker() } catch(e) {}
   loadDashboardData()
 }
 
@@ -3019,29 +3020,36 @@ async function loadDashboardData() {
   window._dbThisMonthEligible = thisMonth
   window._dbThisMonthAll = thisMonthAll
 
-  // Payroll cost this calendar month (sum net_pay + employer contrib if columns exist)
+    // Payroll cost for selected range (schema uses month + year ints, not period text)
   let payrollCost = 0, payrollCostPrev = 0
   try {
-    const y = now.getFullYear(), m = now.getMonth() + 1
-    const periodLike = y + '-' + String(m).padStart(2,'0')
-    const prevP = new Date(now.getFullYear(), now.getMonth()-1, 1)
-    const prevLike = prevP.getFullYear() + '-' + String(prevP.getMonth()+1).padStart(2,'0')
+    const bStart = bounds.start.split('-').map(Number)
+    const bEnd = bounds.end.split('-').map(Number)
+    const pStart = bounds.prevStart.split('-').map(Number)
+    const pEnd = bounds.prevEnd.split('-').map(Number)
     const {data: pr} = await sb.from('payroll_records')
-      .select('net_pay,period,employer_epf,employer_socso,employer_eis,gross_pay,total_employer')
-      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-      .or(`period.ilike.${periodLike}%,period.ilike.${prevLike}%`)
+      .select('net_pay,month,year,basic_salary,epf_employer,socso_employer,eis_employer,epf_employee,socso_employee,eis_employee,pcb')
+      .eq('tenant_id', APP.tenant.id)
+    const costOf = (r) => {
+      const gross = Number(r.basic_salary||0)
+      const emp = Number(r.epf_employer||0)+Number(r.socso_employer||0)+Number(r.eis_employer||0)
+      const net = Number(r.net_pay||0)
+      // Company payroll cost ≈ basic + employer statutory (fallback net if no basic)
+      return (gross > 0 ? gross + emp : net + emp)
+    }
+    const inRange = (r, ys, ms, ye, me) => {
+      const y = Number(r.year), m = Number(r.month)
+      if(!y || !m) return false
+      const t = y*12 + m
+      return t >= (ys*12+ms) && t <= (ye*12+me)
+    }
     ;(pr||[]).forEach(r => {
-      const per = String(r.period||'')
-      const emp = Number(r.total_employer||0) || (Number(r.employer_epf||0)+Number(r.employer_socso||0)+Number(r.employer_eis||0))
-      const cost = Number(r.gross_pay||0) || (Number(r.net_pay||0) + emp)
-      // Prefer company cost ≈ net + statutory employee+employer simplified: use gross_pay if set else net_pay+employer
-      const line = Number(r.gross_pay||0) > 0 ? Number(r.gross_pay||0) + emp : Number(r.net_pay||0) + emp
-      if(per.startsWith(periodLike)) payrollCost += line
-      else if(per.startsWith(prevLike)) payrollCostPrev += line
+      if(inRange(r, bStart[0], bStart[1], bEnd[0], bEnd[1])) payrollCost += costOf(r)
+      if(inRange(r, pStart[0], pStart[1], pEnd[0], pEnd[1])) payrollCostPrev += costOf(r)
     })
   } catch(e) { console.warn('dashboard payroll', e) }
 
-  // Customers count + value (collected this month / active customers)
+// Customers count + value (collected this month / active customers)
   let custCount = 0, custValue = 0
   try {
     const {count} = await sb.from('customers').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null)
@@ -3131,7 +3139,7 @@ async function loadDashboardData() {
     },
     topProduct: {
       label: isBm?'Produk Teratas':'Top Product',
-      value: topProductName.length > 18 ? topProductName.slice(0,16)+'…' : topProductName,
+      value: topProductName,
       delta: null,
       sub: formatRM(topProductAmt),
       color: '#14B8A6',
@@ -3139,7 +3147,7 @@ async function loadDashboardData() {
     },
     topInvoice: {
       label: isBm?'Invois Teratas':'Top Invoice',
-      value: topInvLabel.length > 18 ? topInvLabel.slice(0,16)+'…' : topInvLabel,
+      value: topInvLabel,
       delta: null,
       sub: formatRM(topInvAmt),
       color: '#EAB308'
@@ -3162,6 +3170,8 @@ async function loadDashboardData() {
     if(val) {
       val.textContent = v.value
       val.style.color = v.valueColor || ''
+      val.classList.toggle('is-text', k === 'topProduct' || k === 'topInvoice')
+      val.title = (k === 'topProduct' || k === 'topInvoice') ? (v.value + (v.sub ? ' · ' + v.sub : '')) : ''
     }
     if(foot) {
       if(v.delta === null) {
