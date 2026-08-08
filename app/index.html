@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-soa-v2">
+<meta name="nexerp-build" content="2026-08-08-ce">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -8006,16 +8006,18 @@ async function renderStockMovements() {
 function renderSales(params={}) {
   if(params.view==='quo-form') { renderQuoForm(params.id||null); return }
   if(params.view==='quo') { renderQuoList(); return }
+  if(params.view==='cn' || params.view==='credit-notes') { renderCreditNoteList(); return }
   if(params.view==='inv-form') { renderInvForm(params.id||null); return }
   if(params.view==='inv-detail') { renderInvDetail(params.id); return }
   renderInvList()
 }
 
 function _salesTabs(active) {
-  const t = APP.language==='bm' ? { inv:'Invois', quo:'Sebut Harga' } : { inv:'Invoices', quo:'Quotations' }
-  return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content">
+  const t = APP.language==='bm' ? { inv:'Invois', quo:'Sebut Harga', cn:'Nota Kredit' } : { inv:'Invoices', quo:'Quotations', cn:'Credit Notes' }
+  return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='inv'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('sales',{})"><i class="ti ti-file-invoice"></i> ${t.inv}</button>
     <button class="btn btn-sm ${active==='quo'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('sales',{view:'quo'})"><i class="ti ti-file-description"></i> ${t.quo}</button>
+    <button class="btn btn-sm ${active==='cn'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('sales',{view:'cn'})"><i class="ti ti-receipt-refund"></i> ${t.cn}</button>
   </div>`
 }
 
@@ -10667,6 +10669,59 @@ async function _billPaySave(billId, balance) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+
+async function renderCreditNoteList() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Nota Kredit', noData:'Tiada nota kredit lagi. Buat dari detail invois.',
+    ref:'No. Rujukan', customer:'Pelanggan', date:'Tarikh', amount:'Jumlah', refund:'Bayaran Balik',
+    invoice:'Invois', reason:'Sebab', yes:'Ya', no:'Tidak'
+  } : {
+    title:'Credit Notes', noData:'No credit notes yet. Create from invoice detail.',
+    ref:'Ref No.', customer:'Customer', date:'Date', amount:'Amount', refund:'Refund',
+    invoice:'Invoice', reason:'Reason', yes:'Yes', no:'No'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_salesTabs('cn')}
+  <div class="card"><div id="cn-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  const wrap = document.getElementById('cn-list-wrap')
+  const {data, error} = await sb.from('credit_notes')
+    .select('id,ref_no,customer_name,credit_date,amount,reason,refunded,invoice_id,status,created_at')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    .order('credit_date', {ascending:false})
+  if(error) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">${isBm?'Jadual credit_notes belum wujud. Jalankan migration di Supabase.':'credit_notes table missing. Run migration in Supabase.'}<br><span style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(error.message||'')}</span></p></div>`
+    return
+  }
+  if(!data || !data.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="openPage('sales',{})"><i class="ti ti-file-invoice"></i> ${isBm?'Ke Invois':'Go to Invoices'}</button></div>`
+    return
+  }
+  // Optional: load invoice refs
+  const invIds = [...new Set(data.map(r => r.invoice_id).filter(Boolean))]
+  let invMap = {}
+  if(invIds.length) {
+    const {data: invs} = await sb.from('invoices').select('id,ref_no').in('id', invIds)
+    ;(invs||[]).forEach(i => { invMap[i.id] = i.ref_no })
+  }
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.ref}</th><th>${t.date}</th><th>${t.customer}</th><th>${t.invoice}</th>
+    <th style="text-align:right">${t.amount}</th><th>${t.refund}</th><th>${t.reason}</th>
+  </tr></thead><tbody>
+  ${data.map(r => `<tr>
+    <td><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
+    <td>${formatDate(r.credit_date)}</td>
+    <td>${_aiEscapeHtml(r.customer_name||'-')}</td>
+    <td>${r.invoice_id ? `<a href="javascript:void(0)" onclick="openPage('sales',{view:'inv-detail',id:'${r.invoice_id}'})" style="color:var(--primary)">${_aiEscapeHtml(invMap[r.invoice_id]||'INV')}</a>` : '-'}</td>
+    <td style="text-align:right;font-weight:600">${formatRM(r.amount)}</td>
+    <td>${r.refunded ? `<span style="color:var(--success)">${t.yes}</span>` : t.no}</td>
+    <td style="font-size:12px;color:var(--text-2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_aiEscapeHtml(r.reason||'-')}</td>
+  </tr>`).join('')}
+  </tbody></table>`
+}
 
 // ─── Credit Notes (minimal invoice refund / credit) ─────────────────────────
 async function _cnOpenForm(invoiceId) {
