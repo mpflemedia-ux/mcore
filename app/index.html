@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-db-dedupe">
+<meta name="nexerp-build" content="2026-08-09-db">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -421,6 +421,9 @@ tbody tr:hover{background:var(--bg)}
 .db-mini-table td{padding:8px 6px;border-bottom:1px solid var(--db-border);color:var(--db-text2)}
 .db-mini-table tr[data-href]{cursor:pointer}
 .db-mini-table tr[data-href]:hover td{background:color-mix(in srgb,var(--primary) 8%,transparent)}
+
+.db-card-glow{box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 20%,transparent),0 12px 40px -16px color-mix(in srgb,var(--primary) 45%,transparent)}
+.db-kpi-focus .db-kpi-value{font-size:20px}
 .db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:6px}
 
 .db-kpi-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--primary);opacity:.85;border-radius:14px 0 0 14px}
@@ -2677,50 +2680,25 @@ function renderDashboard() {
     <div class="db-topbar">
       <div>
         <div class="db-title">${t.title}</div>
-        <div class="db-subtitle">${t.welcome}, ${APP.user.name||''} — ${isBm?'Prestasi operasi & kutipan':'Ops performance & collections'}</div>
+        <div class="db-subtitle">${t.welcome}, ${APP.user.name||''} — ${isBm?'Hasil, trend jualan & untung/rugi':'Revenue, sales trend & P&L'}</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="db-btn"><i class="ti ti-calendar"></i> ${monthLabel}</button>
-      </div>
-    </div>
-
-    <!-- Row 1 Hero: Sales Growth + Invoice Status -->
-    <div class="db-hero-row">
-      <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div class="db-card-title"><i class="ti ti-chart-line"></i> ${isBm?'Pertumbuhan Jualan':'Sales Growth'}</div>
-          <div class="db-toggle-group" id="db-period-toggle">
-            <div class="db-toggle active" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
-            <div class="db-toggle" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
-            <div class="db-toggle" data-p="monthly" onclick="_dbSetPeriod('monthly')">${isBm?'Bulanan':'Monthly'}</div>
-          </div>
-        </div>
-        <div style="position:relative;min-height:180px">
-          <canvas id="db-growth-chart" height="90"></canvas>
-        </div>
-        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Berdasarkan paid_amt (Paid/Partial) + POS':'Based on paid_amt (Paid/Partial) + POS'}</div>
-      </div>
-      <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut"></i> ${isBm?'Status Invois':'Invoice Status'}</div>
-        <div class="db-donut-wrap"><canvas id="db-status-donut" width="170" height="170"></canvas>
-          <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
-        </div>
-        <div id="db-status-legend"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="db-btn" style="pointer-events:none;opacity:.9"><i class="ti ti-calendar"></i> ${monthLabel}</span>
       </div>
     </div>
 
-    <!-- Row 2 KPI strip (compact) -->
-    <div class="db-kpi-grid" id="db-kpi-grid">
+    <!-- Focus KPI: Revenue / Sales / GP / Net P&L -->
+    <div class="db-kpi-grid db-kpi-focus" id="db-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:14px">
       ${[
+        {k:'revenue', icon:'ti-trending-up', go:"openPage('reports',{})"},
         {k:'sales', icon:'ti-currency-dollar', go:"openPage('sales',{})"},
         {k:'grossProfit', icon:'ti-chart-arrows-vertical', go:"openPage('sales',{})"},
+        {k:'netPL', icon:'ti-scale', go:"openPage('reports',{})"},
         {k:'collected', icon:'ti-cash', go:"openPage('sales',{})"},
+        {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
         {k:'rate', icon:'ti-percentage', go:"openPage('sales',{})"},
         {k:'overdue', icon:'ti-alert-triangle', go:"window._invStatusFilter='overdue';openPage('sales',{})"},
-        {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
-        {k:'revenue', icon:'ti-trending-up', go:"openPage('reports',{})"},
-        {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
-        {k:'netPL', icon:'ti-scale', go:"openPage('reports',{})"}
+        {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"}
       ].map(({k,icon,go})=>`
       <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer">
         <div class="db-kpi-head">
@@ -2732,28 +2710,59 @@ function renderDashboard() {
       </div>`).join('')}
     </div>
 
-    <!-- Row 3: Top Customers + Low stock (Overdue only in KPI strip) -->
+    <!-- Hero charts: Sales trend (wide) + Invoice mix -->
+    <div class="db-hero-row">
+      <div class="db-card db-card-glow">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="db-card-title"><i class="ti ti-chart-area-line"></i> ${isBm?'Trend Jualan & Kutipan':'Sales & Collections Trend'}</div>
+          <div class="db-toggle-group" id="db-period-toggle">
+            <div class="db-toggle active" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
+            <div class="db-toggle" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
+            <div class="db-toggle" data-p="monthly" onclick="_dbSetPeriod('monthly')">${isBm?'Bulanan':'Monthly'}</div>
+          </div>
+        </div>
+        <div style="position:relative;min-height:220px">
+          <canvas id="db-growth-chart" height="110"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Jualan diiktiraf = paid_amt (Paid/Partial) + POS':'Recognised sales = paid_amt (Paid/Partial) + POS'}</div>
+      </div>
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut-3"></i> ${isBm?'Mix Status Invois':'Invoice Status Mix'}</div>
+        <div class="db-donut-wrap"><canvas id="db-status-donut" width="170" height="170"></canvas>
+          <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
+        </div>
+        <div id="db-status-legend"></div>
+      </div>
+    </div>
+
+    <!-- P&L bars + Top customers -->
     <div class="db-ops-row">
+      <div class="db-card db-card-glow">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Hasil vs Perbelanjaan (6 bulan)':'Revenue vs Expenses (6 mo)'}</div>
+        <div style="position:relative;min-height:200px">
+          <canvas id="db-pnl-chart" height="100"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Dari entri jurnal (akaun hasil & belanja)':'From journal entries (revenue & expense accounts)'}</div>
+      </div>
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
         <div id="db-top-customers"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
-      <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-          <div class="db-card-title"><i class="ti ti-box"></i> ${isBm?'Stok Rendah':'Low Stock'}</div>
-          <button class="db-btn" style="font-size:11px" onclick="openPage('inventory',{})">${isBm?'Inventori':'Inventory'}</button>
-        </div>
-        <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
-      </div>
     </div>
 
-    <!-- Row 4: People + Recent Activity -->
+    <!-- Low stock strip -->
+    <div class="db-card" style="margin-bottom:14px">
+      <div class="db-card-title" style="margin-bottom:10px"><i class="ti ti-package"></i> ${isBm?'Stok Rendah':'Low Stock'}</div>
+      <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+    </div>
+
+    <!-- People + Activity -->
     <div class="db-people-row">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div>
             <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
-            <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan dalam syarikat ini':'Team members in this company')}</div>
+            <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan':'Team members')}</div>
           </div>
           <button class="db-btn" onclick="if(canAccess('hr')) openPage('hr')"><i class="ti ti-arrow-right"></i> ${t.viewHR||(isBm?'Lihat SDM':'View HR')}</button>
         </div>
@@ -2770,7 +2779,6 @@ function renderDashboard() {
     </div>
   </div>`
 
-  _dbSyncGlobalTheme()
   _dbSyncGlobalTheme()
   loadDashboardData()
 }
@@ -3051,6 +3059,7 @@ async function loadDashboardData() {
 
   _dbRenderGrowthChart(inv)
   _dbRenderStatusDonut(thisMonthAll)
+  _dbRenderPnLChart()
   _dbRenderTopCustomers(thisMonth)
   _dbRenderLowStock()
   _dbLoadPeople()
@@ -3472,16 +3481,63 @@ function _dbRenderGrowthChart(inv) {
 
   const c = _dbColors()
   const gradient = ctx.getContext('2d').createLinearGradient(0,0,0,220)
-  gradient.addColorStop(0, 'rgba(34,197,94,.35)')
-  gradient.addColorStop(1, 'rgba(34,197,94,0)')
+  gradient.addColorStop(0, 'rgba(14,116,144,.45)')
+  gradient.addColorStop(0.45, 'rgba(34,211,238,.18)')
+  gradient.addColorStop(1, 'rgba(14,116,144,0)')
 
   _dbCharts['growth'] = new Chart(ctx, {
     type:'line',
-    data:{ labels, datasets:[{ data, borderColor:'#22C55E', backgroundColor:gradient, borderWidth:2, pointRadius:0, tension:.35, fill:true }] },
+    data:{ labels, datasets:[
+      { label: isBm?'Jualan':'Sales', data, borderColor:'#22D3EE', backgroundColor:gradient, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#22D3EE', pointHoverRadius:5, tension:.4, fill:true },
+    ] },
     options:{ responsive:true, maintainAspectRatio:true,
       plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: cx => formatRM(cx.parsed.y) }, backgroundColor:c.tooltipBg, borderColor:'rgba(128,128,128,.2)', borderWidth:1 } },
       scales:{ x:{ grid:{color:c.grid}, ticks:{color:c.text,font:{size:10},maxTicksLimit:8} },
                y:{ grid:{color:c.grid}, ticks:{color:c.text,font:{size:10}, callback:v=>'RM '+Number(v).toLocaleString('en-MY',{maximumFractionDigits:0})} } } }
+  })
+}
+
+
+async function _dbRenderPnLChart() {
+  const isBm = APP.language==='bm'
+  const ctx = document.getElementById('db-pnl-chart')
+  if(!ctx || typeof Chart==='undefined') return
+  _dbDestroy('pnl')
+  const now = new Date()
+  const labels = []
+  const revData = [], expData = [], netData = []
+  for(let m=5; m>=0; m--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-m, 1)
+    const start = d.toISOString().slice(0,10)
+    const endEx = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString().slice(0,10)
+    labels.push(d.toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'short'}))
+    const pl = await _dbMonthPnL(start, endEx)
+    revData.push(Math.max(0, pl.revenue))
+    expData.push(Math.max(0, pl.expense))
+    netData.push(pl.net)
+  }
+  const c = _dbColors()
+  _dbCharts['pnl'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: isBm?'Hasil':'Revenue', data: revData, backgroundColor: 'rgba(34,211,238,.75)', borderRadius: 6, borderSkipped: false },
+        { label: isBm?'Belanja':'Expenses', data: expData, backgroundColor: 'rgba(251,146,60,.7)', borderRadius: 6, borderSkipped: false },
+        { label: isBm?'Bersih':'Net', data: netData, type: 'line', borderColor: '#A78BFA', backgroundColor: 'rgba(167,139,250,.15)', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#A78BFA', tension: .35, yAxisID: 'y' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: true, labels: { color: c.text, boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: cx => (cx.dataset.label||'') + ': ' + formatRM(cx.parsed.y) }, backgroundColor: c.tooltipBg }
+      },
+      scales: {
+        x: { grid: { color: c.grid }, ticks: { color: c.text, font: { size: 10 } } },
+        y: { grid: { color: c.grid }, ticks: { color: c.text, font: { size: 10 }, callback: v => formatRM(v) } }
+      }
+    }
   })
 }
 
