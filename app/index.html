@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-08-recon">
+<meta name="nexerp-build" content="2026-08-08-cn-overdue">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2645,6 +2645,7 @@ function renderDashboard() {
         {k:'sales', icon:'ti-currency-dollar', go:"openPage('sales',{})"},
         {k:'grossProfit', icon:'ti-chart-arrows-vertical', go:"openPage('sales',{})"},
         {k:'collected', icon:'ti-cash', go:"openPage('sales',{})"},
+        {k:'overdue', icon:'ti-alert-triangle', go:"window._invStatusFilter='overdue';openPage('sales',{})"},
         {k:'rate', icon:'ti-percentage', go:"openPage('sales',{})"},
         {k:'avg', icon:'ti-receipt', go:"openPage('sales',{})"},
         {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
@@ -2652,7 +2653,7 @@ function renderDashboard() {
         {k:'expenses', icon:'ti-receipt-2', go:"openPage('reports',{})"},
         {k:'netPL', icon:'ti-scale', go:"openPage('reports',{})"}
       ].map(({k,icon,go})=>`
-      <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer" title="${k==='revenue'||k==='expenses'||k==='netPL'?(APP.language==='bm'?'Buka Penyata Pendapatan':'Open Income Statement'):(APP.language==='bm'?'Buka Jualan':'Open Sales')}">
+      <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer" title="${k==='overdue'?(APP.language==='bm'?'Buka invois tertunggak':'Open overdue invoices'):(k==='revenue'||k==='expenses'||k==='netPL'?(APP.language==='bm'?'Buka Penyata Pendapatan':'Open Income Statement'):(APP.language==='bm'?'Buka Jualan':'Open Sales'))}">
         <div class="db-kpi-head">
           <div class="db-kpi-icon"><i class="ti ${icon}"></i></div>
           <div class="db-kpi-label" id="db-lbl-${k}">-</div>
@@ -2954,10 +2955,25 @@ async function loadDashboardData() {
   const curNetPL = plThis.net
   const prevNetPL = plLast.net
 
+  // Overdue invoices (unpaid/partial past due_date)
+  const todayStrDash = now.toISOString().slice(0,10)
+  let overdueCount = 0, overdueAmt = 0
+  try {
+    const {data: odRows} = await sb.from('invoices').select('total,paid_amt,status,due_date')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .neq('status', 'paid').neq('status', 'cancelled')
+      .lt('due_date', todayStrDash).limit(500)
+    ;(odRows||[]).forEach(i => {
+      overdueCount++
+      overdueAmt += Math.max(0, Number(i.total||0) - Number(i.paid_amt||0))
+    })
+  } catch(e) { console.warn('dashboard overdue', e) }
+
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
     grossProfit: { label: isBm?'Untung Kasar':'Gross Profit', value: formatRM(curGP), delta: pctChange(curGP,prevGP), color:'#14B8A6' },
     collected:{ label: isBm?'Jumlah Kutipan':'Net Collected', value: formatRM(curPaid), delta: pctChange(curPaid,prevPaid), color:'#3B82F6' },
+    overdue: { label: isBm?'Invois Tertunggak':'Overdue Invoices', value: String(overdueCount), delta: null, sub: formatRM(overdueAmt), color:'#EF4444' },
     rate:    { label: isBm?'Kadar Kutipan':'Collection Rate', value: curRate.toFixed(1)+'%', delta: null, sub: curRate>=80?(isBm?'Baik':'Good'):curRate>=50?(isBm?'Sederhana':'Fair'):(isBm?'Perlu Perhatian':'Needs Attention'), color:'#A855F7' },
     avg:     { label: isBm?'Purata Nilai Invois':'Avg Invoice Value', value: formatRM(curAvg), delta: pctChange(curAvg,prevAvg), color:'#F59E0B' },
     count:   { label: t_dash('invoices').charAt(0).toUpperCase()+t_dash('invoices').slice(1), value: String(curCount), delta: pctChange(curCount,prevCount), color:'#38BDF8' },
@@ -2993,9 +3009,13 @@ async function loadDashboardData() {
     }
     if(foot) {
       if(v.delta === null) {
-        // Collection Rate: status badge only
-        const cls = curRate>=80 ? 'up' : curRate>=50 ? 'neutral' : 'warn'
-        foot.innerHTML = `<span class="db-kpi-pill ${cls}">${v.sub}</span>`
+        if(k === 'overdue') {
+          foot.innerHTML = `<span class="db-kpi-pill warn">${v.sub||''} ${isBm?'baki':'outstanding'}</span>`
+        } else {
+          // Collection Rate: status badge only
+          const cls = curRate>=80 ? 'up' : curRate>=50 ? 'neutral' : 'warn'
+          foot.innerHTML = `<span class="db-kpi-pill ${cls}">${v.sub}</span>`
+        }
       } else {
         const up = v.delta >= 0
         const flat = Math.abs(v.delta) < 0.005
@@ -8734,6 +8754,7 @@ async function renderInvDetail(id) {
     <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendInvWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'},'${(inv.customer_name||'').replace(/'/g,"\\'")}','${formatRM(balance)}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
     <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
+    <button class="btn btn-outline btn-sm" onclick="_cnOpenForm('${id}')"><i class="ti ti-receipt-refund"></i> ${APP.language==='bm'?'Nota Kredit':'Credit Note'}</button>
   </div></div>
 
   <div class="pdoc" style="--pdoc-accent:#0E7490;max-width:820px;margin:0 auto 24px">
@@ -9989,20 +10010,36 @@ async function _grnSave(poId) {
   }))
   await sb.from('goods_received_items').insert(grnItemsPayload)
 
+  // Re-read live qty_received from DB to prevent double-receive races
   for(const it of toReceive) {
-    const newQtyReceived = Number(it.qty_received) + Number(it.receive_now)
-    await sb.from('purchase_order_items').update({qty_received:newQtyReceived}).eq('id', it.po_item_id)
-    if(it.product_id) {
+    const {data: liveItem} = await sb.from('purchase_order_items').select('id,qty,qty_received').eq('id', it.po_item_id).single()
+    const ordered = Number(liveItem?.qty ?? it.qty || 0)
+    const already = Number(liveItem?.qty_received ?? it.qty_received || 0)
+    const receiveNow = Number(it.receive_now||0)
+    const remaining = Math.max(0, ordered - already)
+    if(receiveNow > remaining + 0.0001) {
+      errEl.textContent = isBm
+        ? `Kuantiti untuk "${it.description||it.po_item_id}" melebihi baki (${remaining}). Muat semula borang.`
+        : `Qty for "${it.description||it.po_item_id}" exceeds remaining (${remaining}). Reload the form.`
+      errEl.style.display = 'block'
+      return
+    }
+    const newQtyReceived = already + receiveNow
+    await sb.from('purchase_order_items').update({qty_received: newQtyReceived}).eq('id', it.po_item_id)
+    if(it.product_id && receiveNow > 0) {
       const {data: p} = await sb.from('products').select('stock_qty').eq('id',it.product_id).eq('tenant_id',APP.tenant.id).single()
-      const newStock = Number(p?.stock_qty||0) + Number(it.receive_now)
+      const newStock = Number(p?.stock_qty||0) + receiveNow
       await sb.from('products').update({stock_qty:newStock}).eq('id',it.product_id).eq('tenant_id',APP.tenant.id)
-      await sb.from('stock_movements').insert({tenant_id:APP.tenant.id, product_id: it.product_id, type:'in', qty: Number(it.receive_now), note: 'GRN '+grnNo})
+      try {
+        await sb.from('stock_movements').insert({tenant_id:APP.tenant.id, product_id: it.product_id, type:'in', qty: receiveNow, note: 'GRN '+grnNo})
+      } catch(e) { console.warn('stock_movements GRN', e) }
     }
   }
 
   const {data: allItems} = await sb.from('purchase_order_items').select('qty,qty_received').eq('po_id',poId)
-  const allReceived = (allItems||[]).every(x=>Number(x.qty_received) >= Number(x.qty))
-  const newStatus = allReceived ? 'received' : 'partial'
+  const allReceived = (allItems||[]).length > 0 && (allItems||[]).every(x=>Number(x.qty_received) >= Number(x.qty))
+  const anyReceived = (allItems||[]).some(x=>Number(x.qty_received) > 0)
+  const newStatus = allReceived ? 'received' : (anyReceived ? 'partial' : 'ordered')
   await sb.from('purchase_orders').update({status:newStatus}).eq('id',poId).eq('tenant_id',APP.tenant.id)
 
   auditLog('create','goods_received_notes', grn.id)
@@ -10426,6 +10463,126 @@ async function _billPaySave(billId, balance) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Credit Notes (minimal invoice refund / credit) ─────────────────────────
+async function _cnOpenForm(invoiceId) {
+  const isBm = APP.language==='bm'
+  const {data: inv} = await sb.from('invoices').select('id,ref_no,customer_id,customer_name,total,paid_amt,status').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
+  if(!inv) { showToast(isBm?'Invois tidak dijumpai.':'Invoice not found.', 'error'); return }
+  const paid = Number(inv.paid_amt||0)
+  const total = Number(inv.total||0)
+  const maxRefund = paid
+  const overlay = document.createElement('div')
+  overlay.id = 'cn-modal-overlay'
+  overlay.className = 'modal-overlay active'
+  overlay.innerHTML = `
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-box-header">${isBm?'Nota Kredit / Bayaran Balik':'Credit Note / Refund'}</div>
+    <div class="modal-box-body">
+      <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">${isBm?'Invois':'Invoice'} <strong>${_aiEscapeHtml(inv.ref_no||'')}</strong> · ${isBm?'Dibayar':'Paid'} ${formatRM(paid)} / ${formatRM(total)}</p>
+      <div class="form-group"><label class="form-label">${isBm?'Jumlah *':'Amount *'}</label>
+        <input id="cn-amount" type="number" step="0.01" class="form-input" value="${(maxRefund>0?Math.min(maxRefund,total):total).toFixed(2)}"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Tarikh':'Date'}</label>
+        <input id="cn-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Sebab':'Reason'}</label>
+        <input id="cn-reason" type="text" class="form-input" placeholder="${isBm?'cth. barang dikembalikan':'e.g. goods returned'}"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px">
+        <input id="cn-refund" type="checkbox" ${paid>0.005?'checked':''}>
+        ${isBm?'Wang dikembalikan kepada pelanggan (jurnal Dr Jualan / Cr Tunai)':'Money refunded to customer (journal Dr Sales / Cr Cash)'}
+      </label>
+      <div id="cn-err" class="auth-error" style="display:none;margin-top:10px"></div>
+    </div>
+    <div class="modal-box-footer">
+      <button class="btn btn-primary" style="flex:1" onclick="_cnSave('${invoiceId}')"><i class="ti ti-check"></i> ${isBm?'Simpan':'Save'}</button>
+      <button class="btn btn-outline" onclick="document.getElementById('cn-modal-overlay')?.remove()">${isBm?'Batal':'Cancel'}</button>
+    </div>
+  </div>`
+  document.body.appendChild(overlay)
+}
+
+async function _cnSave(invoiceId) {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('cn-err')
+  const amount = Number(document.getElementById('cn-amount')?.value||0)
+  const creditDate = document.getElementById('cn-date')?.value || new Date().toISOString().slice(0,10)
+  const reason = (document.getElementById('cn-reason')?.value||'').trim()
+  const refunded = !!document.getElementById('cn-refund')?.checked
+  if(amount <= 0) { if(errEl){errEl.textContent=isBm?'Jumlah tidak sah.':'Invalid amount.'; errEl.style.display='block'} return }
+
+  const {data: inv} = await sb.from('invoices').select('id,ref_no,customer_id,customer_name,total,paid_amt,status').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
+  if(!inv) { if(errEl){errEl.textContent='Invoice not found.'; errEl.style.display='block'} return }
+
+  const paid = Number(inv.paid_amt||0)
+  if(refunded && amount > paid + 0.005) {
+    if(errEl){errEl.textContent=isBm?'Bayaran balik tidak boleh melebihi jumlah dibayar.':'Refund cannot exceed amount paid.'; errEl.style.display='block'}
+    return
+  }
+  if(amount > Number(inv.total||0) + 0.005) {
+    if(errEl){errEl.textContent=isBm?'Jumlah tidak boleh melebihi jumlah invois.':'Amount cannot exceed invoice total.'; errEl.style.display='block'}
+    return
+  }
+
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'CN'}).then(r=>r, ()=>({data:null}))
+  const refNo = refData || ('CN-'+Date.now().toString().slice(-8))
+
+  const {data: cn, error} = await sb.from('credit_notes').insert({
+    tenant_id: APP.tenant.id,
+    ref_no: refNo,
+    invoice_id: invoiceId,
+    customer_id: inv.customer_id || null,
+    customer_name: inv.customer_name || null,
+    credit_date: creditDate,
+    amount,
+    reason: reason || null,
+    status: 'posted',
+    refunded,
+    created_by: APP.user?.id || null
+  }).select('id').single()
+
+  if(error) {
+    if(errEl){errEl.textContent='Error: '+error.message+(isBm?' — pastikan migration credit_notes dijalankan.':' — ensure credit_notes migration is applied.'); errEl.style.display='block'}
+    return
+  }
+
+  let newPaid = paid
+  let newTotal = Number(inv.total||0)
+  if(refunded) {
+    newPaid = Math.max(0, paid - amount)
+  } else {
+    newTotal = Math.max(0, newTotal - amount)
+  }
+  const newStatus = newPaid < 0.005 ? 'unpaid' : (newPaid >= newTotal - 0.005 ? 'paid' : 'partial')
+  const invPatch = { paid_amt: newPaid, status: newStatus }
+  if(!refunded) invPatch.total = newTotal
+  await sb.from('invoices').update(invPatch).eq('id', invoiceId).eq('tenant_id', APP.tenant.id)
+
+  if(refunded) {
+    try {
+      const salesAcc = await _getDefaultAccountId('sales_revenue')
+      const cashAcc = await _getDefaultAccountId('cash')
+      if(salesAcc && cashAcc) {
+        await _postJournalEntry({
+          description: `Credit Note / Refund ${refNo} (INV ${inv.ref_no||''})`,
+          entryDate: creditDate,
+          entryType: 'auto',
+          lines: [
+            { account_id: salesAcc, debit: amount, credit: 0 },
+            { account_id: cashAcc, debit: 0, credit: amount },
+          ],
+          sourceTable: 'credit_notes', sourceId: cn.id,
+        })
+      } else {
+        showToast(isBm?'Nota kredit disimpan; akaun lalai Jualan/Tunai belum ditetapkan — jurnal dilangkau.':'Credit note saved; default Sales/Cash accounts not set — journal skipped.', 'warning')
+      }
+    } catch(e) { console.error('CN journal', e) }
+  }
+
+  try { auditLog('create', 'credit_notes', cn.id) } catch(e) {}
+  document.getElementById('cn-modal-overlay')?.remove()
+  showToast(isBm?'Nota kredit disimpan.':'Credit note saved.', 'success')
+  renderInvDetail(invoiceId)
+}
+
 // PAYMENT VOUCHERS (PV) — formal payment documents + financial reflection
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -12283,6 +12440,15 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
   const pcbAcc = await _getDefaultAccountId('pcb_payable')
   if(!salaryAcc || !cashAcc || !epfAcc || !socsoAcc || !eisAcc || !pcbAcc) {
     console.warn('Payroll journal post skipped (missing one or more default accounts: salary_expense/cash/epf_payable/socso_payable/eis_payable/pcb_payable)')
+    // Visible warning — no silent skip for operators
+    if(!window._payrollMissingAccWarned) {
+      window._payrollMissingAccWarned = true
+      const isBm = APP.language==='bm'
+      showToast(isBm
+        ? 'Jurnal payroll dilangkau: tetapkan akaun lalai (Gaji/Tunai/EPF/SOCSO/EIS/PCB) di Tetapan.'
+        : 'Payroll journal skipped: set default accounts (Salary/Cash/EPF/SOCSO/EIS/PCB) in Settings.',
+        'warning')
+    }
     return null
   }
   const totalAllowance = Number(calc.allowance_1||0) + Number(calc.allowance_2||0) + Number(calc.allowance_3||0)
