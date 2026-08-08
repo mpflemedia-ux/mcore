@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dd">
+<meta name="nexerp-build" content="2026-08-09-de">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0E7490">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -2705,7 +2705,9 @@ function renderDashboard() {
         {k:'count', icon:'ti-file-invoice', go:"openPage('sales',{})"},
         {k:'posSales', icon:'ti-device-desktop', go:"openPage('pos',{view:'history'})"},
         {k:'payroll', icon:'ti-wallet', go:"openPage('hr',{})"},
-        {k:'customers', icon:'ti-users', go:"openPage('crm',{})"}
+        {k:'customers', icon:'ti-users', go:"openPage('crm',{})"},
+        {k:'topProduct', icon:'ti-package', go:"openPage('inventory',{})"},
+        {k:'topInvoice', icon:'ti-file-description', go:"openPage('sales',{})"}
       ].map(({k,icon,go})=>`
       <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer">
         <div class="db-kpi-head">
@@ -2942,8 +2944,16 @@ async function loadDashboardData() {
 
   const curSales = sumSalesAmt(thisMonth) + posThis, prevSales = sumSalesAmt(lastMonth) + posLast
   const curPaid = sumPaid(thisMonth) + posPaidThis, prevPaid = sumPaid(lastMonth) + posPaidLast
-  const curRate = curSales ? (curPaid/curSales*100) : 0
-  const prevRate = prevSales ? (prevPaid/prevSales*100) : 0
+  // Collection rate = collected / billed (all non-cancelled invoices in range + POS)
+  // so overdue/unpaid reduce the rate (NOT only Paid/Partial sales)
+  const nonCancel = arr => (arr||[]).filter(i => String(i.status||'').toLowerCase() !== 'cancelled')
+  const sumTotal = arr => arr.reduce((s,i)=>s+Number(i.total||0),0)
+  const billedThis = sumTotal(nonCancel(thisMonthAll)) + posThis
+  const billedLast = sumTotal(nonCancel(lastMonthAll)) + posLast
+  const collectedThis = sumPaid(nonCancel(thisMonthAll)) + posPaidThis
+  const collectedLast = sumPaid(nonCancel(lastMonthAll)) + posPaidLast
+  const curRate = billedThis > 0.005 ? (collectedThis/billedThis*100) : 0
+  const prevRate = billedLast > 0.005 ? (collectedLast/billedLast*100) : 0
   const invCountThis = thisMonth.length, invCountLast = lastMonth.length
   const curAvg = invCountThis ? sumSalesAmt(thisMonth)/invCountThis : 0
   const prevAvg = invCountLast ? sumSalesAmt(lastMonth)/invCountLast : 0
@@ -3039,6 +3049,38 @@ async function loadDashboardData() {
     custValue = custCount ? (curPaid / custCount) : 0
   } catch(e) { console.warn('dashboard customers', e) }
 
+  // Top product (by line amount) + top invoice (highest total) in period
+  let topProductName = '-', topProductAmt = 0
+  let topInvLabel = '-', topInvAmt = 0
+  try {
+    const periodInvs = nonCancel(thisMonthAll)
+    if(periodInvs.length) {
+      const topInv = [...periodInvs].sort((a,b)=>Number(b.total||0)-Number(a.total||0))[0]
+      if(topInv) {
+        topInvAmt = Number(topInv.total||0)
+        topInvLabel = (topInv.ref_no||'INV') + (topInv.customer_name ? ' · ' + topInv.customer_name : '')
+      }
+      const ids = periodInvs.map(i=>i.id)
+      if(ids.length) {
+        const {data: items} = await sb.from('invoice_items')
+          .select('description,qty,unit_price,product_id,products(name_en,name_bm),invoice_id')
+          .in('invoice_id', ids.slice(0,200))
+        const byKey = {}
+        ;(items||[]).forEach(it => {
+          const pname = (it.products && (APP.language==='bm' ? (it.products.name_bm||it.products.name_en) : (it.products.name_en||it.products.name_bm))) || it.description || 'Item'
+          const key = String(pname).trim() || 'Item'
+          const amt = Number(it.qty||0) * Number(it.unit_price||0)
+          byKey[key] = (byKey[key]||0) + amt
+        })
+        const ranked = Object.entries(byKey).sort((a,b)=>b[1]-a[1])
+        if(ranked.length) {
+          topProductName = ranked[0][0]
+          topProductAmt = ranked[0][1]
+        }
+      }
+    }
+  } catch(e) { console.warn('dashboard top product/inv', e) }
+
   const kpis = {
     sales:   { label: t_dash('totalSales'), value: formatRM(curSales), delta: pctChange(curSales,prevSales), color:'#22C55E' },
     grossProfit: { label: isBm?'Untung Kasar':'Gross Profit', value: formatRM(curGP), delta: pctChange(curGP,prevGP), color:'#14B8A6' },
@@ -3087,6 +3129,21 @@ async function loadDashboardData() {
       sub: isBm ? ('Purata kutipan '+formatRM(custValue)) : ('Avg collected '+formatRM(custValue)),
       color: '#8B5CF6'
     },
+    topProduct: {
+      label: isBm?'Produk Teratas':'Top Product',
+      value: topProductName.length > 18 ? topProductName.slice(0,16)+'…' : topProductName,
+      delta: null,
+      sub: formatRM(topProductAmt),
+      color: '#14B8A6',
+      valueColor: ''
+    },
+    topInvoice: {
+      label: isBm?'Invois Teratas':'Top Invoice',
+      value: topInvLabel.length > 18 ? topInvLabel.slice(0,16)+'…' : topInvLabel,
+      delta: null,
+      sub: formatRM(topInvAmt),
+      color: '#EAB308'
+    },
   }
 
   // sync range label
@@ -3110,7 +3167,7 @@ async function loadDashboardData() {
       if(v.delta === null) {
         if(k === 'overdue') {
           foot.innerHTML = `<span class="db-kpi-pill warn">${v.sub||''} ${isBm?'baki':'outstanding'}</span>`
-        } else if(k === 'customers') {
+        } else if(k === 'customers' || k === 'topProduct' || k === 'topInvoice') {
           foot.innerHTML = `<span class="db-kpi-pill neutral">${v.sub||''}</span>`
         } else {
           // Collection Rate: status badge only
