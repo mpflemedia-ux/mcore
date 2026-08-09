@@ -8008,11 +8008,17 @@ function _loadPdfJs() {
 
 const PDF_MAX_PAGES = 5 // sane cap for a short intake form — protects against an oversized upload, not a real limit for this use case
 
-async function _pdfPagesToImageBlobs(file) {
+// maxPages defaults to PDF_MAX_PAGES so every existing caller (SSM/bank
+// header scans — genuinely short documents) is unaffected; Bank Recon's PDF
+// import (_recoPdfUpload) passes a much higher cap since a monthly
+// statement can easily run past 5 pages. blobs.totalPages lets a caller
+// tell whether pages were actually truncated, instead of returning an
+// array indistinguishable from "the PDF only had this many pages".
+async function _pdfPagesToImageBlobs(file, maxPages = PDF_MAX_PAGES) {
   const pdfjsLib = await _loadPdfJs()
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-  const pageCount = Math.min(pdf.numPages, PDF_MAX_PAGES)
+  const pageCount = Math.min(pdf.numPages, maxPages)
   const blobs = []
   for (let i = 1; i <= pageCount; i++) {
     const page = await pdf.getPage(i)
@@ -8026,6 +8032,7 @@ async function _pdfPagesToImageBlobs(file) {
     })
     blobs.push(blob)
   }
+  blobs.totalPages = pdf.numPages
   return blobs
 }
 
@@ -8313,6 +8320,13 @@ async function renderReconcile() {
   <div class="card" style="padding:16px;margin-bottom:16px">
     <p style="font-size:13px;color:var(--text-3);margin-bottom:10px">${t.instructions}</p>
     <input type="file" accept=".csv,text/csv,text/plain" id="reco-file-input" onchange="_recoFileUpload(event)" style="margin-bottom:10px;display:block">
+    <div style="margin-bottom:10px;padding:10px;border:1px dashed var(--border);border-radius:var(--radius-sm)">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px"><i class="ti ti-file-type-pdf"></i> ${isBm?'Import PDF Penyata Bank (AI, Beta)':'Import Bank Statement PDF (AI, Beta)'}</label>
+      <input type="file" accept="application/pdf,.pdf" id="reco-pdf-input" onchange="_recoPdfUpload(event)" style="display:block">
+      <div id="reco-pdf-status" style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm
+        ? 'AI baca setiap muka surat, hasil masuk ke kotak teks bawah untuk SEMAK dulu sebelum "Import & Auto-Kategori".'
+        : 'AI reads each page, results go into the text box below for you to REVIEW before "Import & Auto-Categorize".'}</div>
+    </div>
     <textarea id="reco-csv-text" class="form-input" rows="6" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00&#10;01/04/2026,CIB Instant Transfer - Operation Cost,799.00,,35600156696,LE AROMA SDN BHD"></textarea>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
       <button class="btn btn-primary btn-sm" onclick="_recoImportCategorize()"><i class="ti ti-file-import"></i> ${t.parse}</button>
@@ -8351,6 +8365,138 @@ function _recoFileUpload(event) {
   reader.onload = () => { const el = document.getElementById('reco-csv-text'); if (el) el.value = reader.result }
   reader.onerror = () => showToast(APP.language==='bm'?'Gagal baca fail.':'Failed to read file.', 'error')
   reader.readAsText(file)
+}
+
+// AI-assisted PDF import — renders each page to an image (reusing the same
+// _pdfPagesToImageBlobs/_compressImageToBase64 pipeline Company Profile's
+// SSM-certificate/bank-header scans already use) and asks ai-proxy's
+// extract_bank_transactions action (vision) to read the transaction rows
+// off each page image. One call PER PAGE, not one call for the whole PDF —
+// see the server-side handler's comment for why (token-budget headroom for
+// a page that can have 30-50+ rows).
+//
+// Deliberately does NOT write into _recoTxns directly. Extracted rows are
+// converted to the same "date,description,amount" text the paste/CSV path
+// already accepts and appended into the #reco-csv-text textarea — the user
+// still has to review that text and click "Import & Auto-Categorize"
+// themselves, same as a manual paste. This AI extraction is unverified
+// against a real bank statement (see the server handler's KNOWN LIMITATION
+// note); routing it through the same textarea as manual entry means a bad
+// extraction shows up as visibly wrong/garbled text to catch, not as
+// silently-wrong data that lands directly in _recoTxns.
+const RECO_PDF_MAX_PAGES = 15 // a monthly SME statement can easily run past the 5-page default meant for short intake forms
+let _recoPdfBusy = false // re-entrancy guard — a scan can take a while (up to 15 sequential vision calls), so a second file pick before the first finishes must not run concurrently against the same textarea
+
+async function _recoPdfUpload(event) {
+  const file = event.target.files[0]
+  if (!file) return
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    converting: 'Menukar PDF ke imej...',
+    scanning: (i,n) => `AI membaca muka surat ${i}/${n}...`,
+    badFile: 'Sila pilih fail PDF.',
+    busy: 'Satu imbasan PDF lain sedang berjalan, sila tunggu.',
+    none: 'Tiada transaksi dikesan dalam PDF ini — cuba semak fail, atau guna CSV/tampal.',
+    allFailed: (n) => `Gagal baca semua ${n} muka surat (kemungkinan isu API/rangkaian) — bukan sebab PDF tiada transaksi. Cuba lagi, atau guna CSV/tampal.`,
+    done: (n,pages) => `${n} baris dikesan daripada ${pages} muka surat — SEMAK dalam kotak teks di bawah (terutama tarikh + tanda +/- jumlah) sebelum klik "Import & Auto-Kategori".`,
+    truncated: (used,total) => ` PDF ada ${total} muka surat, hanya ${used} pertama diproses — muka surat lain TAK diimport.`,
+    pageFail: (n) => ` (${n} muka surat gagal dibaca — baris daripada muka surat tu takkan ada.)`,
+    err: 'Ralat baca PDF: '
+  } : {
+    converting: 'Converting PDF to image...',
+    scanning: (i,n) => `AI reading page ${i}/${n}...`,
+    badFile: 'Please select a PDF file.',
+    busy: 'Another PDF scan is already running, please wait.',
+    none: 'No transactions detected in this PDF — check the file, or use CSV/paste instead.',
+    allFailed: (n) => `Failed to read all ${n} page(s) — likely an API/network issue, not that the PDF has no transactions. Try again, or use CSV/paste instead.`,
+    done: (n,pages) => `${n} line(s) detected from ${pages} page(s) — REVIEW them in the text box below (especially dates + amount sign) before clicking "Import & Auto-Categorize".`,
+    truncated: (used,total) => ` PDF has ${total} pages, only the first ${used} were processed — the rest were NOT imported.`,
+    pageFail: (n) => ` (${n} page(s) failed to read — rows from those pages will be missing.)`,
+    err: 'PDF read error: '
+  }
+
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  if (!isPdf) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+  if (_recoPdfBusy) { showToast(t.busy, 'warning'); event.target.value=''; return }
+  _recoPdfBusy = true
+
+  // Captured once, up front — if the user navigates away from Reconcile
+  // mid-scan, #main gets replaced and these become detached nodes. Writing
+  // to a detached node is harmless (no crash, just invisible), but
+  // document.contains() below lets the final outcome fall back to a toast
+  // so the user isn't left with a silently-vanished result.
+  const statusEl = document.getElementById('reco-pdf-status')
+  const setStatus = (html) => { if (statusEl && document.contains(statusEl)) statusEl.innerHTML = html }
+  const spinner = (label) => `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${label}`
+
+  try {
+    setStatus(spinner(t.converting))
+    const pageBlobs = await _pdfPagesToImageBlobs(file, RECO_PDF_MAX_PAGES)
+    const allRows = []
+    let failedPages = 0
+    for (let i = 0; i < pageBlobs.length; i++) {
+      setStatus(spinner(t.scanning(i+1, pageBlobs.length)))
+      // Per-page try/catch — same "isolate one failure, don't lose the rest
+      // of the batch" pattern renderPayslipsPrint uses for its batch loop.
+      // Without this, one transient failure (rate limit, network blip) on
+      // e.g. page 5 of 8 would throw and discard everything already
+      // extracted from pages 1-4.
+      try {
+        const img = await _compressImageToBase64(pageBlobs[i])
+        const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+          action: 'extract_bank_transactions',
+          images: [{ image_base64: img.base64, mime_type: img.mimeType }]
+        }})
+        if (error) throw error
+        if (!data?.success) throw new Error(data?.error || 'Unknown error')
+        allRows.push(...(data.data?.transactions || []))
+      } catch (pageErr) {
+        console.error(`Bank PDF extraction failed on page ${i+1}/${pageBlobs.length}:`, pageErr)
+        failedPages++
+      }
+    }
+    if (!allRows.length) {
+      // Distinguish "every page failed to read" (API/network/deploy issue —
+      // telling the user to check their PDF would be actively misleading)
+      // from "pages read fine, genuinely no transaction rows found".
+      const msg = (failedPages > 0 && failedPages === pageBlobs.length) ? t.allFailed(failedPages) : t.none
+      setStatus(`<span style="color:${failedPages ? 'var(--danger)' : 'var(--text-3)'}">${msg}</span>`)
+      if (!document.contains(statusEl)) showToast(msg, failedPages ? 'error' : 'warning')
+      return
+    }
+    // credit -> positive (money in), debit -> negative (money out) — same
+    // sign convention _brSuggestCategory/_recoParseCsvText already use.
+    // Commas/newlines stripped from description since _recoParseCsvText's
+    // CSV split is naive (not quote-aware) — a stray comma would shift the
+    // row's columns.
+    const lines = allRows.map(r => {
+      const amt = r.credit != null ? Number(r.credit) : -Math.abs(Number(r.debit||0))
+      // \t included: _recoParseCsvText splits on comma OR tab
+      // (line.split(/,|\t/)) — a stray tab here would shift the row's
+      // columns exactly like a stray comma would, and unlike a comma it's
+      // invisible whitespace in the textarea, so the user's review step
+      // can't catch it.
+      const desc = String(r.description||'').replace(/[,\t\n\r]/g, ' ').trim()
+      return `${r.date},${desc},${amt.toFixed(2)}`
+    })
+    const ta = document.getElementById('reco-csv-text')
+    if (ta && document.contains(ta)) {
+      const existing = ta.value.trim()
+      ta.value = (existing ? existing + '\n' : '') + lines.join('\n')
+    }
+    let msg = t.done(lines.length, pageBlobs.length)
+    if (pageBlobs.totalPages > pageBlobs.length) msg += t.truncated(pageBlobs.length, pageBlobs.totalPages)
+    if (failedPages) msg += t.pageFail(failedPages)
+    setStatus(`<span style="color:var(--success)"><i class="ti ti-check"></i> ${msg}</span>`)
+    if (!document.contains(statusEl) || !document.contains(ta)) showToast(msg, failedPages ? 'warning' : 'success')
+  } catch (err) {
+    console.error('Bank PDF extraction error:', err)
+    setStatus(`<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${t.err}${err.message||''}</span>`)
+    if (!document.contains(statusEl)) showToast(t.err + (err.message||''), 'error')
+  } finally {
+    _recoPdfBusy = false
+    event.target.value = ''
+  }
 }
 
 function _recoNormalizeDate(s) {
