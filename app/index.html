@@ -8767,14 +8767,23 @@ async function _recoRefineOther() {
 // so re-running this after a partial post never double-posts.
 async function _recoPostUnmatched() {
   const isBm = APP.language==='bm'
-  // Re-entrancy guard: without this, clicking the button twice while the
-  // first click's confirm()+await loop is still in flight could post two
-  // journal entries for the same bank line (both invocations see the same
-  // not-yet-posted txn.status before either has flipped it).
+  // Re-entrancy guard, set BEFORE any other work (including the awaited
+  // _getDefaultAccountId lookup and the blocking confirm() dialog below) —
+  // setting it only right before the posting loop would leave the whole
+  // setup phase (a real network round trip) as an open re-entrancy window
+  // where a second click could still race to the same candidates.
   if (_recoPosting) {
     showToast(isBm?'Sedang memproses, sila tunggu...':'Already processing, please wait...', 'warning')
     return
   }
+  _recoPosting = true
+  try {
+    await _recoPostUnmatchedInner(isBm)
+  } finally {
+    _recoPosting = false
+  }
+}
+async function _recoPostUnmatchedInner(isBm) {
   // Lines that will never be posted anyway (already posted, or manually
   // tagged Owner Drawings) are excluded up front — both from the "has Match
   // run?" gate below and from `candidates` itself — so tagging a line
@@ -8823,10 +8832,16 @@ async function _recoPostUnmatched() {
     : `Post ${candidates.length} unmatched line(s) as separate journal entries? Confirmed/matched lines are NOT touched.`
   if (!confirm(msg)) return
 
-  _recoPosting = true
   let posted = 0, skipped = 0, skippedOldFormat = 0, skippedNoGl = 0, skippedOther = 0, alreadyPosted = 0
-  try {
-    for (const txn of candidates) {
+  for (const txn of candidates) {
+      // Re-check live state: the loop awaits a Supabase round trip per line,
+      // so it can take several seconds for a large batch, during which the
+      // page stays interactive — if the user confirms this exact line's
+      // match to an existing invoice/payment (_recoSetState mutates the
+      // same txn object in place) or it gets posted by a concurrent run
+      // while this iteration was waiting, skip it instead of posting a
+      // second/conflicting entry for money that's no longer eligible.
+      if (txn._state === 'confirmed' || txn.status === 'posted') continue
       if (!uuidRe.test(txn.id)) { skipped++; skippedOldFormat++; continue }
       // Query directly (rather than the boolean-only _journalAlreadyPosted)
       // so the ref_no is available to populate txn.journal_ref for the
@@ -8859,15 +8874,18 @@ async function _recoPostUnmatched() {
         console.warn('bank recon post failed', txn.id, e)
         skipped++; skippedOther++
       }
-    }
-  } finally {
-    _recoPosting = false
   }
   _brSaveStore(_recoTxns)
   _recoRenderResults()
   const reasonBits = []
   if (alreadyPosted) reasonBits.push(isBm ? `${alreadyPosted} dah diposkan sebelum ini` : `${alreadyPosted} already posted earlier`)
-  if (skippedOldFormat) reasonBits.push(isBm ? `${skippedOldFormat} format id lama (import semula CSV)` : `${skippedOldFormat} old id format (re-import the CSV)`)
+  // Re-importing the identical CSV will NOT fix old-id-format lines — the
+  // fingerprint dedup in _recoParseCsvText silently skips any line whose
+  // fingerprint already exists in _recoTxns, so the stuck old-format rows
+  // stay stuck. The only real fix is Clear Session (which does lose
+  // existing categorization/match work), so say that instead of advice
+  // that quietly does nothing.
+  if (skippedOldFormat) reasonBits.push(isBm ? `${skippedOldFormat} format id lama (kosongkan sesi & import semula untuk baris ini)` : `${skippedOldFormat} old id format (Clear Session then re-import to fix these)`)
   if (skippedNoGl) reasonBits.push(isBm ? `${skippedNoGl} tiada akaun GL` : `${skippedNoGl} no GL account`)
   if (skippedOther) reasonBits.push(isBm ? `${skippedOther} period lock / ralat` : `${skippedOther} period locked / error`)
   const reasonMsg = reasonBits.length ? ` (${reasonBits.join(', ')})` : ''
