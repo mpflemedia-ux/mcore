@@ -8090,10 +8090,13 @@ async function _expScanReceipt(event) {
   }
 }
 
-// ─── Bank Reconciliation (AI-assisted, suggestion only) ────────────────────────
-// Ephemeral: parses a CSV client-side, matches against existing invoices/payments/
-// journal_entries (read-only), and never writes anything back to the DB — there is
-// no bank_transactions table. Confirm/Reject only toggle local UI state.
+// ─── Bank Reconciliation (AI-assisted) ──────────────────────────────────────
+// Parses a CSV client-side and matches against existing invoices/payments/
+// journal_entries (read-only). Confirm/Reject only toggle local UI state —
+// no journal is posted for a confirmed match (link only). Post Unmatched
+// (_recoPostUnmatched, Phase 3) is the one path here that DOES write to the
+// DB: it posts real journal_entries/journal_lines for lines that have no
+// match and aren't tagged Owner Drawings. Everything else is suggestion-only.
 let _recoTxns = []
 let _recoMatches = []
 
@@ -8199,7 +8202,7 @@ function _brSaveGlMap(map) {
 let _brCoaCache = null
 async function _brFetchCoaAccounts() {
   if (_brCoaCache && _brCoaCache.tenantId === APP.tenant.id) return _brCoaCache.accounts
-  const { data } = await sb.from('chart_of_accounts').select('id,code,name,account_type')
+  const { data } = await sb.from('chart_of_accounts').select('id,code,name_en,account_type')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('code')
   const accounts = data || []
   _brCoaCache = { tenantId: APP.tenant.id, accounts }
@@ -8230,7 +8233,7 @@ async function _recoRenderGlMap() {
       <div style="flex:1;font-size:13px">${_aiEscapeHtml(cat)}</div>
       <select class="form-input" style="max-width:260px;font-size:12px" onchange="_recoSetGlMap(${JSON.stringify(cat)}, this.value)">
         <option value="">${isBm?'— Guna default —':'— Use default —'}</option>
-        ${accounts.map(a=>`<option value="${a.id}" ${map[cat]===a.id?'selected':''}>${_aiEscapeHtml(a.code)} — ${_aiEscapeHtml(a.name)}</option>`).join('')}
+        ${accounts.map(a=>`<option value="${a.id}" ${map[cat]===a.id?'selected':''}>${_aiEscapeHtml(a.code)} — ${_aiEscapeHtml(a.name_en)}</option>`).join('')}
       </select>
     </div>`).join('')
 }
@@ -8267,7 +8270,7 @@ async function renderReconcile() {
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
       <button class="btn btn-primary btn-sm" onclick="_recoImportCategorize()"><i class="ti ti-file-import"></i> ${t.parse}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.match}</button>
-      <button class="btn btn-outline btn-sm" onclick="_recoRefineOther()"><i class="ti ti-sparkles"></i> ${isBm?'AI Refine Other':'AI Refine Other'}</button>
+      <button class="btn btn-outline btn-sm" onclick="_recoRefineOther()"><i class="ti ti-sparkles"></i> ${isBm?'AI Perhalusi "Lain-lain"':'AI Refine Other'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoPostUnmatched()"><i class="ti ti-book"></i> ${isBm?'Post Unmatched → Jurnal':'Post Unmatched → Journal'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoOpenGlMap()"><i class="ti ti-settings"></i> ${isBm?'Kategori → Akaun':'Category → Account'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoClearSession()"><i class="ti ti-trash"></i> ${t.clear}</button>
@@ -8544,7 +8547,7 @@ function _recoRenderResults() {
         <td style="max-width:220px;font-size:12px">${_aiEscapeHtml(txn.description)}</td>
         <td style="text-align:right;font-variant-numeric:tabular-nums;color:${txn.amount<0?'var(--danger)':'var(--success)'}">${formatRM(txn.amount)}</td>
         <td style="font-size:11px">
-          <select class="form-input" style="font-size:11px;padding:2px 4px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%" ${state==='confirmed'?'disabled':''} onchange="_recoSetCategory(${i}, this.value)">
+          <select class="form-input" style="font-size:11px;padding:2px 4px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%" ${(state==='confirmed'||txn.status==='posted')?'disabled':''} onchange="_recoSetCategory(${i}, this.value)">
             ${_BR_CATEGORIES.map(c=>`<option value="${_aiEscapeHtml(c)}" ${txn.category===c?'selected':''}>${_aiEscapeHtml(c)}</option>`).join('')}
           </select>
           ${txn._aiSuggestion ? `<div style="font-size:10px;color:var(--primary);margin-top:2px">→ ${_aiEscapeHtml(txn._aiSuggestion.category)} (${txn._aiSuggestion.confidence}%)
@@ -8698,8 +8701,19 @@ async function _recoRefineOther() {
 async function _recoPostUnmatched() {
   const isBm = APP.language==='bm'
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  const candidates = _recoTxns.filter(t =>
-    t._state !== 'confirmed' && t.status !== 'posted' && !/^Owner Drawings$/i.test(t.category||''))
+  // A line with a match candidate that's still pending (neither confirmed
+  // nor rejected) is NOT eligible — it might be the same money as an
+  // existing invoice/payment (which already has its own journal entry), so
+  // posting a new one here would double-count it. Only lines with no
+  // candidate at all, or ones the user explicitly rejected (i.e. looked at
+  // the suggested match and confirmed it's wrong), are safe to post.
+  const candidates = _recoTxns.filter(t => {
+    if (t.status === 'posted') return false
+    if (t._state === 'confirmed') return false
+    if (/^Owner Drawings$/i.test(t.category||'')) return false
+    const hasPendingCandidate = !!(t._match && t._match.candidate) && t._state !== 'rejected'
+    return !hasPendingCandidate
+  })
   if (!candidates.length) {
     showToast(isBm?'Tiada baris unmatched untuk post.':'No unmatched lines to post.', 'info')
     return
