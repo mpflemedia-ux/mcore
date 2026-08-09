@@ -865,8 +865,6 @@ html[data-skip-intro="1"] #intro-skip {
     overflow:visible !important;
     height:auto !important;
     max-height:none !important;
-    page-break-inside:avoid !important;
-    break-inside:avoid !important;
   }
   .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td, .pdoc-sd-totals, .pdoc-sd-tot { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid {
@@ -1879,7 +1877,7 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
   const bankAcc = (rec.employees?.bank_account_no || '').trim()
 
   return `
-  <div class="pdoc" style="--pdoc-accent:${accent};max-width:680px;margin:0 auto 28px">
+  <div class="pdoc" style="--pdoc-accent:${accent};max-width:680px;margin:0 auto 28px;page-break-inside:avoid;break-inside:avoid">
     ${_pdocHeaderHtml(tn,
       `${isBm?'Tarikh Bayaran':'Pay Date'}: ${_pdocPayDate(rec)}<br>${isBm?'Ruj.':'Ref'}: ${_pdocPayslipRef(rec)}`,
       `${isBm?'SLIP GAJI':'PAYSLIP'} — ${_pdocMonthYearLabel(rec.month, rec.year, isBm)}`,
@@ -8231,7 +8229,7 @@ async function _recoRenderGlMap() {
   body.innerHTML = usedCats.map(cat => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;font-size:13px">${_aiEscapeHtml(cat)}</div>
-      <select class="form-input" style="max-width:260px;font-size:12px" onchange="_recoSetGlMap(${JSON.stringify(cat)}, this.value)">
+      <select class="form-input" style="max-width:260px;font-size:12px" data-cat="${_aiEscapeHtml(cat)}" onchange="_recoSetGlMap(this.dataset.cat, this.value)">
         <option value="">${isBm?'— Guna default —':'— Use default —'}</option>
         ${accounts.map(a=>`<option value="${a.id}" ${map[cat]===a.id?'selected':''}>${_aiEscapeHtml(a.code)} — ${_aiEscapeHtml(a.name_en)}</option>`).join('')}
       </select>
@@ -8700,6 +8698,18 @@ async function _recoRefineOther() {
 // so re-running this after a partial post never double-posts.
 async function _recoPostUnmatched() {
   const isBm = APP.language==='bm'
+  // _recoRunMatch sets t._match on every line it processes (an object when
+  // a candidate is found, explicit null when none is) — a line that still
+  // has _match===undefined has never been checked against ERP records at
+  // all, so its eligibility below can't be trusted yet. Block rather than
+  // silently including it (or silently re-running Match on the user's
+  // behalf, which would also fire an AI call they didn't ask for right now).
+  if (_recoTxns.some(t => t._match === undefined && t.status !== 'posted')) {
+    showToast(isBm
+      ? 'Sila jalankan "Padan dengan AI" dahulu untuk semua baris sebelum Post Unmatched.'
+      : 'Please run "Match with AI" first for all lines before Post Unmatched.', 'warning')
+    return
+  }
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   // A line with a match candidate that's still pending (neither confirmed
   // nor rejected) is NOT eligible — it might be the same money as an
@@ -8730,13 +8740,13 @@ async function _recoPostUnmatched() {
     : `Post ${candidates.length} unmatched line(s) as separate journal entries? Confirmed/matched lines are NOT touched.`
   if (!confirm(msg)) return
 
-  let posted = 0, skipped = 0
+  let posted = 0, skipped = 0, skippedOldFormat = 0, skippedNoGl = 0
   for (const txn of candidates) {
-    if (!uuidRe.test(txn.id)) { skipped++; continue }
+    if (!uuidRe.test(txn.id)) { skipped++; skippedOldFormat++; continue }
     if (await _journalAlreadyPosted('bank_recon', txn.id)) { txn.status = 'posted'; continue }
     const isIncome = Number(txn.amount) >= 0
     const glAcc = await _brResolveGlAccount(txn.category, isIncome)
-    if (!glAcc) { skipped++; continue }
+    if (!glAcc) { skipped++; skippedNoGl++; continue }
     const amt = Math.abs(Number(txn.amount))
     const lines = isIncome
       ? [{ account_id: cashAcc, debit: amt, credit: 0 }, { account_id: glAcc, debit: 0, credit: amt }]
@@ -8759,9 +8769,13 @@ async function _recoPostUnmatched() {
   }
   _brSaveStore(_recoTxns)
   _recoRenderResults()
+  const reasonBits = []
+  if (skippedOldFormat) reasonBits.push(isBm ? `${skippedOldFormat} format id lama (import semula CSV)` : `${skippedOldFormat} old id format (re-import the CSV)`)
+  if (skippedNoGl) reasonBits.push(isBm ? `${skippedNoGl} tiada akaun GL / period lock` : `${skippedNoGl} no GL account / period locked`)
+  const reasonMsg = reasonBits.length ? ` (${reasonBits.join(', ')})` : ''
   showToast(isBm
-    ? `Selesai: ${posted} jurnal diposkan, ${skipped} dilangkau (tiada akaun GL / period lock / dah pos).`
-    : `Done: ${posted} journal(s) posted, ${skipped} skipped (no GL account / period locked / already posted).`,
+    ? `Selesai: ${posted} jurnal diposkan, ${skipped} dilangkau${reasonMsg}.`
+    : `Done: ${posted} journal(s) posted, ${skipped} skipped${reasonMsg}.`,
     posted ? 'success' : 'warning')
 }
 
