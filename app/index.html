@@ -8111,8 +8111,24 @@ const _BR_RULES = [
   { keywords:['LHDN','HASIL','EPF','KWSP','SOCSO','PERKESO','EIS ','SIP '], category:'Statutory', type:'out', conf:95 },
   { keywords:['SALARY','GAJI','PAYROLL'], category:'Salaries & Wages', type:'out', conf:90 },
   { keywords:['BANK CHARGE','MONTHLY FEE','SERVICE CHARGE','QUICK CHEQUE'], category:'Bank Charges', type:'out', conf:90 },
+  { keywords:['SEWA','RENTAL','RENT '], category:'Rental', type:'out', conf:85 },
+  { keywords:['INSURANCE','TAKAFUL','INSURAN'], category:'Insurance', type:'out', conf:85 },
+  { keywords:['POS LAJU','J&T','J&T EXPRESS','DHL','NINJAVAN','CITY-LINK','GDEX'], category:'Postage & Courier', type:'out', conf:85 },
+  { keywords:['STAMP DUTY','SSM','SETIAUSAHA','COMPANY SECRETARY'], category:'Professional Fees', type:'out', conf:80 },
   { keywords:['INTEREST CREDIT','PROFIT CREDIT','DIVIDEND'], category:'Other Income', type:'in', conf:85 },
   { keywords:['SHOPEE','TIKTOK','LAZADA'], category:'Sales Income', type:'in', conf:80 },
+]
+
+// Full category list offered in the manual override dropdown + AI Refine +
+// GL mapping modal — kept as one list so all three stay in sync. Owner
+// Drawings is intentionally NOT auto-detected by keyword (too ambiguous/
+// risky to guess from description alone) — user must set it manually,
+// which is also what excludes a line from Post Unmatched.
+const _BR_CATEGORIES = [
+  'Utilities','Telephone & Internet','Software & Subscriptions','Travel & Fuel',
+  'Statutory','Salaries & Wages','Bank Charges','Rental','Insurance',
+  'Postage & Courier','Professional Fees','Sales Income','Other Income',
+  'Other Expense','Owner Drawings'
 ]
 
 function _brLsKey() {
@@ -8166,6 +8182,62 @@ function _brFingerprint(date, amount, desc) {
   return [date, Number(amount).toFixed(2), _brNorm(desc).slice(0,40)].join('|')
 }
 
+// Category → chart_of_accounts.id, per tenant. Explicit user choice (set via
+// the "Category → Account" modal) always wins; Post Unmatched falls back to
+// the tenant's general_expense/sales_revenue default mapping when a category
+// has no explicit account, and skips the line (never guesses) when neither
+// is configured — same "never guess an account" rule _getExpenseAccountId follows.
+function _brGlMapKey() { return 'nexerp_br_glmap_' + (APP.tenant?.id || 'none') }
+function _brLoadGlMap() {
+  try { return JSON.parse(localStorage.getItem(_brGlMapKey()) || '{}') } catch(e) { return {} }
+}
+function _brSaveGlMap(map) {
+  try { localStorage.setItem(_brGlMapKey(), JSON.stringify(map)) } catch(e) {}
+}
+let _brCoaCache = null
+async function _brFetchCoaAccounts() {
+  if (_brCoaCache && _brCoaCache.tenantId === APP.tenant.id) return _brCoaCache.accounts
+  const { data } = await sb.from('chart_of_accounts').select('id,code,name,account_type')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('code')
+  const accounts = data || []
+  _brCoaCache = { tenantId: APP.tenant.id, accounts }
+  return accounts
+}
+async function _brResolveGlAccount(category, isIncome) {
+  const map = _brLoadGlMap()
+  if (map[category]) return map[category]
+  return await _getDefaultAccountId(isIncome ? 'sales_revenue' : 'general_expense')
+}
+function _recoOpenGlMap() {
+  document.getElementById('reco-glmap-modal-overlay')?.classList.add('active')
+  _recoRenderGlMap()
+}
+async function _recoRenderGlMap() {
+  const isBm = APP.language==='bm'
+  const body = document.getElementById('reco-glmap-body')
+  if (!body) return
+  body.innerHTML = `<div style="text-align:center;padding:20px"><div class="spinner dark"></div></div>`
+  const [accounts, map] = await Promise.all([_brFetchCoaAccounts(), Promise.resolve(_brLoadGlMap())])
+  const usedCats = Array.from(new Set([..._BR_CATEGORIES, ...(_recoTxns||[]).map(t=>t.category).filter(Boolean)]))
+  if (!accounts.length) {
+    body.innerHTML = `<div style="color:var(--text-3);font-size:13px">${isBm?'Tiada akaun dalam Carta Akaun lagi.':'No accounts in Chart of Accounts yet.'}</div>`
+    return
+  }
+  body.innerHTML = usedCats.map(cat => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;font-size:13px">${_aiEscapeHtml(cat)}</div>
+      <select class="form-input" style="max-width:260px;font-size:12px" onchange="_recoSetGlMap(${JSON.stringify(cat)}, this.value)">
+        <option value="">${isBm?'— Guna default —':'— Use default —'}</option>
+        ${accounts.map(a=>`<option value="${a.id}" ${map[cat]===a.id?'selected':''}>${_aiEscapeHtml(a.code)} — ${_aiEscapeHtml(a.name)}</option>`).join('')}
+      </select>
+    </div>`).join('')
+}
+function _recoSetGlMap(cat, accId) {
+  const map = _brLoadGlMap()
+  if (accId) map[cat] = accId; else delete map[cat]
+  _brSaveGlMap(map)
+}
+
 async function renderReconcile() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
@@ -8195,10 +8267,25 @@ async function renderReconcile() {
       <button class="btn btn-outline btn-sm" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.match}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoRefineOther()"><i class="ti ti-sparkles"></i> ${isBm?'AI Refine Other':'AI Refine Other'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoPostUnmatched()"><i class="ti ti-book"></i> ${isBm?'Post Unmatched → Jurnal':'Post Unmatched → Journal'}</button>
+      <button class="btn btn-outline btn-sm" onclick="_recoOpenGlMap()"><i class="ti ti-settings"></i> ${isBm?'Kategori → Akaun':'Category → Account'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoClearSession()"><i class="ti ti-trash"></i> ${t.clear}</button>
     </div>
   </div>
-  <div id="reco-result"></div>`
+  <div id="reco-result"></div>
+  <div class="modal-overlay" id="reco-glmap-modal-overlay">
+    <div class="modal-box" style="max-width:520px;max-height:80vh;overflow-y:auto">
+      <div class="modal-box-header">${isBm?'Kategori → Akaun GL':'Category → GL Account'}</div>
+      <div class="modal-box-body">
+        <p style="font-size:12px;color:var(--text-3);margin:0">${isBm
+          ? 'Tetapkan akaun GL untuk setiap kategori. Tanpa tetapan, sistem guna default (Perbelanjaan Am / Hasil Jualan) daripada Default Account Mappings — jika default pun tiada, baris itu dilangkau semasa Post Unmatched.'
+          : 'Set the GL account for each category. Without a setting, it falls back to the General Expense / Sales Revenue default mapping — if that default is also missing, the line is skipped during Post Unmatched.'}</p>
+        <div id="reco-glmap-body"></div>
+      </div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('reco-glmap-modal-overlay').classList.remove('active')">${isBm?'Tutup':'Close'}</button>
+      </div>
+    </div>
+  </div>`
   _recoTxns = _brLoadStore()
   _recoMatches = _recoTxns.map(t => t._match || null)
   if (_recoTxns.length) _recoRenderResults()
@@ -8267,7 +8354,10 @@ function _recoParseCsvText(text) {
     existingFp.add(fp)
     const cat = _brSuggestCategory(description, amount)
     rows.push({
-      id: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      // must be a real uuid (not just a locally-unique token) — it's used
+      // as journal_entries.source_id (uuid column) when posting via
+      // _recoPostUnmatched, and as the idempotency key via _journalAlreadyPosted
+      id: (crypto.randomUUID && crypto.randomUUID()) || ('local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)),
       date, description, amount,
       category: cat.category,
       categoryConfidence: cat.confidence,
@@ -8451,10 +8541,18 @@ function _recoRenderResults() {
         <td style="white-space:nowrap">${formatDate(txn.date)}</td>
         <td style="max-width:220px;font-size:12px">${_aiEscapeHtml(txn.description)}</td>
         <td style="text-align:right;font-variant-numeric:tabular-nums;color:${txn.amount<0?'var(--danger)':'var(--success)'}">${formatRM(txn.amount)}</td>
-        <td style="font-size:11px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%">${_aiEscapeHtml(txn.category||'-')}</td>
+        <td style="font-size:11px">
+          <select class="form-input" style="font-size:11px;padding:2px 4px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%" ${state==='confirmed'?'disabled':''} onchange="_recoSetCategory(${i}, this.value)">
+            ${_BR_CATEGORIES.map(c=>`<option value="${_aiEscapeHtml(c)}" ${txn.category===c?'selected':''}>${_aiEscapeHtml(c)}</option>`).join('')}
+          </select>
+          ${txn._aiSuggestion ? `<div style="font-size:10px;color:var(--primary);margin-top:2px">→ ${_aiEscapeHtml(txn._aiSuggestion.category)} (${txn._aiSuggestion.confidence}%)
+            <button onclick="_recoApplySuggestion(${i})" style="border:none;background:none;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:10px;padding:0">${isBm?'Guna':'Apply'}</button></div>` : ''}
+        </td>
         <td style="font-size:12px">${cand ? `<span>[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)}</span>` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
         <td>${m && m.confidence!=null ? Math.round((m.confidence <= 1 ? m.confidence*100 : m.confidence))+'%' : '-'}</td>
-        <td>${state
+        <td>${txn.status==='posted'
+          ? `<span style="color:var(--success);font-size:12px;font-weight:600" title="${_aiEscapeHtml(txn.journal_ref||'')}"><i class="ti ti-book"></i> ${isBm?'Diposkan':'Posted'}</span>`
+          : state
           ? `<span style="color:${state==='confirmed'?'var(--success)':'var(--text-3)'};font-size:12px;font-weight:600">${state==='confirmed'?t.confirmed:t.rejected}</span>`
           : `<button class="btn btn-outline btn-sm" style="padding:3px 8px" onclick="_recoSetState(${i},'confirmed')" ${cand?'':'disabled'}><i class="ti ti-check"></i></button>
              <button class="btn btn-outline btn-sm" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)" onclick="_recoSetState(${i},'rejected')"><i class="ti ti-x"></i></button>`}
@@ -8506,6 +8604,149 @@ function _recoSetState(i, state) {
       ? 'Padanan disahkan (pautan sahaja — tiada jurnal auto).'
       : 'Match confirmed (link only — no auto journal).', 'success')
   }
+}
+
+// Manual category override — also how a line gets marked "Owner Drawings"
+// (never auto-detected by keyword, see _BR_CATEGORIES), and how a
+// wrongly-categorized line gets corrected before Post Unmatched runs.
+function _recoSetCategory(i, cat) {
+  if (!_recoTxns[i] || !cat) return
+  _recoTxns[i].category = cat
+  _recoTxns[i].categorySource = 'manual'
+  _recoTxns[i].categoryConfidence = 100
+  delete _recoTxns[i]._aiSuggestion
+  _brLearnPattern(_recoTxns[i].description, cat, _recoTxns[i].amount)
+  _brSaveStore(_recoTxns)
+}
+
+function _recoApplySuggestion(i) {
+  const txn = _recoTxns[i]
+  if (!txn || !txn._aiSuggestion) return
+  txn.category = txn._aiSuggestion.category
+  txn.categorySource = 'ai'
+  txn.categoryConfidence = txn._aiSuggestion.confidence
+  delete txn._aiSuggestion
+  _brLearnPattern(txn.description, txn.category, txn.amount)
+  _brSaveStore(_recoTxns)
+  _recoRenderResults()
+}
+
+// Phase 2 — AI Refine Other. Only sends lines still stuck on the "Other
+// Income"/"Other Expense" fallback (rule + pattern memory both missed) to
+// the ai-proxy edge function; everything already categorized by a rule or
+// learned pattern is left alone. Suggestions are advisory only — nothing on
+// the line changes until the user clicks "Apply" per row (_recoApplySuggestion),
+// same "user tick, not auto-apply" behaviour Phase 1 confirm/match already
+// follows. Fails gracefully (toast, no throw) if the edge function doesn't
+// support the 'categorize_bank' action yet.
+async function _recoRefineOther() {
+  const isBm = APP.language==='bm'
+  const others = _recoTxns
+    .map((t,i) => ({ t, i }))
+    .filter(({t}) => /^Other (Income|Expense)$/i.test(t.category||'') && t._state !== 'confirmed')
+  if (!others.length) {
+    showToast(isBm?'Tiada baris "Other" untuk refine.':'No "Other" lines to refine.', 'info')
+    return
+  }
+  showToast(isBm?'Menjana cadangan AI...':'Generating AI suggestions...', 'info')
+  let suggestions = []
+  try {
+    const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+      action: 'categorize_bank',
+      transactions: others.map(({t,i}) => ({ idx:i, date:t.date, description:t.description, amount:t.amount })),
+      categories: _BR_CATEGORIES.filter(c => !/^Other /i.test(c) && c !== 'Owner Drawings'),
+      language: APP.language
+    }})
+    if (error) throw error
+    if (data?.success && Array.isArray(data.data?.suggestions)) suggestions = data.data.suggestions
+  } catch (e) {
+    console.warn('categorize_bank unavailable', e)
+    showToast(isBm
+      ? 'AI Refine tak tersedia buat masa ini (edge function belum sokong categorize_bank).'
+      : 'AI Refine unavailable right now (edge function does not support categorize_bank yet).', 'warning')
+    return
+  }
+  if (!suggestions.length) {
+    showToast(isBm?'AI tiada cadangan baharu.':'AI has no new suggestions.', 'info')
+    return
+  }
+  let n = 0
+  suggestions.forEach(s => {
+    const txn = _recoTxns[s.idx]
+    if (!txn || !s.category || !_BR_CATEGORIES.includes(s.category)) return
+    txn._aiSuggestion = { category: s.category, confidence: Math.round(s.confidence||70) }
+    n++
+  })
+  _brSaveStore(_recoTxns)
+  _recoRenderResults()
+  showToast(isBm ? `${n} cadangan diterima — semak & klik "Guna".` : `${n} suggestion(s) received — review and click "Apply".`, 'success')
+}
+
+// Phase 3 — Post Unmatched → Journal. Only lines the user has NOT confirmed
+// as a match to an existing invoice/payment/journal (confirmed = already
+// represented in the ledger, posting again would double-count) and not
+// manually marked "Owner Drawings" (personal transfer, not a P&L event) are
+// eligible. Each eligible line becomes its own balanced Dr/Cr journal entry
+// against the tenant's Cash/Bank default account + the resolved category
+// account (_brResolveGlAccount) — same _postJournalEntry every other
+// auto-posting flow in this app uses, so period lock / ref numbering /
+// audit log all behave identically. Idempotent via source_table='bank_recon'
+// + source_id=txn.id (a real uuid — see the id generator in _recoParseCsvText)
+// so re-running this after a partial post never double-posts.
+async function _recoPostUnmatched() {
+  const isBm = APP.language==='bm'
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const candidates = _recoTxns.filter(t =>
+    t._state !== 'confirmed' && t.status !== 'posted' && !/^Owner Drawings$/i.test(t.category||''))
+  if (!candidates.length) {
+    showToast(isBm?'Tiada baris unmatched untuk post.':'No unmatched lines to post.', 'info')
+    return
+  }
+  const cashAcc = await _getDefaultAccountId('cash')
+  if (!cashAcc) {
+    showToast(isBm
+      ? 'Sila tetapkan akaun Tunai/Bank dalam Default Account Mappings dahulu.'
+      : 'Please configure the Cash/Bank default account mapping first.', 'warning')
+    return
+  }
+  const msg = isBm
+    ? `Post ${candidates.length} baris belum padan sebagai jurnal berasingan? Baris yang dipadan/disahkan TIDAK disentuh.`
+    : `Post ${candidates.length} unmatched line(s) as separate journal entries? Confirmed/matched lines are NOT touched.`
+  if (!confirm(msg)) return
+
+  let posted = 0, skipped = 0
+  for (const txn of candidates) {
+    if (!uuidRe.test(txn.id)) { skipped++; continue }
+    if (await _journalAlreadyPosted('bank_recon', txn.id)) { txn.status = 'posted'; continue }
+    const isIncome = Number(txn.amount) >= 0
+    const glAcc = await _brResolveGlAccount(txn.category, isIncome)
+    if (!glAcc) { skipped++; continue }
+    const amt = Math.abs(Number(txn.amount))
+    const lines = isIncome
+      ? [{ account_id: cashAcc, debit: amt, credit: 0 }, { account_id: glAcc, debit: 0, credit: amt }]
+      : [{ account_id: glAcc, debit: amt, credit: 0 }, { account_id: cashAcc, debit: 0, credit: amt }]
+    try {
+      const res = await _postJournalEntry({
+        description: `Bank Recon: ${txn.description}`.slice(0, 200),
+        entryDate: txn.date,
+        entryType: 'auto',
+        lines,
+        sourceTable: 'bank_recon',
+        sourceId: txn.id
+      })
+      if (res) { txn.status = 'posted'; txn.journal_ref = res.ref_no; posted++ }
+      else skipped++
+    } catch (e) {
+      console.warn('bank recon post failed', txn.id, e)
+      skipped++
+    }
+  }
+  _brSaveStore(_recoTxns)
+  _recoRenderResults()
+  showToast(isBm
+    ? `Selesai: ${posted} jurnal diposkan, ${skipped} dilangkau (tiada akaun GL / period lock / dah pos).`
+    : `Done: ${posted} journal(s) posted, ${skipped} skipped (no GL account / period locked / already posted).`,
+    posted ? 'success' : 'warning')
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
