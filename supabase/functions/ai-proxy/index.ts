@@ -6,14 +6,19 @@
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
 // Actions: chat, categorize, receipt (vision), scan_application_form (vision),
-// scan_ssm_certificate (vision), scan_bank_statement (vision), narrate_report,
-// business_insight, draft_reminder, follow_up_suggestion.
-// 'receipt', 'scan_application_form', 'scan_ssm_certificate', and
-// 'scan_bank_statement' use a vision-capable model read from the
-// GROQ_VISION_MODEL secret (falls back to qwen/qwen3.6-27b) — kept out of code so
-// it can be swapped without a redeploy if Groq deprecates it, which has happened
-// to every prior Groq vision model on a roughly 3-4 month cadence. Every other
-// action uses CHAT_MODEL (text-only).
+// scan_ssm_certificate (vision), scan_bank_statement (vision),
+// extract_bank_transactions (vision), narrate_report, business_insight,
+// draft_reminder, follow_up_suggestion, reconcile_match, month_end_summary,
+// generate_po, marketing_advice, tax_guidance, generate_document,
+// daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
+// production_check, hr_payslip_note.
+// 'receipt', 'scan_application_form', 'scan_ssm_certificate',
+// 'scan_bank_statement', and 'extract_bank_transactions' use a
+// vision-capable model read from the GROQ_VISION_MODEL secret (falls back
+// to qwen/qwen3.6-27b) — kept out of code so it can be swapped without a
+// redeploy if Groq deprecates it, which has happened to every prior Groq
+// vision model on a roughly 3-4 month cadence. Every other action uses
+// CHAT_MODEL (text-only).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -318,6 +323,121 @@ async function handleScanBankStatement(body: Record<string, unknown>) {
     account_name: str(parsed.account_name),
     address: str(parsed.address),
   }
+}
+
+// Counterpart to handleScanBankStatement above (which reads ONLY the
+// account header, explicitly excluding transaction rows): this extracts the
+// transaction line items themselves, for Bank Reconciliation's PDF import
+// (see _recoPdfUpload in app/index.html). Called once PER PAGE by the
+// client rather than batched across a whole statement in one call — a full
+// month's statement can have 30-50+ rows, and this file has already hit a
+// real, documented truncation failure ("max completion tokens reached
+// before generating a valid document") on a FLAT, much shorter field list
+// at max_tokens:2048 (see the PERSONAL_MAX_TOKENS note below) — a page's
+// worth of rows is a much safer response size to keep inside budget than
+// asking for the entire statement in a single JSON array. max_tokens here
+// is set higher (8192) than every other action in this file for the same
+// reason: a wide/dense statement page can legitimately have more rows than
+// any other JSON shape this file asks the model to produce.
+//
+// debit/credit are asked for as SEPARATE fields (not one signed amount) —
+// the model just has to read which column a number is printed in, not
+// judge whether a transaction is money in or out from context. This is a
+// more reliable read than a sign inference, and matches the actual column
+// layout on every major Malaysian bank statement (Maybank, CIMB, Public
+// Bank, RHB, Hong Leong).
+//
+// KNOWN LIMITATION: written but not yet validated against a real bank
+// statement PDF — no live Groq access or real statement sample was
+// available in the environment this was built in. Malaysian bank
+// statement layouts vary meaningfully (some show separate debit/credit
+// columns, some show a single amount column with a DR/CR marker, some
+// print the year only once per page/section rather than per row) — this
+// prompt was written to handle all of those, but that's untested reasoning,
+// not a verified result. The client-side flow (_recoPdfUpload) treats this
+// as a best-effort extraction and requires the user to review the parsed
+// rows in the existing CSV textarea before anything is imported — so a
+// wrong/incomplete extraction here surfaces as visibly wrong text for the
+// user to catch or fix, not as silently-wrong imported data.
+async function handleExtractBankTransactions(body: Record<string, unknown>) {
+  const imageUrls = buildImageUrls(body)
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  const systemPrompt =
+    'Extract every transaction row from this ONE page of a Malaysian bank statement image. ' +
+    'Return ONLY a JSON object, no other text, with EXACTLY this shape: {"transactions": ' +
+    '[{"date": "<YYYY-MM-DD>", "description": "<transaction description exactly as printed>", ' +
+    '"debit": <plain number with no currency symbol, or null if this row has no debit/' +
+    'withdrawal/outgoing amount>, "credit": <plain number, or null if this row has no credit/' +
+    'deposit/incoming amount>}]}. Read the debit and credit amounts from whichever COLUMN they ' +
+    'actually appear in on the statement — do not infer the sign from the description text. ' +
+    'Skip header rows, column-label rows, and footer/summary rows (opening balance, closing ' +
+    'balance, page totals, "brought forward"/"carried forward") — only include actual ' +
+    'transaction rows. If the year is not printed on every row (some statements only print it ' +
+    'once at the top of the page or section), infer it from the statement period printed ' +
+    'elsewhere on the page. Return {"transactions": []} if this page has no transaction table ' +
+    'at all (e.g. a cover page).'
+
+  let raw: string
+  try {
+    raw = await callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract every transaction row from this bank statement page.' },
+            ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+          ],
+        },
+      ],
+      visionModel,
+      { response_format: { type: 'json_object' }, max_tokens: 8192 },
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Bank transaction extraction vision call failed (model=${visionModel}): ${msg}`)
+  }
+
+  let parsed: { transactions?: unknown }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+  }
+
+  // The prompt asks for a plain JSON number, but a comma-formatted amount
+  // (e.g. "1,500.00") is NOT valid JSON number syntax — a model that copies
+  // the printed formatting literally emits it as a string instead, which
+  // would silently vanish under a strict `typeof === 'number'` check (and
+  // if credit/debit both end up null, the row is dropped entirely by the
+  // filter below). Accept a numeric string too, stripping thousands commas.
+  const asAmount = (v: unknown): number | null => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+    if (typeof v === 'string') {
+      const n = Number(v.replace(/,/g, '').trim())
+      if (Number.isFinite(n)) return n
+    }
+    return null
+  }
+
+  const rawRows = Array.isArray(parsed.transactions) ? parsed.transactions : []
+  const transactions = rawRows
+    .map((r) => {
+      const rec = r as Record<string, unknown>
+      return {
+        date: typeof rec.date === 'string' ? rec.date : null,
+        description: typeof rec.description === 'string' ? rec.description : '',
+        debit: asAmount(rec.debit),
+        credit: asAmount(rec.credit),
+      }
+    })
+    // A row this loose about missing fields is more likely a header/summary
+    // row the model failed to filter than a genuine null-amount transaction
+    // — drop it here rather than pass it to the client to silently skip.
+    .filter((r) => r.date && (r.debit != null || r.credit != null))
+
+  return { transactions }
 }
 
 // FLAT field list — no nested arrays/objects. The original schema nested
@@ -1203,6 +1323,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'scan_bank_statement':
         data = await handleScanBankStatement(body)
+        break
+      case 'extract_bank_transactions':
+        data = await handleExtractBankTransactions(body)
         break
       case 'narrate_report':
         data = await handleNarrateReport(body)
