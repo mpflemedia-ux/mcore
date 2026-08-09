@@ -8276,7 +8276,7 @@ function _brSuggestCategory(desc, amount) {
   }
   // pattern memory per tenant
   try {
-    const patterns = JSON.parse(localStorage.getItem('nexerp_br_patterns_' + (APP.tenant?.id||'')) || '[]')
+    const patterns = JSON.parse(localStorage.getItem(_brPatternsKey()) || '[]')
     for (const p of patterns.sort((a,b)=>(b.count||0)-(a.count||0))) {
       if (p.type && p.type !== type) continue
       if (p.keyword && norm.includes(_brNorm(p.keyword))) {
@@ -8286,18 +8286,29 @@ function _brSuggestCategory(desc, amount) {
   } catch(e) {}
   return { category: type === 'in' ? 'Other Income' : 'Other Expense', confidence: 40, source: 'default' }
 }
-function _brLearnPattern(desc, category, amount) {
+function _brPatternsKey() { return 'nexerp_br_patterns_' + (APP.tenant?.id||'') }
+
+// Pure — mutates the given in-memory patterns array, no localStorage I/O.
+// Factored out so a bulk caller (_recoApplyAllSuggestions) can read the
+// store once, mutate it in memory for every line in the batch, and write
+// once at the end, instead of _brLearnPattern's read+parse+stringify+write
+// round trip repeated once per line — on an 80-90 line "Apply All" batch,
+// that was a real, visible main-thread stall proportional to N.
+function _brLearnPatternInto(patterns, desc, category, amount) {
   if (!desc || !category) return
   const type = Number(amount) >= 0 ? 'in' : 'out'
   const words = _brNorm(desc).split(' ').filter(w => w.length >= 3).slice(0, 2)
   if (!words.length) return
   const keyword = words.join(' ')
-  const key = 'nexerp_br_patterns_' + (APP.tenant?.id||'')
-  let patterns = []
-  try { patterns = JSON.parse(localStorage.getItem(key) || '[]') } catch(e) {}
   const ex = patterns.find(p => _brNorm(p.keyword) === keyword && p.category === category)
   if (ex) { ex.count = (ex.count||1)+1; ex.lastUsed = new Date().toISOString().slice(0,10) }
   else patterns.push({ keyword, category, type, count: 1, lastUsed: new Date().toISOString().slice(0,10) })
+}
+function _brLearnPattern(desc, category, amount) {
+  const key = _brPatternsKey()
+  let patterns = []
+  try { patterns = JSON.parse(localStorage.getItem(key) || '[]') } catch(e) {}
+  _brLearnPatternInto(patterns, desc, category, amount)
   try { localStorage.setItem(key, JSON.stringify(patterns.slice(-200))) } catch(e) {}
 }
 function _brFingerprint(date, amount, desc) {
@@ -8416,6 +8427,7 @@ async function renderReconcile() {
       <button class="btn btn-primary btn-sm" onclick="_recoImportCategorize()"><i class="ti ti-file-import"></i> ${t.parse}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.match}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoRefineOther()"><i class="ti ti-sparkles"></i> ${isBm?'AI Perhalusi "Lain-lain"':'AI Refine Other'}</button>
+      <button class="btn btn-outline btn-sm" onclick="_recoApplyAllSuggestions()"><i class="ti ti-checks"></i> ${isBm?'Guna Semua Cadangan':'Apply All Suggestions'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoPostUnmatched()"><i class="ti ti-book"></i> ${isBm?'Post Unmatched → Jurnal':'Post Unmatched → Journal'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoOpenGlMap()"><i class="ti ti-settings"></i> ${isBm?'Kategori → Akaun':'Category → Account'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoClearSession()"><i class="ti ti-trash"></i> ${t.clear}</button>
@@ -8909,27 +8921,81 @@ function _recoSetCategory(i, cat) {
   _brSaveStore(_recoTxns)
 }
 
-function _recoApplySuggestion(i) {
-  const txn = _recoTxns[i]
-  if (!txn || !txn._aiSuggestion) return
+// Shared by the per-row Apply (_recoApplySuggestion) and the bulk Apply All
+// (_recoApplyAllSuggestions) — same guard either way: already booked to a
+// GL account (posted), or already confirmed as a match to an existing
+// invoice/payment, means changing the category now would desync the
+// displayed/learned category from what's actually in effect, so the
+// suggestion is just cleared, not applied (same guard the manual category
+// <select> applies via its disabled condition). Mutates txn in place;
+// caller is responsible for _brSaveStore + _recoRenderResults afterward.
+//
+// patterns (optional): an in-memory pattern-store array to mutate via
+// _brLearnPatternInto instead of doing a full localStorage read+write per
+// call — passed by the bulk caller so N applies cost one read + one write
+// total, not N of each. Per-row Apply omits it and falls back to
+// _brLearnPattern's own single read-write.
+function _recoApplyOneSuggestion(txn, patterns) {
   if (txn.status === 'posted' || txn._state === 'confirmed') {
-    // Already booked to a GL account (posted), or already confirmed as a
-    // match to an existing invoice/payment — changing the category now
-    // would desync the displayed/learned category from what's actually in
-    // effect, with no re-post/re-learn offered here. Same guard the manual
-    // category <select> already applies (see the disabled condition above).
     delete txn._aiSuggestion
-    _brSaveStore(_recoTxns)
-    _recoRenderResults()
     return
   }
   txn.category = txn._aiSuggestion.category
   txn.categorySource = 'ai'
   txn.categoryConfidence = txn._aiSuggestion.confidence
   delete txn._aiSuggestion
-  _brLearnPattern(txn.description, txn.category, txn.amount)
+  if (patterns) _brLearnPatternInto(patterns, txn.description, txn.category, txn.amount)
+  else _brLearnPattern(txn.description, txn.category, txn.amount)
+}
+
+function _recoApplySuggestion(i) {
+  const txn = _recoTxns[i]
+  if (!txn || !txn._aiSuggestion) return
+  _recoApplyOneSuggestion(txn)
   _brSaveStore(_recoTxns)
   _recoRenderResults()
+}
+
+// Bulk version of the above — applies every pending AI suggestion in one
+// go instead of clicking "Apply" per row, which is impractical once a
+// batch has dozens of "Other"-category lines (a real bank statement can
+// easily produce 80-90+). Still one explicit user action (a confirm()
+// showing exactly how many lines will change) before anything is touched
+// — it's a faster path to the same per-row Apply, not a bypass of the
+// "review before commit" principle the rest of Bank Recon follows.
+//
+// pending.forEach always runs, even when applicableCount is 0 — a pending
+// suggestion on an already-posted/confirmed line (stale, e.g. the user
+// confirmed a match after AI Refine ran but before clicking that row's own
+// Apply) still needs _recoApplyOneSuggestion to clear its _aiSuggestion
+// flag, or that row's stale "Apply" link would keep rendering forever.
+// Only the confirm() dialog is skipped when nothing will actually change.
+function _recoApplyAllSuggestions() {
+  const isBm = APP.language==='bm'
+  const pending = _recoTxns.filter(t => t._aiSuggestion)
+  if (!pending.length) {
+    showToast(isBm?'Tiada cadangan AI untuk di-Apply.':'No AI suggestions to apply.', 'info')
+    return
+  }
+  const applicableCount = pending.filter(t => t.status !== 'posted' && t._state !== 'confirmed').length
+  if (applicableCount > 0) {
+    const msg = isBm
+      ? `Guna ${applicableCount} cadangan kategori AI sekali gus? Ini cuma tukar kategori baris-baris tu — tiada jurnal diposkan.`
+      : `Apply ${applicableCount} AI category suggestion(s) at once? This only changes the category on those lines — no journal is posted.`
+    if (!confirm(msg)) return
+  }
+  const patKey = _brPatternsKey()
+  let patterns = []
+  try { patterns = JSON.parse(localStorage.getItem(patKey) || '[]') } catch(e) {}
+  pending.forEach(t => _recoApplyOneSuggestion(t, patterns))
+  try { localStorage.setItem(patKey, JSON.stringify(patterns.slice(-200))) } catch(e) {}
+  _brSaveStore(_recoTxns)
+  _recoRenderResults()
+  showToast(
+    applicableCount > 0
+      ? (isBm ? `${applicableCount} kategori dikemaskini.` : `${applicableCount} categories updated.`)
+      : (isBm ? 'Cadangan lapuk dikosongkan.' : 'Stale suggestions cleared.'),
+    'success')
 }
 
 // Phase 2 — AI Refine Other. Only sends lines still stuck on the "Other
