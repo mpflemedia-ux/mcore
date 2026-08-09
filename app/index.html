@@ -8115,7 +8115,11 @@ const _BR_RULES = [
   { keywords:['LHDN','HASIL','EPF','KWSP','SOCSO','PERKESO','EIS ','SIP '], category:'Statutory', type:'out', conf:95 },
   { keywords:['SALARY','GAJI','PAYROLL'], category:'Salaries & Wages', type:'out', conf:90 },
   { keywords:['BANK CHARGE','MONTHLY FEE','SERVICE CHARGE','QUICK CHEQUE'], category:'Bank Charges', type:'out', conf:90 },
-  { keywords:['SEWA','RENTAL','RENT '], category:'Rental', type:'out', conf:85 },
+  // 'RENT ' (trailing-space trick) deliberately left out — _brNorm() trims
+  // trailing whitespace before the substring check, so it would match any
+  // description merely containing "RENT" as a substring (e.g. "CURRENT
+  // ACCT"), not the whole word. 'RENTAL' is specific enough on its own.
+  { keywords:['SEWA','RENTAL'], category:'Rental', type:'out', conf:85 },
   { keywords:['INSURANCE','TAKAFUL','INSURAN'], category:'Insurance', type:'out', conf:85 },
   { keywords:['POS LAJU','J&T','J&T EXPRESS','DHL','NINJAVAN','CITY-LINK','GDEX'], category:'Postage & Courier', type:'out', conf:85 },
   { keywords:['STAMP DUTY','SSM','SETIAUSAHA','COMPANY SECRETARY'], category:'Professional Fees', type:'out', conf:80 },
@@ -8667,17 +8671,24 @@ function _recoSetCategory(i, cat) {
   _recoTxns[i].categorySource = 'manual'
   _recoTxns[i].categoryConfidence = 100
   delete _recoTxns[i]._aiSuggestion
-  _brLearnPattern(_recoTxns[i].description, cat, _recoTxns[i].amount)
+  // Never teach "Owner Drawings" into pattern memory — it's meant to stay a
+  // deliberate per-line manual choice (see _BR_CATEGORIES comment). Learning
+  // it here would let _brSuggestCategory silently auto-tag a future,
+  // unrelated business expense as Owner Drawings just because it shares a
+  // couple of keywords, silently excluding it from Post Unmatched.
+  if (cat !== 'Owner Drawings') _brLearnPattern(_recoTxns[i].description, cat, _recoTxns[i].amount)
   _brSaveStore(_recoTxns)
 }
 
 function _recoApplySuggestion(i) {
   const txn = _recoTxns[i]
   if (!txn || !txn._aiSuggestion) return
-  if (txn.status === 'posted') {
-    // Already booked to a GL account via Post Unmatched — changing the
-    // category now would desync the displayed category from what was
-    // actually posted, with no re-post/reversal offered here.
+  if (txn.status === 'posted' || txn._state === 'confirmed') {
+    // Already booked to a GL account (posted), or already confirmed as a
+    // match to an existing invoice/payment — changing the category now
+    // would desync the displayed/learned category from what's actually in
+    // effect, with no re-post/re-learn offered here. Same guard the manual
+    // category <select> already applies (see the disabled condition above).
     delete txn._aiSuggestion
     _brSaveStore(_recoTxns)
     _recoRenderResults()
@@ -8814,7 +8825,12 @@ async function _recoPostUnmatched() {
   try {
     for (const txn of candidates) {
       if (!uuidRe.test(txn.id)) { skipped++; skippedOldFormat++; continue }
-      if (await _journalAlreadyPosted('bank_recon', txn.id)) { txn.status = 'posted'; alreadyPosted++; continue }
+      // Query directly (rather than the boolean-only _journalAlreadyPosted)
+      // so the ref_no is available to populate txn.journal_ref for the
+      // "Posted" badge tooltip, same as a fresh post does a few lines below.
+      const { data: existingEntry } = await sb.from('journal_entries').select('ref_no')
+        .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon').eq('source_id', txn.id).limit(1).maybeSingle()
+      if (existingEntry) { txn.status = 'posted'; txn.journal_ref = existingEntry.ref_no; alreadyPosted++; continue }
       const isIncome = Number(txn.amount) >= 0
       const glAcc = await _brResolveGlAccount(txn.category, isIncome)
       if (!glAcc) { skipped++; skippedNoGl++; continue }
