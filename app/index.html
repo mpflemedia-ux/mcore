@@ -8227,6 +8227,10 @@ const _BR_RULES = [
   { keywords:['STAMP DUTY','SSM','SETIAUSAHA','COMPANY SECRETARY'], category:'Professional Fees', type:'out', conf:80 },
   { keywords:['INTEREST CREDIT','PROFIT CREDIT','DIVIDEND'], category:'Other Income', type:'in', conf:85 },
   { keywords:['SHOPEE','TIKTOK','LAZADA'], category:'Sales Income', type:'in', conf:80 },
+  // Cash & carry wholesalers (Segi, Mydin Wholesale, etc.) — stock/raw
+  // material purchases, not a generic operating expense. Specific enough
+  // a substring that it shouldn't collide with anything else.
+  { keywords:['CASH & CARRY','CASH N CARRY'], category:'Cost of Sales', type:'out', conf:85 },
 ]
 
 // journal_entries.source_id is a real Postgres `uuid` column — a bank recon
@@ -8244,7 +8248,7 @@ const _RECO_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const _BR_CATEGORIES = [
   'Utilities','Telephone & Internet','Software & Subscriptions','Travel & Fuel',
   'Statutory','Salaries & Wages','Bank Charges','Rental','Insurance',
-  'Postage & Courier','Professional Fees','Sales Income','Other Income',
+  'Postage & Courier','Professional Fees','Cost of Sales','Sales Income','Other Income',
   'Other Expense','Owner Drawings'
 ]
 // Categories offered to the ai-proxy edge function for suggestions AND
@@ -8264,7 +8268,7 @@ const _BR_CATEGORY_LABEL_BM = {
   'Software & Subscriptions':'Perisian & Langganan', 'Travel & Fuel':'Perjalanan & Minyak',
   'Statutory':'Statutori', 'Salaries & Wages':'Gaji & Upah', 'Bank Charges':'Caj Bank',
   'Rental':'Sewa', 'Insurance':'Insurans', 'Postage & Courier':'Pos & Kurier',
-  'Professional Fees':'Yuran Profesional', 'Sales Income':'Hasil Jualan',
+  'Professional Fees':'Yuran Profesional', 'Cost of Sales':'Kos Barang Dijual', 'Sales Income':'Hasil Jualan',
   'Other Income':'Pendapatan Lain', 'Other Expense':'Perbelanjaan Lain',
   'Owner Drawings':'Pengeluaran Pemilik'
 }
@@ -8379,6 +8383,14 @@ async function _brFetchCoaAccounts() {
 async function _brResolveGlAccount(category, isIncome) {
   const map = _brLoadGlMap()
   if (map[category]) return map[category]
+  // 'Cost of Sales' falls back to the tenant's own COGS default mapping
+  // (DEFAULT_ACCOUNT_MAPPING_KEYS 'cogs', same account Sales/POS auto-
+  // posting already uses) rather than General Expense — stock/raw
+  // material purchases don't belong lumped into generic opex. Same "never
+  // guess" rule as everywhere else: if the tenant hasn't configured that
+  // mapping, this returns null and the line is skipped (skippedNoGl), not
+  // silently posted to the wrong account.
+  if (category === 'Cost of Sales') return await _getDefaultAccountId('cogs')
   return await _getDefaultAccountId(isIncome ? 'sales_revenue' : 'general_expense')
 }
 function _recoOpenGlMap() {
