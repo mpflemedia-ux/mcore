@@ -8562,7 +8562,7 @@ async function _recoRunMatch() {
     console.warn('AI match optional', err)
   }
 
-  _recoTxns.forEach((t, i) => { t._match = _recoMatches[i] })
+  _recoTxns.forEach((t, i) => { t._match = _recoMatches[i]; t._matchChecked = true })
   _brSaveStore(_recoTxns)
   _recoRenderResults()
 }
@@ -8746,7 +8746,7 @@ async function _recoRefineOther() {
   suggestions.forEach(s => {
     const txn = _recoTxns[s.idx]
     if (!txn || !s.category || !_BR_AI_CATEGORIES.includes(s.category)) return
-    txn._aiSuggestion = { category: s.category, confidence: Math.round(s.confidence||70) }
+    txn._aiSuggestion = { category: s.category, confidence: Math.round(Number.isFinite(s.confidence) ? s.confidence : 70) }
     n++
   })
   _brSaveStore(_recoTxns)
@@ -8780,13 +8780,16 @@ async function _recoPostUnmatched() {
   // run?" gate below and from `candidates` itself — so tagging a line
   // Owner Drawings doesn't force an unrelated Match/AI run on it.
   const postable = _recoTxns.filter(t => t.status !== 'posted' && !/^Owner Drawings$/i.test(t.category||''))
-  // _recoRunMatch sets t._match on every line it processes (an object when
-  // a candidate is found, explicit null when none is) — a line that still
-  // has _match===undefined has never been checked against ERP records at
-  // all, so its eligibility below can't be trusted yet. Block rather than
-  // silently including it (or silently re-running Match on the user's
-  // behalf, which would also fire an AI call they didn't ask for right now).
-  if (postable.some(t => t._match === undefined)) {
+  // _recoRunMatch is the only place that sets _matchChecked=true, right
+  // alongside t._match — a line without it has never actually been checked
+  // against ERP records, so its eligibility below can't be trusted yet.
+  // Deliberately NOT keyed off t._match itself: _recoSetState (Confirm AND
+  // Reject) also writes t._match (from _recoMatches[i], which defaults to
+  // null at import time before Match has ever run) — so a user clicking
+  // Reject on a freshly-imported, never-matched line would give it a
+  // defined-but-null _match and silently slip past a t._match===undefined
+  // check. _matchChecked is only ever set by an actual Match run.
+  if (postable.some(t => !t._matchChecked)) {
     showToast(isBm
       ? 'Sila jalankan "Padan dengan AI" dahulu untuk semua baris sebelum Post Unmatched.'
       : 'Please run "Match with AI" first for all lines before Post Unmatched.', 'warning')
