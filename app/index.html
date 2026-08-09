@@ -8209,6 +8209,27 @@ function _brLearnPattern(desc, category, amount) {
 function _brFingerprint(date, amount, desc) {
   return [date, Number(amount).toFixed(2), _brNorm(desc).slice(0,40)].join('|')
 }
+// Deterministic id derived from the fingerprint (NOT crypto.randomUUID) —
+// the same bank line (same date+amount+description) always maps to the
+// same id, so re-importing it after "Clear session", on another device, or
+// from an overlapping statement export can't post a second journal entry
+// for money already posted: _journalAlreadyPosted's source_id lookup finds
+// the original entry by this same id and skips it. Not cryptographically
+// secure and doesn't need to be — only used as a stable, valid-shaped
+// (8-4-4-4-12 hex) uuid-column value, collisions are not a realistic
+// concern at the volume of lines one tenant reconciles.
+function _brFingerprintUuid(fp) {
+  let hex = ''
+  for (let seed = 0; seed < 4; seed++) {
+    let h = 0x9e3779b9 ^ seed
+    for (let i = 0; i < fp.length; i++) {
+      h = Math.imul(h ^ fp.charCodeAt(i), 0x85ebca6b)
+      h = (h << 13) | (h >>> 19)
+    }
+    hex += (h >>> 0).toString(16).padStart(8, '0')
+  }
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`
+}
 
 // Category → chart_of_accounts.id, per tenant. Explicit user choice (set via
 // the "Category → Account" modal) always wins; Post Unmatched falls back to
@@ -8382,10 +8403,13 @@ function _recoParseCsvText(text) {
     existingFp.add(fp)
     const cat = _brSuggestCategory(description, amount)
     rows.push({
-      // must be a real uuid (not just a locally-unique token) — it's used
-      // as journal_entries.source_id (uuid column) when posting via
-      // _recoPostUnmatched, and as the idempotency key via _journalAlreadyPosted
-      id: (crypto.randomUUID && crypto.randomUUID()) || ('local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)),
+      // valid-uuid-shaped AND deterministic (derived from fp, not random) —
+      // used as journal_entries.source_id (uuid column) and as the
+      // idempotency key via _journalAlreadyPosted when posting via
+      // _recoPostUnmatched; deterministic so re-importing the same line
+      // after Clear Session (or on another device) maps to the same id
+      // instead of silently becoming a postable "new" duplicate
+      id: _brFingerprintUuid(fp),
       date, description, amount,
       category: cat.category,
       categoryConfidence: cat.confidence,
@@ -8650,6 +8674,15 @@ function _recoSetCategory(i, cat) {
 function _recoApplySuggestion(i) {
   const txn = _recoTxns[i]
   if (!txn || !txn._aiSuggestion) return
+  if (txn.status === 'posted') {
+    // Already booked to a GL account via Post Unmatched — changing the
+    // category now would desync the displayed category from what was
+    // actually posted, with no re-post/reversal offered here.
+    delete txn._aiSuggestion
+    _brSaveStore(_recoTxns)
+    _recoRenderResults()
+    return
+  }
   txn.category = txn._aiSuggestion.category
   txn.categorySource = 'ai'
   txn.categoryConfidence = txn._aiSuggestion.confidence
@@ -8671,7 +8704,7 @@ async function _recoRefineOther() {
   const isBm = APP.language==='bm'
   const others = _recoTxns
     .map((t,i) => ({ t, i }))
-    .filter(({t}) => /^Other (Income|Expense)$/i.test(t.category||'') && t._state !== 'confirmed')
+    .filter(({t}) => /^Other (Income|Expense)$/i.test(t.category||'') && t._state !== 'confirmed' && t.status !== 'posted')
   if (!others.length) {
     showToast(isBm?'Tiada baris "Other" untuk refine.':'No "Other" lines to refine.', 'info')
     return
@@ -8731,13 +8764,18 @@ async function _recoPostUnmatched() {
     showToast(isBm?'Sedang memproses, sila tunggu...':'Already processing, please wait...', 'warning')
     return
   }
+  // Lines that will never be posted anyway (already posted, or manually
+  // tagged Owner Drawings) are excluded up front — both from the "has Match
+  // run?" gate below and from `candidates` itself — so tagging a line
+  // Owner Drawings doesn't force an unrelated Match/AI run on it.
+  const postable = _recoTxns.filter(t => t.status !== 'posted' && !/^Owner Drawings$/i.test(t.category||''))
   // _recoRunMatch sets t._match on every line it processes (an object when
   // a candidate is found, explicit null when none is) — a line that still
   // has _match===undefined has never been checked against ERP records at
   // all, so its eligibility below can't be trusted yet. Block rather than
   // silently including it (or silently re-running Match on the user's
   // behalf, which would also fire an AI call they didn't ask for right now).
-  if (_recoTxns.some(t => t._match === undefined && t.status !== 'posted')) {
+  if (postable.some(t => t._match === undefined)) {
     showToast(isBm
       ? 'Sila jalankan "Padan dengan AI" dahulu untuk semua baris sebelum Post Unmatched.'
       : 'Please run "Match with AI" first for all lines before Post Unmatched.', 'warning')
@@ -8750,10 +8788,8 @@ async function _recoPostUnmatched() {
   // posting a new one here would double-count it. Only lines with no
   // candidate at all, or ones the user explicitly rejected (i.e. looked at
   // the suggested match and confirmed it's wrong), are safe to post.
-  const candidates = _recoTxns.filter(t => {
-    if (t.status === 'posted') return false
+  const candidates = postable.filter(t => {
     if (t._state === 'confirmed') return false
-    if (/^Owner Drawings$/i.test(t.category||'')) return false
     const hasPendingCandidate = !!(t._match && t._match.candidate) && t._state !== 'rejected'
     return !hasPendingCandidate
   })
@@ -8774,11 +8810,11 @@ async function _recoPostUnmatched() {
   if (!confirm(msg)) return
 
   _recoPosting = true
-  let posted = 0, skipped = 0, skippedOldFormat = 0, skippedNoGl = 0, skippedOther = 0
+  let posted = 0, skipped = 0, skippedOldFormat = 0, skippedNoGl = 0, skippedOther = 0, alreadyPosted = 0
   try {
     for (const txn of candidates) {
       if (!uuidRe.test(txn.id)) { skipped++; skippedOldFormat++; continue }
-      if (await _journalAlreadyPosted('bank_recon', txn.id)) { txn.status = 'posted'; continue }
+      if (await _journalAlreadyPosted('bank_recon', txn.id)) { txn.status = 'posted'; alreadyPosted++; continue }
       const isIncome = Number(txn.amount) >= 0
       const glAcc = await _brResolveGlAccount(txn.category, isIncome)
       if (!glAcc) { skipped++; skippedNoGl++; continue }
@@ -8811,6 +8847,7 @@ async function _recoPostUnmatched() {
   _brSaveStore(_recoTxns)
   _recoRenderResults()
   const reasonBits = []
+  if (alreadyPosted) reasonBits.push(isBm ? `${alreadyPosted} dah diposkan sebelum ini` : `${alreadyPosted} already posted earlier`)
   if (skippedOldFormat) reasonBits.push(isBm ? `${skippedOldFormat} format id lama (import semula CSV)` : `${skippedOldFormat} old id format (re-import the CSV)`)
   if (skippedNoGl) reasonBits.push(isBm ? `${skippedNoGl} tiada akaun GL` : `${skippedNoGl} no GL account`)
   if (skippedOther) reasonBits.push(isBm ? `${skippedOther} period lock / ralat` : `${skippedOther} period locked / error`)
@@ -8818,7 +8855,7 @@ async function _recoPostUnmatched() {
   showToast(isBm
     ? `Selesai: ${posted} jurnal diposkan, ${skipped} dilangkau${reasonMsg}.`
     : `Done: ${posted} journal(s) posted, ${skipped} skipped${reasonMsg}.`,
-    posted ? 'success' : 'warning')
+    (posted || alreadyPosted) ? 'success' : 'warning')
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
