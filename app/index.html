@@ -8196,7 +8196,8 @@ async function _expScanReceipt(event) {
 // no journal is posted for a confirmed match (link only). Post Unmatched
 // (_recoPostUnmatched, Phase 3) is the one path here that DOES write to the
 // DB: it posts real journal_entries/journal_lines for lines that have no
-// match and aren't tagged Owner Drawings. Everything else is suggestion-only.
+// match and aren't tagged with a manual-only category (see
+// _BR_MANUAL_ONLY_CATEGORIES). Everything else is suggestion-only.
 let _recoTxns = []
 let _recoMatches = []
 let _recoPosting = false
@@ -8212,6 +8213,23 @@ const _BR_RULES = [
   { keywords:['TNB','TENAGA NASIONAL'], category:'Utilities', type:'out', conf:95 },
   { keywords:['INDAH WATER','IWK','SYABAS','AIR SELANGOR'], category:'Utilities', type:'out', conf:95 },
   { keywords:['UNIFI','MAXIS','CELCOM','DIGI','TIME FIBRE','TIME DOTCOM'], category:'Telephone & Internet', type:'out', conf:95 },
+  // Digital ad platforms — checked BEFORE the Software & Subscriptions rule
+  // below on purpose: _brSuggestCategory returns on the FIRST matching rule
+  // in array order, and that rule's 'GOOGLE *' keyword (Google's generic
+  // card-statement merchant prefix, e.g. "GOOGLE *WORKSPACE") would
+  // otherwise shadow a real Google Ads charge — the most common ad
+  // platform — before this more specific rule ever gets a chance.
+  // 'GOOGLE *ADS' is the actual card-statement descriptor form (e.g.
+  // "GOOGLE *ADS-1234567 SG") — the literal asterisk means plain 'GOOGLE
+  // ADS'/'GOOGLEADS' alone would never match that real-world text, so both
+  // the asterisk and non-asterisk spellings are listed. 'TIKTOK ADS'/
+  // 'TIKTOK FOR BUSINESS' etc. are type 'out' only, so these never compete
+  // with the bare 'TIKTOK' keyword further below (that rule is type:'in'
+  // only, for marketplace sales payouts) even though both lists mention
+  // "tiktok" — _brSuggestCategory filters by type before ever comparing
+  // keywords, so an outgoing ad-spend line and an incoming marketplace
+  // payout can never match the same rule.
+  { keywords:['META ADS','FACEBOOK ADS','FB ADS','TIKTOK ADS','TIKTOK FOR BUSINESS','GOOGLE *ADS','GOOGLE ADS','GOOGLEADS','YOUTUBE ADS'], category:'Marketing & Advertising', type:'out', conf:85 },
   { keywords:['HOSTINGER','SHOPIFY','GOOGLE *','MICROSOFT','ADOBE','CANVA','OPENAI','GITHUB','AWS'], category:'Software & Subscriptions', type:'out', conf:90 },
   { keywords:['PETRONAS','SHELL','PETRON','TOUCH N GO','TNG ','GRAB'], category:'Travel & Fuel', type:'out', conf:85 },
   { keywords:['LHDN','HASIL','EPF','KWSP','SOCSO','PERKESO','EIS ','SIP '], category:'Statutory', type:'out', conf:95 },
@@ -8231,6 +8249,17 @@ const _BR_RULES = [
   // material purchases, not a generic operating expense. Specific enough
   // a substring that it shouldn't collide with anything else.
   { keywords:['CASH & CARRY','CASH N CARRY'], category:'Cost of Sales', type:'out', conf:85 },
+  // Payment gateway processing fees — same nature as a bank's own
+  // transaction fee, so filed under the existing Bank Charges category
+  // rather than a new one (per discussion: don't fragment the chart of
+  // accounts for something that's still fundamentally a transaction cost).
+  // Bare 'GHL' deliberately left out — same reason 'RENT ' is left out of
+  // the Rental rule above: _brNorm() trims the keyword itself before the
+  // substring check, so a trailing/leading-space word-boundary trick
+  // doesn't actually work here, and 'GHL' alone is too short/generic a
+  // substring to risk matching unrelated text. 'EGHL' (eGHL's actual
+  // brand prefix) is specific enough on its own.
+  { keywords:['BILLPLZ','IPAY88','TOYYIBPAY','SENANGPAY','CURLEC','STRIPE','EGHL','2C2P'], category:'Bank Charges', type:'out', conf:80 },
 ]
 
 // journal_entries.source_id is a real Postgres `uuid` column — a bank recon
@@ -8241,23 +8270,56 @@ const _BR_RULES = [
 // filter out legacy ids the same way before querying by source_id.
 const _RECO_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Full category list offered in the manual override dropdown + AI Refine +
-// GL mapping modal — kept as one list so all three stay in sync. Owner
-// Drawings is intentionally NOT auto-detected by keyword (too ambiguous/
-// risky to guess from description alone) — user must set it manually,
-// which is also what excludes a line from Post Unmatched.
+// GL mapping modal — kept as one list so all three stay in sync. The
+// _BR_MANUAL_ONLY_CATEGORIES entries (below) are intentionally NOT
+// auto-detected by keyword (too ambiguous/risky to guess from description
+// alone, or — for the balance-sheet/equity ones — too high-stakes to post
+// without a human actually looking) — user must set them manually, which
+// is also what excludes a line from Post Unmatched.
 const _BR_CATEGORIES = [
   'Utilities','Telephone & Internet','Software & Subscriptions','Travel & Fuel',
   'Statutory','Salaries & Wages','Bank Charges','Rental','Insurance',
-  'Postage & Courier','Professional Fees','Cost of Sales','Sales Income','Other Income',
-  'Other Expense','Owner Drawings'
+  'Postage & Courier','Professional Fees','Cost of Sales','Marketing & Advertising',
+  'Sales Income','Other Income','Other Expense',
+  'Owner Drawings',"Owner's Capital Injection",'Fixed Asset Purchase','Loan Drawdown','Internal Transfer'
 ]
+// Categories that are ALWAYS a deliberate manual choice, never something
+// the system guesses for the user:
+// - Owner Drawings / Owner's Capital Injection: equity movements. Guessing
+//   either from a description alone risks silently misclassifying an
+//   ordinary business payment as a personal draw (or vice versa) —
+//   auto-tagging equity moves without a human looking is exactly the kind
+//   of mistake that corrupts an owner's actual stake in the business.
+// - Fixed Asset Purchase: belongs on the Balance Sheet (an asset), not
+//   P&L — the app also has a dedicated Fixed Assets module (register +
+//   depreciation schedule) that a Bank Recon auto-post would bypass
+//   entirely, leaving a journal entry with no matching asset record.
+// - Loan Drawdown: a liability movement, and real loan drawdowns often
+//   need splitting (principal vs. fees) that this simple two-line
+//   Cash-vs-category posting can't represent correctly.
+// - Internal Transfer: money moving between the tenant's OWN bank
+//   accounts. Bank Recon only resolves a single tenant-wide "cash" default
+//   account (_getDefaultAccountId('cash')), so it has no way to know which
+//   two specific accounts are involved — posting it through the normal
+//   flow would either double-count it as income/expense or debit/credit
+//   the same account against itself.
+// All five are therefore excluded from Post Unmatched (see
+// _recoPostUnmatchedInner), never taught into pattern memory (see
+// _recoSetCategory), and never offered to/accepted from the AI (see
+// _BR_AI_CATEGORIES below) — every path to a category on these five is a
+// direct, explicit user click.
+const _BR_MANUAL_ONLY_CATEGORIES = ['Owner Drawings', "Owner's Capital Injection", 'Fixed Asset Purchase', 'Loan Drawdown', 'Internal Transfer']
+function _brIsManualOnlyCategory(cat) {
+  const norm = String(cat||'').toLowerCase()
+  return _BR_MANUAL_ONLY_CATEGORIES.some(c => c.toLowerCase() === norm)
+}
 // Categories offered to the ai-proxy edge function for suggestions AND
-// accepted back from it — deliberately excludes 'Owner Drawings' (manual-only,
-// see above) and the two 'Other …' fallbacks (suggesting "Other" back to a
-// line that's already "Other" would be a no-op). Used for BOTH the outgoing
+// accepted back from it — deliberately excludes every manual-only category
+// above and the two 'Other …' fallbacks (suggesting "Other" back to a line
+// that's already "Other" would be a no-op). Used for BOTH the outgoing
 // request and validating the response, so the AI can never suggest a
 // category outside what it was actually asked to choose from.
-const _BR_AI_CATEGORIES = _BR_CATEGORIES.filter(c => !/^Other /i.test(c) && c !== 'Owner Drawings')
+const _BR_AI_CATEGORIES = _BR_CATEGORIES.filter(c => !/^Other /i.test(c) && !_brIsManualOnlyCategory(c))
 
 // English category name (the value actually stored on a line, matched
 // against by keyword rules / GL mapping / the Owner Drawings check) -> BM
@@ -8268,9 +8330,12 @@ const _BR_CATEGORY_LABEL_BM = {
   'Software & Subscriptions':'Perisian & Langganan', 'Travel & Fuel':'Perjalanan & Minyak',
   'Statutory':'Statutori', 'Salaries & Wages':'Gaji & Upah', 'Bank Charges':'Caj Bank',
   'Rental':'Sewa', 'Insurance':'Insurans', 'Postage & Courier':'Pos & Kurier',
-  'Professional Fees':'Yuran Profesional', 'Cost of Sales':'Kos Barang Dijual', 'Sales Income':'Hasil Jualan',
+  'Professional Fees':'Yuran Profesional', 'Cost of Sales':'Kos Barang Dijual',
+  'Marketing & Advertising':'Pemasaran & Pengiklanan', 'Sales Income':'Hasil Jualan',
   'Other Income':'Pendapatan Lain', 'Other Expense':'Perbelanjaan Lain',
-  'Owner Drawings':'Pengeluaran Pemilik'
+  'Owner Drawings':'Pengeluaran Pemilik', "Owner's Capital Injection":'Suntikan Modal Pemilik',
+  'Fixed Asset Purchase':'Pembelian Aset Tetap', 'Loan Drawdown':'Pengeluaran Pinjaman',
+  'Internal Transfer':'Pindahan Dalaman'
 }
 function _brCatLabel(cat) {
   return (APP.language==='bm' && _BR_CATEGORY_LABEL_BM[cat]) || cat
@@ -8403,7 +8468,15 @@ async function _recoRenderGlMap() {
   if (!body) return
   body.innerHTML = `<div style="text-align:center;padding:20px"><div class="spinner dark"></div></div>`
   const [accounts, map] = await Promise.all([_brFetchCoaAccounts(), Promise.resolve(_brLoadGlMap())])
+  // Manual-only categories (Owner Drawings, Internal Transfer, etc.) are
+  // excluded here — _brResolveGlAccount (the only place a GL-map entry is
+  // ever read) is only called from _recoPostUnmatchedInner's candidates
+  // loop, which already excludes every manual-only category up front. A
+  // mapping picked here for one of them would be silently stored but never
+  // actually used by anything, which would mislead an admin into thinking
+  // they've configured where those lines post to.
   const usedCats = Array.from(new Set([..._BR_CATEGORIES, ...(_recoTxns||[]).map(t=>t.category).filter(Boolean)]))
+    .filter(c => !_brIsManualOnlyCategory(c))
   if (!accounts.length) {
     body.innerHTML = `<div style="color:var(--text-3);font-size:13px">${isBm?'Tiada akaun dalam Carta Akaun lagi.':'No accounts in Chart of Accounts yet.'}</div>`
     return
@@ -8935,21 +9008,23 @@ function _recoSetState(i, state) {
   }
 }
 
-// Manual category override — also how a line gets marked "Owner Drawings"
-// (never auto-detected by keyword, see _BR_CATEGORIES), and how a
-// wrongly-categorized line gets corrected before Post Unmatched runs.
+// Manual category override — also how a line gets marked with a
+// manual-only category like "Owner Drawings" (never auto-detected by
+// keyword, see _BR_MANUAL_ONLY_CATEGORIES), and how a wrongly-categorized
+// line gets corrected before Post Unmatched runs.
 function _recoSetCategory(i, cat) {
   if (!_recoTxns[i] || !cat) return
   _recoTxns[i].category = cat
   _recoTxns[i].categorySource = 'manual'
   _recoTxns[i].categoryConfidence = 100
   delete _recoTxns[i]._aiSuggestion
-  // Never teach "Owner Drawings" into pattern memory — it's meant to stay a
-  // deliberate per-line manual choice (see _BR_CATEGORIES comment). Learning
-  // it here would let _brSuggestCategory silently auto-tag a future,
-  // unrelated business expense as Owner Drawings just because it shares a
-  // couple of keywords, silently excluding it from Post Unmatched.
-  if (cat !== 'Owner Drawings') _brLearnPattern(_recoTxns[i].description, cat, _recoTxns[i].amount)
+  // Never teach a manual-only category (Owner Drawings, Internal Transfer,
+  // etc.) into pattern memory — they're meant to stay a deliberate per-line
+  // manual choice (see _BR_MANUAL_ONLY_CATEGORIES). Learning one here would
+  // let _brSuggestCategory silently auto-tag a future, unrelated
+  // transaction the same way just because it shares a couple of keywords,
+  // silently excluding it from Post Unmatched.
+  if (!_brIsManualOnlyCategory(cat)) _brLearnPattern(_recoTxns[i].description, cat, _recoTxns[i].amount)
   _brSaveStore(_recoTxns)
 }
 
@@ -9090,8 +9165,10 @@ async function _recoRefineOther() {
 // Phase 3 — Post Unmatched → Journal. Only lines the user has NOT confirmed
 // as a match to an existing invoice/payment/journal (confirmed = already
 // represented in the ledger, posting again would double-count) and not
-// manually marked "Owner Drawings" (personal transfer, not a P&L event) are
-// eligible. Each eligible line becomes its own balanced Dr/Cr journal entry
+// manually marked with a manual-only category (_BR_MANUAL_ONLY_CATEGORIES —
+// Owner Drawings, Internal Transfer, etc. — never auto-posted, see that
+// constant's comment for why each one) are eligible. Each eligible line
+// becomes its own balanced Dr/Cr journal entry
 // against the tenant's Cash/Bank default account + the resolved category
 // account (_brResolveGlAccount) — same _postJournalEntry every other
 // auto-posting flow in this app uses, so period lock / ref numbering /
@@ -9118,10 +9195,11 @@ async function _recoPostUnmatched() {
 }
 async function _recoPostUnmatchedInner(isBm) {
   // Lines that will never be posted anyway (already posted, or manually
-  // tagged Owner Drawings) are excluded up front — both from the "has Match
-  // run?" gate below and from `candidates` itself — so tagging a line
-  // Owner Drawings doesn't force an unrelated Match/AI run on it.
-  const postable = _recoTxns.filter(t => t.status !== 'posted' && !/^Owner Drawings$/i.test(t.category||''))
+  // tagged with a manual-only category) are excluded up front — both from
+  // the "has Match run?" gate below and from `candidates` itself — so
+  // tagging a line Owner Drawings/Internal Transfer/etc. doesn't force an
+  // unrelated Match/AI run on it.
+  const postable = _recoTxns.filter(t => t.status !== 'posted' && !_brIsManualOnlyCategory(t.category))
   // _recoRunMatch is the only place that sets _matchChecked=true, right
   // alongside t._match — a line without it has never actually been checked
   // against ERP records, so its eligibility below can't be trusted yet.
