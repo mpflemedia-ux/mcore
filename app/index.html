@@ -865,6 +865,8 @@ html[data-skip-intro="1"] #intro-skip {
     overflow:visible !important;
     height:auto !important;
     max-height:none !important;
+    page-break-inside:avoid !important;
+    break-inside:avoid !important;
   }
   .pdoc-title-bar, .pdoc-net-bar, .pdoc-budget-bar, .pdoc-sd-table th, .pdoc-sd-table tfoot td, .pdoc-sd-totals, .pdoc-sd-tot { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .pdoc-sig-grid {
@@ -14705,6 +14707,25 @@ async function renderPayslipsPrint(month, year) {
   _pdocSetPageOrientation('portrait')
   const printFilenamePrefix = `Payslips_${_pdocSlug(tn.name)}_${year}${String(month).padStart(2,'0')}`
 
+  // Generate each payslip individually (not inline in the template literal
+  // below) so one record's data can't take the whole batch down — if
+  // _pdocPayslipHtml() throws for a specific employee, log it clearly and
+  // render a visible error placeholder in that slip's slot instead of
+  // losing the rest of the batch to .map()'s all-or-nothing behaviour.
+  const slipsHtml = data.map((rec,i) => {
+    let html
+    try {
+      html = _pdocPayslipHtml(rec, tn, t, isBm, accent)
+    } catch(err) {
+      console.error(`renderPayslipsPrint: failed to generate payslip for "${rec.employees?.name||'(unknown)'}" (payroll_records.id=${rec.id}):`, err)
+      html = `<div class="pdoc" style="--pdoc-accent:${accent};max-width:680px;margin:0 auto 28px;padding:24px">
+        <div style="color:#DC2626;font-weight:600">${isBm?'Ralat menjana slip gaji untuk':'Error generating payslip for'} ${_aiEscapeHtml(rec.employees?.name||rec.id)}</div>
+        <div style="font-size:12px;color:#64748B;margin-top:6px">${isBm?'Sila buka slip ini secara individu untuk maklumat lanjut, atau semak konsol pelayar.':'Please open this payslip individually for details, or check the browser console.'}</div>
+      </div>`
+    }
+    return `<div style="${i<data.length-1?'page-break-after:always':''}">${html}</div>`
+  }).join('')
+
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
     <div class="page-title">${t.period} ${month}/${year}</div>
@@ -14718,7 +14739,7 @@ async function renderPayslipsPrint(month, year) {
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
   </div>
-  ${data.map((rec,i)=>`<div style="${i<data.length-1?'page-break-after:always':''}">${_pdocPayslipHtml(rec, tn, t, isBm, accent)}</div>`).join('')}`
+  ${slipsHtml}`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
