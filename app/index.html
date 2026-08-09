@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-09-dq">
+<meta name="nexerp-build" content="2026-08-09-br1">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -8095,170 +8095,367 @@ async function _expScanReceipt(event) {
 let _recoTxns = []
 let _recoMatches = []
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BANK RECONCILIATION — Phase 1
+// Import (CSV/paste) → rules category → match ERP → confirm link (no auto journal)
+// Lines persisted in localStorage per tenant; optional Supabase if tables exist
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _BR_RULES = [
+  { keywords:['TNB','TENAGA NASIONAL'], category:'Utilities', type:'out', conf:95 },
+  { keywords:['INDAH WATER','IWK','SYABAS','AIR SELANGOR'], category:'Utilities', type:'out', conf:95 },
+  { keywords:['UNIFI','MAXIS','CELCOM','DIGI','TIME FIBRE','TIME DOTCOM'], category:'Telephone & Internet', type:'out', conf:95 },
+  { keywords:['HOSTINGER','SHOPIFY','GOOGLE *','MICROSOFT','ADOBE','CANVA','OPENAI','GITHUB','AWS'], category:'Software & Subscriptions', type:'out', conf:90 },
+  { keywords:['PETRONAS','SHELL','PETRON','TOUCH N GO','TNG ','GRAB'], category:'Travel & Fuel', type:'out', conf:85 },
+  { keywords:['LHDN','HASIL','EPF','KWSP','SOCSO','PERKESO','EIS ','SIP '], category:'Statutory', type:'out', conf:95 },
+  { keywords:['SALARY','GAJI','PAYROLL'], category:'Salaries & Wages', type:'out', conf:90 },
+  { keywords:['BANK CHARGE','MONTHLY FEE','SERVICE CHARGE','QUICK CHEQUE'], category:'Bank Charges', type:'out', conf:90 },
+  { keywords:['INTEREST CREDIT','PROFIT CREDIT','DIVIDEND'], category:'Other Income', type:'in', conf:85 },
+  { keywords:['SHOPEE','TIKTOK','LAZADA'], category:'Sales Income', type:'in', conf:80 },
+]
+
+function _brLsKey() {
+  return 'nexerp_bank_lines_' + (APP.tenant?.id || 'none')
+}
+function _brLoadStore() {
+  try { return JSON.parse(localStorage.getItem(_brLsKey()) || '[]') } catch(e) { return [] }
+}
+function _brSaveStore(lines) {
+  try { localStorage.setItem(_brLsKey(), JSON.stringify(lines.slice(-500))) } catch(e) {}
+}
+function _brNorm(s) { return String(s||'').toUpperCase().replace(/\s+/g,' ').trim() }
+function _brSuggestCategory(desc, amount) {
+  const type = Number(amount) >= 0 ? 'in' : 'out'
+  const norm = _brNorm(desc)
+  for (const rule of _BR_RULES) {
+    if (rule.type && rule.type !== type) continue
+    for (const kw of rule.keywords) {
+      if (norm.includes(_brNorm(kw))) {
+        return { category: rule.category, confidence: rule.conf, source: 'rule', keyword: kw }
+      }
+    }
+  }
+  // pattern memory per tenant
+  try {
+    const patterns = JSON.parse(localStorage.getItem('nexerp_br_patterns_' + (APP.tenant?.id||'')) || '[]')
+    for (const p of patterns.sort((a,b)=>(b.count||0)-(a.count||0))) {
+      if (p.type && p.type !== type) continue
+      if (p.keyword && norm.includes(_brNorm(p.keyword))) {
+        return { category: p.category, confidence: Math.min(97, 70 + (p.count||1)*3), source: 'pattern', keyword: p.keyword }
+      }
+    }
+  } catch(e) {}
+  return { category: type === 'in' ? 'Other Income' : 'Other Expense', confidence: 40, source: 'default' }
+}
+function _brLearnPattern(desc, category, amount) {
+  if (!desc || !category) return
+  const type = Number(amount) >= 0 ? 'in' : 'out'
+  const words = _brNorm(desc).split(' ').filter(w => w.length >= 3).slice(0, 2)
+  if (!words.length) return
+  const keyword = words.join(' ')
+  const key = 'nexerp_br_patterns_' + (APP.tenant?.id||'')
+  let patterns = []
+  try { patterns = JSON.parse(localStorage.getItem(key) || '[]') } catch(e) {}
+  const ex = patterns.find(p => _brNorm(p.keyword) === keyword && p.category === category)
+  if (ex) { ex.count = (ex.count||1)+1; ex.lastUsed = new Date().toISOString().slice(0,10) }
+  else patterns.push({ keyword, category, type, count: 1, lastUsed: new Date().toISOString().slice(0,10) })
+  try { localStorage.setItem(key, JSON.stringify(patterns.slice(-200))) } catch(e) {}
+}
+function _brFingerprint(date, amount, desc) {
+  return [date, Number(amount).toFixed(2), _brNorm(desc).slice(0,40)].join('|')
+}
+
 async function renderReconcile() {
-  const t = APP.language==='bm' ? {
-    title:'Penyesuaian Bank (Reconciliation)',
-    instructions:'Muat naik atau tampal senarai transaksi bank (satu baris satu transaksi). Dua format disokong (auto-detect ikut bilangan kolum): "tarikh,keterangan,jumlah" (1 kolum jumlah bertanda +/-), ATAU format statement bank sebenar "tarikh,keterangan,debit,kredit,..." (kolum lain macam no./nama akaun diabaikan). Header row (cth "DATE,DESCRIPTION,...") dikesan dan diskip automatik. Tiada data disimpan ke pangkalan data — ni alat cadangan sahaja.',
-    parse:'Padan dengan AI'
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title: 'Penyesuaian Bank',
+    instructions: 'Fasa 1: Import CSV/tampal → auto-kategori (rules) → padan invois/bayaran/jurnal → sahkan pautan. Tiada jurnal automatik (elak double). Tarikh bank dikekalkan (sokong back-dated). Data disimpan lokal per syarikat; jadual Supabase optional.',
+    parse: 'Import & Auto-Kategori',
+    match: 'Padan dengan AI',
+    saved: 'Baris disimpan',
+    clear: 'Kosongkan sesi'
   } : {
-    title:'Bank Reconciliation',
-    instructions:'Upload or paste a list of bank transactions (one per line). Two formats supported (auto-detected by column count): "date,description,amount" (single signed amount), OR real bank statement exports "date,description,debit,credit,..." (extra columns like account no./name are ignored). A header row (eg. "DATE,DESCRIPTION,...") is detected and skipped automatically. Nothing here is saved to the database — this is a suggestion tool only.',
-    parse:'Match with AI'
+    title: 'Bank Reconciliation',
+    instructions: 'Phase 1: Import CSV/paste → auto-category (rules) → match invoices/payments/journals → confirm link. No auto journal (avoid double-posting). Bank dates kept (back-dated OK). Stored locally per company; Supabase tables optional.',
+    parse: 'Import & Auto-Categorize',
+    match: 'Match with AI',
+    saved: 'Lines saved',
+    clear: 'Clear session'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_accTabs('reconcile')}
   <div class="card" style="padding:16px;margin-bottom:16px">
     <p style="font-size:13px;color:var(--text-3);margin-bottom:10px">${t.instructions}</p>
-    <input type="file" accept=".csv,text/csv" id="reco-file-input" onchange="_recoFileUpload(event)" style="margin-bottom:10px;display:block">
+    <input type="file" accept=".csv,text/csv,text/plain" id="reco-file-input" onchange="_recoFileUpload(event)" style="margin-bottom:10px;display:block">
     <textarea id="reco-csv-text" class="form-input" rows="6" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00&#10;01/04/2026,CIB Instant Transfer - Operation Cost,799.00,,35600156696,LE AROMA SDN BHD"></textarea>
-    <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.parse}</button>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      <button class="btn btn-primary btn-sm" onclick="_recoImportCategorize()"><i class="ti ti-file-import"></i> ${t.parse}</button>
+      <button class="btn btn-outline btn-sm" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.match}</button>
+      <button class="btn btn-outline btn-sm" onclick="_recoClearSession()"><i class="ti ti-trash"></i> ${t.clear}</button>
+    </div>
   </div>
   <div id="reco-result"></div>`
-  _recoTxns = []
-  _recoMatches = []
+  _recoTxns = _brLoadStore()
+  _recoMatches = _recoTxns.map(t => t._match || null)
+  if (_recoTxns.length) _recoRenderResults()
+  else document.getElementById('reco-result').innerHTML = ''
 }
 
 function _recoFileUpload(event) {
   const file = event.target.files[0]
-  if(!file) return
+  if (!file) return
   const reader = new FileReader()
-  reader.onload = () => { const el = document.getElementById('reco-csv-text'); if(el) el.value = reader.result }
+  reader.onload = () => { const el = document.getElementById('reco-csv-text'); if (el) el.value = reader.result }
   reader.onerror = () => showToast(APP.language==='bm'?'Gagal baca fail.':'Failed to read file.', 'error')
   reader.readAsText(file)
 }
 
 function _recoNormalizeDate(s) {
-  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
-  return null
+  s = String(s||'').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/)
+  if (m) {
+    const y = Number(m[3]) + (Number(m[3]) > 50 ? 1900 : 2000)
+    return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
+  }
+  return s
 }
 
-// Supports two layouts, auto-detected per row by column count:
-//  - 3 columns:  date, description, amount (single signed amount)
-//  - 4+ columns: date, description, debit, credit, ...(ignored, eg. account no/name)
-//    amount = +credit if present, else -debit (money out). Real bank exports
-//    (eg. Malaysian bank CSV statements) commonly use this debit/credit-split shape.
-// A header row (first column isn't a parseable date and contains letters, eg.
-// "DATE") is detected and skipped automatically.
-function _recoParseCsv(text) {
-  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean)
-  if(!lines.length) return []
+function _recoParseAmount(s) {
+  if (s == null || s === '') return null
+  const neg = /\(.*\)/.test(s) || /^-/.test(String(s).trim())
+  const n = parseFloat(String(s).replace(/[^\d.-]/g, ''))
+  if (isNaN(n)) return null
+  return neg ? -Math.abs(n) : n
+}
 
-  const firstCols = lines[0].split(',').map(c=>c.trim())
-  const looksLikeHeader = !_recoNormalizeDate(firstCols[0]) && /[a-zA-Z]/.test(firstCols[0]||'')
+function _recoParseCsvText(text) {
+  const lines = String(text||'').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (!lines.length) return []
+  const firstCols = lines[0].split(/,|\t/).map(x => x.trim())
+  const looksLikeHeader = !/^\d{1,4}/.test(firstCols[0]||'') || /date|tarikh|description|desc|amount|debit|credit/i.test(lines[0])
   const dataLines = looksLikeHeader ? lines.slice(1) : lines
-
   const rows = []
-  for(const line of dataLines) {
-    const cols = line.split(',').map(c=>c.trim())
-    if(cols.length < 3) continue
-    const dateNorm = _recoNormalizeDate(cols[0])
-    if(!dateNorm) continue
-    const description = cols[1] || ''
-
+  const existingFp = new Set((_recoTxns||[]).map(t => t.fingerprint).filter(Boolean))
+  dataLines.forEach(line => {
+    const cols = line.split(/,|\t/).map(x => x.trim())
+    if (cols.length < 2) return
+    const date = _recoNormalizeDate(cols[0])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
+    let description = cols[1] || ''
     let amount = null
-    if(cols.length >= 4) {
-      const debitRaw = (cols[2]||'').replace(/[^0-9.\-]/g,'')
-      const creditRaw = (cols[3]||'').replace(/[^0-9.\-]/g,'')
-      const debit = debitRaw ? Number(debitRaw) : NaN
-      const credit = creditRaw ? Number(creditRaw) : NaN
-      if(creditRaw && !isNaN(credit)) amount = credit
-      else if(debitRaw && !isNaN(debit)) amount = -debit
+    if (cols.length === 3) {
+      amount = _recoParseAmount(cols[2])
     } else {
-      const amountRaw = (cols[2]||'').replace(/[^0-9.\-]/g,'')
-      const amt = amountRaw ? Number(amountRaw) : NaN
-      if(!isNaN(amt)) amount = amt
+      // date, desc, debit, credit, ...
+      const debit = _recoParseAmount(cols[2])
+      const credit = _recoParseAmount(cols[3])
+      if (debit && Math.abs(debit) > 0) amount = -Math.abs(debit)
+      else if (credit && Math.abs(credit) > 0) amount = Math.abs(credit)
+      else amount = _recoParseAmount(cols[2])
+      if (cols.length > 4 && description.length < 3) description = cols.slice(1, 3).join(' ')
     }
-    if(amount===null || isNaN(amount)) continue
-    rows.push({date:dateNorm, description, amount})
-  }
+    if (amount == null || isNaN(amount)) return
+    const fp = _brFingerprint(date, amount, description)
+    if (existingFp.has(fp)) return
+    existingFp.add(fp)
+    const cat = _brSuggestCategory(description, amount)
+    rows.push({
+      id: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      date, description, amount,
+      category: cat.category,
+      categoryConfidence: cat.confidence,
+      categorySource: cat.source,
+      fingerprint: fp,
+      status: 'imported',
+      _state: null,
+      matched_type: null,
+      matched_id: null,
+      matched_ref: null
+    })
+  })
   return rows
+}
+
+function _recoImportCategorize() {
+  const isBm = APP.language==='bm'
+  const text = document.getElementById('reco-csv-text')?.value || ''
+  const rows = _recoParseCsvText(text)
+  if (!rows.length) {
+    showToast(isBm ? 'Tiada baris sah dijumpai.' : 'No valid rows found.', 'warning')
+    return
+  }
+  _recoTxns = [...(_recoTxns || []), ...rows]
+  _recoMatches = _recoTxns.map(t => t._match || null)
+  _brSaveStore(_recoTxns)
+  _recoTryCloudSave(rows)
+  _recoRenderResults()
+  showToast((isBm ? 'Diimport & dikategori: ' : 'Imported & categorized: ') + rows.length, 'success')
+}
+
+async function _recoTryCloudSave(rows) {
+  if (!APP.tenant?.id || !rows?.length) return
+  try {
+    const payload = rows.map(r => ({
+      tenant_id: APP.tenant.id,
+      txn_date: r.date,
+      description: r.description,
+      amount: r.amount,
+      category: r.category,
+      fingerprint: r.fingerprint,
+      status: 'imported'
+    }))
+    const { error } = await sb.from('bank_statement_lines').upsert(payload, { onConflict: 'tenant_id,fingerprint', ignoreDuplicates: true })
+    if (error) console.warn('bank_statement_lines save skipped', error.message)
+  } catch (e) { console.warn('bank_statement_lines', e) }
+}
+
+function _recoClearSession() {
+  _recoTxns = []
+  _recoMatches = []
+  _brSaveStore([])
+  const el = document.getElementById('reco-result')
+  if (el) el.innerHTML = ''
+  showToast(APP.language==='bm'?'Sesi dikosongkan.':'Session cleared.', 'info')
 }
 
 async function _recoRunMatch() {
   const isBm = APP.language==='bm'
-  const text = document.getElementById('reco-csv-text').value
   const resultEl = document.getElementById('reco-result')
-  const rows = _recoParseCsv(text)
-  if(!rows.length) {
-    showToast(isBm?'Tiada baris transaksi sah dijumpai. Format: tarikh,keterangan,jumlah':'No valid transaction rows found. Format: date,description,amount', 'warning')
+  if (!_recoTxns?.length) {
+    // try parse textarea first
+    const text = document.getElementById('reco-csv-text')?.value || ''
+    if (text.trim()) _recoImportCategorize()
+  }
+  if (!_recoTxns?.length) {
+    showToast(isBm?'Import baris dahulu.':'Import lines first.', 'warning')
     return
   }
-  _recoTxns = rows
-  _recoMatches = rows.map(()=>null)
+  if (resultEl) resultEl.innerHTML = `<div class="card" style="padding:24px;text-align:center"><div class="spinner dark"></div><p style="margin-top:12px;color:var(--text-3)">${isBm?'Memadankan...':'Matching...'}</p></div>`
 
-  resultEl.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><div class="spinner"></div><p style="margin-top:10px">${isBm?'Memadankan dengan AI...':'Matching with AI...'}</p></div></div>`
+  const dates = _recoTxns.map(t => t.date).filter(Boolean).sort()
+  const from = dates[0]
+  const to = dates[dates.length - 1]
+  // expand window ±7 days for back-dated / settlement lag
+  const fromD = new Date(from + 'T00:00:00'); fromD.setDate(fromD.getDate() - 7)
+  const toD = new Date(to + 'T00:00:00'); toD.setDate(toD.getDate() + 7)
+  const fromStr = fromD.toISOString().slice(0,10)
+  const toStr = toD.toISOString().slice(0,10)
 
+  let invoices = [], payments = [], entries = []
   try {
-    const dates = rows.map(r=>r.date).slice().sort()
-    const minDate = new Date(dates[0]); minDate.setDate(minDate.getDate()-5)
-    const maxDate = new Date(dates[dates.length-1]); maxDate.setDate(maxDate.getDate()+5)
-    const minStr = minDate.toISOString().slice(0,10), maxStr = maxDate.toISOString().slice(0,10)
+    const r1 = await sb.from('invoices').select('id,ref_no,issue_date,total,paid_amt,status,customer_name').eq('tenant_id', APP.tenant.id).is('deleted_at', null).gte('issue_date', fromStr).lte('issue_date', toStr)
+    invoices = r1.data || []
+  } catch(e) {}
+  try {
+    const r2 = await sb.from('payments').select('id,ref_no,payment_date,amount,customer_name,notes,invoice_id').eq('tenant_id', APP.tenant.id).gte('payment_date', fromStr).lte('payment_date', toStr)
+    payments = r2.data || []
+  } catch(e) {}
+  try {
+    const r3 = await sb.from('journal_entries').select('id,ref_no,entry_date,description').eq('tenant_id', APP.tenant.id).is('deleted_at', null).gte('entry_date', fromStr).lte('entry_date', toStr)
+    entries = r3.data || []
+  } catch(e) {}
 
-    const [{data: invoices}, {data: payments}, {data: entries}] = await Promise.all([
-      sb.from('invoices').select('id,ref_no,issue_date,total,customer_name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('issue_date',minStr).lte('issue_date',maxStr),
-      sb.from('payments').select('id,ref_no,payment_date,amount,customer_name,notes').eq('tenant_id',APP.tenant.id).gte('payment_date',minStr).lte('payment_date',maxStr),
-      sb.from('journal_entries').select('id,ref_no,entry_date,description').eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('entry_date',minStr).lte('entry_date',maxStr),
-    ])
-
-    const entryIds = (entries||[]).map(e=>e.id)
-    const entryTotals = {}
-    if(entryIds.length) {
-      const {data: lines} = await sb.from('journal_lines').select('entry_id,debit_amt').in('entry_id', entryIds)
-      ;(lines||[]).forEach(l=>{ entryTotals[l.entry_id] = (entryTotals[l.entry_id]||0) + Number(l.debit_amt||0) })
-    }
-
-    const candidates = []
-    ;(invoices||[]).forEach(i=>candidates.push({ type:'invoice', ref:i.ref_no, date:i.issue_date, amount:Number(i.total||0), desc:i.customer_name||'' }))
-    ;(payments||[]).forEach(p=>candidates.push({ type:'payment', ref:p.ref_no, date:p.payment_date, amount:Number(p.amount||0), desc:p.customer_name||p.notes||'' }))
-    ;(entries||[]).forEach(e=>candidates.push({ type:'journal_entry', ref:e.ref_no, date:e.entry_date, amount:entryTotals[e.id]||0, desc:e.description||'' }))
-
-    if(!candidates.length) {
-      resultEl.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod sedia ada dalam julat tarikh ni untuk dipadankan.':'No existing records in this date range to match against.'}</p></div></div>`
-      return
-    }
-
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: {
-      action:'reconcile_match',
-      transactions: rows.map((r,i)=>({idx:i, date:r.date, description:r.description, amount:r.amount})),
-      candidates,
-      language: APP.language
-    }})
-    if(error) throw error
-    if(!data?.success) throw new Error(data?.error || 'Unknown error')
-
-    ;(data.data.matches||[]).forEach(m => { if(m.txn_idx!=null && m.txn_idx < _recoMatches.length) _recoMatches[m.txn_idx] = m })
-    _recoRenderResults()
-  } catch(err) {
-    console.error('Reconciliation match error:', err)
-    resultEl.innerHTML = `<div class="card"><div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${isBm?'Ralat: ':'Error: '}${err.message||''}</p></div></div>`
+  let entryTotals = {}
+  if (entries.length) {
+    try {
+      const ids = entries.map(e => e.id)
+      const { data: lines } = await sb.from('journal_lines').select('entry_id,debit_amt,credit_amt').in('entry_id', ids.slice(0, 500))
+      ;(lines||[]).forEach(l => {
+        entryTotals[l.entry_id] = (entryTotals[l.entry_id]||0) + Number(l.debit_amt||0)
+      })
+    } catch(e) {}
   }
+
+  const candidates = []
+  ;(invoices||[]).forEach(i => candidates.push({ type:'invoice', id:i.id, ref:i.ref_no, date:i.issue_date, amount:Number(i.total||0), desc:i.customer_name||'' }))
+  ;(payments||[]).forEach(p => candidates.push({ type:'payment', id:p.id, ref:p.ref_no, date:p.payment_date, amount:Number(p.amount||0), desc:p.customer_name||p.notes||'' }))
+  ;(entries||[]).forEach(e => candidates.push({ type:'journal_entry', id:e.id, ref:e.ref_no, date:e.entry_date, amount:entryTotals[e.id]||0, desc:e.description||'' }))
+
+  // Local heuristic match first (amount + date proximity)
+  _recoMatches = _recoTxns.map(txn => {
+    if (txn._state === 'confirmed' && txn._match) return txn._match
+    const absAmt = Math.abs(Number(txn.amount))
+    let best = null, bestScore = 0
+    candidates.forEach(c => {
+      if (Math.abs(Math.abs(c.amount) - absAmt) > 0.05) return
+      const d1 = new Date(txn.date+'T00:00:00'), d2 = new Date(c.date+'T00:00:00')
+      const dayDiff = Math.abs((d1 - d2) / 86400000)
+      if (dayDiff > 14) return
+      let score = 0.7 - dayDiff * 0.02
+      if (_brNorm(txn.description).includes(_brNorm(c.desc).slice(0, 8)) && c.desc) score += 0.15
+      if (score > bestScore) { bestScore = score; best = c }
+    })
+    if (best) return { txn_idx: 0, confidence: bestScore, candidate: best, source: 'heuristic' }
+    return null
+  })
+
+  // Optional AI enhance
+  try {
+    const unmatchedIdx = _recoMatches.map((m,i) => m ? -1 : i).filter(i => i >= 0)
+    if (unmatchedIdx.length && candidates.length) {
+      const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+        action: 'reconcile_match',
+        transactions: unmatchedIdx.map(i => ({ idx: i, date: _recoTxns[i].date, description: _recoTxns[i].description, amount: _recoTxns[i].amount })),
+        candidates,
+        language: APP.language
+      }})
+      if (!error && data?.success && data.data?.matches) {
+        data.data.matches.forEach(m => {
+          if (m.txn_idx != null && !_recoMatches[m.txn_idx]) _recoMatches[m.txn_idx] = m
+        })
+      }
+    }
+  } catch (err) {
+    console.warn('AI match optional', err)
+  }
+
+  _recoTxns.forEach((t, i) => { t._match = _recoMatches[i] })
+  _brSaveStore(_recoTxns)
+  _recoRenderResults()
 }
 
 function _recoRenderResults() {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { date:'Tarikh', desc:'Keterangan', amount:'Jumlah', match:'Cadangan Padanan', confidence:'Keyakinan', action:'Tindakan', noMatch:'Tiada padanan', confirmed:'Disahkan', rejected:'Ditolak' }
-    : { date:'Date', desc:'Description', amount:'Amount', match:'Suggested Match', confidence:'Confidence', action:'Action', noMatch:'No match', confirmed:'Confirmed', rejected:'Rejected' }
+    ? { date:'Tarikh', desc:'Keterangan', amount:'Jumlah', cat:'Kategori', match:'Padanan', confidence:'Yakin', action:'Tindakan', noMatch:'Tiada padanan', confirmed:'Disahkan', rejected:'Ditolak' }
+    : { date:'Date', desc:'Description', amount:'Amount', cat:'Category', match:'Match', confidence:'Conf.', action:'Action', noMatch:'No match', confirmed:'Confirmed', rejected:'Rejected' }
   const resultEl = document.getElementById('reco-result')
-  if(!resultEl) return
-  resultEl.innerHTML = `<div class="card"><div style="overflow-x:auto"><table>
-    <thead><tr><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.match}</th><th>${t.confidence}</th><th>${t.action}</th></tr></thead>
+  if (!resultEl) return
+  const n = _recoTxns.length
+  const nConf = _recoTxns.filter(x => x._state === 'confirmed').length
+  const nCat = _recoTxns.filter(x => x.category && !/^Other /i.test(x.category)).length
+  resultEl.innerHTML = `<div class="card" style="padding:12px 16px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;font-size:13px">
+    <span><strong>${n}</strong> ${isBm?'baris':'lines'}</span>
+    <span><strong>${nCat}</strong> ${isBm?'berkategori':'categorized'}</span>
+    <span><strong>${nConf}</strong> ${isBm?'disahkan':'confirmed'}</span>
+    <span style="color:var(--text-3)">${isBm?'Tarikh = tarikh bank (back-dated OK)':'Dates = bank dates (back-dated OK)'}</span>
+  </div>
+  <div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr>
+      <th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th>
+      <th>${t.cat}</th><th>${t.match}</th><th>${t.confidence}</th><th>${t.action}</th>
+    </tr></thead>
     <tbody>${_recoTxns.map((txn,i) => {
       const m = _recoMatches[i]
       const cand = m && m.candidate
       const state = txn._state
+      const catColor = /^Other /i.test(txn.category||'') ? 'var(--warning, #F59E0B)' : 'var(--text-2)'
       return `<tr>
-        <td>${formatDate(txn.date)}</td>
-        <td>${_aiEscapeHtml(txn.description)}</td>
-        <td style="text-align:right">${formatRM(txn.amount)}</td>
-        <td>${cand ? `<span style="font-size:12px">[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)} (${formatDate(cand.date)})</span>` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
-        <td>${m && m.confidence!=null ? Math.round(m.confidence*100)+'%' : '-'}</td>
+        <td style="white-space:nowrap">${formatDate(txn.date)}</td>
+        <td style="max-width:220px;font-size:12px">${_aiEscapeHtml(txn.description)}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${txn.amount<0?'var(--danger)':'var(--success)'}">${formatRM(txn.amount)}</td>
+        <td style="font-size:11px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%">${_aiEscapeHtml(txn.category||'-')}</td>
+        <td style="font-size:12px">${cand ? `<span>[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)}</span>` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
+        <td>${m && m.confidence!=null ? Math.round((m.confidence <= 1 ? m.confidence*100 : m.confidence))+'%' : '-'}</td>
         <td>${state
           ? `<span style="color:${state==='confirmed'?'var(--success)':'var(--text-3)'};font-size:12px;font-weight:600">${state==='confirmed'?t.confirmed:t.rejected}</span>`
-          : (cand ? `<button class="btn btn-outline btn-sm" style="padding:3px 8px" onclick="_recoSetState(${i},'confirmed')"><i class="ti ti-check"></i></button> <button class="btn btn-outline btn-sm" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)" onclick="_recoSetState(${i},'rejected')"><i class="ti ti-x"></i></button>` : '')}
+          : `<button class="btn btn-outline btn-sm" style="padding:3px 8px" onclick="_recoSetState(${i},'confirmed')" ${cand?'':'disabled'}><i class="ti ti-check"></i></button>
+             <button class="btn btn-outline btn-sm" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)" onclick="_recoSetState(${i},'rejected')"><i class="ti ti-x"></i></button>`}
         </td>
       </tr>`
     }).join('')}</tbody>
@@ -8266,28 +8463,47 @@ function _recoRenderResults() {
 }
 
 function _recoSetState(i, state) {
-  if(!_recoTxns[i]) return
+  if (!_recoTxns[i]) return
   const isBm = APP.language==='bm'
-  if(state === 'confirmed') {
+  if (state === 'confirmed') {
     const m = _recoMatches[i]
     const cand = m && m.candidate
-    // Prevent double-match of the same ERP record onto two bank lines (session-local)
-    if(cand && cand.id) {
+    if (!cand) {
+      showToast(isBm?'Tiada padanan untuk disahkan.':'No match to confirm.', 'warning')
+      return
+    }
+    if (cand.id) {
       const taken = _recoTxns.findIndex((t, j) =>
         j !== i && t._state === 'confirmed' &&
         _recoMatches[j]?.candidate?.id === cand.id &&
         _recoMatches[j]?.candidate?.type === cand.type)
-      if(taken >= 0) {
+      if (taken >= 0) {
         showToast(isBm
-          ? `Rekod ${cand.ref_no||cand.id} sudah dipadankan pada baris lain.`
-          : `Record ${cand.ref_no||cand.id} is already matched on another line.`, 'warning')
+          ? `Rekod ${cand.ref||cand.id} sudah dipadankan pada baris lain.`
+          : `Record ${cand.ref||cand.id} is already matched on another line.`, 'warning')
         return
       }
     }
+    _recoTxns[i].matched_type = cand.type
+    _recoTxns[i].matched_id = cand.id
+    _recoTxns[i].matched_ref = cand.ref
+    _recoTxns[i].status = 'matched'
+    _brLearnPattern(_recoTxns[i].description, _recoTxns[i].category, _recoTxns[i].amount)
+  } else {
+    _recoTxns[i].matched_type = null
+    _recoTxns[i].matched_id = null
+    _recoTxns[i].matched_ref = null
+    _recoTxns[i].status = 'imported'
   }
   _recoTxns[i]._state = state
+  _recoTxns[i]._match = _recoMatches[i]
+  _brSaveStore(_recoTxns)
   _recoRenderResults()
-  if(state === 'confirmed') showToast(isBm?'Padanan disahkan (tempatan sahaja).':'Match confirmed (local only).', 'success')
+  if (state === 'confirmed') {
+    showToast(isBm
+      ? 'Padanan disahkan (pautan sahaja — tiada jurnal auto).'
+      : 'Match confirmed (link only — no auto journal).', 'success')
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
