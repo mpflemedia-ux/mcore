@@ -8959,7 +8959,13 @@ async function _recoRefineOther() {
       language: APP.language
     }})
     if (error) throw error
-    if (data?.success && Array.isArray(data.data?.suggestions)) suggestions = data.data.suggestions
+    // Matches every other ai-proxy call site in this file — the function
+    // always responds HTTP 200 even on failure (GROQ_API_KEY missing, Groq
+    // down, unparseable model output), so `error` alone doesn't catch a
+    // real failure; without this check it fell through to "AI has no new
+    // suggestions" for the same case as "AI call outright failed".
+    if (!data?.success) throw new Error(data?.error || 'Unknown error')
+    if (Array.isArray(data.data?.suggestions)) suggestions = data.data.suggestions
   } catch (e) {
     console.warn('categorize_bank unavailable', e)
     showToast(isBm
