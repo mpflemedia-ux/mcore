@@ -5,13 +5,13 @@
 // Request:  POST { action: '...', language: 'en'|'bm', ...action-specific fields }
 // Response: { success: true, data: {...} } | { success: false, error: string }
 //
-// Actions: chat, categorize, receipt (vision), scan_application_form (vision),
-// scan_ssm_certificate (vision), scan_bank_statement (vision),
-// extract_bank_transactions (vision), narrate_report, business_insight,
-// draft_reminder, follow_up_suggestion, reconcile_match, month_end_summary,
-// generate_po, marketing_advice, tax_guidance, generate_document,
-// daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
-// production_check, hr_payslip_note.
+// Actions: chat, categorize, categorize_bank, receipt (vision),
+// scan_application_form (vision), scan_ssm_certificate (vision),
+// scan_bank_statement (vision), extract_bank_transactions (vision),
+// narrate_report, business_insight, draft_reminder, follow_up_suggestion,
+// reconcile_match, month_end_summary, generate_po, marketing_advice,
+// tax_guidance, generate_document, daily_digest, fraud_scan, onboarding_tip,
+// logistics_suggest, production_check, hr_payslip_note.
 // 'receipt', 'scan_application_form', 'scan_ssm_certificate',
 // 'scan_bank_statement', and 'extract_bank_transactions' use a
 // vision-capable model read from the GROQ_VISION_MODEL secret (falls back
@@ -148,6 +148,93 @@ async function handleCategorize(body: Record<string, unknown>) {
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
     reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
   }
+}
+
+// Bank Recon's "AI Refine Other" (_recoRefineOther in app/index.html) —
+// batch-classifies bank-statement lines that the client's own keyword
+// rules + pattern memory both missed (still sitting on the generic "Other
+// Income"/"Other Expense" fallback) into one of a fixed category list. Text
+// -only (CHAT_MODEL, not vision) — these are already-extracted description
+// strings, not images. A single batch call covering every "Other" line in
+// one reconciliation session (seen in practice: ~90 lines from one bank
+// statement) rather than one call per line, so max_tokens is set generous
+// (8192, same reasoning as handleExtractBankTransactions) — each
+// suggestion is only {idx, category, confidence} so this is far more
+// compact per-row than that action's output, but at ~90 rows it's still
+// worth the same headroom rather than risk the truncation failure mode
+// this file has already hit once on a much shorter, flatter shape.
+async function handleCategorizeBank(body: Record<string, unknown>) {
+  const transactions = body.transactions
+  const categories = body.categories
+  if (!Array.isArray(transactions) || transactions.length === 0) throw new Error('transactions is required and must be a non-empty array')
+  if (!Array.isArray(categories) || categories.length === 0) throw new Error('categories is required and must be a non-empty array')
+
+  const categoryList = categories.filter((c) => typeof c === 'string') as string[]
+  if (!categoryList.length) throw new Error('categories must contain at least one string value')
+  const txnLines = transactions
+    .map((t) => {
+      const rec = t as Record<string, unknown>
+      const idx = typeof rec.idx === 'number' ? rec.idx : null
+      if (idx === null) return null
+      return `${idx}\t${rec.date ?? ''}\t${rec.amount ?? ''}\t${rec.description ?? ''}`
+    })
+    .filter((l): l is string => l !== null)
+  if (!txnLines.length) throw new Error('transactions contained no valid rows (each needs a numeric idx)')
+
+  const systemPrompt =
+    'You are a bank-transaction categorization assistant for a Malaysian SME. Each line below is ' +
+    'one bank statement transaction, tab-separated as: idx\\tdate\\tamount\\tdescription (amount is ' +
+    'negative for money out, positive for money in). Classify EVERY line into exactly ONE of these ' +
+    `categories: ${categoryList.join(', ')}. Respond with ONLY a JSON object, no other text, with ` +
+    'EXACTLY this shape: {"suggestions": [{"idx": <the same idx number from the input line>, ' +
+    '"category": "<one of the categories listed above, verbatim>", "confidence": <number 0 to 100>}]}. ' +
+    'You MUST pick category from the exact list given — never invent a new one. Include a suggestion ' +
+    'for every input line; if genuinely unclear, still pick the closest category and use a low ' +
+    'confidence rather than omitting the line.'
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: txnLines.join('\n') },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' }, max_tokens: 8192 },
+  )
+
+  let parsed: { suggestions?: unknown }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${CHAT_MODEL}): ${raw.slice(0, 300)}`)
+  }
+
+  const validIdx = new Set(txnLines.map((l) => Number(l.split('\t')[0])))
+  // Case/whitespace-normalized lookup back to the caller's exact category
+  // string — the prompt asks for the category "verbatim", but that's not
+  // enforced by response_format:json_object, and an LLM returning e.g.
+  // "sales income" or "Sales Income " instead of "Sales Income" would
+  // otherwise silently fail a strict categoryList.includes(...) check and
+  // drop that row's suggestion entirely, even though it was substantively
+  // correct.
+  const normalize = (s: string) => s.trim().toLowerCase()
+  const categoryByNormalized = new Map(categoryList.map((c) => [normalize(c), c]))
+  const rawSuggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+  const suggestions = rawSuggestions
+    .map((s) => {
+      const rec = s as Record<string, unknown>
+      const rawCategory = typeof rec.category === 'string' ? rec.category : null
+      return {
+        idx: typeof rec.idx === 'number' ? rec.idx : null,
+        category: rawCategory !== null ? (categoryByNormalized.get(normalize(rawCategory)) ?? null) : null,
+        confidence: typeof rec.confidence === 'number' ? rec.confidence : 70,
+      }
+    })
+    // Belt-and-suspenders — the client (_recoRefineOther) already validates
+    // idx/category before applying anything, but rejecting a hallucinated
+    // idx or an off-list category here too keeps the response itself honest.
+    .filter((s) => s.idx !== null && validIdx.has(s.idx) && s.category !== null)
+
+  return { suggestions }
 }
 
 const DEFAULT_VISION_MODEL = 'qwen/qwen3.6-27b'
@@ -1311,6 +1398,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'categorize':
         data = await handleCategorize(body)
+        break
+      case 'categorize_bank':
+        data = await handleCategorizeBank(body)
         break
       case 'receipt':
         data = await handleReceipt(body)
