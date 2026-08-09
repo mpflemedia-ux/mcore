@@ -1436,21 +1436,59 @@ const _DEFAULT_ROLE_MODULES = {
 }
 
 
-// ─── Soft period lock (localStorage per tenant; TODO: migrate to tenants.config) ───
-function _booksLockKey() {
-  return 'nexerp_books_lock_' + (APP.tenant?.id || 'none')
-}
+// ─── Period lock: tenants.config (server, tenant-wide) ──────────────────────
+// Was localStorage-only (per-device) — same "one JSONB blob for tenant-wide
+// settings" pattern _rpSave already uses for role permissions
+// (config->'roles') is used here for config->>'books_lock_date', so a lock
+// set by one staff member on one device is now actually visible to every
+// other device/staff on the tenant, and survives a browser data clear.
+// APP.tenant.config is already loaded into memory at login (see the profile
+// fetch on boot), so reading it here is free — no extra network call per
+// assertNotPeriodLocked check, which is why this can stay synchronous.
+//
+// Deliberately NOT cached in localStorage: an earlier version of this code
+// merged in a local fallback to protect a pre-existing local-only lock from
+// being silently weakened on first load after this shipped — but that same
+// fallback meant an explicit server-side CLEAR (books_lock_date set back to
+// null) could never actually unlock a device that still had a stale local
+// value cached, since null always lost to "any" cached date. A security
+// control that can get permanently stuck in the wrong state on some devices
+// is worse than the one-time cost of an admin having to re-set a
+// pre-existing local-only lock once via Settings after this deploys.
+//
+// Client-side enforcement alone can never be a real security boundary (a
+// technical user can call the Supabase REST API directly, bypassing this
+// entirely) — see supabase/migrations/20260809010000_period_lock_trigger.sql
+// for the DB-level enforcement this is paired with (journal_entries,
+// invoices, payments — the three tables assertNotPeriodLocked actually
+// guards below).
 function getBooksLockDate() {
-  try {
-    const v = localStorage.getItem(_booksLockKey())
-    return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null
-  } catch(e) { return null }
+  const v = APP.tenant?.config?.books_lock_date
+  return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : null
 }
-function setBooksLockDate(dateStr) {
-  try {
-    if(!dateStr) localStorage.removeItem(_booksLockKey())
-    else localStorage.setItem(_booksLockKey(), dateStr)
-  } catch(e) {}
+async function setBooksLockDate(dateStr) {
+  // Validated here too (not just relying on <input type="date">, or on the
+  // server-side checks in merge_tenant_config/the trigger functions) — a
+  // malformed books_lock_date isn't just "this save fails", it's cast with
+  // ::date inside a BEFORE INSERT trigger on journal_entries/invoices/
+  // payments, so a bad value that got through would block EVERY future
+  // insert into any of those tables for the whole tenant until manually
+  // fixed. Defense in depth: reject it here, reject it again server-side.
+  if(dateStr) {
+    const isBm = APP.language==='bm'
+    // Shape regex alone lets a calendar-invalid value like '2026-02-30'
+    // through (JS's own Date silently normalizes it to March 2nd instead
+    // of rejecting it) — round-tripping through Date and comparing the
+    // re-formatted string catches that; the server (merge_tenant_config)
+    // validates with a real ::date cast too, this is just faster feedback.
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error(isBm?'Format tarikh tidak sah (perlu YYYY-MM-DD)':'Invalid date format (expected YYYY-MM-DD)')
+    const d = new Date(dateStr+'T00:00:00Z')
+    if(isNaN(d.getTime()) || d.toISOString().slice(0,10) !== dateStr) throw new Error((isBm?'Tarikh tidak sah: ':'Invalid date: ')+dateStr)
+  }
+  // _tenantConfigPatch (defined further down, hoisted like every other
+  // function declaration in this file) re-SELECTs config fresh before
+  // merging — see its own comment for why that matters here specifically.
+  await _tenantConfigPatch({ books_lock_date: dateStr || null })
 }
 /** Returns false if date is locked (entry/issue date <= lock date). Shows toast. */
 function assertNotPeriodLocked(dateStr) {
@@ -4688,11 +4726,11 @@ async function renderSettings(params={}) {
   </div>
   ${isAdmin ? `
   <div class="card" style="max-width:500px;margin-top:16px">
-    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Kunci Tempoh (lembut)':'Period Lock (soft)'}</div></div>
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Kunci Tempoh':'Period Lock'}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.5">${APP.language==='bm'
-        ? 'Transaksi dengan tarikh pada atau sebelum tarikh kunci tidak boleh disiarkan (jurnal, invois, bayaran). Disimpan setempat per tenant sehingga migrasi ke server.'
-        : 'Transactions dated on or before the lock date cannot be posted (journals, invoices, payments). Stored locally per tenant until a server migration.'}</p>
+        ? 'Transaksi dengan tarikh pada atau sebelum tarikh kunci tidak boleh disiarkan (jurnal, invois, bayaran). Guna kunci untuk seluruh tenant (setiap peranti/staf) dan dikuatkuasakan di peringkat pangkalan data — bukan sekadar semakan app.'
+        : 'Transactions dated on or before the lock date cannot be posted (journals, invoices, payments). Applies tenant-wide (every device/staff member) and is enforced at the database level — not just an app-side check.'}</p>
       <div class="form-group"><label class="form-label">${APP.language==='bm'?'Dikunci sehingga':'Locked through'}</label>
         <input type="date" id="books-lock-date" class="form-input" value="${getBooksLockDate()||''}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -4994,14 +5032,18 @@ function _docCopyDraft() {
 // method, entry type) rather than the discount/void examples mentioned in the
 // original spec — flagged to the user as a scope adjustment.
 
-function _saveBooksLock() {
+async function _saveBooksLock() {
   const v = (document.getElementById('books-lock-date')?.value || '').trim()
-  setBooksLockDate(v || null)
   const isBm = APP.language==='bm'
-  showToast(v
-    ? (isBm ? ('Tempoh dikunci sehingga '+formatDate(v)) : ('Books locked through '+formatDate(v)))
-    : (isBm ? 'Kunci tempoh dibuka.' : 'Period lock cleared.'),
-    'success')
+  try {
+    await setBooksLockDate(v || null)
+    showToast(v
+      ? (isBm ? ('Tempoh dikunci sehingga '+formatDate(v)) : ('Books locked through '+formatDate(v)))
+      : (isBm ? 'Kunci tempoh dibuka.' : 'Period lock cleared.'),
+      'success')
+  } catch(err) {
+    showToast((isBm?'Ralat simpan kunci tempoh: ':'Error saving period lock: ')+(err.message||''), 'error')
+  }
 }
 
 async function _exportTenantBackup() {
@@ -5195,13 +5237,50 @@ function _rpRemoveRole(role) {
   _rpRenderList()
 }
 
+// Shared safe(r) merge for tenants.config — a single JSONB blob storing
+// several unrelated tenant-wide settings (role permissions, TIN,
+// books_lock_date, ...). Tries the merge_tenant_config RPC first — a
+// single atomic `config = config || patch` UPDATE done entirely inside
+// Postgres (see supabase/migrations/20260809010000_period_lock_trigger.sql),
+// so two concurrent saves of different keys (e.g. one tab saving role
+// permissions while another sets the period lock) genuinely cannot clobber
+// each other, not just "probably won't" — Postgres's own row-level MVCC
+// serializes the two UPDATEs. Falls back to the older SELECT-then-merge-
+// then-UPDATE (which still has a real, narrow TOCTOU race between the
+// SELECT and the UPDATE) ONLY when the RPC itself doesn't exist yet (that
+// migration not deployed) — PostgREST's "function not found" error
+// (code PGRST202, or the same wording when it lacks a code) is the one
+// specific case this falls back for. Any OTHER error from the RPC —
+// merge_tenant_config's own owner/admin check failing (42501), its
+// books_lock_date format validation failing (22007), a network error,
+// anything — is re-thrown as-is. Silently falling back to the older path
+// for ANY error would mean the fallback's un-role-checked raw
+// `.update()` could complete a write the RPC explicitly rejected, defeating
+// the owner/admin authorization the RPC exists specifically to enforce.
+async function _tenantConfigPatch(patch) {
+  const {data, error} = await sb.rpc('merge_tenant_config', { p_tenant_id: APP.tenant.id, p_patch: patch })
+  if(!error) { APP.tenant.config = data; return data }
+  const isMissingFn = error.code === 'PGRST202' || /function .* does not exist|could not find the function/i.test(error.message||'')
+  if(!isMissingFn) throw error
+  const {data: curT, error: selErr} = await sb.from('tenants').select('config').eq('id', APP.tenant.id).single()
+  if(selErr) throw selErr
+  let cfg = curT?.config || {}
+  if(typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }
+  cfg = { ...(cfg||{}), ...patch }
+  const {error: updErr} = await sb.from('tenants').update({config:cfg}).eq('id',APP.tenant.id)
+  if(updErr) throw updErr
+  APP.tenant.config = cfg
+  return cfg
+}
+
 async function _rpSave() {
   const t = APP.language==='bm' ? { saved:'Kebenaran peranan disimpan!' } : { saved:'Role permissions saved!' }
   const msgEl = document.getElementById('rp-save-msg')
-  const newConfig = { ...(APP.tenant.config||{}), roles: _rolePermsState }
-  const {error} = await sb.from('tenants').update({config:newConfig}).eq('id',APP.tenant.id)
-  if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent='Error: '+error.message; return }
-  APP.tenant.config = newConfig
+  try {
+    await _tenantConfigPatch({ roles: _rolePermsState })
+  } catch(error) {
+    msgEl.style.color='var(--danger)'; msgEl.textContent='Error: '+error.message; return
+  }
   APP.tenantConfig.roles = _rolePermsState
   buildSidebar()
   msgEl.style.color='var(--success)'
@@ -5374,20 +5453,25 @@ async function _cpSave() {
   }
 
   const tinVal = (document.getElementById('cp-tin')?.value || '').trim() || null
-  // Merge TIN into config jsonb
-  const {data: curT} = await sb.from('tenants').select('config').eq('id', APP.tenant.id).single()
-  let cfg = curT?.config || {}
-  if(typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }
-  cfg = Object.assign({}, cfg || {})
-  if(tinVal) cfg.tin = tinVal
-  else delete cfg.tin
-  payload.config = cfg
+  // Routed through _tenantConfigPatch (same helper role permissions /
+  // period lock saves use), as its OWN call rather than folded into the
+  // payload.config below — a previous version merged config inline here
+  // via its own SELECT-then-merge-then-UPDATE, which meant this save could
+  // silently overwrite a books_lock_date or roles change made concurrently
+  // through the atomic RPC path. That data-loss risk matters more than the
+  // single-call atomicity this trades away (name/address could now save
+  // while the TIN merge fails, or vice versa — a partial, retriable save,
+  // not a silent one).
+  try {
+    await _tenantConfigPatch({ tin: tinVal })
+  } catch(error) {
+    msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return
+  }
 
   const {error} = await sb.from('tenants').update(payload).eq('id', APP.tenant.id)
   if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
 
   APP.tenant.name = name
-  APP.tenant.config = cfg
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')
@@ -12714,6 +12798,15 @@ async function _pvMarkPaid(id) {
   const {data: v} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!v) { showToast('Not found','error'); return }
   if(v.status==='paid') { showToast(isBm?'Sudah dibayar.':'Already paid.','error'); return }
+  const voucherDate = v.voucher_date || new Date().toISOString().slice(0,10)
+  // Checked up front, before any write — step 3 below inserts into
+  // `payments`, which the period-lock DB trigger now also guards. Without
+  // this check, a locked voucher date would still mark the PV "paid" in
+  // step 1, then silently fail to record the payments row in step 3 (that
+  // insert is deliberately best-effort/console.warn-only for OTHER kinds of
+  // failures) — leaving the voucher marked paid with no actual payment or
+  // journal entry behind it, and no error shown to the user.
+  if(!assertNotPeriodLocked(voucherDate)) return
 
   // 1) Update PV
   const {error: e1} = await sb.from('payment_vouchers').update({
@@ -12732,7 +12825,7 @@ async function _pvMarkPaid(id) {
         await sb.from('supplier_payments').insert({
           tenant_id: APP.tenant.id,
           bill_id: v.bill_id,
-          payment_date: v.voucher_date || new Date().toISOString().slice(0,10),
+          payment_date: voucherDate,
           amount: Number(v.amount||0),
           method: v.payment_method || 'Bank Transfer',
           notes: 'PV '+ (v.ref_no||'')
@@ -12749,7 +12842,7 @@ async function _pvMarkPaid(id) {
     await sb.from('payments').insert({
       tenant_id: APP.tenant.id,
       ref_no: v.ref_no,
-      payment_date: v.voucher_date || new Date().toISOString().slice(0,10),
+      payment_date: voucherDate,
       amount: Number(v.amount||0),
       payment_type: 'payment',
       payment_method: v.payment_method || null,
@@ -12770,7 +12863,7 @@ async function _pvMarkPaid(id) {
     if(cashAcc && debitAcc) {
       await _postJournalEntry({
         description: 'PV '+(v.ref_no||'')+' — '+(v.payee_name||''),
-        entryDate: v.voucher_date || new Date().toISOString().slice(0,10),
+        entryDate: voucherDate,
         entryType: 'auto',
         lines: [
           { account_id: debitAcc, debit: Number(v.amount||0), credit: 0 },
