@@ -456,14 +456,26 @@ async function handleExtractBankTransactions(body: Record<string, unknown>) {
     '[{"date": "<YYYY-MM-DD>", "description": "<transaction description exactly as printed>", ' +
     '"debit": <plain number with no currency symbol, or null if this row has no debit/' +
     'withdrawal/outgoing amount>, "credit": <plain number, or null if this row has no credit/' +
-    'deposit/incoming amount>}]}. Read the debit and credit amounts from whichever COLUMN they ' +
-    'actually appear in on the statement — do not infer the sign from the description text. ' +
-    'Skip header rows, column-label rows, and footer/summary rows (opening balance, closing ' +
-    'balance, page totals, "brought forward"/"carried forward") — only include actual ' +
-    'transaction rows. If the year is not printed on every row (some statements only print it ' +
-    'once at the top of the page or section), infer it from the statement period printed ' +
-    'elsewhere on the page. Return {"transactions": []} if this page has no transaction table ' +
-    'at all (e.g. a cover page).'
+    'deposit/incoming amount>}], "statement_total_debit": <the statement\'s OWN printed grand ' +
+    'total of all debits/withdrawals for the WHOLE statement period, as a plain number, or null ' +
+    'if no such summary figure is printed anywhere on this page>, "statement_total_credit": ' +
+    '<the statement\'s OWN printed grand total of all credits/deposits for the WHOLE statement ' +
+    'period, or null if not printed on this page>}. Read the debit and credit amounts from ' +
+    'whichever COLUMN they actually appear in on the statement — do not infer the sign from the ' +
+    'description text. Skip header rows, column-label rows, and footer/summary rows (opening ' +
+    'balance, closing balance, page totals, "brought forward"/"carried forward") when building ' +
+    'the transactions list — only include actual transaction rows there. Separately, if this ' +
+    'page shows a statement-wide summary section (often titled something like "Statement ' +
+    'Summary" or "Account Summary", typically only on ONE page of the whole statement — commonly ' +
+    'the first) with a DOLLAR AMOUNT total of debits and a DOLLAR AMOUNT total of credits for the ' +
+    'ENTIRE statement period (NOT a per-page subtotal, NOT an opening/closing balance, and NOT a ' +
+    'transaction COUNT — some statements print both a count like "Total Transactions: 42" and a ' +
+    'dollar total nearby; only the dollar amounts belong in these two fields), report those ' +
+    'dollar amounts in statement_total_debit/statement_total_credit. If the year is not printed ' +
+    'on every row (some statements only print it once at the top of the page or section), infer it from the ' +
+    'statement period printed elsewhere on the page. Return {"transactions": [], ' +
+    '"statement_total_debit": null, "statement_total_credit": null} if this page has no ' +
+    'transaction table at all (e.g. a cover page).'
 
   let raw: string
   try {
@@ -486,7 +498,7 @@ async function handleExtractBankTransactions(body: Record<string, unknown>) {
     throw new Error(`Bank transaction extraction vision call failed (model=${visionModel}): ${msg}`)
   }
 
-  let parsed: { transactions?: unknown }
+  let parsed: { transactions?: unknown; statement_total_debit?: unknown; statement_total_credit?: unknown }
   try {
     parsed = JSON.parse(raw)
   } catch {
@@ -502,7 +514,13 @@ async function handleExtractBankTransactions(body: Record<string, unknown>) {
   const asAmount = (v: unknown): number | null => {
     if (typeof v === 'number' && Number.isFinite(v)) return v
     if (typeof v === 'string') {
-      const n = Number(v.replace(/,/g, '').trim())
+      const trimmed = v.replace(/,/g, '').trim()
+      // Number('') and Number('   ') both evaluate to 0, NOT NaN — an
+      // empty-string deviation from the prompt's "or null" instruction
+      // (unenforced by json_object mode) would otherwise silently become
+      // a false real total of RM 0.00 instead of "not found".
+      if (!trimmed) return null
+      const n = Number(trimmed)
       if (Number.isFinite(n)) return n
     }
     return null
@@ -524,7 +542,18 @@ async function handleExtractBankTransactions(body: Record<string, unknown>) {
     // — drop it here rather than pass it to the client to silently skip.
     .filter((r) => r.date && (r.debit != null || r.credit != null))
 
-  return { transactions }
+  // Independent of the transaction rows above — lets the client show a
+  // "does our extracted total match the statement's own printed total?"
+  // completeness check (a page failing to extract, or a row being
+  // mis-parsed, would otherwise be invisible unless the user manually
+  // re-counts against the PDF). Most statements only print this summary
+  // on one page, so most per-page calls legitimately return null here —
+  // that's expected, not a failure, and the client merges across pages.
+  return {
+    transactions,
+    statement_total_debit: asAmount(parsed.statement_total_debit),
+    statement_total_credit: asAmount(parsed.statement_total_credit),
+  }
 }
 
 // FLAT field list — no nested arrays/objects. The original schema nested
