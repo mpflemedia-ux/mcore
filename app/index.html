@@ -8593,8 +8593,9 @@ async function renderReconcile() {
       <div id="reco-pdf-status" style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm
         ? 'AI baca setiap muka surat, hasil masuk ke kotak teks bawah untuk SEMAK dulu sebelum "Import & Auto-Kategori".'
         : 'AI reads each page, results go into the text box below for you to REVIEW before "Import & Auto-Categorize".'}</div>
+      <div id="reco-pdf-tally"></div>
     </div>
-    <textarea id="reco-csv-text" class="form-input" rows="6" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00&#10;01/04/2026,CIB Instant Transfer - Operation Cost,799.00,,35600156696,LE AROMA SDN BHD"></textarea>
+    <textarea id="reco-csv-text" class="form-input" rows="6" oninput="_recoClearPdfTally()" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00&#10;01/04/2026,CIB Instant Transfer - Operation Cost,799.00,,35600156696,LE AROMA SDN BHD"></textarea>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
       <button class="btn btn-primary btn-sm" onclick="_recoImportCategorize()"><i class="ti ti-file-import"></i> ${t.parse}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoRunMatch()"><i class="ti ti-wand"></i> ${t.match}</button>
@@ -8651,9 +8652,27 @@ function _recoFileUpload(event) {
   const file = event.target.files[0]
   if (!file) return
   const reader = new FileReader()
-  reader.onload = () => { const el = document.getElementById('reco-csv-text'); if (el) el.value = reader.result }
+  // Cleared inside onload, not unconditionally up front — a CSV file
+  // replaces the reviewed text entirely, and the PDF tally banner (if
+  // showing) verified the PREVIOUS PDF-scanned content against ITS
+  // statement totals, so it must go once that content is actually
+  // replaced. But if this read fails (reader.onerror below — corrupted
+  // file, I/O error), the textarea is untouched and still holds exactly
+  // the content the banner verified; clearing before knowing the read
+  // will succeed would wipe an accurate banner for data that never
+  // actually changed. Same "only clear once the replacement actually
+  // happens" reasoning _recoImportCategorize applies to its own clear.
+  reader.onload = () => {
+    const el = document.getElementById('reco-csv-text')
+    if (el) el.value = reader.result
+    _recoClearPdfTally()
+  }
   reader.onerror = () => showToast(APP.language==='bm'?'Gagal baca fail.':'Failed to read file.', 'error')
   reader.readAsText(file)
+}
+function _recoClearPdfTally() {
+  const el = document.getElementById('reco-pdf-tally')
+  if (el) el.innerHTML = ''
 }
 
 // AI-assisted PDF import — renders each page to an image (reusing the same
@@ -8675,6 +8694,16 @@ function _recoFileUpload(event) {
 // silently-wrong data that lands directly in _recoTxns.
 const RECO_PDF_MAX_PAGES = 25 // a monthly SME statement can easily run past the 5-page default meant for short intake forms; 25 covers a typical high-volume monthly statement without an unbounded (cost/time) upload
 let _recoPdfBusy = false // re-entrancy guard — a scan can take a while (up to 25 sequential vision calls, each with its own retries — see _recoPdfUpload), so a second file pick before the first finishes must not run concurrently against the same textarea
+// Shared by resolveTotal (cross-page agreement on the statement's own
+// printed total) and _recoRenderPdfTally (extracted-sum-vs-statement-total
+// comparison) — both are the same "rounding-cent allowance" concept for
+// the SAME PDF-tally feature, so they share one constant rather than two
+// independently-tunable literals that happen to currently match. NOT
+// reused by the unrelated heuristic bank-txn-to-invoice/payment matcher's
+// own amount tolerance (_recoRunMatch) — that's a different domain
+// (matching two distinct financial records) that only coincidentally
+// uses the same value today.
+const RECO_PDF_TALLY_TOLERANCE = 0.05
 function _sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
 
 async function _recoPdfUpload(event) {
@@ -8721,12 +8750,31 @@ async function _recoPdfUpload(event) {
   const setStatus = (html) => { if (statusEl && document.contains(statusEl)) statusEl.innerHTML = html }
   const spinner = (label) => `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${label}`
 
+  // Deliberately NOT cleared here (unlike _recoFileUpload/manual-edit/
+  // Import) — the textarea is cumulative across PDF scans (the append
+  // below: `existing + '\n' + lines`, e.g. for a statement split across
+  // more than RECO_PDF_MAX_PAGES pages, uploaded in parts). Wiping the
+  // tally at the start of every new scan would silently erase an earlier
+  // scan's mismatch warning the moment a second scan begins, even though
+  // that earlier scan's under-extracted rows are still sitting in the box
+  // about to be imported. _recoRenderPdfTally appends (not replaces), so
+  // every scan's own verdict stays visible until something that actually
+  // invalidates ALL of them happens (CSV upload, manual edit, Import,
+  // Clear Session).
   try {
     setStatus(spinner(t.converting))
     const pageBlobs = await _pdfPagesToImageBlobs(file, RECO_PDF_MAX_PAGES)
     const allRows = []
     let failedPages = 0
     let consecutiveFailures = 0
+    // Statement's OWN printed grand totals (extract_bank_transactions asks
+    // for these too now — see ai-proxy) — most Malaysian bank statements
+    // only print this summary on ONE page (commonly the first), so most
+    // per-page results legitimately have both null. Every non-null value
+    // found is collected (not just the first) so pages disagreeing with
+    // each other can be detected below, instead of silently trusting
+    // whichever page happened to report first.
+    const stmtDebitCandidates = [], stmtCreditCandidates = []
     for (let i = 0; i < pageBlobs.length; i++) {
       // Per-page try/catch + up to 2 retries (3 attempts total) with
       // backoff — same "isolate one failure, don't lose the rest of the
@@ -8770,6 +8818,15 @@ async function _recoPdfUpload(event) {
             if (error) throw error
             if (!data?.success) throw new Error(data?.error || 'Unknown error')
             allRows.push(...(data.data?.transactions || []))
+            // Math.abs() — the AI isn't told a sign convention for these
+            // (unlike per-row debit/credit, a statement's own "Total
+            // Debit" summary box can print as a negative reducing figure
+            // on some layouts), and sumDebit/sumCredit below are always
+            // positive magnitudes too, so comparing a possibly-negative
+            // statement figure against an always-positive extracted sum
+            // would produce a false mismatch.
+            if (data.data?.statement_total_debit != null) stmtDebitCandidates.push(Math.abs(Number(data.data.statement_total_debit)))
+            if (data.data?.statement_total_credit != null) stmtCreditCandidates.push(Math.abs(Number(data.data.statement_total_credit)))
             pageOk = true
           } catch (pageErr) {
             if (attempt === 2) {
@@ -8792,30 +8849,107 @@ async function _recoPdfUpload(event) {
         break
       }
     }
+    // Whether the SUM of extracted rows can be trusted to represent the
+    // whole statement — true if EITHER the page cap truncated processing
+    // OR any pages failed outright (including a circuit-breaker abort,
+    // which also leaves trailing pages unprocessed). Deliberately broader
+    // than just the page-cap comparison: a 10-page statement well under
+    // RECO_PDF_MAX_PAGES that loses 3 pages to a network blip and trips
+    // the circuit breaker is JUST as incomplete a sum as a 30-page
+    // statement capped at 25 — comparing either against the statement's
+    // OWN full-period total would be comparing a partial sum to a total
+    // it was never going to match, mischaracterizing a transient
+    // extraction gap as a genuine data mismatch. Computed once and reused
+    // everywhere below instead of separately re-deriving the page-cap
+    // half of this condition at each call site (which is what the
+    // page-cap-specific t.truncated(...) MESSAGE text below still checks
+    // directly — that wording is specifically about processed-vs-total
+    // pages, not this broader "can the sum be trusted" gate).
+    const pdfSumIncomplete = (pageBlobs.totalPages > pageBlobs.length) || failedPages > 0
+    // Resolve each candidate list to a single value — null if nothing was
+    // found, the value itself if every page that reported one agrees
+    // (within the same 0.05 rounding tolerance the tally comparison
+    // itself uses), or a special 'conflict' marker if pages disagree
+    // (e.g. a combined multi-statement PDF, or a mislabeled subtotal on
+    // one page) — silently trusting whichever page happened to report
+    // first would risk showing a confidently wrong tally against a figure
+    // that was never actually the real statement-wide total. Defined
+    // before the !allRows.length check below (not after) so a page that
+    // reports a real statement total but extracts zero transaction rows
+    // (e.g. a summary-only page) still gets that total surfaced instead
+    // of silently discarded.
+    const resolveTotal = (candidates) => {
+      if (!candidates.length) return null
+      // min/max spread, NOT "every candidate within tolerance of just the
+      // FIRST one" — the latter only checks pairwise-to-first, so e.g.
+      // [100.00, 100.05, 99.96] would each individually pass against
+      // 100.00 (spread <=0.05 from it) while the 2nd and 3rd actually
+      // differ from EACH OTHER by 0.09, more than tolerance — a real
+      // disagreement the pairwise-to-first check would miss entirely.
+      const min = Math.min(...candidates), max = Math.max(...candidates)
+      return (max - min) <= RECO_PDF_TALLY_TOLERANCE ? candidates[0] : 'conflict'
+    }
     if (!allRows.length) {
       // Distinguish "every page failed to read" (API/network/deploy issue —
       // telling the user to check their PDF would be actively misleading)
       // from "pages read fine, genuinely no transaction rows found".
-      const msg = (failedPages > 0 && failedPages === pageBlobs.length) ? t.allFailed(failedPages) : t.none
+      let msg = (failedPages > 0 && failedPages === pageBlobs.length) ? t.allFailed(failedPages) : t.none
+      // Same truncation note the success path below appends — without it,
+      // "no transactions detected" on a PDF that has more pages than were
+      // processed reads as "this statement genuinely has none" when the
+      // real explanation may just be that the actual transaction pages
+      // (or the summary page) were never reached.
+      if (pageBlobs.totalPages > pageBlobs.length) msg += t.truncated(pageBlobs.length, pageBlobs.totalPages)
       setStatus(`<span style="color:${failedPages ? 'var(--danger)' : 'var(--text-3)'}">${msg}</span>`)
       if (!document.contains(statusEl)) showToast(msg, failedPages ? 'error' : 'warning')
+      // Even with zero transaction ROWS, a page may have still reported a
+      // real statement total (e.g. a cover/summary page, or a short
+      // statement whose only content is a summary box) — surfacing that
+      // instead of silently dropping it lets the user notice "PDF shows
+      // RM X total but 0 transactions were read" as its own red flag,
+      // rather than just a generic "no transactions found" message.
+      if (stmtDebitCandidates.length || stmtCreditCandidates.length) {
+        _recoRenderPdfTally(isBm, 0, 0, resolveTotal(stmtDebitCandidates), resolveTotal(stmtCreditCandidates), pdfSumIncomplete)
+      }
       return
     }
     // credit -> positive (money in), debit -> negative (money out) — same
     // sign convention _brSuggestCategory/_recoParseCsvText already use.
-    // Commas/newlines stripped from description since _recoParseCsvText's
-    // CSV split is naive (not quote-aware) — a stray comma would shift the
-    // row's columns.
-    const lines = allRows.map(r => {
-      const amt = r.credit != null ? Number(r.credit) : -Math.abs(Number(r.debit||0))
-      // \t included: _recoParseCsvText splits on comma OR tab
-      // (line.split(/,|\t/)) — a stray tab here would shift the row's
-      // columns exactly like a stray comma would, and unlike a comma it's
-      // invisible whitespace in the textarea, so the user's review step
-      // can't catch it.
-      const desc = String(r.description||'').replace(/[,\t\n\r]/g, ' ').trim()
-      return `${r.date},${desc},${amt.toFixed(2)}`
+    // Resolved ONCE per row here (not separately for the CSV text vs the
+    // tally sums below) — if a row ever had both debit AND credit
+    // non-null (the AI schema doesn't forbid it, e.g. a misread
+    // combined-line), computing the tally from allRows independently
+    // would sum BOTH sides while the CSV text below only ever keeps ONE
+    // (credit wins), silently making the tally check totals that don't
+    // match what's actually reviewable/importable. Sharing this one
+    // resolved amt keeps them impossible to diverge.
+    const resolved = allRows.map(r => ({
+      date: r.date,
+      amt: r.credit != null ? Number(r.credit) : -Math.abs(Number(r.debit||0)),
+      // Commas/newlines stripped since _recoParseCsvText's CSV split is
+      // naive (not quote-aware) — a stray comma would shift the row's
+      // columns. \t included too: that split is on comma OR tab
+      // (line.split(/,|\t/)), and unlike a comma a stray tab is invisible
+      // whitespace in the textarea, so the user's review step can't catch it.
+      desc: String(r.description||'').replace(/[,\t\n\r]/g, ' ').trim(),
+    }))
+    const lines = resolved.map(x => `${x.date},${x.desc},${x.amt.toFixed(2)}`)
+    // Independent extraction-completeness check — sums what THIS import
+    // actually captured (from the SAME resolved amounts the CSV text
+    // above uses) and compares against the statement's own printed total
+    // (if one was found on any page), completely separate from the
+    // failedPages/consecutiveFailures tracking above. A page can "succeed"
+    // (no error, valid JSON) while still under- or over-reading rows the
+    // model misjudged — this catches that class of silent miscount, not
+    // just outright page failures.
+    let sumDebit = 0, sumCredit = 0
+    resolved.forEach(x => {
+      if (x.amt >= 0) sumCredit += x.amt
+      else sumDebit += Math.abs(x.amt)
     })
+    const stmtTotalDebit = resolveTotal(stmtDebitCandidates)
+    const stmtTotalCredit = resolveTotal(stmtCreditCandidates)
+    _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, pdfSumIncomplete)
     const ta = document.getElementById('reco-csv-text')
     if (ta && document.contains(ta)) {
       const existing = ta.value.trim()
@@ -8834,6 +8968,142 @@ async function _recoPdfUpload(event) {
     _recoPdfBusy = false
     event.target.value = ''
   }
+}
+
+// Extraction-completeness banner — compares what was actually extracted
+// from THIS scan against that PDF's own printed grand totals (see
+// ai-proxy's extract_bank_transactions statement_total_debit/credit
+// fields). APPENDS its result rather than replacing #reco-pdf-tally's
+// existing content — the textarea is cumulative across multiple PDF
+// scans (a statement split across more than RECO_PDF_MAX_PAGES pages,
+// uploaded in parts), so a second scan's clean result must not silently
+// erase a first scan's mismatch warning; see _recoPdfUpload's own comment
+// on why it doesn't clear this before starting a new scan. Callers that
+// DO want to reset the whole history (CSV upload, manual textarea edit,
+// Import, Clear Session) call _recoClearPdfTally() themselves first.
+// Falls back to a toast (see the bottom of this function) rather than
+// silently doing nothing if #reco-pdf-tally isn't in the DOM (user
+// navigated away mid-scan) — same reasoning as setStatus's own fallback
+// for the main scan-progress message.
+// stmtTotalDebit/stmtTotalCredit: a positive number (found and agreed on
+// by every page that reported one), null (no page reported one), or the
+// string 'conflict' (different pages reported different figures — see
+// resolveTotal in _recoPdfUpload; treated as "can't verify" rather than
+// trusting an arbitrary one of them).
+function _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, sumIncomplete) {
+  const el = document.getElementById('reco-pdf-tally')
+  const TOL = RECO_PDF_TALLY_TOLERANCE
+  // Resolved independently PER FIELD (not one shared verdict for both) —
+  // a statement that only prints a debit summary (no credit total
+  // anywhere) shouldn't have its credit side silently counted as "fine"
+  // just because there was nothing to check, and a conflict on ONE field
+  // shouldn't discard a perfectly good, resolved total on the OTHER.
+  // 'incomplete' is its OWN outcome, distinct from 'ok'/'mismatch' — a
+  // resolved statement total exists, but sumDebit/sumCredit can't be
+  // trusted to represent the whole statement (sumIncomplete covers BOTH
+  // the page-cap being hit AND pages failing outright / a circuit-breaker
+  // abort — see where the caller computes it), while the statement's own
+  // total is for the WHOLE period — comparing them would be
+  // apples-to-oranges and could show a false "mismatch" on exactly the
+  // large or flaky-network statements this feature is meant to help with.
+  // Checked BEFORE 'conflict' inside itself would be wrong — conflict
+  // (pages disagreeing with EACH OTHER) is a real, independent
+  // data-quality signal about the pages that WERE read, and must still
+  // surface even when the sum itself is incomplete; only a genuinely
+  // resolved single total becomes unreliable under an incomplete sum, not
+  // a disagreement among the processed pages themselves.
+  const fieldStatus = (sum, stmt) => {
+    if (stmt === 'conflict') return 'conflict'
+    if (stmt == null) return 'none'
+    if (sumIncomplete) return 'incomplete'
+    return Math.abs(sum - stmt) <= TOL ? 'ok' : 'mismatch'
+  }
+  const debitStatus = fieldStatus(sumDebit, stmtTotalDebit)
+  const creditStatus = fieldStatus(sumCredit, stmtTotalCredit)
+
+  if (debitStatus === 'none' && creditStatus === 'none') {
+    // Incomplete-sum case gets its own note — a null total here could
+    // mean the statement genuinely has no printed summary, OR that the
+    // summary (often on the last page) simply wasn't among the pages
+    // successfully processed; those read very differently to the user.
+    const toastMsg = sumIncomplete
+      ? (isBm
+        ? 'Tiada ringkasan jumlah ditemui dalam muka surat yang berjaya diproses — mungkin ringkasan (jika ada) berada pada muka surat yang tak diproses/gagal dibaca.'
+        : 'No summary total found in the pages successfully processed — the summary (if any) may be on a page that wasn\'t processed or failed to read.')
+      : (isBm
+        ? 'Tiada ringkasan jumlah dalam PDF ini untuk auto-sahkan — sila semak manual berbanding penyata asal.'
+        : 'No summary total found in this PDF to auto-verify — please check manually against the original statement.')
+    const html = `<div style="font-size:11px;color:var(--text-3);margin-top:6px"><i class="ti ti-info-circle"></i> ${toastMsg}</div>`
+    if (el && document.contains(el)) el.insertAdjacentHTML('beforeend', html)
+    else showToast(toastMsg, 'info')
+    return
+  }
+
+  const hasConflict = debitStatus === 'conflict' || creditStatus === 'conflict'
+  const hasMismatch = debitStatus === 'mismatch' || creditStatus === 'mismatch'
+  const hasIncomplete = debitStatus === 'incomplete' || creditStatus === 'incomplete'
+  // Both sides actually COMPARED (ok or mismatch — not just found, and not
+  // conflict/incomplete/none) — drives whether the headline says
+  // "verification passed" (both checked) vs "partially verified" (the
+  // other side had nothing comparable, whether because no total was
+  // printed for it, pages disagreed on it, or an incomplete sum made it
+  // unreliable — the OTHER side's completeness was never actually
+  // checked either way).
+  const bothChecked = (debitStatus === 'ok' || debitStatus === 'mismatch') && (creditStatus === 'ok' || creditStatus === 'mismatch')
+  // Green is reserved for an actual FULL pass — a partial verification is
+  // amber even when the one side that WAS checked matched, since a green
+  // checkmark would misrepresent that as a full pass.
+  const themeColor = hasMismatch ? 'var(--danger)' : !bothChecked ? 'var(--warning,#F59E0B)' : 'var(--success)'
+  const headline = hasMismatch
+    ? (isBm?'Amaran — jumlah TIDAK tally dengan penyata bank (mungkin ada baris terlepas)':'Warning — totals do NOT tally with bank statement (some rows may be missing)')
+    : hasConflict
+      ? (isBm?'Sebahagian tak dapat disahkan — muka surat PDF berbeza laporkan jumlah berbeza':'Partially unverifiable — different PDF pages reported disagreeing totals')
+      : hasIncomplete
+        ? (isBm?'Tak dapat disahkan sepenuhnya — bukan semua muka surat berjaya diproses':'Cannot fully verify — not all pages were successfully processed')
+        : bothChecked
+          ? (isBm?'Pengesahan PDF Lulus — jumlah tally dengan penyata bank':'PDF verification passed — totals tally with bank statement')
+          : (isBm?'Disahkan sebahagian — tiada ringkasan penuh dalam PDF untuk semak kedua-dua arah':'Partially verified — no full summary in PDF to check both directions')
+  const headlineIcon = (hasMismatch || hasConflict || !bothChecked) ? 'ti-alert-triangle' : 'ti-circle-check'
+  const row = (label, sum, stmt, status) => {
+    if (status === 'none') return ''
+    if (status === 'conflict') return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;padding:3px 0">
+        <span style="color:var(--text-3)">${label}</span>
+        <span style="color:var(--warning,#F59E0B)"><i class="ti ti-alert-triangle"></i> ${isBm?'Muka surat tak sepadan':'Pages disagree'}</span>
+      </div>`
+    if (status === 'incomplete') return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;padding:3px 0">
+        <span style="color:var(--text-3)">${label}</span>
+        <span style="color:var(--text-3)">${formatRM(sum)} <i class="ti ti-info-circle"></i> ${isBm?'Ekstrak tak lengkap':'Extraction incomplete'}</span>
+      </div>`
+    const ok = status === 'ok'
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;padding:3px 0">
+        <span style="color:var(--text-3)">${label}</span>
+        <span style="font-variant-numeric:tabular-nums;color:${ok?'var(--success)':'var(--danger)'}">
+          <i class="ti ${ok?'ti-check':'ti-alert-triangle'}"></i>
+          ${formatRM(sum)} <span style="color:var(--text-3);font-weight:400">${isBm?'berbanding PDF':'vs PDF'} ${formatRM(stmt)}</span>
+        </span>
+      </div>`
+  }
+  const html = `
+    <div class="card" style="padding:10px 12px;margin-top:8px;border:1px solid ${themeColor};background:color-mix(in srgb,${themeColor} 10%,transparent)">
+      <div style="font-size:12px;font-weight:600;color:${themeColor}"><i class="ti ${headlineIcon}"></i> ${headline}</div>
+      ${row(isBm?'Jumlah Masuk (IN)':'Total IN', sumCredit, stmtTotalCredit, creditStatus)}
+      ${row(isBm?'Jumlah Keluar (OUT)':'Total OUT', sumDebit, stmtTotalDebit, debitStatus)}
+    </div>`
+  // Mismatch gets 'error', not 'warning' — matches this same file's own
+  // convention pairing danger-colored status text with an 'error' toast
+  // in the equivalent detached-element fallback a few lines above (see
+  // setStatus's `failedPages ? 'error' : 'warning'`).
+  const toastType = hasMismatch ? 'error' : !bothChecked ? 'warning' : 'success'
+
+  // Same "don't leave the user with a silently-vanished result" fallback
+  // setStatus already applies for the main scan-progress message — the
+  // user could have navigated away from Reconcile and back while a scan
+  // was still running, detaching #reco-pdf-tally from the DOM.
+  if (el && document.contains(el)) el.insertAdjacentHTML('beforeend', html)
+  else showToast(headline, toastType)
 }
 
 function _recoNormalizeDate(s) {
@@ -8967,6 +9237,14 @@ async function _recoImportCategorize() {
     showToast(isBm ? 'Tiada baris sah dijumpai.' : 'No valid rows found.', 'warning')
     return
   }
+  // Only cleared once rows are actually about to be imported (not
+  // unconditionally at the top of this function) — the PDF tally banner
+  // (if showing a real mismatch warning) verified the text that was in
+  // the box at scan time; if this specific Import click turns out to
+  // import nothing (the `!rows.length` branch above), that warning is
+  // still accurate for whatever's still sitting in the box and must stay
+  // visible, not get wiped before the user has actually acted on it.
+  _recoClearPdfTally()
   _recoTxns = [...(_recoTxns || []), ...rows]
   _recoMatches = _recoTxns.map(t => t._match || null)
   _brSaveStore(_recoTxns)
@@ -9146,6 +9424,7 @@ function _recoClearSession() {
   _brSaveStore([])
   const el = document.getElementById('reco-result')
   if (el) el.innerHTML = ''
+  _recoClearPdfTally()
   showToast(APP.language==='bm'?'Sesi dikosongkan.':'Session cleared.', 'info')
 }
 
