@@ -8347,8 +8347,76 @@ function _brLsKey() {
 function _brLoadStore() {
   try { return JSON.parse(localStorage.getItem(_brLsKey()) || '[]') } catch(e) { return [] }
 }
-function _brSaveStore(lines) {
+// opts.skipCloud: used only by renderReconcile right after a cloud recovery
+// (see _recoTryCloudRecover) — the lines just came FROM Supabase, so
+// immediately upserting them straight back would be a pointless round
+// trip, not a real sync.
+let _recoCloudSyncTimer = null
+let _recoCloudSyncPending = null
+// Flushes a pending debounced sync immediately, bypassing the rest of the
+// 800ms wait. A plain setTimeout does NOT survive the tab closing before
+// it fires — if the user's last action before closing (or switching away
+// from) the tab is a Confirm/Reject/category edit, the debounce window
+// alone could silently drop it from the cloud copy with nothing to
+// self-heal it later (unlike Post Unmatched, whose idempotency check
+// verifies against the real journal_entries table, a plain Confirm/Reject
+// is link-only local state with no equivalent DB-side source of truth to
+// recover a dropped sync from). Wired to 'visibilitychange' below, which
+// reliably fires when a tab is backgrounded or closed, well before
+// 'beforeunload' would (and without beforeunload's own unreliability for
+// in-flight async work).
+//
+// RESIDUAL GAP: this narrows the loss window, it doesn't close it. The
+// upsert this triggers is a normal (non-keepalive) fetch through the
+// Supabase client — if the browser actually tears down the page before
+// that request completes (as opposed to just backgrounding the tab, which
+// 'visibilitychange' fires for well before an actual close), it can still
+// be aborted mid-flight. A real fix needs `fetch(..., {keepalive:true})`
+// or `navigator.sendBeacon`, neither of which the Supabase JS client
+// exposes here, and sendBeacon specifically can't carry the
+// Authorization/apikey headers PostgREST requires — that would mean a
+// raw, hand-authenticated REST call bypassing the client entirely.
+// Reasonable to accept for what this is (an occasional-loss recovery
+// backup — see the KNOWN LIMITATION on _recoCloudSyncState), not
+// reasonable to silently claim solved.
+function _brFlushCloudSync() {
+  if (!_recoCloudSyncTimer) return
+  clearTimeout(_recoCloudSyncTimer)
+  _recoCloudSyncTimer = null
+  const pending = _recoCloudSyncPending
+  _recoCloudSyncPending = null
+  if (pending) _recoCloudSyncState(pending)
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) _brFlushCloudSync() })
+function _brSaveStore(lines, opts) {
   try { localStorage.setItem(_brLsKey(), JSON.stringify(lines.slice(-500))) } catch(e) {}
+  // Best-effort mirror of the FULL current state to bank_statement_lines —
+  // fire-and-forget, never blocks or throws into the caller (localStorage
+  // remains the actual source of truth for an active session; this is a
+  // recovery backup only, see _recoTryCloudRecover). Deliberately skipped
+  // on an EMPTY array (Clear Session calls _brSaveStore([])) so clearing
+  // local state can never wipe the cloud copy — the whole point of that
+  // copy is to survive exactly this kind of local data loss.
+  //
+  // Debounced (800ms), not immediate — _brSaveStore fires on nearly every
+  // Bank Recon click (confirm one row, edit one category, ...), and each
+  // sync upserts the ENTIRE current array, not just what changed. Without
+  // debouncing, reviewing a batch of lines one click at a time would fire
+  // one full-array upload PER click; collapsing a burst of clicks into one
+  // upload after the user pauses is a meaningfully cheaper, still-simple
+  // fix that doesn't require per-row change tracking.
+  //
+  // Capped to the same last-500 slice as the localStorage write above —
+  // _recoTxns itself has no such cap in memory (importing several
+  // statements back-to-back in one session without a refresh just keeps
+  // appending), so without this the cloud payload would grow unbounded
+  // right alongside it, turning every debounced sync into an
+  // ever-larger upload as a long session's import count grows.
+  if (lines.length && !(opts && opts.skipCloud)) {
+    clearTimeout(_recoCloudSyncTimer)
+    _recoCloudSyncPending = lines.slice(-500)
+    _recoCloudSyncTimer = setTimeout(_brFlushCloudSync, 800)
+  }
 }
 function _brNorm(s) { return String(s||'').toUpperCase().replace(/\s+/g,' ').trim() }
 function _brSuggestCategory(desc, amount) {
@@ -8554,9 +8622,29 @@ async function renderReconcile() {
     </div>
   </div>`
   _recoTxns = _brLoadStore()
+  // Recovery path — local session is empty (cache cleared, new device,
+  // private/incognito window) but a cloud backup may exist from an earlier
+  // session (see _recoCloudSyncState/_brSaveStore). Only attempted when
+  // local is genuinely empty: an active session's localStorage always
+  // stays the live source of truth, this never overrides it.
+  if (!_recoTxns.length) {
+    const recovered = await _recoTryCloudRecover()
+    if (recovered.length) {
+      _recoTxns = recovered
+      _brSaveStore(_recoTxns, {skipCloud: true})
+      showToast(isBm
+        ? `${recovered.length} baris dipulihkan dari cloud (sesi tempatan kosong).`
+        : `${recovered.length} line(s) recovered from cloud (local session was empty).`, 'info')
+    }
+  }
   _recoMatches = _recoTxns.map(t => t._match || null)
   if (_recoTxns.length) _recoRenderResults()
-  else document.getElementById('reco-result').innerHTML = ''
+  // Null-guarded like _recoRenderResults() itself already is — the
+  // _recoTryCloudRecover() await above is a real network round trip, and
+  // the user navigating to a different page while it's pending replaces
+  // #main's whole innerHTML (openPage's loading state), removing
+  // #reco-result from the DOM before this line runs.
+  else { const el = document.getElementById('reco-result'); if (el) el.innerHTML = '' }
 }
 
 function _recoFileUpload(event) {
@@ -8585,8 +8673,9 @@ function _recoFileUpload(event) {
 // note); routing it through the same textarea as manual entry means a bad
 // extraction shows up as visibly wrong/garbled text to catch, not as
 // silently-wrong data that lands directly in _recoTxns.
-const RECO_PDF_MAX_PAGES = 15 // a monthly SME statement can easily run past the 5-page default meant for short intake forms
-let _recoPdfBusy = false // re-entrancy guard — a scan can take a while (up to 15 sequential vision calls), so a second file pick before the first finishes must not run concurrently against the same textarea
+const RECO_PDF_MAX_PAGES = 25 // a monthly SME statement can easily run past the 5-page default meant for short intake forms; 25 covers a typical high-volume monthly statement without an unbounded (cost/time) upload
+let _recoPdfBusy = false // re-entrancy guard — a scan can take a while (up to 25 sequential vision calls, each with its own retries — see _recoPdfUpload), so a second file pick before the first finishes must not run concurrently against the same textarea
+function _sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
 
 async function _recoPdfUpload(event) {
   const file = event.target.files[0]
@@ -8595,6 +8684,7 @@ async function _recoPdfUpload(event) {
   const t = isBm ? {
     converting: 'Menukar PDF ke imej...',
     scanning: (i,n) => `AI membaca muka surat ${i}/${n}...`,
+    scanningRetry: (i,n,a) => `AI membaca muka surat ${i}/${n}... (cubaan ${a+1}/3)`,
     badFile: 'Sila pilih fail PDF.',
     busy: 'Satu imbasan PDF lain sedang berjalan, sila tunggu.',
     none: 'Tiada transaksi dikesan dalam PDF ini — cuba semak fail, atau guna CSV/tampal.',
@@ -8606,6 +8696,7 @@ async function _recoPdfUpload(event) {
   } : {
     converting: 'Converting PDF to image...',
     scanning: (i,n) => `AI reading page ${i}/${n}...`,
+    scanningRetry: (i,n,a) => `AI reading page ${i}/${n}... (attempt ${a+1}/3)`,
     badFile: 'Please select a PDF file.',
     busy: 'Another PDF scan is already running, please wait.',
     none: 'No transactions detected in this PDF — check the file, or use CSV/paste instead.',
@@ -8635,25 +8726,70 @@ async function _recoPdfUpload(event) {
     const pageBlobs = await _pdfPagesToImageBlobs(file, RECO_PDF_MAX_PAGES)
     const allRows = []
     let failedPages = 0
+    let consecutiveFailures = 0
     for (let i = 0; i < pageBlobs.length; i++) {
-      setStatus(spinner(t.scanning(i+1, pageBlobs.length)))
-      // Per-page try/catch — same "isolate one failure, don't lose the rest
-      // of the batch" pattern renderPayslipsPrint uses for its batch loop.
-      // Without this, one transient failure (rate limit, network blip) on
-      // e.g. page 5 of 8 would throw and discard everything already
-      // extracted from pages 1-4.
+      // Per-page try/catch + up to 2 retries (3 attempts total) with
+      // backoff — same "isolate one failure, don't lose the rest of the
+      // batch" pattern renderPayslipsPrint uses for its batch loop, plus
+      // retries because a page failing here is usually a transient
+      // network/rate-limit blip (this loop fires one sequential Groq
+      // vision call per page, up to RECO_PDF_MAX_PAGES in a row) rather
+      // than a genuinely unreadable page. Confirmed live: 5 of 15 pages
+      // failed on one real statement with zero retries in place — a
+      // second or third attempt recovers real transactions that a single
+      // permanent skip would otherwise silently drop.
+      //
+      // Circuit breaker (below, after this inner loop): if a SYSTEMIC
+      // failure (ai-proxy down, deploy broken) hits every page, this inner
+      // retry loop alone would burn through up to RECO_PDF_MAX_PAGES x 3
+      // attempts — 75 calls plus minutes of pure backoff on a 25-page
+      // statement — before ever giving up, with _recoPdfBusy blocking the
+      // user from even cancelling and trying a different file in the
+      // meantime.
+      let pageOk = false
+      // Compressed ONCE per page, outside the retry loop below — it's a
+      // deterministic transform of an already-in-memory, unchanging blob
+      // (FileReader + Image decode + canvas draw), so retrying it on a
+      // network/API failure would just redo identical CPU work for no
+      // benefit; only the sb.functions.invoke call actually needs a retry.
+      let img = null
       try {
-        const img = await _compressImageToBase64(pageBlobs[i])
-        const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
-          action: 'extract_bank_transactions',
-          images: [{ image_base64: img.base64, mime_type: img.mimeType }]
-        }})
-        if (error) throw error
-        if (!data?.success) throw new Error(data?.error || 'Unknown error')
-        allRows.push(...(data.data?.transactions || []))
-      } catch (pageErr) {
-        console.error(`Bank PDF extraction failed on page ${i+1}/${pageBlobs.length}:`, pageErr)
+        img = await _compressImageToBase64(pageBlobs[i])
+      } catch (compressErr) {
+        console.error(`Bank PDF page ${i+1}/${pageBlobs.length} image compression failed:`, compressErr)
+      }
+      if (img) {
+        for (let attempt = 0; attempt < 3 && !pageOk; attempt++) {
+          setStatus(spinner(attempt === 0 ? t.scanning(i+1, pageBlobs.length) : t.scanningRetry(i+1, pageBlobs.length, attempt)))
+          if (attempt > 0) await _sleep(attempt * 1200)
+          try {
+            const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+              action: 'extract_bank_transactions',
+              images: [{ image_base64: img.base64, mime_type: img.mimeType }]
+            }})
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.error || 'Unknown error')
+            allRows.push(...(data.data?.transactions || []))
+            pageOk = true
+          } catch (pageErr) {
+            if (attempt === 2) {
+              console.error(`Bank PDF extraction failed on page ${i+1}/${pageBlobs.length} after 3 attempts:`, pageErr)
+              failedPages++
+            }
+          }
+        }
+      } else {
         failedPages++
+      }
+      if (pageOk) { consecutiveFailures = 0 }
+      else if (++consecutiveFailures >= 3) {
+        // 3 pages in a row failed ALL 3 attempts each — this is a systemic
+        // issue (API/deploy/network), not a run of individually-unreadable
+        // pages. Stop burning through the rest of the statement; whatever
+        // rows were extracted from earlier successful pages are kept.
+        failedPages += pageBlobs.length - i - 1
+        console.error(`Bank PDF extraction aborted after ${consecutiveFailures} consecutive full page failures (page ${i+1}/${pageBlobs.length}) — likely a systemic API/network issue.`)
+        break
       }
     }
     if (!allRows.length) {
@@ -8775,39 +8911,235 @@ function _recoParseCsvText(text) {
   return rows
 }
 
-function _recoImportCategorize() {
+let _recoImportBusy = false
+async function _recoImportCategorize() {
   const isBm = APP.language==='bm'
+  // Re-entrancy guard — the cloud-recovery step below is a real network
+  // round trip (awaited before _recoTxns is touched), so a double-click
+  // here while it's still pending would let a second call ALSO see
+  // _recoTxns as empty, both independently recover, and whichever resolves
+  // second overwrites _recoTxns wholesale — silently discarding whatever
+  // the first call had already appended and losing that import. Same
+  // pattern as _recoPdfBusy for the PDF upload flow.
+  if (_recoImportBusy) {
+    showToast(isBm?'Sedang memproses, sila tunggu...':'Already processing, please wait...', 'warning')
+    return
+  }
+  _recoImportBusy = true
+  try {
+  // If local state is empty right now, try recovering from cloud FIRST —
+  // closes the exact gap _recoClearSession's own comment documents (Clear
+  // Session, then re-importing the same statement in THIS tab with no
+  // reload in between): without this, _recoParseCsvText's dedup check
+  // only sees the now-empty in-memory _recoTxns, treats every line as
+  // brand new, and the resulting fresh 'imported' rows would overwrite
+  // the cloud copy's confirmed/posted state via _recoCloudSyncState's
+  // plain upsert. This mirrors exactly what renderReconcile already does
+  // on page load — reachable here too now, without requiring a reload
+  // (so re-importing directly in the same tab after Clear Session is safe
+  // either way — see _recoClearSession's own comment). A brand-new tenant
+  // that's never used Bank Recon just gets an empty result back and
+  // proceeds exactly as before.
+  let recoveredCount = 0
+  if (!_recoTxns.length) {
+    const recovered = await _recoTryCloudRecover()
+    if (recovered.length) {
+      recoveredCount = recovered.length
+      _recoTxns = recovered
+      _recoMatches = _recoTxns.map(t => t._match || null)
+      _brSaveStore(_recoTxns, {skipCloud: true})
+      showToast(isBm
+        ? `${recovered.length} baris dipulihkan dari cloud sebelum import.`
+        : `${recovered.length} line(s) recovered from cloud before import.`, 'info')
+    }
+  }
   const text = document.getElementById('reco-csv-text')?.value || ''
   const rows = _recoParseCsvText(text)
   if (!rows.length) {
+    // Recovery may have already populated _recoTxns even though the
+    // pasted text contributed nothing new (e.g. every line deduped away
+    // against what was just recovered) — that recovered data still needs
+    // rendering, otherwise it sits correctly in _recoTxns/localStorage but
+    // the results table stays blank (left empty by Clear Session) while
+    // this "No valid rows" warning contradicts the recovery toast the
+    // user just saw.
+    if (recoveredCount) _recoRenderResults()
     showToast(isBm ? 'Tiada baris sah dijumpai.' : 'No valid rows found.', 'warning')
     return
   }
   _recoTxns = [...(_recoTxns || []), ...rows]
   _recoMatches = _recoTxns.map(t => t._match || null)
   _brSaveStore(_recoTxns)
-  _recoTryCloudSave(rows)
   _recoRenderResults()
   showToast((isBm ? 'Diimport & dikategori: ' : 'Imported & categorized: ') + rows.length, 'success')
+  } finally { _recoImportBusy = false }
 }
 
-async function _recoTryCloudSave(rows) {
-  if (!APP.tenant?.id || !rows?.length) return
+let _recoCloudSyncBusy = false
+// Best-effort background mirror of the FULL current Bank Recon state to
+// bank_statement_lines, called from every _brSaveStore (see there) — a
+// recovery backup only, never read back mid-session (localStorage stays
+// the actual source of truth while a session is active; see
+// _recoTryCloudRecover for the one place this table IS read, on a page
+// load with an empty local store). A plain upsert (not ignoreDuplicates)
+// on purpose: local state should always win and overwrite whatever's in
+// the cloud copy, since local is the live truth this is mirroring FROM.
+//
+// KNOWN LIMITATION: last-write-wins, no conflict detection. If the SAME
+// tenant has Bank Recon open in two tabs/devices at once (started from
+// the same earlier recovery), whichever one saves LAST silently
+// overwrites the other's synced state in the cloud copy — there's no
+// version check against the `updated_at` column, and no warning to
+// either session. This is acceptable for what this feature actually is
+// (an occasional-loss recovery backup, not real-time multi-device sync)
+// but would need real conflict resolution before being sold as anything
+// more than that.
+let _recoCloudSyncQueued = null
+async function _recoCloudSyncState(lines) {
+  if (!APP.tenant?.id || !lines?.length) return
+  // Re-entrancy guard — but queues the latest state rather than silently
+  // dropping it. A plain "if busy, return" would lose this call's data for
+  // good whenever a Supabase round trip happens to outlast the 800ms
+  // debounce window (ordinary on a slow connection, not just an edge
+  // case) UNLESS the user makes a further edit afterward — the assumption
+  // "the next _brSaveStore catches up" only holds if there IS a next one;
+  // if this was the user's last action before closing the tab, there
+  // wouldn't be. Queuing and re-firing once the in-flight call finishes
+  // (below) means at most one request is ever in flight, but nothing gets
+  // silently forgotten either.
+  if (_recoCloudSyncBusy) { _recoCloudSyncQueued = lines; return }
+  _recoCloudSyncBusy = true
   try {
-    const payload = rows.map(r => ({
+    const payload = lines.filter(r => r.fingerprint).map(r => ({
       tenant_id: APP.tenant.id,
       txn_date: r.date,
       description: r.description,
       amount: r.amount,
       category: r.category,
       fingerprint: r.fingerprint,
-      status: 'imported'
+      status: r.status || 'imported',
+      state: r._state || null,
+      match_checked: !!r._matchChecked,
+      matched_type: r.matched_type || null,
+      matched_id: r.matched_id || null,
+      matched_ref: r.matched_ref || null,
+      journal_ref: r.journal_ref || null,
+      updated_at: new Date().toISOString()
     }))
-    const { error } = await sb.from('bank_statement_lines').upsert(payload, { onConflict: 'tenant_id,fingerprint', ignoreDuplicates: true })
-    if (error) console.warn('bank_statement_lines save skipped', error.message)
-  } catch (e) { console.warn('bank_statement_lines', e) }
+    if (!payload.length) return
+    const { error } = await sb.from('bank_statement_lines').upsert(payload, { onConflict: 'tenant_id,fingerprint' })
+    if (error) console.warn('bank_statement_lines sync skipped', error.message)
+  } catch (e) { console.warn('bank_statement_lines sync', e) } finally {
+    _recoCloudSyncBusy = false
+    if (_recoCloudSyncQueued) {
+      const next = _recoCloudSyncQueued
+      _recoCloudSyncQueued = null
+      _recoCloudSyncState(next)
+    }
+  }
 }
 
+// Recovery path only — called from renderReconcile when localStorage has
+// NOTHING for this tenant (cache cleared, new device, private/incognito
+// session). Rebuilds the same shape _recoParseCsvText produces so every
+// other Bank Recon function (match, categorize, post, reverse) treats a
+// recovered line identically to a freshly-imported one. _match is
+// reconstructed from matched_type/matched_id/matched_ref/amount rather
+// than stored as-is — the full candidate object (with its own desc/date)
+// was never persisted server-side, only enough to identify which record
+// it's linked to.
+//
+// Minor known gap: a REJECTED line's candidate isn't recoverable, only
+// that it WAS rejected — _recoSetState nulls matched_type/id/ref on
+// Reject (there's no separate "what was rejected" column), so a recovered
+// rejected line shows "No match" in the Match column instead of what was
+// actually compared and turned down. Cosmetic only: the row still shows
+// its correct "Rejected" badge and remains postable via Post Unmatched
+// either way (that logic only excludes a PENDING candidate, and reject
+// state is checked independently of _match's contents).
+//
+// Bounded to the last 90 days + 500 rows: bank_statement_lines is never
+// deleted (Clear Session deliberately skips clearing the cloud copy — see
+// _brSaveStore — so an accidental clear can't destroy the one thing that
+// would let you recover from it), so a tenant reconciling every month for
+// a year would otherwise pull its entire multi-year history back into an
+// active session on every recovery. 90 days covers "the statement(s)
+// you're actively working through"; older lines are already reflected in
+// the ledger (posted) or were reviewed and confirmed/rejected long ago —
+// nothing about that state is lost by not re-loading it here.
+async function _recoTryCloudRecover() {
+  if (!APP.tenant?.id) return []
+  try {
+    // Windowed by updated_at (recency of SYNC activity), deliberately NOT
+    // txn_date (recency of the transaction itself) — an SME catching up on
+    // months-late bookkeeping routinely reconciles a statement whose
+    // txn_date is old but whose sync activity is from today; windowing by
+    // txn_date would make that entire backlog session unrecoverable after
+    // a local wipe even though it was synced minutes ago, defeating the
+    // one thing this recovery exists to do.
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90)
+    // Descending + limit, THEN reverse back to chronological order below —
+    // NOT ascending + limit. With ascending order, limit(500) keeps the
+    // LEAST-recently-touched 500 rows in the window and silently drops the
+    // most recently active ones when a tenant has more than 500 lines
+    // touched in 90 days — exactly the statement(s) actively being worked
+    // on, which is the one thing this recovery exists to not lose.
+    const { data: desc, error } = await sb.from('bank_statement_lines').select('*')
+      .eq('tenant_id', APP.tenant.id).gte('updated_at', cutoff.toISOString())
+      .order('updated_at', {ascending: false}).limit(500)
+    if (error || !desc?.length) return []
+    // Re-sorted to chronological (by txn_date) for display — the query
+    // above orders/truncates by sync recency, not transaction date, so
+    // without this the recovered list could show newest-synced-first
+    // instead of the usual oldest-transaction-first order every other
+    // Bank Recon view uses.
+    const data = desc.slice().sort((a, b) => String(a.txn_date).localeCompare(String(b.txn_date)))
+    return data.map(r => {
+      // _matchChecked is only trustworthy on recovery for a line the user
+      // already acted on (Confirm/Reject) — a line that was matched but
+      // left PENDING never had its candidate persisted (matched_type/id/
+      // ref are only written by _recoSetState on Confirm), so blindly
+      // restoring _matchChecked=true for a pending line would let Post
+      // Unmatched treat it as "checked, no candidate" and post a brand
+      // new journal entry for money that might already be linked to an
+      // existing invoice/payment — a real double-post risk. Forcing a
+      // fresh "Match with AI" run for anything not explicitly confirmed/
+      // rejected is what keeps that gate meaningful after a recovery.
+      const actedOn = r.state === 'confirmed' || r.state === 'rejected'
+      return {
+      id: _brFingerprintUuid(r.fingerprint),
+      date: r.txn_date,
+      description: r.description || '',
+      amount: Number(r.amount),
+      category: r.category || null,
+      categoryConfidence: null,
+      categorySource: r.category ? 'cloud' : null,
+      fingerprint: r.fingerprint,
+      status: r.status || 'imported',
+      _state: r.state || null,
+      _matchChecked: !!r.match_checked && actedOn,
+      _match: r.matched_type ? { candidate: { type: r.matched_type, id: r.matched_id, ref: r.matched_ref, amount: Number(r.amount) }, confidence: 1, source: 'cloud-recovered' } : null,
+      matched_type: r.matched_type || null,
+      matched_id: r.matched_id || null,
+      matched_ref: r.matched_ref || null,
+      journal_ref: r.journal_ref || null
+    }})
+  } catch (e) { console.warn('bank_statement_lines recover failed', e); return [] }
+}
+
+// Clears LOCAL state only — the cloud backup (bank_statement_lines, see
+// _recoCloudSyncState) is deliberately left untouched, so an accidental
+// click here can still be recovered from. _recoParseCsvText's duplicate
+// check only looks at in-memory _recoTxns, which is now empty, so a
+// re-import right after clearing would otherwise look like a brand new
+// statement and its fresh 'imported'/unmatched rows would sync right back
+// over whatever more-advanced cloud state (confirmed, posted, ...) that
+// statement already had. Both ways of re-importing are covered against
+// this: a page reload runs the cloud recovery on load
+// (_recoTryCloudRecover, in renderReconcile), and re-importing directly
+// in the SAME tab without reloading runs that same recovery from inside
+// _recoImportCategorize itself — so either path repopulates _recoTxns
+// from cloud first and the dedup check sees the existing fingerprints.
 function _recoClearSession() {
   _recoTxns = []
   _recoMatches = []
@@ -8874,17 +9206,40 @@ async function _recoRunMatch() {
   _recoMatches = _recoTxns.map(txn => {
     if (txn._state === 'confirmed' && txn._match) return txn._match
     const absAmt = Math.abs(Number(txn.amount))
-    let best = null, bestScore = 0
+    let best = null, bestScore = -1, tieCount = 0
     candidates.forEach(c => {
       if (Math.abs(Math.abs(c.amount) - absAmt) > 0.05) return
       const d1 = new Date(txn.date+'T00:00:00'), d2 = new Date(c.date+'T00:00:00')
       const dayDiff = Math.abs((d1 - d2) / 86400000)
       if (dayDiff > 14) return
-      let score = 0.7 - dayDiff * 0.02
-      if (_brNorm(txn.description).includes(_brNorm(c.desc).slice(0, 8)) && c.desc) score += 0.15
-      if (score > bestScore) { bestScore = score; best = c }
+      const descMatch = !!(c.desc && _brNorm(txn.description).includes(_brNorm(c.desc).slice(0, 8)))
+      // Base confidence from amount+date proximity ALONE is deliberately
+      // capped low (was 0.7 flat minus a small day penalty — read by users
+      // as "70% confident" even with zero corroborating evidence). Same
+      // amount + nearby date is a coincidence, not a real match: confirmed
+      // live when two unrelated DuitNow transfers (RM16.30, same day, to
+      // two different people) tied together at the old base score with no
+      // description overlap at all. Real confidence should only come from
+      // the description actually lining up.
+      let score = 0.30 - dayDiff * 0.015
+      if (descMatch) score += 0.45
+      if (score > bestScore + 0.001) { bestScore = score; best = c; tieCount = 1 }
+      else if (Math.abs(score - bestScore) <= 0.001 && best && !(String(c.id) === String(best.id) && c.type === best.type)) { tieCount++ }
     })
-    if (best) return { txn_idx: 0, confidence: bestScore, candidate: best, source: 'heuristic' }
+    if (best) {
+      // Ambiguous: more than one DISTINCT candidate tied for the top
+      // score — flagged regardless of whether the winner has description
+      // evidence, since two candidates can tie WITH matching description
+      // evidence too (e.g. the same customer has two same-amount invoices
+      // issued the same day — both legitimately contain the customer's
+      // name, so descMatch is true for both, and the old
+      // description-evidence-implies-safe assumption would silently miss
+      // exactly this case). Flagged in the UI (see _recoRenderResults)
+      // instead of silently presenting whichever candidate the loop
+      // happened to keep as if it were a confident, considered pick.
+      const ambiguous = tieCount > 1
+      return { txn_idx: 0, confidence: bestScore, candidate: best, source: 'heuristic', ambiguous }
+    }
     return null
   })
 
@@ -8950,7 +9305,7 @@ function _recoRenderResults() {
           ${txn._aiSuggestion ? `<div style="font-size:10px;color:var(--primary);margin-top:2px">→ ${_aiEscapeHtml(_brCatLabel(txn._aiSuggestion.category))} (${txn._aiSuggestion.confidence}%)
             <button onclick="_recoApplySuggestion(${i})" style="border:none;background:none;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:10px;padding:0">${isBm?'Guna':'Apply'}</button></div>` : ''}
         </td>
-        <td style="font-size:12px">${cand ? `<span>[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)}</span>` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
+        <td style="font-size:12px">${cand ? `<span>[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)}</span>${(m.ambiguous && !state) ? `<div style="font-size:10px;color:var(--warning,#F59E0B)" title="${isBm?'Lebih dari satu rekod sepadan amaun+tarikh sama rapat — sila sahkan keterangan sebelum confirm':'More than one record matches this amount+date equally closely — verify the description before confirming'}"><i class="ti ti-alert-triangle"></i> ${isBm?'Tak pasti':'Uncertain'}</div>` : ''}` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
         <td>${m && m.confidence!=null ? Math.round((m.confidence <= 1 ? m.confidence*100 : m.confidence))+'%' : '-'}</td>
         <td>${txn.status==='posted'
           ? `<span style="color:var(--success);font-size:12px;font-weight:600" title="${_aiEscapeHtml(txn.journal_ref||'')}"><i class="ti ti-book"></i> ${isBm?'Diposkan':'Posted'}</span>`
