@@ -8320,6 +8320,34 @@ function _brIsManualOnlyCategory(cat) {
 // request and validating the response, so the AI can never suggest a
 // category outside what it was actually asked to choose from.
 const _BR_AI_CATEGORIES = _BR_CATEGORIES.filter(c => !/^Other /i.test(c) && !_brIsManualOnlyCategory(c))
+// Which direction each category belongs to — an expense category (e.g.
+// Salaries & Wages) offered to the AI for a CREDIT (money in) transaction,
+// or vice versa, is a structurally wrong suggestion no confidence score
+// makes safe: _recoRefineOther confirmed this live (an incoming DuitNow/
+// MAE QR transfer got suggested "Salaries & Wages" — an expense category —
+// because the AI wasn't given a category list restricted by direction, only
+// a text instruction it didn't reliably follow). _brSuggestCategory (the
+// local rule-based matcher) already hard-filters by `rule.type` before ever
+// comparing keywords — this map lets the AI-refine path apply the exact
+// same structural guarantee instead of trusting the model's own judgment.
+// 'Internal Transfer' is deliberately absent — it can genuinely be either
+// direction — but it's also manual-only (excluded from _BR_AI_CATEGORIES
+// already), so it never needs a direction here.
+const _BR_CATEGORY_TYPE = {
+  'Utilities': 'out', 'Telephone & Internet': 'out', 'Software & Subscriptions': 'out',
+  'Travel & Fuel': 'out', 'Statutory': 'out', 'Salaries & Wages': 'out', 'Bank Charges': 'out',
+  'Rental': 'out', 'Insurance': 'out', 'Postage & Courier': 'out', 'Professional Fees': 'out',
+  'Cost of Sales': 'out', 'Marketing & Advertising': 'out', 'Other Expense': 'out',
+  'Owner Drawings': 'out', 'Fixed Asset Purchase': 'out',
+  'Sales Income': 'in', 'Other Income': 'in', "Owner's Capital Injection": 'in', 'Loan Drawdown': 'in',
+}
+// The two subsets _recoRefineOther actually sends to the AI, one call per
+// direction — see _BR_CATEGORY_TYPE's own comment. A category with no
+// entry there (shouldn't happen for anything in _BR_AI_CATEGORIES given
+// the map above, but defensive) is excluded from BOTH rather than risking
+// it being offered for the wrong direction.
+const _BR_AI_INCOME_CATEGORIES = _BR_AI_CATEGORIES.filter(c => _BR_CATEGORY_TYPE[c] === 'in')
+const _BR_AI_EXPENSE_CATEGORIES = _BR_AI_CATEGORIES.filter(c => _BR_CATEGORY_TYPE[c] === 'out')
 
 // English category name (the value actually stored on a line, matched
 // against by keyword rules / GL mapping / the Owner Drawings check) -> BM
@@ -10909,12 +10937,22 @@ async function _recoRefineOther() {
     return
   }
   showToast(isBm?'Menjana cadangan AI...':'Generating AI suggestions...', 'info')
-  let suggestions = []
-  try {
+  // Split by direction and call the AI once PER direction, each time with
+  // ONLY that direction's categories — see _BR_CATEGORY_TYPE's own comment.
+  // A single shared call across both directions (the previous behavior) is
+  // exactly what let a real incoming DuitNow/MAE QR transfer get suggested
+  // "Salaries & Wages", an expense category — the prompt telling the model
+  // "amount is positive for money in" is a soft instruction it doesn't
+  // reliably follow; only NEVER OFFERING the wrong-direction categories at
+  // all is a real guarantee.
+  const incomeOthers = others.filter(({t}) => Number(t.amount) >= 0)
+  const expenseOthers = others.filter(({t}) => Number(t.amount) < 0)
+  const runBatch = async (batch, categories) => {
+    if (!batch.length || !categories.length) return []
     const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
       action: 'categorize_bank',
-      transactions: others.map(({t,i}) => ({ idx:i, date:t.date, description:t.description, amount:t.amount })),
-      categories: _BR_AI_CATEGORIES,
+      transactions: batch.map(({t,i}) => ({ idx:i, date:t.date, description:t.description, amount:t.amount })),
+      categories,
       language: APP.language
     }})
     if (error) throw error
@@ -10924,9 +10962,22 @@ async function _recoRefineOther() {
     // real failure; without this check it fell through to "AI has no new
     // suggestions" for the same case as "AI call outright failed".
     if (!data?.success) throw new Error(data?.error || 'Unknown error')
-    if (Array.isArray(data.data?.suggestions)) suggestions = data.data.suggestions
-  } catch (e) {
-    console.warn('categorize_bank unavailable', e)
+    return Array.isArray(data.data?.suggestions) ? data.data.suggestions : []
+  }
+  // allSettled, not all/Promise.all — an income-side failure (e.g. a
+  // transient network blip on that one call) shouldn't also discard
+  // expense-side suggestions that succeeded, same "isolate one failure,
+  // don't lose the rest of the batch" pattern this file already uses for
+  // per-page PDF extraction.
+  const [incomeResult, expenseResult] = await Promise.allSettled([
+    runBatch(incomeOthers, _BR_AI_INCOME_CATEGORIES),
+    runBatch(expenseOthers, _BR_AI_EXPENSE_CATEGORIES),
+  ])
+  const suggestions = (incomeResult.status === 'fulfilled' ? incomeResult.value : [])
+    .concat(expenseResult.status === 'fulfilled' ? expenseResult.value : [])
+  if (incomeResult.status === 'rejected') console.warn('categorize_bank (income) unavailable', incomeResult.reason)
+  if (expenseResult.status === 'rejected') console.warn('categorize_bank (expense) unavailable', expenseResult.reason)
+  if (incomeResult.status === 'rejected' && expenseResult.status === 'rejected') {
     showToast(isBm
       ? 'AI Refine tak tersedia buat masa ini (edge function belum sokong categorize_bank).'
       : 'AI Refine unavailable right now (edge function does not support categorize_bank yet).', 'warning')
@@ -10940,6 +10991,11 @@ async function _recoRefineOther() {
   suggestions.forEach(s => {
     const txn = _recoTxns[s.idx]
     if (!txn || !s.category || !_BR_AI_CATEGORIES.includes(s.category)) return
+    // Belt-and-suspenders — the per-direction category lists above should
+    // already make this impossible, but never apply a suggestion whose
+    // category direction disagrees with the transaction's actual sign.
+    const wantType = Number(txn.amount) >= 0 ? 'in' : 'out'
+    if (_BR_CATEGORY_TYPE[s.category] !== wantType) return
     txn._aiSuggestion = { category: s.category, confidence: Math.round(Number.isFinite(s.confidence) ? s.confidence : 70) }
     n++
   })
