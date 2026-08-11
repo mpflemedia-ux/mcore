@@ -8696,6 +8696,7 @@ function _recoClearPdfTally() {
 // extraction shows up as visibly wrong/garbled text to catch, not as
 // silently-wrong data that lands directly in _recoTxns.
 const RECO_PDF_MAX_PAGES = 40 // a monthly SME statement can easily run past the 5-page default meant for short intake forms; 40 gives comfortable headroom over real statements seen in practice (confirmed live: a 33-page statement) without requiring the user to manually split the file — the point of this feature is to remove that manual step, not require it. Kept well short of "unlimited": _pdfPagesToImageBlobs renders every page to a full-resolution canvas blob up front, all held in memory at once before a single AI call runs, and that's a real constraint on lower-memory devices this app's SME users may be on.
+const RECO_PDF_BREAKER_THRESHOLD = 3 // consecutive full-page failures before _recoPdfUpload's circuit breaker aborts a pass (main scan or the recovery retry pass) — shared constant so the two breakers (see _recoPdfUpload) can't silently drift apart if one is ever retuned without the other.
 let _recoPdfBusy = false // re-entrancy guard — a scan can take a while (up to RECO_PDF_MAX_PAGES sequential vision calls, each with its own retries — see _recoPdfUpload), so a second file pick before the first finishes must not run concurrently against the same textarea
 let _recoPdfCancelRequested = false
 // User-facing escape hatch for a long scan — without this, a large
@@ -8723,11 +8724,13 @@ async function _recoPdfUpload(event) {
   const t = isBm ? {
     converting: 'Menukar PDF ke imej...',
     scanning: (i,n) => `AI membaca muka surat ${i}/${n}...`,
-    scanningRetry: (i,n,a) => `AI membaca muka surat ${i}/${n}... (cubaan ${a+1}/4)`,
+    scanningRetry: (i,n,a,max) => `AI membaca muka surat ${i}/${n}... (cubaan ${a+1}/${max})`,
+    recovering: (n) => `Cuba baca semula ${n} muka surat yang gagal tadi (mungkin had kadar API)...`,
     badFile: 'Sila pilih fail PDF.',
     busy: 'Satu imbasan PDF lain sedang berjalan, sila tunggu.',
     none: 'Tiada transaksi dikesan dalam PDF ini — cuba semak fail, atau guna CSV/tampal.',
     cancelled: (n,pages) => `Imbasan dihentikan oleh pengguna selepas ${n} muka surat daripada ${pages}.`,
+    cancelledRecovery: 'Imbasan dihentikan oleh pengguna semasa cuba baca semula muka surat yang gagal.',
     allFailed: (n) => `Gagal baca semua ${n} muka surat (kemungkinan isu API/rangkaian) — bukan sebab PDF tiada transaksi. Cuba lagi, atau guna CSV/tampal.`,
     done: (n,pages) => `${n} baris dikesan daripada ${pages} muka surat — SEMAK dalam kotak teks di bawah (terutama tarikh + tanda +/- jumlah) sebelum klik "Import & Auto-Kategori".`,
     truncated: (used,total) => ` PDF ada ${total} muka surat, hanya ${used} pertama diproses — muka surat lain TAK diimport.`,
@@ -8736,11 +8739,13 @@ async function _recoPdfUpload(event) {
   } : {
     converting: 'Converting PDF to image...',
     scanning: (i,n) => `AI reading page ${i}/${n}...`,
-    scanningRetry: (i,n,a) => `AI reading page ${i}/${n}... (attempt ${a+1}/4)`,
+    scanningRetry: (i,n,a,max) => `AI reading page ${i}/${n}... (attempt ${a+1}/${max})`,
+    recovering: (n) => `Retrying ${n} page(s) that failed to read (possible API rate limit)...`,
     badFile: 'Please select a PDF file.',
     busy: 'Another PDF scan is already running, please wait.',
     none: 'No transactions detected in this PDF — check the file, or use CSV/paste instead.',
     cancelled: (n,pages) => `Scan stopped by user after ${n} of ${pages} page(s).`,
+    cancelledRecovery: 'Scan stopped by user while retrying pages that failed to read.',
     allFailed: (n) => `Failed to read all ${n} page(s) — likely an API/network issue, not that the PDF has no transactions. Try again, or use CSV/paste instead.`,
     done: (n,pages) => `${n} line(s) detected from ${pages} page(s) — REVIEW them in the text box below (especially dates + amount sign) before clicking "Import & Auto-Categorize".`,
     truncated: (used,total) => ` PDF has ${total} pages, only the first ${used} were processed — the rest were NOT imported.`,
@@ -8793,16 +8798,48 @@ async function _recoPdfUpload(event) {
     // user click Cancel during conversion for no effect, since nothing
     // in that phase ever checks _recoPdfCancelRequested.
     showCancelBtn(true)
-    const allRows = []
+    // Rows per page index, NOT a single flat array pushed to as pages
+    // complete — a page recovered in the later recovery pass would
+    // otherwise land at the END of the textarea (after every main-pass
+    // page, including ones after it in the statement) instead of in its
+    // real position, making the required "REVIEW dates + amount sign"
+    // step harder to sanity-check against the statement's actual layout.
+    // Assembled into the flat allRows array, in page order, once both
+    // passes are done — see below.
+    const pageRows = new Array(pageBlobs.length)
     let failedPages = 0
     let consecutiveFailures = 0
     let wasCancelled = false
+    // Set only when the user cancels DURING the recovery pass — needed
+    // because that pass can run even after the main loop broke early (a
+    // circuit-breaker trip), so pagesAttemptedAtCancel no longer reliably
+    // tells "cancelled mid-recovery" apart from "cancelled mid-main-pass".
+    // Without this flag, cancelling during recovery would show "cancelled
+    // after N of N pages" (pagesAttemptedAtCancel was never touched again
+    // after the main loop, so it'd read as if the whole scan finished
+    // normally before the user stopped it) even when rows are still
+    // missing and recovery was cut short.
+    let cancelledDuringRecovery = false
     // Set to the count of pages actually attempted at the moment
     // cancellation is detected — NOT derived from pageBlobs.length -
     // failedPages, which would conflate genuine per-page failures earlier
     // in the scan with pages skipped because of the cancellation itself,
     // undercounting how many pages were really looked at.
     let pagesAttemptedAtCancel = 0
+    // Pages not successfully extracted by the main pass below — either an
+    // individual page that failed every attempt, or (once the circuit
+    // breaker trips — see below) the un-attempted tail after it. NOT pages
+    // skipped by a user Cancel (re-attempting those isn't "recovery", it's
+    // just continuing a scan the user chose to stop). Retried once more in
+    // the recovery pass further below, after this main pass ends.
+    const failedPageIndices = []
+    // Which of the above were never actually attempted at all (breaker
+    // tail), as opposed to individually attempted-and-failed after real
+    // retries — used to order the recovery pass so a handful of genuinely
+    // bad pages (corrupt scan, non-transaction insert) that already burned
+    // every attempt can't trip ITS breaker before a batch of merely
+    // never-tried, likely-fine tail pages ever gets a turn.
+    const neverAttemptedIndices = new Set()
     // Statement's OWN printed grand totals (extract_bank_transactions asks
     // for these too now — see ai-proxy) — most Malaysian bank statements
     // only print this summary on ONE page (commonly the first), so most
@@ -8811,33 +8848,99 @@ async function _recoPdfUpload(event) {
     // each other can be detected below, instead of silently trusting
     // whichever page happened to report first.
     const stmtDebitCandidates = [], stmtCreditCandidates = []
+
+    // Compresses + calls ai-proxy for a single page, with its own
+    // rate-limit-aware retry/backoff. Shared by the main pass below AND
+    // the recovery pass after it so this logic (and its reasoning) lives
+    // in exactly one place instead of two copies quietly drifting apart.
+    const extractPage = async (pageBlob, i, total, maxAttempts, skipInitialDelay) => {
+      // Compressed ONCE per page, outside the retry loop below — it's a
+      // deterministic transform of an already-in-memory, unchanging blob
+      // (FileReader + Image decode + canvas draw), so retrying it on a
+      // network/API failure would just redo identical CPU work for no
+      // benefit; only the sb.functions.invoke call actually needs a retry.
+      let img = null
+      try {
+        img = await _compressImageToBase64(pageBlob)
+      } catch (compressErr) {
+        console.error(`Bank PDF page ${i+1}/${total} image compression failed:`, compressErr)
+        return { ok: false, cancelled: false }
+      }
+      // Short pause before the first attempt (skipped only for the very
+      // first page of the whole scan, which has nothing to space itself
+      // out from) — sequential per-page vision calls at full speed can hit
+      // Groq's own rate limits, which shows up as ordinary-looking page
+      // failures with nothing wrong with the page itself. Spacing requests
+      // out is cheap prevention against exactly the class of failure the
+      // retries below exist to recover from after the fact.
+      if (!skipInitialDelay) await _sleep(800)
+      // Tracks the most recent failure for THIS page so the backoff below
+      // can react to it — confirmed live: even with 4 attempts at a flat
+      // ~1.2-3.6s backoff, 7 of 33 pages still failed on a real statement.
+      // A flat short backoff assumes every failure is a one-off blip, but
+      // callGroq (ai-proxy) surfaces the real HTTP status in its error
+      // message (`Groq API error (429): ...`) — a genuine rate-limit
+      // window is typically tens of seconds, not a few seconds, so
+      // retrying quickly just burns all attempts against a limit that
+      // hasn't cleared yet.
+      let lastPageErr = null
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Polled here too, not just once per PAGE — a retry's own backoff
+        // alone can run up to (rate-limited) 15s+, and without this check
+        // a user who clicks Cancel mid-retry would still sit through
+        // whatever backoff/attempts were already in flight before the
+        // caller ever got a chance to notice.
+        if (_recoPdfCancelRequested) return { ok: false, cancelled: true }
+        setStatus(spinner(attempt === 0 ? t.scanning(i+1, total) : t.scanningRetry(i+1, total, attempt, maxAttempts)))
+        if (attempt > 0) {
+          // \b429\b, not the exact "(429)" wrapping ai-proxy currently
+          // uses — 429 is specific enough as a bare word match that this
+          // won't false-positive on unrelated text, but is more resilient
+          // to ai-proxy's error-wrapping wording changing later than
+          // requiring today's exact "(429)" parenthesization.
+          const wasRateLimited = /\b429\b/.test(String(lastPageErr?.message || lastPageErr || ''))
+          await _sleep(attempt * (wasRateLimited ? 5000 : 1200))
+        }
+        try {
+          const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+            action: 'extract_bank_transactions',
+            images: [{ image_base64: img.base64, mime_type: img.mimeType }]
+          }})
+          if (error) throw error
+          if (!data?.success) throw new Error(data?.error || 'Unknown error')
+          pageRows[i] = data.data?.transactions || []
+          // Math.abs() — the AI isn't told a sign convention for these
+          // (unlike per-row debit/credit, a statement's own "Total Debit"
+          // summary box can print as a negative reducing figure on some
+          // layouts), and sumDebit/sumCredit further below are always
+          // positive magnitudes too, so comparing a possibly-negative
+          // statement figure against an always-positive extracted sum
+          // would produce a false mismatch.
+          if (data.data?.statement_total_debit != null) stmtDebitCandidates.push(Math.abs(Number(data.data.statement_total_debit)))
+          if (data.data?.statement_total_credit != null) stmtCreditCandidates.push(Math.abs(Number(data.data.statement_total_credit)))
+          return { ok: true, cancelled: false }
+        } catch (pageErr) {
+          lastPageErr = pageErr
+        }
+      }
+      console.error(`Bank PDF extraction failed on page ${i+1}/${total} after ${maxAttempts} attempts:`, lastPageErr)
+      return { ok: false, cancelled: false }
+    }
+
     for (let i = 0; i < pageBlobs.length; i++) {
-      // Per-page try/catch + up to 3 retries (4 attempts total) with
-      // backoff — same "isolate one failure, don't lose the rest of the
-      // batch" pattern renderPayslipsPrint uses for its batch loop, plus
-      // retries because a page failing here is usually a transient
-      // network/rate-limit blip (this loop fires one sequential Groq
-      // vision call per page, up to RECO_PDF_MAX_PAGES in a row) rather
-      // than a genuinely unreadable page. Confirmed live: 5 of 15 pages
-      // failed on one real statement with zero retries in place — a
-      // second, third, or fourth attempt recovers real transactions that
-      // a single permanent skip would otherwise silently drop.
-      //
-      // Circuit breaker (below, after this inner loop): if a SYSTEMIC
-      // failure (ai-proxy down, deploy broken) hits every page, this inner
-      // retry loop alone would burn through up to RECO_PDF_MAX_PAGES x 4
-      // attempts before ever giving up — kept at 3 consecutive full-page
-      // failures (not raised alongside the retry count) specifically so
-      // worst-case wait before the Cancel button below actually matters
-      // stays bounded; the user can also just click Cancel directly
-      // rather than wait out the full breaker threshold.
+      // Circuit breaker (below, after extractPage returns): if a SYSTEMIC
+      // failure (ai-proxy down, deploy broken) hits every page, retries
+      // alone would burn through up to RECO_PDF_MAX_PAGES x 4 attempts
+      // before ever giving up — kept at 3 consecutive full-page failures
+      // (not raised alongside the retry count) specifically so worst-case
+      // wait before the Cancel button below actually matters stays
+      // bounded; the user can also just click Cancel directly rather than
+      // wait out the full breaker threshold.
       if (_recoPdfCancelRequested) {
         wasCancelled = true
         pagesAttemptedAtCancel = i
         // This checkpoint breaks immediately, BEFORE reaching the shared
-        // `if (wasCancelled) { failedPages += ...; break }` accounting
-        // further down (that block only runs after the if(img){...}
-        // section, which this checkpoint skips entirely) — so it has to
+        // accounting after extractPage's call further down — so it has to
         // do its own failedPages accounting here, or pdfSumIncomplete
         // would stay false for what is actually the MOST common
         // cancellation timing (between two pages, not mid-retry), letting
@@ -8855,124 +8958,148 @@ async function _recoPdfUpload(event) {
       // the user returning, instead of only ever showing it once at the
       // very start of the whole scan.
       showCancelBtn(true)
-      let pageOk = false
-      // Compressed ONCE per page, outside the retry loop below — it's a
-      // deterministic transform of an already-in-memory, unchanging blob
-      // (FileReader + Image decode + canvas draw), so retrying it on a
-      // network/API failure would just redo identical CPU work for no
-      // benefit; only the sb.functions.invoke call actually needs a retry.
-      let img = null
-      try {
-        img = await _compressImageToBase64(pageBlobs[i])
-      } catch (compressErr) {
-        console.error(`Bank PDF page ${i+1}/${pageBlobs.length} image compression failed:`, compressErr)
-      }
-      if (img) {
-        // Short pause before each page's first attempt (not after a
-        // compression failure just above, which never touches the
-        // network — no rate-limit benefit to delaying there, only dead
-        // time) — sequential per-page vision calls at full speed can hit
-        // Groq's own rate limits, which shows up here as ordinary-looking
-        // page failures with nothing wrong with the page itself. Spacing
-        // requests out is cheap prevention against exactly the class of
-        // failure the retries below exist to recover from after the fact.
-        if (i > 0) await _sleep(800)
-        // Tracks the most recent failure for THIS page so the backoff
-        // below can react to it — confirmed live: even with 4 attempts at
-        // a flat ~1.2-3.6s backoff, 7 of 33 pages still failed on a real
-        // statement. A flat short backoff assumes every failure is a
-        // one-off blip, but callGroq (ai-proxy) surfaces the real HTTP
-        // status in its error message (`Groq API error (429): ...`) — a
-        // genuine rate-limit window is typically tens of seconds, not a
-        // few seconds, so retrying quickly just burns all 4 attempts
-        // against a limit that hasn't cleared yet.
-        let lastPageErr = null
-        for (let attempt = 0; attempt < 4 && !pageOk; attempt++) {
-          // Polled here too, not just once per PAGE — a retry's own
-          // backoff alone can run up to (rate-limited) 15s+, and without
-          // this check a user who clicks Cancel mid-retry would still sit
-          // through whatever backoff/attempts were already in flight
-          // before the outer loop ever got a chance to notice.
-          if (_recoPdfCancelRequested) { wasCancelled = true; pagesAttemptedAtCancel = i; break }
-          setStatus(spinner(attempt === 0 ? t.scanning(i+1, pageBlobs.length) : t.scanningRetry(i+1, pageBlobs.length, attempt)))
-          if (attempt > 0) {
-            // \b429\b, not the exact "(429)" wrapping ai-proxy currently
-            // uses — 429 is specific enough as a bare word match that this
-            // won't false-positive on unrelated text, but is more
-            // resilient to ai-proxy's error-wrapping wording changing
-            // later than requiring today's exact "(429)" parenthesization.
-            const wasRateLimited = /\b429\b/.test(String(lastPageErr?.message || lastPageErr || ''))
-            await _sleep(attempt * (wasRateLimited ? 5000 : 1200))
-          }
-          try {
-            const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
-              action: 'extract_bank_transactions',
-              images: [{ image_base64: img.base64, mime_type: img.mimeType }]
-            }})
-            if (error) throw error
-            if (!data?.success) throw new Error(data?.error || 'Unknown error')
-            allRows.push(...(data.data?.transactions || []))
-            // Math.abs() — the AI isn't told a sign convention for these
-            // (unlike per-row debit/credit, a statement's own "Total
-            // Debit" summary box can print as a negative reducing figure
-            // on some layouts), and sumDebit/sumCredit below are always
-            // positive magnitudes too, so comparing a possibly-negative
-            // statement figure against an always-positive extracted sum
-            // would produce a false mismatch.
-            if (data.data?.statement_total_debit != null) stmtDebitCandidates.push(Math.abs(Number(data.data.statement_total_debit)))
-            if (data.data?.statement_total_credit != null) stmtCreditCandidates.push(Math.abs(Number(data.data.statement_total_credit)))
-            pageOk = true
-          } catch (pageErr) {
-            lastPageErr = pageErr
-            if (attempt === 3) {
-              console.error(`Bank PDF extraction failed on page ${i+1}/${pageBlobs.length} after 4 attempts:`, pageErr)
-              failedPages++
-            }
-          }
-        }
-      } else {
-        failedPages++
-      }
-      if (wasCancelled) {
-        // Covers a cancellation from EITHER check point (top-of-page, or
-        // mid-retry inside the inner loop above) with one shared formula:
-        // in both cases nothing from page i onward was ever captured, so
+      const result = await extractPage(pageBlobs[i], i, pageBlobs.length, 4, i === 0)
+      if (result.cancelled) {
+        // Covers a cancellation detected mid-retry inside extractPage —
+        // nothing from page i onward was ever captured, so
         // pageBlobs.length - i is the correct count of pages left out of
-        // allRows/the statement-total candidates either way. Breaks here
-        // (not just the inner loop) so a mid-retry cancellation doesn't
-        // fall through into the consecutiveFailures/circuit-breaker logic
-        // below and get misreported as a systemic API/network issue.
+        // allRows/the statement-total candidates. Breaks here (not just
+        // inside extractPage) so a mid-retry cancellation doesn't fall
+        // through into the consecutiveFailures/circuit-breaker logic below
+        // and get misreported as a systemic API/network issue.
+        wasCancelled = true
+        pagesAttemptedAtCancel = i
         failedPages += pageBlobs.length - i
         break
       }
-      if (pageOk) { consecutiveFailures = 0 }
-      else if (++consecutiveFailures >= 3) {
-        // 3 pages in a row failed ALL 4 attempts each — this is a systemic
-        // issue (API/deploy/network), not a run of individually-unreadable
-        // pages. Stop burning through the rest of the statement; whatever
-        // rows were extracted from earlier successful pages are kept.
-        failedPages += pageBlobs.length - i - 1
-        console.error(`Bank PDF extraction aborted after ${consecutiveFailures} consecutive full page failures (page ${i+1}/${pageBlobs.length}) — likely a systemic API/network issue.`)
-        break
+      if (result.ok) {
+        consecutiveFailures = 0
+      } else {
+        failedPages++
+        failedPageIndices.push(i)
+        if (++consecutiveFailures >= RECO_PDF_BREAKER_THRESHOLD) {
+          // N pages in a row failed ALL attempts each — this is a systemic
+          // issue (API/deploy/network), not a run of individually-unreadable
+          // pages. Stop burning through the main pass's remaining attempts
+          // against it right now; whatever rows were extracted from earlier
+          // successful pages are kept. The REST of the statement (i+1
+          // onward) was never attempted at all — queued into
+          // failedPageIndices too (not just counted in failedPages), same
+          // as the pages that caused the trip, so the recovery pass below
+          // gets a real chance at ALL of them after a cooldown instead of
+          // silently abandoning everything past the trip point. This is
+          // safe specifically because that pass has its own breaker (see
+          // RECO_PDF_BREAKER_THRESHOLD below) bounding its worst-case cost
+          // to one cooldown + a few attempts if the outage is still live —
+          // it's not the unbounded re-hammering this breaker exists to
+          // prevent, and a cooldown may well be exactly what clears a
+          // transient rate-limit window that looked "systemic" in the moment.
+          for (let j = i + 1; j < pageBlobs.length; j++) { failedPageIndices.push(j); neverAttemptedIndices.add(j) }
+          failedPages += pageBlobs.length - i - 1
+          console.error(`Bank PDF extraction aborted after ${consecutiveFailures} consecutive full page failures (page ${i+1}/${pageBlobs.length}) — likely a systemic API/network issue.`)
+          break
+        }
+      }
+    }
+    // Automatic recovery pass over pages that failed the main pass outright
+    // (not pages skipped by Cancel — those were never attempted, so
+    // re-attempting them isn't "recovery", it's just continuing a scan the
+    // user chose to stop). Confirmed live: even after the rate-limit-aware
+    // backoff fix, isolated pages scattered non-consecutively across a
+    // large statement (so never tripping the main breaker above) still
+    // failed all 4 main-pass attempts each — 4 of 33 pages on one real
+    // statement. A fixed cooldown before trying again clears exactly this
+    // kind of lingering rate-limit state, instead of leaving the user to
+    // notice the gap and re-upload the whole PDF themselves to plug 4
+    // pages out of 33. This pass has its own breaker further below, so it
+    // still runs (bounded) even after the main breaker tripped.
+    if (!wasCancelled && failedPageIndices.length) {
+      setStatus(spinner(t.recovering(failedPageIndices.length)))
+      showCancelBtn(true)
+      // Polled in short slices, not a single await _sleep(5000) — every
+      // other wait point in this function checks _recoPdfCancelRequested
+      // during the wait so Cancel takes effect promptly (see the retry
+      // backoff's own comment on this); a single 5s sleep with no polling
+      // would make Cancel silently wait out the full cooldown before it's
+      // even noticed, which is exactly the delay the polling elsewhere
+      // exists to avoid.
+      for (let waited = 0; waited < 5000 && !_recoPdfCancelRequested; waited += 500) {
+        showCancelBtn(true)
+        await _sleep(500)
+      }
+      if (_recoPdfCancelRequested) {
+        wasCancelled = true
+        cancelledDuringRecovery = true
+      } else {
+        // Own consecutive-failure breaker, separate from the main pass's —
+        // without one, a systemic outage that failed pages non-consecutively
+        // during the main pass (so never tripped THAT breaker) would have
+        // the recovery pass retry every single failed page anyway, each
+        // with up to 3 more attempts and full rate-limit backoff, against
+        // an API that's still down. Shares RECO_PDF_BREAKER_THRESHOLD with
+        // the main pass so the two can't silently drift apart.
+        let consecutiveRecoveryFailures = 0
+        // Never-attempted (breaker tail) pages FIRST, individually
+        // attempted-and-failed pages LAST — a stable sort (native since
+        // ES2019) so within each group the original order is kept. Without
+        // this, a handful of genuinely bad pages (corrupt scan, a
+        // non-transaction insert page) that already burned every main-pass
+        // attempt would sit at the FRONT of failedPageIndices (they're
+        // pushed before the tail on a breaker trip) and could trip THIS
+        // breaker before a whole batch of merely never-tried, likely-fine
+        // tail pages ever gets a turn — silently dropping pages that had
+        // nothing wrong with them.
+        const recoveryOrder = failedPageIndices.slice().sort((a, b) =>
+          (neverAttemptedIndices.has(a) ? 0 : 1) - (neverAttemptedIndices.has(b) ? 0 : 1))
+        for (const i of recoveryOrder) {
+          if (_recoPdfCancelRequested) {
+            wasCancelled = true
+            cancelledDuringRecovery = true
+            break
+          }
+          showCancelBtn(true)
+          const result = await extractPage(pageBlobs[i], i, pageBlobs.length, 3, false)
+          if (result.cancelled) {
+            wasCancelled = true
+            cancelledDuringRecovery = true
+            break
+          }
+          if (result.ok) {
+            failedPages--
+            consecutiveRecoveryFailures = 0
+          } else if (++consecutiveRecoveryFailures >= RECO_PDF_BREAKER_THRESHOLD) {
+            console.error(`Bank PDF extraction recovery pass aborted after ${consecutiveRecoveryFailures} consecutive failures — likely still a systemic API/network issue.`)
+            break
+          }
+        }
       }
     }
     // Whether the SUM of extracted rows can be trusted to represent the
     // whole statement — true if EITHER the page cap truncated processing
-    // OR any pages failed outright (including a circuit-breaker abort,
-    // which also leaves trailing pages unprocessed). Deliberately broader
-    // than just the page-cap comparison: a 10-page statement well under
-    // RECO_PDF_MAX_PAGES that loses 3 pages to a network blip and trips
-    // the circuit breaker is JUST as incomplete a sum as a large
-    // statement hitting the page cap — comparing either against the statement's
-    // OWN full-period total would be comparing a partial sum to a total
-    // it was never going to match, mischaracterizing a transient
-    // extraction gap as a genuine data mismatch. Computed once and reused
-    // everywhere below instead of separately re-deriving the page-cap
-    // half of this condition at each call site (which is what the
+    // OR any pages failed outright even after the recovery pass above
+    // (including a circuit-breaker abort, which also leaves trailing pages
+    // unprocessed). Deliberately broader than just the page-cap comparison:
+    // a 10-page statement well under RECO_PDF_MAX_PAGES that loses 3 pages
+    // to a network blip and trips the circuit breaker is JUST as incomplete
+    // a sum as a large statement hitting the page cap — comparing either
+    // against the statement's OWN full-period total would be comparing a
+    // partial sum to a total it was never going to match, mischaracterizing
+    // a transient extraction gap as a genuine data mismatch. Computed once
+    // and reused everywhere below instead of separately re-deriving the
+    // page-cap half of this condition at each call site (which is what the
     // page-cap-specific t.truncated(...) MESSAGE text below still checks
     // directly — that wording is specifically about processed-vs-total
     // pages, not this broader "can the sum be trusted" gate).
     const pdfSumIncomplete = (pageBlobs.totalPages > pageBlobs.length) || failedPages > 0
+    // Flattened in page order (0, 1, 2, ...), not in whichever order pages
+    // actually finished — a page recovered later in the recovery pass
+    // still lands in its correct position here, since pageRows is indexed
+    // by page number rather than appended-to as pages complete. Pages
+    // never successfully extracted stay as sparse holes; .filter(Boolean)
+    // drops them (an empty array from a page with zero transactions is
+    // truthy and kept, so this only drops actual holes, not real
+    // zero-row pages).
+    const allRows = [].concat(...pageRows.filter(Boolean))
     // Resolve each candidate list to a single value — null if nothing was
     // found, the value itself if every page that reported one agrees
     // (within the same 0.05 rounding tolerance the tally comparison
@@ -9006,7 +9133,7 @@ async function _recoPdfUpload(event) {
       // genuine total failure) would show the scary "likely an API/
       // network issue" message for something the user did on purpose.
       let msg = wasCancelled
-        ? t.cancelled(pagesAttemptedAtCancel, pageBlobs.length)
+        ? (cancelledDuringRecovery ? t.cancelledRecovery : t.cancelled(pagesAttemptedAtCancel, pageBlobs.length))
         : (failedPages > 0 && failedPages === pageBlobs.length) ? t.allFailed(failedPages) : t.none
       // Same truncation note the success path below appends — without it,
       // "no transactions detected" on a PDF that has more pages than were
@@ -9085,7 +9212,7 @@ async function _recoPdfUpload(event) {
     // (some pages usually succeed before a user decides to cancel) than
     // the zero-rows case the earlier branch already handles.
     let msg = wasCancelled
-      ? t.cancelled(pagesAttemptedAtCancel, pageBlobs.length) + (isBm ? ` (${lines.length} baris dikesan setakat ini.)` : ` (${lines.length} line(s) detected so far.)`)
+      ? (cancelledDuringRecovery ? t.cancelledRecovery : t.cancelled(pagesAttemptedAtCancel, pageBlobs.length)) + (isBm ? ` (${lines.length} baris dikesan setakat ini.)` : ` (${lines.length} line(s) detected so far.)`)
       : t.done(lines.length, pageBlobs.length)
     // Both notes appended regardless of wasCancelled — "the PDF has more
     // pages than were processed" and "N page(s) failed to read" are
