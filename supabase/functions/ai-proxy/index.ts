@@ -446,6 +446,133 @@ async function handleScanBankStatement(body: Record<string, unknown>) {
 // rows in the existing CSV textarea before anything is imported — so a
 // wrong/incomplete extraction here surfaces as visibly wrong text for the
 // user to catch or fix, not as silently-wrong imported data.
+// Recovers whatever complete transaction rows it can from a response that
+// failed JSON.parse — confirmed live: even with max_tokens raised to 8192
+// (see the comment above this function), a single page can still come back
+// with malformed/truncated JSON, and unlike a rate-limit error this is
+// CONTENT-DRIVEN (a page with an unusually dense transaction table), so it
+// recurs identically on every retry no matter how many attempts or how
+// long the backoff — a real statement's page kept failing across the main
+// pass, the automatic recovery pass, AND a manually-triggered retry, all
+// at different times (ruling out a transient rate-limit window). Plain
+// retries can never fix a deterministic failure; salvaging what's still
+// readable in the response can. Scans for the `"transactions"` array and
+// extracts each balanced `{...}` object inside it via brace-depth tracking
+// (string/escape-aware, so a description containing literal `{`/`}` text
+// doesn't throw off the count) — a truncated response simply yields fewer
+// complete objects rather than none.
+function _salvagePartialTransactionsJson(raw: string): { transactions: unknown[]; statement_total_debit: number | null; statement_total_credit: number | null; arrayClosedProperly: boolean } {
+  const transactions: unknown[] = []
+  // True only if the scan below BOTH reaches the array's real closing `]`
+  // AND every balanced {...} object found along the way parsed
+  // successfully — meaning the TRANSACTIONS portion of the response is
+  // structurally complete AND fully trustworthy, even if something else
+  // in the object (most likely a truncated statement_total field near the
+  // very end) is what actually broke JSON.parse for the whole response.
+  // handleExtractBankTransactions uses this to trust the salvaged rows as
+  // a clean result rather than flagging the whole page incomplete just
+  // because of an unrelated trailing field — including the important case
+  // of a page that GENUINELY has zero transactions (a cover/disclaimer
+  // page): without this, a confirmed-empty-but-complete array would still
+  // be treated as "found nothing, give up" rather than "confirmed
+  // nothing, done". Reaching the closing bracket alone is NOT enough —
+  // an individual object can still fail ITS OWN JSON.parse (a stray
+  // unescaped control character, a trailing comma inside just that one
+  // object) and get silently skipped below while the surrounding array
+  // still closes properly; that dropped row must still mark this result
+  // as incomplete, or a page that genuinely lost a transaction would come
+  // back looking like a clean, fully-trustworthy read.
+  let arrayClosedProperly = false
+  let allObjectsParsed = true
+  const arrStart = (() => {
+    const keyIdx = raw.indexOf('"transactions"')
+    return keyIdx === -1 ? -1 : raw.indexOf('[', keyIdx)
+  })()
+  if (arrStart !== -1) {
+    let depth = 0
+    let objStart = -1
+    let inString = false
+    let escape = false
+    for (let i = arrStart + 1; i < raw.length; i++) {
+      const ch = raw[i]
+      if (inString) {
+        if (escape) escape = false
+        else if (ch === '\\') escape = true
+        else if (ch === '"') inString = false
+        continue
+      }
+      if (ch === '"') { inString = true; continue }
+      if (ch === '{') {
+        if (depth === 0) objStart = i
+        depth++
+      } else if (ch === '}') {
+        depth--
+        // Floor-guarded — an LLM degenerating into a stray/duplicate
+        // closing brace on a dense, repetitive table (a known pattern,
+        // and exactly the trigger case this whole function exists for)
+        // would otherwise push depth permanently negative, so it never
+        // returns to exactly 0 again for the REST of the array — silently
+        // dropping every well-formed object after that point even though
+        // transactions.length would still be nonzero (so no error is
+        // thrown and the truncated result looks fully salvaged). Resetting
+        // to 0 treats a stray `}` as a no-op and keeps scanning cleanly
+        // from the next `{`.
+        if (depth < 0) depth = 0
+        else if (depth === 0 && objStart !== -1) {
+          try {
+            transactions.push(JSON.parse(raw.slice(objStart, i + 1)))
+          } catch {
+            // Skip this one malformed row, keep the rest — but the
+            // overall result is no longer fully trustworthy, so
+            // arrayClosedProperly must not end up true for it (see this
+            // function's own comment on allObjectsParsed).
+            allObjectsParsed = false
+          }
+          objStart = -1
+        }
+      } else if (ch === ']' && depth === 0) {
+        arrayClosedProperly = true
+        break // reached the array's real closing bracket — nothing after this belongs to it
+      }
+    }
+  }
+  // Best-effort scrape for the two summary fields too, even out of an
+  // otherwise-truncated response. Matches either a bare number or a
+  // QUOTED number string — same "model copies the printed comma
+  // formatting literally, so json_object mode can't stop it emitting a
+  // string instead of a number" behavior asAmount() below already
+  // anticipates for debit/credit; without also handling it here, a page
+  // whose summary total got quoted would salvage the transactions fine
+  // but silently lose a total that WAS actually present in the text.
+  const numOrNull = (raw: string, re: RegExp): number | null => {
+    const m = raw.match(re)
+    if (!m) return null
+    let v = m[1].trim()
+    if (v === 'null') return null
+    // Guards against a value truncated mid-digit-string (max_tokens cut
+    // off generation right after emitting e.g. "150" of what was really
+    // "150000.00") — a cut-off number still parses as a perfectly
+    // plausible-looking (but wrong) value, which is worse than the "not
+    // found" null this function's callers already handle correctly. A
+    // genuinely COMPLETE value is never the very last thing in the raw
+    // text — real JSON always has at least a closing `}` after it.
+    const matchEnd = (m.index ?? 0) + m[0].length
+    if (matchEnd >= raw.length) return null
+    if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1)
+    const n = Number(v.replace(/,/g, ''))
+    return Number.isFinite(n) ? n : null
+  }
+  return {
+    transactions,
+    statement_total_debit: numOrNull(raw, /"statement_total_debit"\s*:\s*("[^"]*"|-?[\d.,]+|null)/),
+    statement_total_credit: numOrNull(raw, /"statement_total_credit"\s*:\s*("[^"]*"|-?[\d.,]+|null)/),
+    // Both conditions required — see this function's own comment on
+    // allObjectsParsed for why reaching the closing bracket alone isn't
+    // enough to call the array trustworthy.
+    arrayClosedProperly: arrayClosedProperly && allObjectsParsed,
+  }
+}
+
 async function handleExtractBankTransactions(body: Record<string, unknown>) {
   const imageUrls = buildImageUrls(body)
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
@@ -499,10 +626,44 @@ async function handleExtractBankTransactions(body: Record<string, unknown>) {
   }
 
   let parsed: { transactions?: unknown; statement_total_debit?: unknown; statement_total_credit?: unknown }
+  let wasSalvaged = false
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+    // Only salvages when the CLIENT signals this is the final retry
+    // attempt for this page (allow_partial) — never on an earlier attempt.
+    // A parse failure here is content-driven (see _salvagePartialTransactionsJson's
+    // own comment) and WILL recur identically if this exact page is asked
+    // for again, so salvaging on attempt 1 would just short-circuit
+    // attempts 2-4 that could still return the model's occasional clean,
+    // FULL read of the same page — silently settling for less than what a
+    // normal retry might still achieve. Reserved for the point where the
+    // alternative is truly "these rows or nothing", not "these rows or a
+    // do-over".
+    if (body.allow_partial !== true) {
+      throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+    }
+    const salvaged = _salvagePartialTransactionsJson(raw)
+    // Only gives up if there's NOTHING to salvage AND we can't even
+    // confirm the transactions array was genuinely complete — an empty
+    // array that reached its own real closing bracket (arrayClosedProperly)
+    // means this page has confirmed-zero transactions (e.g. a cover page),
+    // which is a legitimate result, not a failure. An empty array WITHOUT
+    // that confirmation means the response was cut off before the array
+    // ever really started/finished — there's truly nothing to go on.
+    if (!salvaged.transactions.length && !salvaged.arrayClosedProperly) {
+      throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+    }
+    parsed = salvaged
+    // Only flagged as a partial/salvaged result (still needs another
+    // attempt per the client's freeze logic) when we could NOT confirm
+    // the transactions array itself was structurally complete — if it
+    // reached its real closing bracket, every row that exists IS
+    // captured, and whatever broke JSON.parse was something else in the
+    // response (most likely a truncated statement_total field near the
+    // very end), which doesn't call the ROW data's completeness into
+    // question.
+    wasSalvaged = !salvaged.arrayClosedProperly
   }
 
   // The prompt asks for a plain JSON number, but a comma-formatted amount
@@ -553,6 +714,13 @@ async function handleExtractBankTransactions(body: Record<string, unknown>) {
     transactions,
     statement_total_debit: asAmount(parsed.statement_total_debit),
     statement_total_credit: asAmount(parsed.statement_total_credit),
+    // Tells the client this page's rows came from salvaging a malformed
+    // response, not a clean parse — the client treats a partial result as
+    // "apply these rows, but still count the page as incomplete" (keeps
+    // failedPages/the extraction-completeness tally/the Retry Failed Pages
+    // button all accurate) rather than a full, trustworthy success. Only
+    // ever true when allow_partial was set — see the try/catch above.
+    partial: wasSalvaged,
   }
 }
 
