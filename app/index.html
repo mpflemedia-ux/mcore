@@ -8596,6 +8596,7 @@ async function renderReconcile() {
       <div id="reco-pdf-status" style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm
         ? 'AI baca setiap muka surat, hasil masuk ke kotak teks bawah untuk SEMAK dulu sebelum "Import & Auto-Kategori".'
         : 'AI reads each page, results go into the text box below for you to REVIEW before "Import & Auto-Categorize".'}</div>
+      <button type="button" id="reco-pdf-retry-btn" onclick="_recoPdfRetryFailed()" style="display:${_recoPdfRetryState?.failedPageIndices?.length ? '' : 'none'};margin-top:6px" class="btn btn-outline btn-sm" title="${isBm?'Cuba baca semula hanya muka surat yang gagal, tanpa scan semula seluruh PDF':'Re-read only the pages that failed, without re-scanning the whole PDF'}"><i class="ti ti-refresh"></i> ${isBm?'Cuba Semula Muka Surat Gagal':'Retry Failed Pages'}</button>
       <div id="reco-pdf-tally"></div>
     </div>
     <textarea id="reco-csv-text" class="form-input" rows="6" oninput="_recoClearPdfTally()" placeholder="2026-07-01,Payment from ABC Sdn Bhd,1500.00&#10;01/04/2026,CIB Instant Transfer - Operation Cost,799.00,,35600156696,LE AROMA SDN BHD"></textarea>
@@ -8673,9 +8674,30 @@ function _recoFileUpload(event) {
   reader.onerror = () => showToast(APP.language==='bm'?'Gagal baca fail.':'Failed to read file.', 'error')
   reader.readAsText(file)
 }
-function _recoClearPdfTally() {
+// Clears just the tally banner's DOM content — split out from
+// _recoClearPdfTally() below so _recoPdfRetryFailed can replace a stale
+// verdict with an updated one for the SAME scan without also triggering
+// _recoClearPdfTally's other side effect (wiping _recoPdfRetryState/the
+// retry button), which would defeat the retry it's in the middle of.
+function _recoClearPdfTallyBanner(scanId) {
   const el = document.getElementById('reco-pdf-tally')
-  if (el) el.innerHTML = ''
+  if (!el) return
+  if (scanId == null) { el.innerHTML = ''; return }
+  // Scoped clear — removes only the segment(s) tagged with THIS scan's id
+  // (see _recoPdfScanSeq's comment), leaving any OTHER scan's banner
+  // (e.g. an earlier batch of the same multi-part PDF import) untouched.
+  el.querySelectorAll(`[data-reco-pdf-scan="${scanId}"]`).forEach(node => node.remove())
+}
+function _recoClearPdfTally() {
+  _recoClearPdfTallyBanner()
+  // Every caller of this (CSV upload, manual textarea edit, Import, Clear
+  // Session) already means "the PDF scan this tally/state refers to no
+  // longer matches what's in the textarea" — same reasoning applies to the
+  // "Retry Failed Pages" state and button, so they're cleared together
+  // rather than needing a second call at every one of these sites.
+  _recoPdfRetryState = null
+  const btn = document.getElementById('reco-pdf-retry-btn')
+  if (btn) btn.style.display = 'none'
 }
 
 // AI-assisted PDF import — renders each page to an image (reusing the same
@@ -8705,7 +8727,7 @@ let _recoPdfCancelRequested = false
 // watching a spinner for minutes with the file input disabled by
 // _recoPdfBusy and no way to abandon it and try something else.
 function _recoPdfCancelScan() { _recoPdfCancelRequested = true }
-// Shared by resolveTotal (cross-page agreement on the statement's own
+// Shared by _recoResolvePdfTotal (cross-page agreement on the statement's own
 // printed total) and _recoRenderPdfTally (extracted-sum-vs-statement-total
 // comparison) — both are the same "rounding-cent allowance" concept for
 // the SAME PDF-tally feature, so they share one constant rather than two
@@ -8716,6 +8738,183 @@ function _recoPdfCancelScan() { _recoPdfCancelRequested = true }
 // uses the same value today.
 const RECO_PDF_TALLY_TOLERANCE = 0.05
 function _sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
+// Set by _recoPdfUpload when a scan finishes with pages still unread after
+// its own automatic recovery pass — lets the "Retry Failed Pages" button
+// (#reco-pdf-retry-btn) re-attempt just those specific pages later without
+// re-uploading/re-scanning the whole PDF. Only holds image blobs for the
+// STILL-FAILED pages (not all pageBlobs — see _recoPdfUpload's own comment
+// where this is populated), so it doesn't keep a whole large statement's
+// worth of full-resolution images alive in memory for pages that already
+// succeeded. Cleared (along with the button) by _recoClearPdfTally, since
+// every action that already clears the tally banner (new CSV, manual edit,
+// Import, Clear Session) also invalidates what this state refers to.
+let _recoPdfRetryState = null
+// Monotonic id, one per _recoPdfUpload call — tags that scan's tally
+// banner segment (data-reco-pdf-scan attribute, see _recoRenderPdfTally)
+// so _recoPdfRetryFailed can replace JUST its own scan's stale verdict
+// later without touching a DIFFERENT scan's banner that happens to be
+// sitting in the same #reco-pdf-tally (the deliberately-cumulative case:
+// a statement split across more than RECO_PDF_MAX_PAGES pages, uploaded
+// in separate scans, each keeping its own history entry).
+let _recoPdfScanSeq = 0
+
+// Resolves a list of statement-total candidates (one bank statement page's
+// own printed grand total, collected across however many pages reported
+// one) to a single value — null if nothing was found, the value itself if
+// every page that reported one agrees within RECO_PDF_TALLY_TOLERANCE, or
+// the 'conflict' sentinel if pages disagree (e.g. a combined multi-statement
+// PDF, or a mislabeled subtotal on one page). Pure/stateless so both
+// _recoPdfUpload and _recoPdfRetryFailed can call it on their own candidate
+// lists without duplicating the comparison logic.
+// credit -> positive (money in), debit -> negative (money out) — same sign
+// convention _brSuggestCategory/_recoParseCsvText already use. Shared by
+// _recoPdfUpload and _recoPdfRetryFailed so the CSV-text line format and
+// the tally's own sum are always computed from the exact same resolved
+// amount — if a row ever had both debit AND credit non-null (the AI schema
+// doesn't forbid it, e.g. a misread combined-line), two independent
+// resolutions could silently disagree on which side "wins".
+function _recoBankRowsToLines(rows) {
+  return rows.map(r => {
+    const amt = r.credit != null ? Number(r.credit) : -Math.abs(Number(r.debit||0))
+    // Commas/newlines stripped since _recoParseCsvText's CSV split is naive
+    // (not quote-aware) — a stray comma would shift the row's columns. \t
+    // included too: that split is on comma OR tab (line.split(/,|\t/)),
+    // and unlike a comma a stray tab is invisible whitespace in the
+    // textarea, so the user's review step can't catch it.
+    const desc = String(r.description||'').replace(/[,\t\n\r]/g, ' ').trim()
+    return { date: r.date, amt, desc, line: `${r.date},${desc},${amt.toFixed(2)}` }
+  })
+}
+// Appends resolved CSV-text lines to #reco-csv-text (trim + newline-join,
+// no-op if there's nothing to add) — shared by _recoPdfUpload and
+// _recoPdfRetryFailed so this exact pattern can't drift between the two,
+// and so a caller with zero non-empty lines (e.g. every newly-recovered
+// page turned out to have no transaction rows) can't accidentally append
+// a stray blank line by joining an empty array.
+function _recoAppendCsvLines(lines) {
+  if (!lines.length) return
+  const ta = document.getElementById('reco-csv-text')
+  if (ta && document.contains(ta)) {
+    const existing = ta.value.trim()
+    ta.value = (existing ? existing + '\n' : '') + lines.join('\n')
+  }
+}
+// Applies one page's successful _recoExtractPdfPage result into the
+// running pageRows/candidate-total arrays — shared by _recoPdfUpload's
+// main pass, its recovery pass, AND _recoPdfRetryFailed's retry pass (3
+// call sites) so this bookkeeping can't drift between them the way the
+// network call itself would have without _recoExtractPdfPage.
+function _recoApplyPageResult(pageRows, stmtDebitCandidates, stmtCreditCandidates, i, result) {
+  pageRows[i] = result.rows
+  if (result.stmtDebit != null) stmtDebitCandidates.push(result.stmtDebit)
+  if (result.stmtCredit != null) stmtCreditCandidates.push(result.stmtCredit)
+}
+// Sums resolved rows (see _recoBankRowsToLines) into positive debit/credit
+// magnitudes for the extraction-completeness tally — separate from
+// per-page failedPages/consecutiveFailures tracking, since a page can
+// "succeed" (no error, valid JSON) while still under- or over-reading rows
+// the model misjudged.
+function _recoSumResolvedRows(resolved) {
+  let sumDebit = 0, sumCredit = 0
+  resolved.forEach(x => {
+    if (x.amt >= 0) sumCredit += x.amt
+    else sumDebit += Math.abs(x.amt)
+  })
+  return { sumDebit, sumCredit }
+}
+function _recoResolvePdfTotal(candidates) {
+  if (!candidates.length) return null
+  // min/max spread, NOT "every candidate within tolerance of just the
+  // FIRST one" — the latter only checks pairwise-to-first, so e.g.
+  // [100.00, 100.05, 99.96] would each individually pass against 100.00
+  // (spread <=0.05 from it) while the 2nd and 3rd actually differ from
+  // EACH OTHER by 0.09, more than tolerance — a real disagreement the
+  // pairwise-to-first check would miss entirely.
+  const min = Math.min(...candidates), max = Math.max(...candidates)
+  return (max - min) <= RECO_PDF_TALLY_TOLERANCE ? candidates[0] : 'conflict'
+}
+
+// Compresses + calls ai-proxy for a single PDF page image, with its own
+// rate-limit-aware retry/backoff. Pure — returns its result rather than
+// mutating caller state — so _recoPdfUpload's main pass, its own recovery
+// pass, AND the separate _recoPdfRetryFailed (fired later by the "Retry
+// Failed Pages" button, well after _recoPdfUpload has already returned)
+// can all share exactly one copy of this logic instead of three copies
+// quietly drifting apart.
+async function _recoExtractPdfPage(pageBlob, i, total, maxAttempts, skipInitialDelay, t, setStatus, spinner) {
+  // Compressed ONCE per page, outside the retry loop below — it's a
+  // deterministic transform of an already-in-memory, unchanging blob
+  // (FileReader + Image decode + canvas draw), so retrying it on a
+  // network/API failure would just redo identical CPU work for no
+  // benefit; only the sb.functions.invoke call actually needs a retry.
+  let img = null
+  try {
+    img = await _compressImageToBase64(pageBlob)
+  } catch (compressErr) {
+    console.error(`Bank PDF page ${i+1}/${total} image compression failed:`, compressErr)
+    return { ok: false, cancelled: false, rows: null, stmtDebit: null, stmtCredit: null }
+  }
+  // Short pause before the first attempt (skipped only for the very first
+  // page of a whole scan, which has nothing to space itself out from) —
+  // sequential per-page vision calls at full speed can hit Groq's own
+  // rate limits, which shows up as ordinary-looking page failures with
+  // nothing wrong with the page itself. Spacing requests out is cheap
+  // prevention against exactly the class of failure the retries below
+  // exist to recover from after the fact.
+  if (!skipInitialDelay) await _sleep(800)
+  // Tracks the most recent failure for THIS page so the backoff below can
+  // react to it — confirmed live: even with 4 attempts at a flat
+  // ~1.2-3.6s backoff, several pages still failed on a real statement. A
+  // flat short backoff assumes every failure is a one-off blip, but
+  // callGroq (ai-proxy) surfaces the real HTTP status in its error
+  // message (`Groq API error (429): ...`) — a genuine rate-limit window
+  // is typically tens of seconds, not a few seconds, so retrying quickly
+  // just burns all attempts against a limit that hasn't cleared yet.
+  let lastPageErr = null
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Polled here too, not just once per PAGE — a retry's own backoff
+    // alone can run up to (rate-limited) 15s+, and without this check a
+    // user who clicks Cancel mid-retry would still sit through whatever
+    // backoff/attempts were already in flight before the caller ever got
+    // a chance to notice.
+    if (_recoPdfCancelRequested) return { ok: false, cancelled: true, rows: null, stmtDebit: null, stmtCredit: null }
+    setStatus(spinner(attempt === 0 ? t.scanning(i+1, total) : t.scanningRetry(i+1, total, attempt, maxAttempts)))
+    if (attempt > 0) {
+      // \b429\b, not the exact "(429)" wrapping ai-proxy currently uses —
+      // 429 is specific enough as a bare word match that this won't
+      // false-positive on unrelated text, but is more resilient to
+      // ai-proxy's error-wrapping wording changing later than requiring
+      // today's exact "(429)" parenthesization.
+      const wasRateLimited = /\b429\b/.test(String(lastPageErr?.message || lastPageErr || ''))
+      await _sleep(attempt * (wasRateLimited ? 5000 : 1200))
+    }
+    try {
+      const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+        action: 'extract_bank_transactions',
+        images: [{ image_base64: img.base64, mime_type: img.mimeType }]
+      }})
+      if (error) throw error
+      if (!data?.success) throw new Error(data?.error || 'Unknown error')
+      return {
+        ok: true, cancelled: false,
+        rows: data.data?.transactions || [],
+        // Math.abs() — the AI isn't told a sign convention for these
+        // (unlike per-row debit/credit, a statement's own "Total Debit"
+        // summary box can print as a negative reducing figure on some
+        // layouts), and sumDebit/sumCredit at the call site are always
+        // positive magnitudes too, so comparing a possibly-negative
+        // statement figure against an always-positive extracted sum
+        // would produce a false mismatch.
+        stmtDebit: data.data?.statement_total_debit != null ? Math.abs(Number(data.data.statement_total_debit)) : null,
+        stmtCredit: data.data?.statement_total_credit != null ? Math.abs(Number(data.data.statement_total_credit)) : null,
+      }
+    } catch (pageErr) {
+      lastPageErr = pageErr
+    }
+  }
+  console.error(`Bank PDF extraction failed on page ${i+1}/${total} after ${maxAttempts} attempts:`, lastPageErr)
+  return { ok: false, cancelled: false, rows: null, stmtDebit: null, stmtCredit: null }
+}
 
 async function _recoPdfUpload(event) {
   const file = event.target.files[0]
@@ -8758,6 +8957,7 @@ async function _recoPdfUpload(event) {
   if (_recoPdfBusy) { showToast(t.busy, 'warning'); event.target.value=''; return }
   _recoPdfBusy = true
   _recoPdfCancelRequested = false
+  const scanId = ++_recoPdfScanSeq // tags this scan's tally banner segment — see _recoPdfScanSeq's own comment
   // Re-queried fresh at each point that shows/hides it (never cached in a
   // variable) — if the user navigates away from Reconcile and back while
   // a scan is still running, renderReconcile() creates a brand-new button
@@ -8789,6 +8989,14 @@ async function _recoPdfUpload(event) {
   // every scan's own verdict stays visible until something that actually
   // invalidates ALL of them happens (CSV upload, manual edit, Import,
   // Clear Session).
+  // A fresh scan invalidates any retry state left over from a PREVIOUS
+  // scan — its blobs belong to a different (or differently-processed) PDF,
+  // so offering "Retry Failed Pages" against them here would be retrying
+  // the wrong file. This scan sets its own retry state again at the end if
+  // it also ends with pages still missing.
+  _recoPdfRetryState = null
+  const retryBtnEl = document.getElementById('reco-pdf-retry-btn')
+  if (retryBtnEl) retryBtnEl.style.display = 'none'
   try {
     setStatus(spinner(t.converting))
     const pageBlobs = await _pdfPagesToImageBlobs(file, RECO_PDF_MAX_PAGES)
@@ -8849,86 +9057,8 @@ async function _recoPdfUpload(event) {
     // whichever page happened to report first.
     const stmtDebitCandidates = [], stmtCreditCandidates = []
 
-    // Compresses + calls ai-proxy for a single page, with its own
-    // rate-limit-aware retry/backoff. Shared by the main pass below AND
-    // the recovery pass after it so this logic (and its reasoning) lives
-    // in exactly one place instead of two copies quietly drifting apart.
-    const extractPage = async (pageBlob, i, total, maxAttempts, skipInitialDelay) => {
-      // Compressed ONCE per page, outside the retry loop below — it's a
-      // deterministic transform of an already-in-memory, unchanging blob
-      // (FileReader + Image decode + canvas draw), so retrying it on a
-      // network/API failure would just redo identical CPU work for no
-      // benefit; only the sb.functions.invoke call actually needs a retry.
-      let img = null
-      try {
-        img = await _compressImageToBase64(pageBlob)
-      } catch (compressErr) {
-        console.error(`Bank PDF page ${i+1}/${total} image compression failed:`, compressErr)
-        return { ok: false, cancelled: false }
-      }
-      // Short pause before the first attempt (skipped only for the very
-      // first page of the whole scan, which has nothing to space itself
-      // out from) — sequential per-page vision calls at full speed can hit
-      // Groq's own rate limits, which shows up as ordinary-looking page
-      // failures with nothing wrong with the page itself. Spacing requests
-      // out is cheap prevention against exactly the class of failure the
-      // retries below exist to recover from after the fact.
-      if (!skipInitialDelay) await _sleep(800)
-      // Tracks the most recent failure for THIS page so the backoff below
-      // can react to it — confirmed live: even with 4 attempts at a flat
-      // ~1.2-3.6s backoff, 7 of 33 pages still failed on a real statement.
-      // A flat short backoff assumes every failure is a one-off blip, but
-      // callGroq (ai-proxy) surfaces the real HTTP status in its error
-      // message (`Groq API error (429): ...`) — a genuine rate-limit
-      // window is typically tens of seconds, not a few seconds, so
-      // retrying quickly just burns all attempts against a limit that
-      // hasn't cleared yet.
-      let lastPageErr = null
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        // Polled here too, not just once per PAGE — a retry's own backoff
-        // alone can run up to (rate-limited) 15s+, and without this check
-        // a user who clicks Cancel mid-retry would still sit through
-        // whatever backoff/attempts were already in flight before the
-        // caller ever got a chance to notice.
-        if (_recoPdfCancelRequested) return { ok: false, cancelled: true }
-        setStatus(spinner(attempt === 0 ? t.scanning(i+1, total) : t.scanningRetry(i+1, total, attempt, maxAttempts)))
-        if (attempt > 0) {
-          // \b429\b, not the exact "(429)" wrapping ai-proxy currently
-          // uses — 429 is specific enough as a bare word match that this
-          // won't false-positive on unrelated text, but is more resilient
-          // to ai-proxy's error-wrapping wording changing later than
-          // requiring today's exact "(429)" parenthesization.
-          const wasRateLimited = /\b429\b/.test(String(lastPageErr?.message || lastPageErr || ''))
-          await _sleep(attempt * (wasRateLimited ? 5000 : 1200))
-        }
-        try {
-          const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
-            action: 'extract_bank_transactions',
-            images: [{ image_base64: img.base64, mime_type: img.mimeType }]
-          }})
-          if (error) throw error
-          if (!data?.success) throw new Error(data?.error || 'Unknown error')
-          pageRows[i] = data.data?.transactions || []
-          // Math.abs() — the AI isn't told a sign convention for these
-          // (unlike per-row debit/credit, a statement's own "Total Debit"
-          // summary box can print as a negative reducing figure on some
-          // layouts), and sumDebit/sumCredit further below are always
-          // positive magnitudes too, so comparing a possibly-negative
-          // statement figure against an always-positive extracted sum
-          // would produce a false mismatch.
-          if (data.data?.statement_total_debit != null) stmtDebitCandidates.push(Math.abs(Number(data.data.statement_total_debit)))
-          if (data.data?.statement_total_credit != null) stmtCreditCandidates.push(Math.abs(Number(data.data.statement_total_credit)))
-          return { ok: true, cancelled: false }
-        } catch (pageErr) {
-          lastPageErr = pageErr
-        }
-      }
-      console.error(`Bank PDF extraction failed on page ${i+1}/${total} after ${maxAttempts} attempts:`, lastPageErr)
-      return { ok: false, cancelled: false }
-    }
-
     for (let i = 0; i < pageBlobs.length; i++) {
-      // Circuit breaker (below, after extractPage returns): if a SYSTEMIC
+      // Circuit breaker (below, after _recoExtractPdfPage returns): if a SYSTEMIC
       // failure (ai-proxy down, deploy broken) hits every page, retries
       // alone would burn through up to RECO_PDF_MAX_PAGES x 4 attempts
       // before ever giving up — kept at 3 consecutive full-page failures
@@ -8940,7 +9070,7 @@ async function _recoPdfUpload(event) {
         wasCancelled = true
         pagesAttemptedAtCancel = i
         // This checkpoint breaks immediately, BEFORE reaching the shared
-        // accounting after extractPage's call further down — so it has to
+        // accounting after _recoExtractPdfPage's call further down — so it has to
         // do its own failedPages accounting here, or pdfSumIncomplete
         // would stay false for what is actually the MOST common
         // cancellation timing (between two pages, not mid-retry), letting
@@ -8958,21 +9088,22 @@ async function _recoPdfUpload(event) {
       // the user returning, instead of only ever showing it once at the
       // very start of the whole scan.
       showCancelBtn(true)
-      const result = await extractPage(pageBlobs[i], i, pageBlobs.length, 4, i === 0)
+      const result = await _recoExtractPdfPage(pageBlobs[i], i, pageBlobs.length, 4, i === 0, t, setStatus, spinner)
       if (result.cancelled) {
-        // Covers a cancellation detected mid-retry inside extractPage —
-        // nothing from page i onward was ever captured, so
-        // pageBlobs.length - i is the correct count of pages left out of
-        // allRows/the statement-total candidates. Breaks here (not just
-        // inside extractPage) so a mid-retry cancellation doesn't fall
-        // through into the consecutiveFailures/circuit-breaker logic below
-        // and get misreported as a systemic API/network issue.
+        // Covers a cancellation detected mid-retry inside
+        // _recoExtractPdfPage — nothing from page i onward was ever
+        // captured, so pageBlobs.length - i is the correct count of pages
+        // left out of pageRows/the statement-total candidates. Breaks here
+        // (not just inside _recoExtractPdfPage) so a mid-retry cancellation
+        // doesn't fall through into the consecutiveFailures/circuit-breaker
+        // logic below and get misreported as a systemic API/network issue.
         wasCancelled = true
         pagesAttemptedAtCancel = i
         failedPages += pageBlobs.length - i
         break
       }
       if (result.ok) {
+        _recoApplyPageResult(pageRows, stmtDebitCandidates, stmtCreditCandidates, i, result)
         consecutiveFailures = 0
       } else {
         failedPages++
@@ -9058,14 +9189,21 @@ async function _recoPdfUpload(event) {
             break
           }
           showCancelBtn(true)
-          const result = await extractPage(pageBlobs[i], i, pageBlobs.length, 3, false)
+          const result = await _recoExtractPdfPage(pageBlobs[i], i, pageBlobs.length, 3, false, t, setStatus, spinner)
           if (result.cancelled) {
             wasCancelled = true
             cancelledDuringRecovery = true
             break
           }
           if (result.ok) {
+            _recoApplyPageResult(pageRows, stmtDebitCandidates, stmtCreditCandidates, i, result)
             failedPages--
+            // Removed from the SHARED failedPageIndices array (not just
+            // decrementing the count) — this array is persisted into
+            // _recoPdfRetryState below for the "Retry Failed Pages" button,
+            // so it must end this pass reflecting only pages STILL missing,
+            // not every page that was ever attempted.
+            failedPageIndices.splice(failedPageIndices.indexOf(i), 1)
             consecutiveRecoveryFailures = 0
           } else if (++consecutiveRecoveryFailures >= RECO_PDF_BREAKER_THRESHOLD) {
             console.error(`Bank PDF extraction recovery pass aborted after ${consecutiveRecoveryFailures} consecutive failures — likely still a systemic API/network issue.`)
@@ -9112,16 +9250,39 @@ async function _recoPdfUpload(event) {
     // reports a real statement total but extracts zero transaction rows
     // (e.g. a summary-only page) still gets that total surfaced instead
     // of silently discarded.
-    const resolveTotal = (candidates) => {
-      if (!candidates.length) return null
-      // min/max spread, NOT "every candidate within tolerance of just the
-      // FIRST one" — the latter only checks pairwise-to-first, so e.g.
-      // [100.00, 100.05, 99.96] would each individually pass against
-      // 100.00 (spread <=0.05 from it) while the 2nd and 3rd actually
-      // differ from EACH OTHER by 0.09, more than tolerance — a real
-      // disagreement the pairwise-to-first check would miss entirely.
-      const min = Math.min(...candidates), max = Math.max(...candidates)
-      return (max - min) <= RECO_PDF_TALLY_TOLERANCE ? candidates[0] : 'conflict'
+    // Persists enough state for the "Retry Failed Pages" button to
+    // re-attempt just the still-missing pages later, without re-uploading
+    // the whole PDF — see _recoPdfRetryState's own comment. Skipped for a
+    // cancelled scan: a cancellation deliberately mixes genuine per-page
+    // failures with pages that were simply never attempted because the
+    // user chose to stop, and offering to "retry" that blend is more
+    // likely to confuse than help — re-uploading is the clear path there.
+    const persistPdfRetryState = () => {
+      const btn = document.getElementById('reco-pdf-retry-btn')
+      if (wasCancelled || !failedPageIndices.length) {
+        _recoPdfRetryState = null
+        if (btn) btn.style.display = 'none'
+        return
+      }
+      // Only the STILL-FAILED pages' blobs are kept — not the whole
+      // pageBlobs array — so this doesn't hold every page of a large
+      // statement's full-resolution images in memory just to retry a
+      // handful. pageRows/stmtDebitCandidates/stmtCreditCandidates are
+      // reused by reference (not copied): nothing else in this function
+      // touches them again after this point.
+      const blobs = {}
+      failedPageIndices.forEach(idx => { blobs[idx] = pageBlobs[idx] })
+      _recoPdfRetryState = {
+        blobs,
+        failedPageIndices: failedPageIndices.slice(),
+        pageRows,
+        stmtDebitCandidates,
+        stmtCreditCandidates,
+        totalPages: pageBlobs.totalPages,
+        processedPages: pageBlobs.length,
+        scanId, // lets a later retry replace just THIS scan's tally segment
+      }
+      if (btn) btn.style.display = ''
     }
     if (!allRows.length) {
       // Distinguish a user-initiated Cancel FIRST (accurate, no alarm) —
@@ -9157,52 +9318,20 @@ async function _recoPdfUpload(event) {
       // RM X total but 0 transactions were read" as its own red flag,
       // rather than just a generic "no transactions found" message.
       if (stmtDebitCandidates.length || stmtCreditCandidates.length) {
-        _recoRenderPdfTally(isBm, 0, 0, resolveTotal(stmtDebitCandidates), resolveTotal(stmtCreditCandidates), pdfSumIncomplete)
+        _recoRenderPdfTally(isBm, 0, 0, _recoResolvePdfTotal(stmtDebitCandidates), _recoResolvePdfTotal(stmtCreditCandidates), pdfSumIncomplete, scanId)
       }
+      persistPdfRetryState()
       return
     }
-    // credit -> positive (money in), debit -> negative (money out) — same
-    // sign convention _brSuggestCategory/_recoParseCsvText already use.
-    // Resolved ONCE per row here (not separately for the CSV text vs the
-    // tally sums below) — if a row ever had both debit AND credit
-    // non-null (the AI schema doesn't forbid it, e.g. a misread
-    // combined-line), computing the tally from allRows independently
-    // would sum BOTH sides while the CSV text below only ever keeps ONE
-    // (credit wins), silently making the tally check totals that don't
-    // match what's actually reviewable/importable. Sharing this one
-    // resolved amt keeps them impossible to diverge.
-    const resolved = allRows.map(r => ({
-      date: r.date,
-      amt: r.credit != null ? Number(r.credit) : -Math.abs(Number(r.debit||0)),
-      // Commas/newlines stripped since _recoParseCsvText's CSV split is
-      // naive (not quote-aware) — a stray comma would shift the row's
-      // columns. \t included too: that split is on comma OR tab
-      // (line.split(/,|\t/)), and unlike a comma a stray tab is invisible
-      // whitespace in the textarea, so the user's review step can't catch it.
-      desc: String(r.description||'').replace(/[,\t\n\r]/g, ' ').trim(),
-    }))
-    const lines = resolved.map(x => `${x.date},${x.desc},${x.amt.toFixed(2)}`)
-    // Independent extraction-completeness check — sums what THIS import
-    // actually captured (from the SAME resolved amounts the CSV text
-    // above uses) and compares against the statement's own printed total
-    // (if one was found on any page), completely separate from the
-    // failedPages/consecutiveFailures tracking above. A page can "succeed"
-    // (no error, valid JSON) while still under- or over-reading rows the
-    // model misjudged — this catches that class of silent miscount, not
-    // just outright page failures.
-    let sumDebit = 0, sumCredit = 0
-    resolved.forEach(x => {
-      if (x.amt >= 0) sumCredit += x.amt
-      else sumDebit += Math.abs(x.amt)
-    })
-    const stmtTotalDebit = resolveTotal(stmtDebitCandidates)
-    const stmtTotalCredit = resolveTotal(stmtCreditCandidates)
-    _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, pdfSumIncomplete)
+    const resolved = _recoBankRowsToLines(allRows)
+    const lines = resolved.map(x => x.line)
+    const { sumDebit, sumCredit } = _recoSumResolvedRows(resolved)
+    const stmtTotalDebit = _recoResolvePdfTotal(stmtDebitCandidates)
+    const stmtTotalCredit = _recoResolvePdfTotal(stmtCreditCandidates)
+    _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, pdfSumIncomplete, scanId)
+    persistPdfRetryState()
+    _recoAppendCsvLines(lines)
     const ta = document.getElementById('reco-csv-text')
-    if (ta && document.contains(ta)) {
-      const existing = ta.value.trim()
-      ta.value = (existing ? existing + '\n' : '') + lines.join('\n')
-    }
     // wasCancelled checked FIRST — without it, a user who cancels after
     // already getting some rows would see this branch's plain t.done(...)
     // + t.pageFail(...) instead, presented as a green success checkmark
@@ -9241,6 +9370,189 @@ async function _recoPdfUpload(event) {
   }
 }
 
+// Fired by the "Retry Failed Pages" button (#reco-pdf-retry-btn), shown
+// after _recoPdfUpload finishes with pages still missing even after its
+// own automatic recovery pass. Re-attempts just those specific pages using
+// the blobs _recoPdfUpload stashed in _recoPdfRetryState, WITHOUT
+// re-uploading or re-scanning the rest of the PDF — see the user's own
+// "aku buat sistem ni nak mudah kan kerja aku, bukan tambah kerja" ask:
+// re-uploading the whole file to fix 2 pages out of 33 is exactly the
+// extra manual work this button exists to remove.
+async function _recoPdfRetryFailed() {
+  const state = _recoPdfRetryState
+  if (!state || !state.failedPageIndices.length) return
+  const isBm = APP.language === 'bm'
+  if (_recoPdfBusy) {
+    showToast(isBm ? 'Satu imbasan PDF lain sedang berjalan, sila tunggu.' : 'Another PDF scan is already running, please wait.', 'warning')
+    return
+  }
+  _recoPdfBusy = true
+  _recoPdfCancelRequested = false
+  // Only the two message keys _recoExtractPdfPage actually needs — unlike
+  // _recoPdfUpload's own t object (which also covers the initial-scan-only
+  // messages: converting, badFile, none, allFailed, etc.), this retry never
+  // shows those, so building the full set here would just be dead text.
+  const t = isBm ? {
+    scanning: (i,n) => `AI membaca muka surat ${i}/${n}...`,
+    scanningRetry: (i,n,a,max) => `AI membaca muka surat ${i}/${n}... (cubaan ${a+1}/${max})`,
+  } : {
+    scanning: (i,n) => `AI reading page ${i}/${n}...`,
+    scanningRetry: (i,n,a,max) => `AI reading page ${i}/${n}... (attempt ${a+1}/${max})`,
+  }
+  const statusEl = document.getElementById('reco-pdf-status')
+  const setStatus = (html) => { if (statusEl && document.contains(statusEl)) statusEl.innerHTML = html }
+  const spinner = (label) => `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${label}`
+  const showCancelBtn = (show) => { const btn = document.getElementById('reco-pdf-cancel'); if (btn) btn.style.display = show ? '' : 'none' }
+  // Re-queried fresh every time, not cached in a variable — same reason
+  // showCancelBtn does this: if the user navigates away from Reconcile and
+  // back while this retry is still running, renderReconcile() creates a
+  // brand-new #reco-pdf-retry-btn node that starts hidden, and a cached
+  // reference from before the navigation would go on toggling the OLD,
+  // now-detached node forever.
+  const showRetryBtn = (show) => { const btn = document.getElementById('reco-pdf-retry-btn'); if (btn) btn.style.display = show ? '' : 'none' }
+  // Identity check, not just "_recoPdfRetryState is non-null" — another
+  // action (textarea edit, Import, Clear Session, or even a brand-new PDF
+  // scan) can null out or REPLACE _recoPdfRetryState with a different
+  // scan's state while this retry is still in flight. If that happened,
+  // this retry's own results are still valid (the rows/tally already went
+  // into the textarea/banner) but must NOT resurrect the button or clobber
+  // whatever the other action already set — that would point the user at
+  // a retry target that no longer matches what's on screen.
+  const isCurrentState = () => _recoPdfRetryState === state
+  showRetryBtn(false)
+  showCancelBtn(true)
+  const recoveredIndices = []
+  let wasCancelled = false
+  let consecutiveFailures = 0
+  try {
+    // Same bounded breaker as _recoPdfUpload's own recovery pass — if the
+    // API is still down, stop after a few consecutive failures instead of
+    // burning through every remaining failed page at full retry cost.
+    for (const i of state.failedPageIndices.slice()) {
+      if (_recoPdfCancelRequested) { wasCancelled = true; break }
+      showCancelBtn(true)
+      const result = await _recoExtractPdfPage(state.blobs[i], i, state.processedPages, 3, false, t, setStatus, spinner)
+      if (result.cancelled) { wasCancelled = true; break }
+      if (result.ok) {
+        _recoApplyPageResult(state.pageRows, state.stmtDebitCandidates, state.stmtCreditCandidates, i, result)
+        recoveredIndices.push(i)
+        delete state.blobs[i]
+        state.failedPageIndices.splice(state.failedPageIndices.indexOf(i), 1)
+        consecutiveFailures = 0
+      } else if (++consecutiveFailures >= RECO_PDF_BREAKER_THRESHOLD) {
+        console.error(`Bank PDF retry-failed-pages aborted after ${consecutiveFailures} consecutive failures — likely still a systemic API/network issue.`)
+        break
+      }
+    }
+    // Recovered rows appended to the END of the textarea, same trade-off
+    // _recoPdfUpload's own multi-scan append already makes (see its
+    // comment on why it never clears/splices the textarea) — inserting
+    // them at their true page position would mean rewriting text the user
+    // may have already hand-edited (the whole point of the REVIEW step),
+    // which risks silently destroying real edits. Out-of-order but never
+    // destructive.
+    // Everything below that touches the textarea/tally banner is gated on
+    // isCurrentState() — not just the trailing button/state update further
+    // down. Without this, a user who edits the textarea, clicks Import, or
+    // Clear Session WHILE this retry is still in flight (all of which call
+    // _recoClearPdfTally() and null _recoPdfRetryState) would have this
+    // retry silently splice extra rows onto whatever they're now doing —
+    // mid-edit text, or a textarea already reset for the NEXT import —
+    // and resurrect a "verification passed/failed" banner into a tally div
+    // they just cleared. The recovered rows/candidates are still safely
+    // recorded on `state` above regardless (nothing is lost), just not
+    // pushed into a UI that's since moved on to something else.
+    if (isCurrentState()) {
+      if (recoveredIndices.length) {
+        const rows = recoveredIndices.flatMap(i => state.pageRows[i])
+        // _recoAppendCsvLines itself no-ops on an empty array — guards the
+        // case where every newly-recovered page turned out to have zero
+        // transaction rows (e.g. a recovered summary/cover page), which
+        // would otherwise append a stray blank line.
+        _recoAppendCsvLines(_recoBankRowsToLines(rows).map(x => x.line))
+      }
+      // Tally re-rendered from ALL pages now on record (state.pageRows),
+      // not just the ones recovered just now — a page recovered in THIS
+      // click still needs to count toward the overall sum-vs-statement-
+      // total comparison, same as any other successfully-read page.
+      const allRows = [].concat(...state.pageRows.filter(Boolean))
+      const resolved = _recoBankRowsToLines(allRows)
+      const { sumDebit, sumCredit } = _recoSumResolvedRows(resolved)
+      const stmtTotalDebit = _recoResolvePdfTotal(state.stmtDebitCandidates)
+      const stmtTotalCredit = _recoResolvePdfTotal(state.stmtCreditCandidates)
+      const pdfSumIncomplete = (state.totalPages > state.processedPages) || state.failedPageIndices.length > 0
+      // Banner cleared first — unlike _recoPdfUpload's own append-only
+      // design (deliberately preserving each SEPARATE scan's verdict, e.g.
+      // a statement split across multiple PDF uploads), this is an UPDATED
+      // verdict for the exact same scan the still-visible banner already
+      // covers. Appending on top would leave a stale "mismatch/incomplete"
+      // banner sitting above a fresh "verified" one for the same numbers —
+      // materially misleading for a tool whose whole point is trustworthy
+      // totals verification. Scoped to state.scanId — see _recoPdfScanSeq's
+      // comment — so a DIFFERENT scan's banner (e.g. an earlier batch of
+      // the same multi-part PDF import) sitting in the same
+      // #reco-pdf-tally is left untouched; only this scan's own stale
+      // segment is removed.
+      _recoClearPdfTallyBanner(state.scanId)
+      _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, pdfSumIncomplete, state.scanId)
+    }
+    const stillFailing = state.failedPageIndices.length
+    let msg
+    if (!isCurrentState()) {
+      msg = isBm
+        ? `Cuba semula selesai (${recoveredIndices.length} muka surat dipulihkan), tetapi sesi Rekonsiliasi Bank dah berubah semasa ia berjalan — baris yang dipulihkan TIDAK ditambah secara automatik. Import semula PDF jika transaksi ni masih diperlukan.`
+        : `Retry finished (${recoveredIndices.length} page(s) recovered), but the Bank Recon session changed while it was running — recovered rows were NOT added automatically. Re-import the PDF if these transactions are still needed.`
+    } else if (wasCancelled) {
+      msg = isBm
+        ? `Cuba semula dihentikan oleh pengguna. ${recoveredIndices.length} muka surat berjaya dipulihkan, ${stillFailing} masih gagal.`
+        : `Retry stopped by user. ${recoveredIndices.length} page(s) recovered, ${stillFailing} still failing.`
+    } else if (stillFailing) {
+      msg = isBm
+        ? `${recoveredIndices.length} daripada ${recoveredIndices.length + stillFailing} muka surat berjaya dipulihkan — ${stillFailing} masih gagal (mungkin isu API/rangkaian berterusan).`
+        : `${recoveredIndices.length} of ${recoveredIndices.length + stillFailing} page(s) recovered — ${stillFailing} still failing (possibly a persistent API/network issue).`
+    } else {
+      msg = isBm
+        ? `Semua ${recoveredIndices.length} muka surat yang gagal tadi berjaya dipulihkan.`
+        : `All ${recoveredIndices.length} previously-failed page(s) recovered.`
+    }
+    const color = !isCurrentState() ? 'var(--text-3)' : stillFailing ? 'var(--warning)' : 'var(--success)'
+    const icon = !isCurrentState() ? 'ti-info-circle' : stillFailing ? 'ti-alert-triangle' : 'ti-check'
+    setStatus(`<span style="color:${color}"><i class="ti ${icon}"></i> ${msg}</span>`)
+    if (!document.contains(statusEl)) showToast(msg, !isCurrentState() ? 'info' : stillFailing ? 'warning' : 'success')
+    // Only touch the global retry state/button if it's still THIS retry's
+    // own state — see isCurrentState's own comment. If something else
+    // replaced or cleared it while this was running, that other action's
+    // outcome wins.
+    if (isCurrentState()) {
+      if (stillFailing) {
+        showRetryBtn(true)
+      } else {
+        _recoPdfRetryState = null
+      }
+    }
+  } catch (err) {
+    console.error('Bank PDF retry-failed-pages error:', err)
+    const msg = (isBm ? 'Ralat semasa cuba semula: ' : 'Error while retrying: ') + (err.message||'')
+    setStatus(`<span style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${msg}</span>`)
+    if (!document.contains(statusEl)) showToast(msg, 'error')
+    // Mirrors the success path's own logic (guarded the same way by
+    // isCurrentState) — covers the case where the loop above already
+    // recovered every page (state.failedPageIndices emptied out) but a
+    // LATER step (tally render, textarea append) is what actually threw;
+    // without this, _recoPdfRetryState would be left referencing a
+    // stale, already-fully-recovered object indefinitely instead of
+    // being nulled like the success path would have done.
+    if (isCurrentState()) {
+      if (state.failedPageIndices.length) showRetryBtn(true)
+      else _recoPdfRetryState = null
+    }
+  } finally {
+    _recoPdfBusy = false
+    _recoPdfCancelRequested = false
+    showCancelBtn(false)
+  }
+}
+
 // Extraction-completeness banner — compares what was actually extracted
 // from THIS scan against that PDF's own printed grand totals (see
 // ai-proxy's extract_bank_transactions statement_total_debit/credit
@@ -9259,10 +9571,16 @@ async function _recoPdfUpload(event) {
 // stmtTotalDebit/stmtTotalCredit: a positive number (found and agreed on
 // by every page that reported one), null (no page reported one), or the
 // string 'conflict' (different pages reported different figures — see
-// resolveTotal in _recoPdfUpload; treated as "can't verify" rather than
-// trusting an arbitrary one of them).
-function _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, sumIncomplete) {
+// _recoResolvePdfTotal; treated as "can't verify" rather than trusting an
+// arbitrary one of them).
+function _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit, sumIncomplete, scanId) {
   const el = document.getElementById('reco-pdf-tally')
+  // Tags the root of whichever fragment gets appended below with the
+  // scan it belongs to, so _recoClearPdfTallyBanner(scanId) can later
+  // remove just this scan's own segment — see _recoPdfScanSeq's comment.
+  // Omitted (no attribute at all) when no scanId is passed, so this stays
+  // backward-compatible with any future caller that doesn't need it.
+  const scanAttr = scanId != null ? ` data-reco-pdf-scan="${scanId}"` : ''
   const TOL = RECO_PDF_TALLY_TOLERANCE
   // Resolved independently PER FIELD (not one shared verdict for both) —
   // a statement that only prints a debit summary (no credit total
@@ -9304,7 +9622,7 @@ function _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTota
       : (isBm
         ? 'Tiada ringkasan jumlah dalam PDF ini untuk auto-sahkan — sila semak manual berbanding penyata asal.'
         : 'No summary total found in this PDF to auto-verify — please check manually against the original statement.')
-    const html = `<div style="font-size:11px;color:var(--text-3);margin-top:6px"><i class="ti ti-info-circle"></i> ${toastMsg}</div>`
+    const html = `<div${scanAttr} style="font-size:11px;color:var(--text-3);margin-top:6px"><i class="ti ti-info-circle"></i> ${toastMsg}</div>`
     if (el && document.contains(el)) el.insertAdjacentHTML('beforeend', html)
     else showToast(toastMsg, 'info')
     return
@@ -9358,7 +9676,7 @@ function _recoRenderPdfTally(isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTota
       </div>`
   }
   const html = `
-    <div class="card" style="padding:10px 12px;margin-top:8px;border:1px solid ${themeColor};background:color-mix(in srgb,${themeColor} 10%,transparent)">
+    <div${scanAttr} class="card" style="padding:10px 12px;margin-top:8px;border:1px solid ${themeColor};background:color-mix(in srgb,${themeColor} 10%,transparent)">
       <div style="font-size:12px;font-weight:600;color:${themeColor}"><i class="ti ${headlineIcon}"></i> ${headline}</div>
       ${row(isBm?'Jumlah Masuk (IN)':'Total IN', sumCredit, stmtTotalCredit, creditStatus)}
       ${row(isBm?'Jumlah Keluar (OUT)':'Total OUT', sumDebit, stmtTotalDebit, debitStatus)}
