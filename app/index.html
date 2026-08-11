@@ -8876,16 +8876,34 @@ async function _recoPdfUpload(event) {
         // page failures with nothing wrong with the page itself. Spacing
         // requests out is cheap prevention against exactly the class of
         // failure the retries below exist to recover from after the fact.
-        if (i > 0) await _sleep(400)
+        if (i > 0) await _sleep(800)
+        // Tracks the most recent failure for THIS page so the backoff
+        // below can react to it — confirmed live: even with 4 attempts at
+        // a flat ~1.2-3.6s backoff, 7 of 33 pages still failed on a real
+        // statement. A flat short backoff assumes every failure is a
+        // one-off blip, but callGroq (ai-proxy) surfaces the real HTTP
+        // status in its error message (`Groq API error (429): ...`) — a
+        // genuine rate-limit window is typically tens of seconds, not a
+        // few seconds, so retrying quickly just burns all 4 attempts
+        // against a limit that hasn't cleared yet.
+        let lastPageErr = null
         for (let attempt = 0; attempt < 4 && !pageOk; attempt++) {
           // Polled here too, not just once per PAGE — a retry's own
-          // backoff alone can run up to 3600ms, and without this check a
-          // user who clicks Cancel mid-retry would still sit through
-          // whatever backoff/attempts were already in flight before the
-          // outer loop ever got a chance to notice.
+          // backoff alone can run up to (rate-limited) 15s+, and without
+          // this check a user who clicks Cancel mid-retry would still sit
+          // through whatever backoff/attempts were already in flight
+          // before the outer loop ever got a chance to notice.
           if (_recoPdfCancelRequested) { wasCancelled = true; pagesAttemptedAtCancel = i; break }
           setStatus(spinner(attempt === 0 ? t.scanning(i+1, pageBlobs.length) : t.scanningRetry(i+1, pageBlobs.length, attempt)))
-          if (attempt > 0) await _sleep(attempt * 1200)
+          if (attempt > 0) {
+            // \b429\b, not the exact "(429)" wrapping ai-proxy currently
+            // uses — 429 is specific enough as a bare word match that this
+            // won't false-positive on unrelated text, but is more
+            // resilient to ai-proxy's error-wrapping wording changing
+            // later than requiring today's exact "(429)" parenthesization.
+            const wasRateLimited = /\b429\b/.test(String(lastPageErr?.message || lastPageErr || ''))
+            await _sleep(attempt * (wasRateLimited ? 5000 : 1200))
+          }
           try {
             const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
               action: 'extract_bank_transactions',
@@ -8905,6 +8923,7 @@ async function _recoPdfUpload(event) {
             if (data.data?.statement_total_credit != null) stmtCreditCandidates.push(Math.abs(Number(data.data.statement_total_credit)))
             pageOk = true
           } catch (pageErr) {
+            lastPageErr = pageErr
             if (attempt === 3) {
               console.error(`Bank PDF extraction failed on page ${i+1}/${pageBlobs.length} after 4 attempts:`, pageErr)
               failedPages++
