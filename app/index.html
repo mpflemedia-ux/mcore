@@ -4435,7 +4435,36 @@ async function renderAdminTeam() {
   </div>
   ${_adminTabs('team')}
   <div class="card" style="margin-bottom:16px;padding:16px" id="admin-invite-panel" style="display:none"></div>
-  <div class="card"><div id="admin-team-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div class="card"><div id="admin-team-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+
+  <div class="modal-overlay" id="admin-invite-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-box-header">${isBm?'Jemput Ahli Baru':'Invite New Member'}</div>
+      <div class="modal-box-body">
+        <div class="form-group">
+          <label class="form-label">${isBm?'Peranan':'Role'}</label>
+          <select id="ai-invite-role" class="form-select" onchange="_adminInviteRoleChanged()">
+            <option value="staff">${isBm?'Staf':'Staff'}</option>
+            <option value="cashier">${isBm?'Juruwang':'Cashier'}</option>
+            <option value="accountant">${isBm?'Akauntan':'Accountant'}</option>
+            <option value="manager">${isBm?'Pengurus':'Manager'}</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">${isBm?'Akses Modul (pratonton)':'Module Access (preview)'}</label>
+          <div id="ai-invite-modules" style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
+          <p style="font-size:11px;color:var(--text-3);margin-top:6px">${isBm
+            ? 'Pratonton akses standard peranan ini (ditetapkan di Role Permissions). Jemputan akan guna akses penuh peranan yang dipilih — override individu akan datang kemudian.'
+            : "Preview of this role's standard access (set in Role Permissions). The invite will use the selected role's full access — per-invite overrides coming later."}</p>
+        </div>
+      </div>
+      <div class="modal-box-footer">
+        <button class="btn btn-primary" style="flex:1" onclick="_adminSubmitInvite()"><i class="ti ti-user-plus"></i> ${isBm?'Cipta Jemputan':'Create Invite'}</button>
+        <button class="btn btn-outline" onclick="_adminHideInviteModal()">${isBm?'Batal':'Cancel'}</button>
+      </div>
+    </div>
+  </div>`
   _adminLoadInvites()
 
   const wrap = document.getElementById('admin-team-wrap')
@@ -4526,15 +4555,44 @@ async function _adminLoadInvites() {
 }
 
 function _adminShowInviteModal() {
+  const sel = document.getElementById('ai-invite-role')
+  if(sel) sel.value = 'staff'
+  _adminInviteRoleChanged()
+  document.getElementById('admin-invite-modal-overlay')?.classList.add('active')
+}
+
+function _adminHideInviteModal() {
+  document.getElementById('admin-invite-modal-overlay')?.classList.remove('active')
+}
+
+// Read-only preview of what the selected role can access — pulled from the
+// tenant's configured Role Permissions (Settings) if set, else the
+// hardcoded _DEFAULT_ROLE_MODULES fallback canAccess() itself uses. Not
+// editable here: there's no per-invite override storage yet (team_invites
+// has no module-override column), so an editable checkbox would silently
+// do nothing when toggled — showing it read-only is the honest version
+// until that's built.
+function _adminInviteRoleChanged() {
+  const role = document.getElementById('ai-invite-role')?.value
+  const wrap = document.getElementById('ai-invite-modules')
+  if(!wrap || !role) return
   const isBm = APP.language==='bm'
-  const role = prompt(isBm ? 'Peranan untuk ahli baru (staff / cashier / accountant / manager / admin):' : 'Role for new member (staff / cashier / accountant / manager / admin):', 'staff')
-  if(role === null) return
-  const r = (role || 'staff').trim().toLowerCase()
-  if(!['staff','cashier','accountant','manager','admin'].includes(r)) {
-    showToast(isBm?'Peranan tidak sah':'Invalid role', 'error')
+  if(role === 'admin') {
+    wrap.innerHTML = `<span style="font-size:13px;color:var(--text-2)">${isBm?'Akses penuh ke semua modul.':'Full access to all modules.'}</span>`
     return
   }
-  _adminCreateInvite(r)
+  const modules = (APP.tenantConfig && APP.tenantConfig.roles && APP.tenantConfig.roles[role]) || _DEFAULT_ROLE_MODULES[role] || []
+  wrap.innerHTML = RP_MODULES.map(m => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-3)">
+      <input type="checkbox" disabled ${modules.includes(m.id)?'checked':''}>
+      ${isBm?m.bm:m.en}
+    </label>`).join('')
+}
+
+function _adminSubmitInvite() {
+  const role = document.getElementById('ai-invite-role')?.value || 'staff'
+  _adminHideInviteModal()
+  _adminCreateInvite(role)
 }
 
 async function _adminCreateInvite(role) {
