@@ -12036,7 +12036,7 @@ function _invTabs(active) {
   </div>`
 }
 
-let _invState = { search:'', data:[], lowOnly:false }
+let _invState = { search:'', data:[], lowOnly:false, scannedBarcode:null }
 
 async function renderProductList() {
   const t = APP.language==='bm' ? {
@@ -12076,16 +12076,29 @@ async function renderProductList() {
         <button class="btn btn-outline" onclick="document.getElementById('po-modal-overlay').classList.remove('active')">${APP.language==='bm'?'Tutup':'Close'}</button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-overlay" id="prod-ai-scan-modal">
+    <div class="modal-box" style="max-width:420px">
+      <div class="modal-box-header"><i class="ti ti-camera"></i> ${APP.language==='bm'?'Kenal Pasti Produk':'Identify Product'}</div>
+      <div class="modal-box-body" id="prod-ai-scan-body"></div>
+      <div class="modal-box-footer" id="prod-ai-scan-footer" style="flex-wrap:wrap"></div>
+    </div>
   </div>`
   await _invLoad()
 }
 
 let _invSearchTimer = null
-function _invSearch(val) { _invState.search = val; clearTimeout(_invSearchTimer); _invSearchTimer = setTimeout(_invLoad, 350) }
+function _invSearch(val) {
+  _invState.search = val
+  _invState.scannedBarcode = null // typed search, not a scan — don't offer the AI-photo prompt on a plain "no results"
+  clearTimeout(_invSearchTimer); _invSearchTimer = setTimeout(_invLoad, 350)
+}
 
 function _invScanBarcode() {
   openBarcodeScanner((code) => {
     _invState.search = code
+    _invState.scannedBarcode = code // marks this "no results" (if any) as coming from a real barcode scan
     const input = document.getElementById('inv-search')
     if(input) input.value = code
     _invLoad()
@@ -12108,7 +12121,23 @@ async function _invLoad() {
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _invRenderLowStockAlert()
-  if(!list.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_invState.search||_invState.lowOnly?t.noResult:t.noData}</p></div>`; return }
+  if(!list.length) {
+    // A scanned barcode (not just typed text) with zero matches means a real
+    // physical product that isn't in the system yet — offer to identify it
+    // from a photo instead of just saying "no results" and leaving the
+    // cashier to fill in the Add Product form from scratch.
+    if(_invState.scannedBarcode && _invState.scannedBarcode === _invState.search.trim()) {
+      const isBm = APP.language==='bm'
+      wrap.innerHTML = `<div class="empty-state" style="padding:48px">
+        <p>${t.noResult}</p>
+        <p style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm?'Kod bar':'Barcode'}: ${_aiEscapeHtml(_invState.scannedBarcode)}</p>
+        <button class="btn btn-primary" style="margin-top:14px" onclick="_prodOpenAiScanModal('${_aiEscapeHtml(_invState.scannedBarcode).replace(/'/g,"\\'")}')"><i class="ti ti-camera"></i> ${isBm?'Imbas Gambar Produk untuk Kenal Pasti':'Scan Product Photo to Identify'}</button>
+      </div>`
+      return
+    }
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_invState.search||_invState.lowOnly?t.noResult:t.noData}</p></div>`
+    return
+  }
   wrap.innerHTML = `<table><thead><tr><th>${t.sku}</th><th>${t.name}</th><th style="text-align:right">${t.price}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.stock}</th><th style="width:100px"></th></tr></thead>
   <tbody>${list.map(p=>{
     const rp = p.reorder_point ?? 5
@@ -12125,6 +12154,127 @@ async function _invLoad() {
     </td>
   </tr>`
   }).join('')}</tbody></table>`
+}
+
+// ─── Product Form: AI photo-scan (barcode found no match → identify from a
+// photo instead) ─────────────────────────────────────────────────────────
+// 3-step flow inside one modal: capture/upload a photo → AI identifies the
+// product (Groq vision via ai-proxy, action=scan_product_image) → cashier
+// confirms or rescans. Only on confirm does anything reach the Add Product
+// form — via window._prodPrefill, same "stash on window, read once on the
+// next page" pattern _invCreatePOFromLowStock() already uses for PO drafts.
+let _prodAiScanBarcode = null
+let _prodAiScanResult = null
+let _prodAiScanPhotoDataUrl = null
+
+function _prodOpenAiScanModal(barcode) {
+  _prodAiScanBarcode = barcode || null
+  _prodAiScanResult = null
+  _prodAiScanPhotoDataUrl = null
+  _prodAiScanRenderCapture()
+  document.getElementById('prod-ai-scan-modal')?.classList.add('active')
+}
+
+function _prodHideAiScanModal() {
+  document.getElementById('prod-ai-scan-modal')?.classList.remove('active')
+}
+
+function _prodAiScanRenderCapture() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { hint:'Ambil atau muat naik gambar produk (kotak, label, atau produk itu sendiri) supaya AI boleh cuba kenal pasti dan isikan borang produk secara automatik.', choose:'Pilih Gambar', cancel:'Batal' }
+    : { hint:'Take or upload a photo of the product (packaging, label, or the item itself) so AI can try to identify it and auto-fill the product form.', choose:'Choose Photo', cancel:'Cancel' }
+  document.getElementById('prod-ai-scan-body').innerHTML = `
+    <p style="font-size:13px;color:var(--text-3)">${t.hint}</p>
+    <div id="prod-ai-scan-status" style="font-size:12px;margin-top:8px"></div>`
+  document.getElementById('prod-ai-scan-footer').innerHTML = `
+    <label class="btn btn-primary" style="flex:1;cursor:pointer;text-align:center">
+      <i class="ti ti-camera"></i> ${t.choose}
+      <input type="file" accept="image/*" capture="environment" id="prod-ai-scan-input" onchange="_prodAiScanFileSelected(event)" style="display:none">
+    </label>
+    <button class="btn btn-outline" onclick="_prodHideAiScanModal()">${t.cancel}</button>`
+}
+
+async function _prodAiScanFileSelected(event) {
+  const file = event.target.files[0]
+  event.target.value = ''
+  if(!file) return
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { badFile:'Sila pilih fail imej.', scanning:'Menganalisis gambar produk...', err:'Ralat: ' }
+    : { badFile:'Please select an image file.', scanning:'Analyzing product photo...', err:'Error: ' }
+  if(!file.type.startsWith('image/')) { showToast(t.badFile, 'warning'); return }
+
+  const statusEl = document.getElementById('prod-ai-scan-status')
+  const footer = document.getElementById('prod-ai-scan-footer')
+  if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
+  if(footer) footer.innerHTML = ''
+
+  try {
+    const {base64, mimeType} = await _compressImageToBase64(file)
+    _prodAiScanPhotoDataUrl = `data:${mimeType};base64,${base64}`
+    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_product_image', image_base64: base64, mime_type: mimeType } })
+    if(error) throw error
+    if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    _prodAiScanResult = data.data
+    _prodAiScanRenderConfirm()
+  } catch(err) {
+    console.error('_prodAiScanFileSelected error:', err)
+    _prodAiScanRenderCapture()
+    const newStatusEl = document.getElementById('prod-ai-scan-status')
+    if(newStatusEl) newStatusEl.innerHTML = `<span style="color:var(--danger)">${t.err}${err.message||''}</span>`
+  }
+}
+
+function _prodAiScanRenderConfirm() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    confidence:'Keyakinan AI', name:'Nama Produk', nameBm:'Nama (BM)',
+    sku:'Cadangan SKU', unit:'Unit', desc:'Penerangan', useThis:'✓ Guna Ini', rescan:'↻ Imbas Semula', cancel:'Batal',
+    lowConfWarn:'Keyakinan AI rendah — sila semak dengan teliti sebelum guna.'
+  } : {
+    confidence:'AI Confidence', name:'Product Name', nameBm:'Name (BM)',
+    sku:'Suggested SKU', unit:'Unit', desc:'Description', useThis:'✓ Use This', rescan:'↻ Rescan', cancel:'Cancel',
+    lowConfWarn:'AI confidence is low — please review carefully before using.'
+  }
+  const r = _prodAiScanResult || {}
+  const pct = r.confidence!=null ? Math.round(r.confidence*100) : null
+  const confColor = pct==null ? 'var(--text-3)' : (pct>=70?'var(--success)':pct>=40?'var(--warning)':'var(--danger)')
+  document.getElementById('prod-ai-scan-body').innerHTML = `
+    <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px">
+      ${_prodAiScanPhotoDataUrl ? `<img src="${_prodAiScanPhotoDataUrl}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border);flex-shrink:0">` : ''}
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span style="font-size:11px;color:var(--text-3)">${t.confidence}</span>
+          <strong style="color:${confColor}">${pct!=null?pct+'%':'-'}</strong>
+        </div>
+        ${pct!=null && pct<40 ? `<div style="font-size:11px;color:var(--warning);margin-top:4px"><i class="ti ti-alert-triangle"></i> ${t.lowConfWarn}</div>` : ''}
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+      <div><span style="color:var(--text-3)">${t.name}:</span> <strong>${_aiEscapeHtml(r.product_name_en||'-')}</strong></div>
+      <div><span style="color:var(--text-3)">${t.nameBm}:</span> ${_aiEscapeHtml(r.product_name_bm||'-')}</div>
+      <div><span style="color:var(--text-3)">${t.sku}:</span> ${_aiEscapeHtml(r.sku_suggestion||'-')}</div>
+      <div><span style="color:var(--text-3)">${t.unit}:</span> ${_aiEscapeHtml(r.unit_guess||'pcs')}</div>
+      ${r.description ? `<div><span style="color:var(--text-3)">${t.desc}:</span> ${_aiEscapeHtml(r.description)}</div>` : ''}
+    </div>`
+  document.getElementById('prod-ai-scan-footer').innerHTML = `
+    <button class="btn btn-primary" style="flex:1" onclick="_prodAiScanConfirm()"><i class="ti ti-check"></i> ${t.useThis}</button>
+    <button class="btn btn-outline" onclick="_prodAiScanRenderCapture()"><i class="ti ti-refresh"></i> ${t.rescan}</button>
+    <button class="btn btn-outline" onclick="_prodHideAiScanModal()">${t.cancel}</button>`
+}
+
+function _prodAiScanConfirm() {
+  const r = _prodAiScanResult || {}
+  window._prodPrefill = {
+    name_en: r.product_name_en || '',
+    name_bm: r.product_name_bm || '',
+    code: r.sku_suggestion || '',
+    unit: r.unit_guess || 'pcs',
+    barcode: _prodAiScanBarcode || '',
+  }
+  _prodHideAiScanModal()
+  openPage('inventory', {view:'product-form'})
 }
 
 function _invRenderLowStockAlert() {
@@ -12238,11 +12388,16 @@ async function renderProductForm(id=null) {
     save:'Save', cancel:'Cancel', required:'Name and sell price are required.'
   }
   let prod = { unit:'pcs' }
+  let fromAiScan = false
   if(id) { const {data} = await sb.from('products').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single(); if(data) prod = data }
+  else if(window._prodPrefill) { prod = { ...prod, ...window._prodPrefill }; window._prodPrefill = null; fromAiScan = true }
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${id?t.editTitle:t.addTitle}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('inventory',{})">← ${t.back}</div></div></div>
+  ${fromAiScan ? `<div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
+    <i class="ti ti-info-circle" style="color:var(--warning)"></i> ${APP.language==='bm'?'Diisi automatik dari imbasan gambar AI — sila semak semua field sebelum simpan.':'Auto-filled from AI photo scan — please review every field before saving.'}
+  </div>` : ''}
   <div class="card" style="max-width:600px">
     <div id="pf-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
