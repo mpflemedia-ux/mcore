@@ -19740,7 +19740,7 @@ async function _posPrintReceipt() {
   // so it must stay readable regardless of the app's own light/dark theme
   // instead of inheriting the modal's dark background with near-black text.
   body.innerHTML = `
-    <div style="max-width:280px;margin:0 auto;background:#fff;color:#0F172A;padding:16px;border-radius:10px;font-family:'Space Grotesk',sans-serif">
+    <div style="width:100%;max-width:280px;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;margin:0 auto;background:#fff;color:#0F172A;padding:16px;border-radius:10px;font-family:'Space Grotesk',sans-serif">
       <div style="text-align:center;margin-bottom:10px">
         <div style="font-weight:800;font-size:16px;color:#2563EB">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
         ${tn.address||tn.city ? `<div style="font-size:10px;color:#64748B;margin-top:2px;line-height:1.5">${_aiEscapeHtml(_pdocAddressLine(tn))}</div>` : ''}
@@ -19752,7 +19752,7 @@ async function _posPrintReceipt() {
       <div style="font-size:11px;color:#64748B;display:flex;justify-content:space-between;margin-bottom:2px"><span>${isBm?'Tarikh':'Date'}</span><strong style="color:#0F172A">${_aiEscapeHtml(r.dateLabel)}</strong></div>
       ${r.cashierName ? `<div style="font-size:11px;color:#64748B;display:flex;justify-content:space-between;margin-bottom:8px"><span>Cashier</span><strong style="color:#0F172A">${_aiEscapeHtml(r.cashierName)}</strong></div>` : ''}
       <div style="border-top:1px dashed #CBD5E1;border-bottom:1px dashed #CBD5E1;padding:8px 0;margin:8px 0">
-        ${(r.items||[]).map(it=>`<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;gap:8px"><span>${it.qty} × ${_aiEscapeHtml(it.name)}</span><span style="white-space:nowrap">${formatRM(it.qty*Number(it.unit_price||0))}</span></div>`).join('')}
+        ${(r.items||[]).map(it=>`<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;gap:8px"><span style="min-width:0;overflow-wrap:break-word">${it.qty} × ${_aiEscapeHtml(it.name)}</span><span style="white-space:nowrap;flex-shrink:0">${formatRM(it.qty*Number(it.unit_price||0))}</span></div>`).join('')}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:4px"><span>${isBm?'Jumlah':'Total'}</span><span>${r.totalLabel}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748B"><span>${isBm?'Bayaran':'Payment'}</span><span>${_aiEscapeHtml(r.methodLabel)}</span></div>
