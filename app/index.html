@@ -2893,8 +2893,8 @@ function renderDashboard() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <div class="db-card-title"><i class="ti ti-chart-area-line"></i> ${isBm?'Trend Jualan & Kutipan':'Sales & Collections Trend'}</div>
           <div class="db-toggle-group" id="db-period-toggle">
-            <div class="db-toggle active" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
-            <div class="db-toggle" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
+            <div class="db-toggle" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
+            <div class="db-toggle active" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
             <div class="db-toggle" data-p="monthly" onclick="_dbSetPeriod('monthly')">${isBm?'Bulanan':'Monthly'}</div>
           </div>
         </div>
@@ -3856,7 +3856,7 @@ function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
 }
 
 
-let _dbPeriod = 'daily'
+let _dbPeriod = 'weekly'
 let _dbRange = 'month' // day|week|month|year|custom — KPI / P&L window
 let _dbCharts = {}
 let _dbInvCache = []
