@@ -3619,15 +3619,20 @@ async function _dbLoadAttTracker() {
     // tracker opens scrolled to the start of the month, which for most of
     // the month looks like "no data" (nothing logged yet for those early
     // days) even though today's attendance is there, just off-screen to
-    // the right. Deferred one frame + uses scrollIntoView (browser-computed,
-    // not manual getBoundingClientRect math) since immediately after an
-    // innerHTML swap some mobile browsers haven't finished laying out the
-    // new content yet, which was leaving the scroll position wrong (only a
-    // sliver of today's column visible instead of a centred, readable one).
+    // the right. Deferred one frame so layout has settled before reading
+    // geometry. Sets el.scrollLeft directly rather than calling
+    // scrollIntoView — scrollIntoView walks every scrollable ancestor,
+    // including #main's page-level vertical scroll, so on load (before the
+    // user has scrolled down to this card) it was yanking the whole
+    // Dashboard down to this section instead of only panning the table.
     if(isCurrentMonth) {
       requestAnimationFrame(() => {
         const todayTh = el.querySelector(`th[data-day="${today.getDate()}"]`)
-        if(todayTh) todayTh.scrollIntoView({behavior:'auto', block:'nearest', inline:'center'})
+        if(todayTh) {
+          const contRect = el.getBoundingClientRect()
+          const thRect = todayTh.getBoundingClientRect()
+          el.scrollLeft = Math.max(0, el.scrollLeft + (thRect.left - contRect.left) - 60)
+        }
       })
     }
   } catch(err) {
