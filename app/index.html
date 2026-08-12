@@ -3615,26 +3615,9 @@ async function _dbLoadAttTracker() {
         </tr>`
       }).join('')}</tbody>
     </table>`
-    // Default to showing today's column instead of day 1 — otherwise the
-    // tracker opens scrolled to the start of the month, which for most of
-    // the month looks like "no data" (nothing logged yet for those early
-    // days) even though today's attendance is there, just off-screen to
-    // the right. Deferred one frame so layout has settled before reading
-    // geometry. Sets el.scrollLeft directly rather than calling
-    // scrollIntoView — scrollIntoView walks every scrollable ancestor,
-    // including #main's page-level vertical scroll, so on load (before the
-    // user has scrolled down to this card) it was yanking the whole
-    // Dashboard down to this section instead of only panning the table.
-    if(isCurrentMonth) {
-      requestAnimationFrame(() => {
-        const todayTh = el.querySelector(`th[data-day="${today.getDate()}"]`)
-        if(todayTh) {
-          const contRect = el.getBoundingClientRect()
-          const thRect = todayTh.getBoundingClientRect()
-          el.scrollLeft = Math.max(0, el.scrollLeft + (thRect.left - contRect.left) - 60)
-        }
-      })
-    }
+    // Opens at day 1 by default (no auto-scroll) — today's column is still
+    // highlighted in the header (bold, primary colour) so it's easy to spot
+    // once you scroll or use the </> buttons to reach it.
   } catch(err) {
     console.error('_dbLoadAttTracker', err)
     el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Tiada data kehadiran':'No attendance data'}</div>`
