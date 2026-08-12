@@ -108,7 +108,7 @@ input,select,textarea{font-family:inherit}
 /* MAIN */
 #main-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
 #header{height:var(--header-h);background:var(--bg-card);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;flex-shrink:0}
-.header-title{font-size:15px;font-weight:600}
+.header-title{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .header-spacer{flex:1}
 .header-search{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;width:220px}
 .header-search input{border:none;background:none;outline:none;font-size:13px;color:var(--text);width:100%}
@@ -126,8 +126,8 @@ input,select,textarea{font-family:inherit}
 .gs-empty{padding:28px;text-align:center;color:var(--text-3);font-size:13px}
 .gs-hint{padding:8px 16px 12px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border)}
 
-.header-actions{display:flex;align-items:center;gap:4px}
-.notif-wrap{position:relative}
+.header-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.notif-wrap{position:relative;flex-shrink:0}
 .notif-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1}
 .notif-badge.show{display:flex}
 .notif-menu{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,92vw);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.2));display:none;z-index:200;max-height:70vh;overflow:hidden;flex-direction:column}
@@ -138,17 +138,31 @@ input,select,textarea{font-family:inherit}
 .notif-item:hover{background:var(--bg)}
 .notif-item .n-meta{font-size:11px;color:var(--text-3);margin-top:2px}
 
-.header-btn{width:36px;height:36px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:18px;position:relative;cursor:pointer}
+.header-btn{width:36px;height:36px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:18px;position:relative;cursor:pointer;flex-shrink:0}
 .header-btn:hover{background:var(--bg);color:var(--text)}
-.tenant-chip{display:flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary);padding:5px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:600;max-width:min(220px,40vw);min-width:0}
+.tenant-chip{display:flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary);padding:5px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:600;max-width:min(220px,40vw);min-width:0;flex-shrink:0}
 .tenant-chip #tenant-name-header,.tenant-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.header-actions .dropdown{flex-shrink:0}
+/* Header items (icons, tenant chip, avatar) never shrink or get clipped
+   by #app's overflow:hidden — .header-title (flex-shrink + min-width:0,
+   set above) absorbs all the squeeze instead, truncating with an ellipsis
+   before anything in .header-actions is ever pushed out of view. */
 @media (max-width:768px){
-  .tenant-chip{font-size:10px;padding:4px 8px;gap:4px;max-width:min(140px,38vw);line-height:1.2}
+  #header{padding:0 12px;gap:8px}
+  .header-actions{gap:2px}
+  .header-btn{width:32px;height:32px;font-size:16px}
+  .header-actions .dropdown .user-avatar{width:28px;height:28px;font-size:11px}
+  .tenant-chip{font-size:10px;padding:4px 8px;gap:4px;max-width:min(120px,30vw);line-height:1.2}
   .tenant-chip .ti{font-size:12px;flex-shrink:0}
   .tenant-chip #tenant-name-header{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
+@media (max-width:480px){
+  #header{padding:0 8px;gap:6px}
+  .header-title{font-size:14px}
+  .tenant-chip{max-width:min(80px,26vw);padding:3px 6px}
+}
 @media (max-width:400px){
-  .tenant-chip{max-width:min(110px,32vw);font-size:9px;padding:3px 6px}
+  .tenant-chip{max-width:min(70px,24vw);font-size:9px;padding:3px 6px}
 }
 #main{flex:1;overflow-y:auto;padding:24px;background:var(--bg)}
 
@@ -517,6 +531,9 @@ html[data-skip-intro="1"] #intro-skip {
 @media (max-width:900px){.db-row,.db-bottom-row{grid-template-columns:1fr}}
 .db-people-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
 @media (max-width:900px){.db-people-row{grid-template-columns:1fr}}
+/* People (narrower) + Staff Attendance Tracker (wider) side by side */
+.db-people-row-2{display:grid;grid-template-columns:1fr 2fr;gap:14px;margin-top:14px}
+@media (max-width:900px){.db-people-row-2{grid-template-columns:1fr}}
 @media (max-width:768px) {
   /* Sidebar becomes a fixed overlay drawer instead of pushing/squeezing
      main content — #main-area (flex:1) naturally fills the full width
@@ -2903,10 +2920,10 @@ function renderDashboard() {
       <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>
 
-    <!-- People + Activity -->
-    <div class="db-people-row">
+    <!-- People (narrower) + Staff Attendance Tracker (wider) -->
+    <div class="db-people-row-2">
       <div class="db-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
           <div>
             <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
             <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan':'Team members')}</div>
@@ -2917,34 +2934,36 @@ function renderDashboard() {
           <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
         </div>
       </div>
+
+      <!-- Staff Attendance Tracker (monthly heatmap: employees × days) -->
       <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-activity"></i> ${t.recentActivity||(isBm?'Aktiviti Terkini':'Recent Activity')}</div>
-        <div id="db-activity-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">
-          <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+          <div>
+            <div class="db-card-title"><i class="ti ti-calendar-stats"></i> ${isBm?'Penjejak Kehadiran Staff':'Staff Attendance Tracker'}</div>
+            <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Status setiap staff, hari demi hari':"Every staff member's status, day by day"}</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="db-att-month" class="form-select" style="padding:6px 10px;font-size:12px" onchange="_dbLoadAttTracker()">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===(new Date()).getMonth()+1?'selected':''}>${new Date(2000,i,1).toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'long'})}</option>`).join('')}</select>
+            <input id="db-att-year" type="number" class="form-input" style="width:80px;padding:6px 8px;font-size:12px" value="${(new Date()).getFullYear()}" onchange="_dbLoadAttTracker()">
+          </div>
         </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--db-text3)">
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#16A34A;display:inline-block"></span>${isBm?'Hadir':'Present'}</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Bercuti':'On Leave'}</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;display:inline-block"></span>${isBm?'Tidak Hadir':'Absent'}</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#D97706;display:inline-block"></span>${isBm?'Setengah Hari':'Half Day'}</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--db-border2);display:inline-block"></span>${isBm?'Tiada rekod':'No record'}</span>
+        </div>
+        <div id="db-att-tracker" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
     </div>
 
-    <!-- Staff Attendance Tracker (monthly heatmap: employees × days) -->
+    <!-- Recent Activity — always last; keep any new dashboard card above this one -->
     <div class="db-card" style="margin-top:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-        <div>
-          <div class="db-card-title"><i class="ti ti-calendar-stats"></i> ${isBm?'Penjejak Kehadiran Staff':'Staff Attendance Tracker'}</div>
-          <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Status setiap staff, hari demi hari':"Every staff member's status, day by day"}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <select id="db-att-month" class="form-select" style="padding:6px 10px;font-size:12px" onchange="_dbLoadAttTracker()">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===(new Date()).getMonth()+1?'selected':''}>${new Date(2000,i,1).toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'long'})}</option>`).join('')}</select>
-          <input id="db-att-year" type="number" class="form-input" style="width:80px;padding:6px 8px;font-size:12px" value="${(new Date()).getFullYear()}" onchange="_dbLoadAttTracker()">
-        </div>
+      <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-activity"></i> ${t.recentActivity||(isBm?'Aktiviti Terkini':'Recent Activity')}</div>
+      <div id="db-activity-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">
+        <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
       </div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--db-text3)">
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#16A34A;display:inline-block"></span>${isBm?'Hadir':'Present'}</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Bercuti':'On Leave'}</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;display:inline-block"></span>${isBm?'Tidak Hadir':'Absent'}</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#D97706;display:inline-block"></span>${isBm?'Setengah Hari':'Half Day'}</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--db-border2);display:inline-block"></span>${isBm?'Tiada rekod':'No record'}</span>
-      </div>
-      <div id="db-att-tracker" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>
   </div>`
 
