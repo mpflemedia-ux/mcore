@@ -537,8 +537,16 @@ html[data-skip-intro="1"] #intro-skip {
    instead of forcing the whole row past the viewport — grid items
    otherwise default to min-width:auto, which lets intrinsic content
    width (a many-column table) blow out the column and the page. */
-.db-people-row-2{display:grid;grid-template-columns:minmax(0,220px) 1fr;gap:14px;margin-top:14px}
+.db-people-row-2{display:grid;grid-template-columns:minmax(0,280px) 1fr;gap:14px;margin-top:14px}
 @media (max-width:900px){.db-people-row-2{grid-template-columns:1fr}}
+/* Visible horizontal scrollbar for the attendance heatmap — a bare
+   overflow-x:auto scrollbar is too thin/easy to miss in the dark theme,
+   so this makes the "there's more to the right" affordance obvious. */
+.db-hscroll{scrollbar-width:thin;scrollbar-color:var(--db-border2) transparent}
+.db-hscroll::-webkit-scrollbar{height:9px}
+.db-hscroll::-webkit-scrollbar-track{background:transparent}
+.db-hscroll::-webkit-scrollbar-thumb{background:var(--db-border2);border-radius:5px}
+.db-hscroll::-webkit-scrollbar-thumb:hover{background:var(--db-text4)}
 @media (max-width:768px) {
   /* Sidebar becomes a fixed overlay drawer instead of pushing/squeezing
      main content — #main-area (flex:1) naturally fills the full width
@@ -2952,14 +2960,20 @@ function renderDashboard() {
             <input id="db-att-year" type="number" class="form-input" style="width:80px;padding:6px 8px;font-size:12px" value="${(new Date()).getFullYear()}" onchange="_dbLoadAttTracker()">
           </div>
         </div>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--db-text3)">
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#16A34A;display:inline-block"></span>${isBm?'Hadir':'Present'}</span>
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Bercuti':'On Leave'}</span>
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;display:inline-block"></span>${isBm?'Tidak Hadir':'Absent'}</span>
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#D97706;display:inline-block"></span>${isBm?'Setengah Hari':'Half Day'}</span>
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--db-border2);display:inline-block"></span>${isBm?'Tiada rekod':'No record'}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+          <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--db-text3)">
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#16A34A;display:inline-block"></span>${isBm?'Hadir':'Present'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Bercuti':'On Leave'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;display:inline-block"></span>${isBm?'Tidak Hadir':'Absent'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#D97706;display:inline-block"></span>${isBm?'Setengah Hari':'Half Day'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--db-border2);display:inline-block"></span>${isBm?'Tiada rekod':'No record'}</span>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button type="button" class="db-btn" style="padding:5px 8px" title="${isBm?'Tatal kiri':'Scroll left'}" onclick="_dbScrollAttTracker(-1)"><i class="ti ti-chevron-left"></i></button>
+            <button type="button" class="db-btn" style="padding:5px 8px" title="${isBm?'Tatal kanan':'Scroll right'}" onclick="_dbScrollAttTracker(1)"><i class="ti ti-chevron-right"></i></button>
+          </div>
         </div>
-        <div id="db-att-tracker" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+        <div id="db-att-tracker" class="db-hscroll" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
     </div>
 
@@ -3534,6 +3548,11 @@ function _dbAttStatusBadge(isBm) {
     on_leave: { label: isBm?'Bercuti':'On Leave',      color:'#7C3AED', bg:'rgba(124,58,237,.14)' },
   }
   return s => map[s] || { label: isBm?'Bercuti':'On Leave', color:'#7C3AED', bg:'rgba(124,58,237,.14)' }
+}
+
+function _dbScrollAttTracker(dir) {
+  const el = document.getElementById('db-att-tracker')
+  if(el) el.scrollBy({left: dir * 220, behavior: 'smooth'})
 }
 
 // Monthly employees × days heatmap — one row per employee, one cell per
