@@ -4723,7 +4723,7 @@ async function renderSettings(params={}) {
   // holds id/code/name/config in memory (see loadUserSession), not the fuller
   // set of tenants columns this section reads/writes.
   const cp = APP.language==='bm' ? {
-    title:'Profil Syarikat', uploadLogo:'Muat Naik Logo',
+    title:'Profil Syarikat', uploadLogo:'Muat Naik Logo', uploadQr:'Muat Naik QR Bayaran',
     scanSsm:'Imbas Sijil SSM', scanBank:'Imbas Penyata Bank',
     secCompany:'Maklumat Syarikat', companyName:'Nama Syarikat', registrationNo:'No. Pendaftaran (SSM)', incorpDate:'Tarikh Diperbadankan',
     secAddress:'Alamat', address1:'Alamat Baris 1', address2:'Alamat Baris 2', city:'Bandar', postcode:'Poskod', state:'Negeri', selectState:'-- Pilih Negeri --', country:'Negara',
@@ -4733,7 +4733,7 @@ async function renderSettings(params={}) {
     secInvoicing:'Invois', currency:'Mata Wang', invoiceTerms:'Terma Invois', invoiceTermsPlaceholder:'cth: Bayaran perlu dijelaskan dalam 30 hari dari tarikh invois.',
     nameRequired:'Nama syarikat diperlukan.', saved:'Profil syarikat disimpan!',
   } : {
-    title:'Company Profile', uploadLogo:'Upload Logo',
+    title:'Company Profile', uploadLogo:'Upload Logo', uploadQr:'Upload Payment QR',
     scanSsm:'Scan SSM Certificate', scanBank:'Scan Bank Statement',
     secCompany:'Company Information', companyName:'Company Name', registrationNo:'Registration No. (SSM)', incorpDate:'Incorporation Date',
     secAddress:'Address', address1:'Address Line 1', address2:'Address Line 2', city:'City', postcode:'Postcode', state:'State', selectState:'-- Select State --', country:'Country',
@@ -4819,6 +4819,16 @@ async function renderSettings(params={}) {
             <input type="file" accept="image/*" id="cp-logo-input" onchange="_cpUploadLogo(event)" style="display:none">
           </label>
           <div id="cp-logo-status" style="font-size:11px;color:var(--text-3);text-align:center;max-width:120px"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <img id="cp-qr-preview" src="${tenantRow.payment_qr_url||''}" style="width:100px;height:100px;border-radius:8px;object-fit:contain;background:var(--bg);border:1px solid var(--border);${tenantRow.payment_qr_url?'':'display:none'}">
+          <div id="cp-qr-placeholder" style="width:100px;height:100px;border-radius:8px;background:var(--bg);border:1px dashed var(--border-2);display:flex;align-items:center;justify-content:center;color:var(--text-3);${tenantRow.payment_qr_url?'display:none':''}"><i class="ti ti-qrcode" style="font-size:32px"></i></div>
+          <input type="hidden" id="cp-qr-url" value="${tenantRow.payment_qr_url||''}">
+          <label class="btn btn-outline btn-sm" style="cursor:pointer">
+            <i class="ti ti-upload"></i> ${cp.uploadQr}
+            <input type="file" accept="image/*" id="cp-qr-input" onchange="_cpUploadQr(event)" style="display:none">
+          </label>
+          <div id="cp-qr-status" style="font-size:11px;color:var(--text-3);text-align:center;max-width:120px"></div>
         </div>
         <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:10px">
           <div>
@@ -5633,6 +5643,38 @@ async function _cpUploadLogo(event) {
   }
 }
 
+async function _cpUploadQr(event) {
+  const file = event.target.files[0]
+  if(!file) return
+  const t = APP.language==='bm'
+    ? { uploading:'Memuat naik QR...', done:'QR dimuat naik.', err:'Ralat muat naik QR: ', badFile:'Sila pilih fail imej.' }
+    : { uploading:'Uploading QR...', done:'QR uploaded.', err:'QR upload error: ', badFile:'Please select an image file.' }
+  if(!file.type.startsWith('image/')) { showToast(t.badFile, 'warning'); event.target.value=''; return }
+
+  const statusEl = document.getElementById('cp-qr-status')
+  if(statusEl) statusEl.textContent = t.uploading
+
+  try {
+    // Higher resolution than the logo (600 vs 300) — a QR code stays
+    // scannable when compressed, but a heavily downscaled one can lose
+    // enough fine detail that phone cameras stop reading it.
+    const blob = await _compressImageToPngBlob(file, 600)
+    const path = `${APP.tenant.id}/payment-qr.png`
+    const {error: upErr} = await sb.storage.from('company-assets').upload(path, blob, {contentType:'image/png', upsert:true})
+    if(upErr) throw upErr
+    const {data} = sb.storage.from('company-assets').getPublicUrl(path)
+    const url = `${data.publicUrl}?t=${Date.now()}`
+    document.getElementById('cp-qr-url').value = url
+    document.getElementById('cp-qr-preview').src = url
+    document.getElementById('cp-qr-preview').style.display = ''
+    document.getElementById('cp-qr-placeholder').style.display = 'none'
+    if(statusEl) statusEl.textContent = t.done
+  } catch(err) {
+    console.error('QR upload error:', err)
+    if(statusEl) statusEl.textContent = t.err + (err.message||'')
+  }
+}
+
 async function _cpScanSSM(event) {
   const file = event.target.files[0]
   if(!file) return
@@ -5724,6 +5766,7 @@ async function _cpSave() {
   const payload = {
     name,
     logo_url: document.getElementById('cp-logo-url').value || null,
+    payment_qr_url: document.getElementById('cp-qr-url').value || null,
     ssm_no: document.getElementById('cp-ssm').value.trim() || null,
     incorporation_date: document.getElementById('cp-incorp-date').value || null,
     address: document.getElementById('cp-address1').value.trim() || null,
@@ -5765,6 +5808,7 @@ async function _cpSave() {
   if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
 
   APP.tenant.name = name
+  _pdocTenantCache = null // logo/QR/address just changed — don't let the next print/POS-QR use a stale cached copy
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')
@@ -18832,6 +18876,9 @@ async function renderPOS(params={}) {
             <div id="pos-change" class="pos-change" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:var(--text)">—</div>
           </div>
         </div>
+        <div id="pos-qr-wrap" style="display:none;margin-bottom:12px">
+          <button type="button" class="btn btn-outline" style="width:100%" onclick="_posShowQrToCustomer()"><i class="ti ti-qrcode"></i> ${isBm?'Tunjuk QR kepada Pelanggan':'Show QR to Customer'}</button>
+        </div>
         <button class="btn btn-primary pos-checkout" onclick="_posCheckout()"><i class="ti ti-check"></i> ${t.checkout}</button>
       </div>
     </div>
@@ -18853,6 +18900,16 @@ async function renderPOS(params={}) {
       <div class="modal-box-header" id="pos-shift-title"></div>
       <div class="modal-box-body" id="pos-shift-body"></div>
       <div class="modal-box-footer" id="pos-shift-footer"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pos-qr-display-modal">
+    <div class="modal-box" style="max-width:380px">
+      <div class="modal-box-header"><i class="ti ti-qrcode"></i> ${isBm?'Imbas untuk Bayar':'Scan to Pay'}</div>
+      <div class="modal-box-body" id="pos-qr-display-body" style="text-align:center"></div>
+      <div class="modal-box-footer">
+        <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('pos-qr-display-modal').classList.remove('active')">${isBm?'Tutup':'Close'}</button>
+      </div>
     </div>
   </div>
 
@@ -19395,7 +19452,45 @@ function _posSetMethod(m) {
   document.querySelectorAll('.pos-pay-btn').forEach(b => b.classList.toggle('active', b.dataset.method===m))
   const wrap = document.getElementById('pos-tender-wrap')
   if(wrap) wrap.style.display = m==='cash' ? '' : 'none'
+  const qrWrap = document.getElementById('pos-qr-wrap')
+  if(qrWrap) qrWrap.style.display = m==='online_banking' ? '' : 'none'
   _posUpdateChange()
+}
+
+// Shows the tenant's saved payment QR (Settings → Company Profile) full-size
+// so the cashier can turn the screen to the customer to scan — the current
+// cart total is overlaid so the customer sees exactly what they're paying,
+// not just a bare QR code.
+async function _posShowQrToCustomer() {
+  const isBm = APP.language==='bm'
+  const body = document.getElementById('pos-qr-display-body')
+  const modal = document.getElementById('pos-qr-display-modal')
+  if(!body || !modal) return
+  const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
+  body.innerHTML = `<div style="padding:20px 0"><div class="spinner"></div></div>`
+  modal.classList.add('active')
+  try {
+    // Fetched separately from _pdocGetTenant() (used by every print
+    // document) rather than added to its shared select — payment_qr_url is
+    // a brand new column, and if the migration adding it hasn't been run
+    // yet, a failing SELECT there would break Invoice/Quotation/Payslip/SD
+    // printing tenant-wide instead of just this one POS feature.
+    const {data: tn, error} = await sb.from('tenants').select('name,payment_qr_url').eq('id',APP.tenant.id).single()
+    if(error) throw error
+    if(!tn?.payment_qr_url) {
+      body.innerHTML = `<p style="color:var(--text-3);font-size:13px;padding:20px 0">${isBm
+        ? 'Tiada QR pembayaran ditetapkan. Admin boleh muat naik di Settings → Profil Syarikat.'
+        : 'No payment QR set up yet. An admin can upload one in Settings → Company Profile.'}</p>`
+      return
+    }
+    body.innerHTML = `
+      <div style="font-size:22px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:14px">${formatRM(total)}</div>
+      <img src="${_aiEscapeHtml(tn.payment_qr_url)}" alt="Payment QR" style="width:100%;max-width:280px;border-radius:10px;border:1px solid var(--border)">
+      <div style="font-size:12px;color:var(--text-3);margin-top:10px">${isBm?'Imbas untuk bayar':'Scan to pay'} — ${_aiEscapeHtml(tn.name||'')}</div>`
+  } catch(err) {
+    console.error('_posShowQrToCustomer error:', err)
+    body.innerHTML = `<p style="color:var(--danger);font-size:13px;padding:20px 0">Error: ${_aiEscapeHtml(err.message||'')}</p>`
+  }
 }
 function _posUpdateChange() {
   const total = _posCart.reduce((s,c)=>s+c.qty*Number(c.unit_price||0),0)
