@@ -18395,11 +18395,249 @@ async function renderPOSHistory() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Sejarah POS', back:'Titik Jualan', receipt:'No. Resit', date:'Tarikh', total:'Jumlah', method:'Kaedah', status:'Status',
-    noData:'Tiada transaksi POS lagi'
+    noData:'Tiada transaksi POS lagi', session:'No. Shift', from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis',
+    voidBtn:'Void', voidTitle:'Void Transaksi', voidWarn:'Ini akan pulangkan stok, balikkan jurnal perakaunan, dan tandakan jualan asal sebagai void. Tindakan ini tidak boleh diundur.',
+    voidConfirm:'Sahkan Void', cancel:'Batal', voided:'Void', refund:'Pemulangan',
   } : {
     title:'POS History', back:'Point of Sale', receipt:'Receipt No.', date:'Date', total:'Total', method:'Method', status:'Status',
-    noData:'No POS transactions yet'
+    noData:'No POS transactions yet', session:'Shift No.', from:'From', to:'To', apply:'Filter', clear:'Clear',
+    voidBtn:'Void', voidTitle:'Void Transaction', voidWarn:'This will restore stock, reverse the accounting journal, and mark the original sale as voided. This cannot be undone.',
+    voidConfirm:'Confirm Void', cancel:'Cancel', voided:'Voided', refund:'Refund',
   }
+  window._poshT = t
+  if(!window._poshDateFilter) window._poshDateFilter = { from:'', to:'' }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header">
+    <div>
+      <div class="page-title">${t.title}</div>
+      <div style="font-size:13px;color:var(--text-3);cursor:pointer;margin-top:2px" onclick="openPage('pos')">← ${t.back}</div>
+    </div>
+    <button class="btn btn-outline" onclick="openPage('pos',{view:'shifts'})"><i class="ti ti-report-money"></i> ${isBm?'Sejarah Shift':'Shift History'}</button>
+  </div>
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="posh-from" class="form-input" value="${window._poshDateFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="posh-to" class="form-input" value="${window._poshDateFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_poshApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._poshDateFilter={from:'',to:''};renderPOSHistory()">${t.clear}</button>
+    <div style="margin-left:auto">${_periodQuickBar('posh','_poshPickRange')}</div>
+  </div>
+  <div class="card"><div id="pos-hist-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+
+  <div class="modal-overlay" id="pos-void-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-box-header" style="color:var(--danger)"><i class="ti ti-receipt-refund"></i> ${t.voidTitle}</div>
+      <div class="modal-box-body">
+        <div id="pos-void-summary" style="font-weight:600;margin-bottom:8px"></div>
+        <p style="font-size:13px;color:var(--text-3)">${t.voidWarn}</p>
+      </div>
+      <div class="modal-box-footer" style="display:flex;gap:8px">
+        <button id="pos-void-confirm-btn" class="btn btn-primary" style="flex:1;background:var(--danger);border-color:var(--danger)" onclick="_posConfirmVoid()"><i class="ti ti-receipt-refund"></i> ${t.voidConfirm}</button>
+        <button class="btn btn-outline" onclick="_posHideVoidModal()">${t.cancel}</button>
+      </div>
+    </div>
+  </div>`
+  await _poshLoadTable()
+}
+
+function _poshApplyFilter() {
+  window._poshDateFilter = {
+    from: document.getElementById('posh-from')?.value || '',
+    to: document.getElementById('posh-to')?.value || ''
+  }
+  renderPOSHistory()
+}
+
+function _poshPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._poshDateFilter = r
+  renderPOSHistory()
+}
+
+async function _poshLoadTable() {
+  const t = window._poshT || {}
+  const isBm = APP.language==='bm'
+  const wrap = document.getElementById('pos-hist-wrap')
+  if(!wrap) return
+  let q = sb.from('pos_transactions')
+    .select('id,receipt_no,total,payment_method,txn_type,status,session_id,created_at')
+    .eq('tenant_id', APP.tenant.id)
+  const f = window._poshDateFilter || {}
+  // created_at is a timestamp — bound the "to" day at its end so same-day filters aren't empty.
+  if(f.from) q = q.gte('created_at', f.from+'T00:00:00')
+  if(f.to) q = q.lte('created_at', f.to+'T23:59:59')
+  const {data, error} = await q.order('created_at', {ascending:false}).limit(200)
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${_aiEscapeHtml(error.message)}</p></div>`; return }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+
+  const sessionIds = [...new Set(data.map(r=>r.session_id).filter(Boolean))]
+  const {data: sessions} = sessionIds.length
+    ? await sb.from('pos_sessions').select('id,session_no').in('id', sessionIds)
+    : {data:[]}
+  const sessionNoById = {}
+  ;(sessions||[]).forEach(s=>{ sessionNoById[s.id] = s.session_no })
+
+  window._poshCache = data
+  const isAdminOwner = isTenantAdmin()
+  const statusLabel = r => r.status==='voided' ? t.voided : (r.txn_type==='refund' ? t.refund : (r.status||r.txn_type||'-'))
+  const statusColor = r => r.status==='voided' ? 'var(--danger)' : (r.txn_type==='refund' ? 'var(--warning)' : 'var(--success)')
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.receipt}</th><th>${t.session}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.method}</th><th>${t.status}</th><th></th>
+  </tr></thead><tbody>
+  ${data.map(r=>{
+    const canVoid = isAdminOwner && r.txn_type==='sale' && r.status==='completed'
+    return `<tr>
+    <td><strong>${_aiEscapeHtml(r.receipt_no||'-')}</strong></td>
+    <td style="color:var(--text-3);font-size:12px">${_aiEscapeHtml(sessionNoById[r.session_id]||'-')}</td>
+    <td>${r.created_at ? new Date(r.created_at).toLocaleString('en-MY') : '-'}</td>
+    <td style="text-align:right;font-weight:600">${formatRM(r.total)}</td>
+    <td>${_aiEscapeHtml(r.payment_method||'-')}</td>
+    <td><span style="color:${statusColor(r)};font-weight:600">${_aiEscapeHtml(statusLabel(r))}</span></td>
+    <td style="white-space:nowrap">${canVoid ? `<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_posOpenVoidModal('${r.id}')"><i class="ti ti-receipt-refund"></i> ${t.voidBtn}</button>` : ''}</td>
+  </tr>`
+  }).join('')}
+  </tbody></table>`
+}
+
+let _posVoidTarget = null
+
+function _posOpenVoidModal(txnId) {
+  if(!isTenantAdmin()) { showToast(APP.language==='bm'?'Tiada kebenaran untuk void transaksi.':'Not permitted to void transactions.', 'error'); return }
+  const row = (window._poshCache||[]).find(r => String(r.id)===String(txnId))
+  if(!row) { showToast(APP.language==='bm'?'Transaksi tidak ditemui.':'Transaction not found.', 'error'); return }
+  _posVoidTarget = row
+  const summaryEl = document.getElementById('pos-void-summary')
+  if(summaryEl) summaryEl.textContent = `${row.receipt_no||row.id} — ${formatRM(row.total)}`
+  document.getElementById('pos-void-modal-overlay')?.classList.add('active')
+}
+
+function _posHideVoidModal() {
+  document.getElementById('pos-void-modal-overlay')?.classList.remove('active')
+  _posVoidTarget = null
+}
+
+// Reverses a completed POS sale: inserts a linked refund transaction (so
+// cash-drawer variance for whichever shift is open right now reflects the
+// money actually leaving the till today), restores the stock that was
+// deducted at sale time, posts a mirror-image reversing journal entry, and
+// marks the original transaction status='voided' so it drops out of every
+// "sale" total (_posComputeSessionTotals) and can't be voided twice.
+async function _posConfirmVoid() {
+  const isBm = APP.language==='bm'
+  if(!_posVoidTarget) return
+  if(!isTenantAdmin()) { showToast(isBm?'Tiada kebenaran untuk void transaksi.':'Not permitted to void transactions.', 'error'); return }
+  const btn = document.getElementById('pos-void-confirm-btn')
+  const t = window._poshT || {}
+  if(btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>' }
+  try {
+    const txnId = _posVoidTarget.id
+    const {data: original, error: fetchErr} = await sb.from('pos_transactions')
+      .select('id,session_id,receipt_no,total,payment_method,txn_type,status')
+      .eq('id', txnId).eq('tenant_id', APP.tenant.id).single()
+    if(fetchErr || !original) throw (fetchErr || new Error('Transaction not found'))
+    if(original.txn_type !== 'sale' || original.status !== 'completed') {
+      showToast(isBm?'Transaksi ini tidak boleh di-void (bukan jualan aktif — mungkin dah di-void).':'This transaction cannot be voided (not an active sale — may already be voided).', 'error')
+      _posHideVoidModal()
+      await _poshLoadTable()
+      return
+    }
+    const {data: items, error: itemsErr} = await sb.from('pos_transaction_items')
+      .select('product_id,name,qty,unit_price,line_total').eq('txn_id', txnId).eq('tenant_id', APP.tenant.id)
+    if(itemsErr) throw itemsErr
+
+    // Attribute the refund to whichever shift is open right now (cash physically
+    // leaves today's drawer); fall back to the original sale's own session if
+    // nobody has a shift open (e.g. an admin voiding after hours). Re-check
+    // fresh here — POS History can be opened directly via nav without ever
+    // visiting the main POS screen, which is the only place that otherwise
+    // populates _posCurrentSession, so it can't be trusted as-is.
+    await _posCheckSession()
+    const refundSessionId = _posCurrentSession ? _posCurrentSession.id : original.session_id
+
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).then(r=>r, ()=>({data:null}))
+    const refundReceiptNo = refData || await _genFallbackRefNo('pos_transactions','receipt_no','POS')
+
+    const {data: refundTxn, error: refundErr} = await sb.from('pos_transactions').insert({
+      tenant_id: APP.tenant.id, session_id: refundSessionId, receipt_no: refundReceiptNo,
+      total: original.total, payment_method: original.payment_method, txn_type: 'refund', status: 'completed'
+    }).select('id').single()
+    if(refundErr) throw refundErr
+
+    if(items && items.length) {
+      const refundItemsPayload = items.map(it => ({
+        tenant_id: APP.tenant.id, txn_id: refundTxn.id, product_id: it.product_id,
+        name: `[Void ${original.receipt_no}] ${it.name}`,
+        qty: it.qty, unit_price: it.unit_price, line_total: it.line_total
+      }))
+      const {error: refundItemsErr} = await sb.from('pos_transaction_items').insert(refundItemsPayload)
+      if(refundItemsErr) throw refundItemsErr
+      for(const it of items) {
+        if(!it.product_id) continue
+        try { await _stockAdjust(it.product_id, Number(it.qty||0), 'in', 'POS Void '+original.receipt_no) }
+        catch(e) { console.warn('POS void stock adjust', e) }
+      }
+    }
+
+    const {error: markErr} = await sb.from('pos_transactions').update({ status: 'voided' }).eq('id', txnId).eq('tenant_id', APP.tenant.id)
+    if(markErr) throw markErr
+
+    try {
+      const cashAcc = await _getDefaultAccountId('cash')
+      const revenueAcc = await _getDefaultAccountId('sales_revenue')
+      if(cashAcc && revenueAcc) {
+        const lines = [
+          { account_id: revenueAcc, debit: original.total, credit: 0 },
+          { account_id: cashAcc, debit: 0, credit: original.total },
+        ]
+        const cogs = await _calcCOGS('pos_transaction_items','txn_id', txnId)
+        if(cogs > 0) {
+          const cogsAcc = await _getDefaultAccountId('cogs')
+          const invAcc = await _getDefaultAccountId('inventory')
+          if(cogsAcc && invAcc) {
+            lines.push({ account_id: invAcc, debit: cogs, credit: 0 })
+            lines.push({ account_id: cogsAcc, debit: 0, credit: cogs })
+          }
+        }
+        await _postJournalEntry({
+          description: `POS Void ${original.receipt_no}`,
+          entryDate: new Date().toISOString().slice(0,10),
+          entryType: 'auto', lines,
+          sourceTable: 'pos_refund', sourceId: refundTxn.id,
+        })
+      }
+    } catch(e) { console.error('POS void journal post failed:', e) }
+
+    auditLog('void', 'pos_transactions', txnId)
+    showToast(isBm?'Transaksi di-void.':'Transaction voided.', 'success')
+    _posHideVoidModal()
+    await _poshLoadTable()
+  } catch(err) {
+    console.error('_posConfirmVoid error:', err)
+    showToast('Error: '+(err.message||err), 'error')
+  } finally {
+    if(btn) { btn.disabled = false; btn.innerHTML = `<i class="ti ti-receipt-refund"></i> ${t.voidConfirm||'Confirm Void'}` }
+  }
+}
+
+// Admin/owner sees every cashier's shifts (tenant-wide reconciliation view);
+// a regular cashier sees only their own — same visibility split already
+// used by _posLoadOtherOpenSessions for closing another cashier's shift.
+async function renderPOSShifts() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Sejarah Shift', back:'Titik Jualan', cashier:'Cashier', opened:'Dibuka', closed:'Ditutup',
+    opening:'Tunai Pembukaan', sales:'Jumlah Jualan', refunds:'Pemulangan', closing:'Tunai Penutupan',
+    expected:'Tunai Dijangka', variance:'Perbezaan', status:'Status', open:'Terbuka', doneStatus:'Ditutup',
+    noData:'Tiada shift lagi', from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis',
+  } : {
+    title:'Shift History', back:'Point of Sale', cashier:'Cashier', opened:'Opened', closed:'Closed',
+    opening:'Opening Cash', sales:'Total Sales', refunds:'Refunds', closing:'Closing Cash',
+    expected:'Expected Cash', variance:'Variance', status:'Status', open:'Open', doneStatus:'Closed',
+    noData:'No shifts yet', from:'From', to:'To', apply:'Filter', clear:'Clear',
+  }
+  if(!window._poshiftDateFilter) window._poshiftDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
   <div class="page-header">
     <div>
@@ -18407,30 +18645,80 @@ async function renderPOSHistory() {
       <div style="font-size:13px;color:var(--text-3);cursor:pointer;margin-top:2px" onclick="openPage('pos')">← ${t.back}</div>
     </div>
   </div>
-  <div class="card"><div id="pos-hist-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
-  const wrap = document.getElementById('pos-hist-wrap')
-  const {data, error} = await sb.from('pos_transactions')
-    .select('id,receipt_no,total,payment_method,txn_type,status,created_at')
-    .eq('tenant_id', APP.tenant.id)
-    .order('created_at', {ascending:false})
-    .limit(100)
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="poshift-from" class="form-input" value="${window._poshiftDateFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="poshift-to" class="form-input" value="${window._poshiftDateFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_poshiftApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._poshiftDateFilter={from:'',to:''};renderPOSShifts()">${t.clear}</button>
+    <div style="margin-left:auto">${_periodQuickBar('poshift','_poshiftPickRange')}</div>
+  </div>
+  <div class="card"><div id="poshift-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const wrap = document.getElementById('poshift-wrap')
+  const isAdminOwner = isTenantAdmin()
+  let q = sb.from('pos_sessions').select('*').eq('tenant_id', APP.tenant.id)
+  if(!isAdminOwner) q = q.eq('cashier_id', APP.user.id)
+  const f = window._poshiftDateFilter || {}
+  if(f.from) q = q.gte('opened_at', f.from+'T00:00:00')
+  if(f.to) q = q.lte('opened_at', f.to+'T23:59:59')
+  const {data, error} = await q.order('opened_at', {ascending:false}).limit(200)
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${_aiEscapeHtml(error.message)}</p></div>`; return }
   if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+
+  const cashierIds = [...new Set(data.map(s=>s.cashier_id).filter(Boolean))]
+  const {data: profiles} = cashierIds.length
+    ? await sb.from('user_profiles').select('id,full_name').in('id', cashierIds)
+    : {data:[]}
+  const nameById = {}
+  ;(profiles||[]).forEach(p=>{ nameById[p.id] = p.full_name })
+
   wrap.innerHTML = `<table><thead><tr>
-    <th>${t.receipt}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.method}</th><th>${t.status}</th>
+    <th>${t.cashier}</th><th>${t.opened}</th><th>${t.closed}</th>
+    <th style="text-align:right">${t.opening}</th><th style="text-align:right">${t.sales}</th>
+    <th style="text-align:right">${t.refunds}</th><th style="text-align:right">${t.closing}</th>
+    <th style="text-align:right">${t.expected}</th><th style="text-align:right">${t.variance}</th><th>${t.status}</th>
   </tr></thead><tbody>
-  ${data.map(r=>`<tr>
-    <td><strong>${_aiEscapeHtml(r.receipt_no||'-')}</strong></td>
-    <td>${r.created_at ? new Date(r.created_at).toLocaleString('en-MY') : '-'}</td>
-    <td style="text-align:right;font-weight:600">${formatRM(r.total)}</td>
-    <td>${_aiEscapeHtml(r.payment_method||'-')}</td>
-    <td>${_aiEscapeHtml(r.status||r.txn_type||'-')}</td>
-  </tr>`).join('')}
+  ${data.map(s=>{
+    const isOpen = s.status==='open'
+    const varianceVal = Number(s.cash_variance||0)
+    const varianceColor = isOpen ? 'var(--text-3)' : (Math.abs(varianceVal) < 0.01 ? 'var(--success)' : (Math.abs(varianceVal) <= 10 ? 'var(--warning)' : 'var(--danger)'))
+    const varianceLabel = isOpen ? '—' : (varianceVal > 0 ? '+'+formatRM(varianceVal) : formatRM(varianceVal))
+    return `<tr>
+    <td>${_aiEscapeHtml(nameById[s.cashier_id]||'-')}</td>
+    <td>${s.opened_at ? new Date(s.opened_at).toLocaleString('en-MY') : '-'}</td>
+    <td>${s.closed_at ? new Date(s.closed_at).toLocaleString('en-MY') : '-'}</td>
+    <td style="text-align:right">${formatRM(s.opening_cash)}</td>
+    <td style="text-align:right">${isOpen ? '—' : formatRM(s.total_sales)}</td>
+    <td style="text-align:right">${isOpen ? '—' : formatRM(s.total_refunds)}</td>
+    <td style="text-align:right">${isOpen ? '—' : formatRM(s.closing_cash)}</td>
+    <td style="text-align:right">${isOpen ? '—' : formatRM(s.expected_cash)}</td>
+    <td style="text-align:right;font-weight:600;color:${varianceColor}">${varianceLabel}</td>
+    <td><span style="color:${isOpen?'var(--success)':'var(--text-3)'};font-weight:600">${isOpen?t.open:t.doneStatus}</span></td>
+  </tr>`
+  }).join('')}
   </tbody></table>`
+}
+
+function _poshiftApplyFilter() {
+  window._poshiftDateFilter = {
+    from: document.getElementById('poshift-from')?.value || '',
+    to: document.getElementById('poshift-to')?.value || ''
+  }
+  renderPOSShifts()
+}
+
+function _poshiftPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._poshiftDateFilter = r
+  renderPOSShifts()
 }
 
 async function renderPOS(params={}) {
   if(params.view==='history') { renderPOSHistory(); return }
+  if(params.view==='shifts') { renderPOSShifts(); return }
 
   const t = APP.language==='bm' ? {
     title:'Titik Jualan', search:'Cari produk...', cart:'Troli', empty:'Troli kosong',
@@ -18455,6 +18743,7 @@ async function renderPOS(params={}) {
     <div><div class="page-title">${t.title}</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="openPage('pos',{view:'history'})"><i class="ti ti-history"></i> ${isBm?'Sejarah':'History'}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('pos',{view:'shifts'})"><i class="ti ti-report-money"></i> ${isBm?'Sejarah Shift':'Shift History'}</button>
       <div id="pos-shift-status" style="font-size:13px"></div>
     </div>
   </div>
@@ -18780,6 +19069,23 @@ async function _posStartShift() {
   if(btn) { btn.disabled=true; btn.innerHTML='<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>' }
 
   try {
+    // Re-check right before insert (not just whatever _posCheckSession found
+    // when the page loaded) — closes the window where a cashier could open
+    // a second shift (e.g. two tabs, or a slow first click) and end up with
+    // an orphaned first session that never gets closed or reconciled.
+    const {data: existing, error: existErr} = await sb.from('pos_sessions').select('id')
+      .eq('tenant_id', APP.tenant.id).eq('cashier_id', APP.user.id).eq('status','open')
+      .order('opened_at',{ascending:false}).limit(1).maybeSingle()
+    if(existErr) throw existErr
+    if(existing) {
+      await _posCheckSession()
+      _posRenderShiftStatus()
+      _posCloseShiftModal()
+      showToast(APP.language==='bm'?'Kau dah ada shift dibuka. Tutup shift sedia ada dulu sebelum mula yang baru.':'You already have an open shift. Close it before starting a new one.', 'error')
+      if(btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-clock-play"></i> '+t.start }
+      return
+    }
+
     // Single-branch systems have no branch picker yet — fall back to the tenant's
     // first branch, or null if none exist. Never block starting a shift on this.
     let branchId = null
@@ -18971,7 +19277,16 @@ async function _posCheckout() {
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
   const itemsPayload = _posCart.map(c => ({ tenant_id: APP.tenant.id, txn_id: trans.id, product_id: c.product_id, name: c.name, qty: c.qty, unit_price: c.unit_price, line_total: c.qty*Number(c.unit_price||0) }))
-  await sb.from('pos_transaction_items').insert(itemsPayload)
+  const {error: itemsErr} = await sb.from('pos_transaction_items').insert(itemsPayload)
+  if(itemsErr) {
+    // Items never saved — the transaction header alone (a total with no
+    // lines) would be undetectable in reports and would still deduct stock
+    // below if left in place, so roll it back and stop before anything else
+    // (stock, journal) happens. Nothing user-facing was ever shown yet.
+    await sb.from('pos_transactions').delete().eq('id', trans.id).eq('tenant_id', APP.tenant.id)
+    showToast(APP.language==='bm'?'Ralat: gagal simpan item jualan. Jualan dibatalkan, sila cuba lagi.':'Error: failed to save sale items. Sale cancelled, please retry.', 'error')
+    return
+  }
 
   // Deduct stock for product-linked lines; warn already handled pre-checkout
   for(const c of _posCart) {
