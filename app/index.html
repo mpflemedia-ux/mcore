@@ -2963,7 +2963,10 @@ function renderDashboard() {
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
           <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--db-text3)">
             <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#16A34A;display:inline-block"></span>${isBm?'Hadir':'Present'}</span>
-            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Bercuti':'On Leave'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Cuti Tahunan':'Annual Leave'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#0EA5E9;display:inline-block"></span>${isBm?'Cuti Sakit':'Medical Leave'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DB2777;display:inline-block"></span>${isBm?'Cuti Kecemasan':'Emergency Leave'}</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#64748B;display:inline-block"></span>${isBm?'Cuti Tanpa Gaji':'Unpaid Leave'}</span>
             <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;display:inline-block"></span>${isBm?'Tidak Hadir':'Absent'}</span>
             <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#D97706;display:inline-block"></span>${isBm?'Setengah Hari':'Half Day'}</span>
             <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--db-border2);display:inline-block"></span>${isBm?'Tiada rekod':'No record'}</span>
@@ -3550,6 +3553,19 @@ function _dbAttStatusBadge(isBm) {
   return s => map[s] || { label: isBm?'Bercuti':'On Leave', color:'#7C3AED', bg:'rgba(124,58,237,.14)' }
 }
 
+// Shared leave_type → {label, color, bg} — used by the Staff Attendance
+// Tracker to colour cells plotted from approved leave_requests (rather
+// than an actual attendance row) by which kind of leave it is.
+function _dbLeaveTypeBadge(isBm) {
+  const map = {
+    annual:    { label: isBm?'Cuti Tahunan':'Annual Leave',      color:'#7C3AED', bg:'rgba(124,58,237,.14)' },
+    medical:   { label: isBm?'Cuti Sakit':'Medical Leave',       color:'#0EA5E9', bg:'rgba(14,165,233,.14)' },
+    emergency: { label: isBm?'Cuti Kecemasan':'Emergency Leave', color:'#DB2777', bg:'rgba(219,39,119,.14)' },
+    unpaid:    { label: isBm?'Cuti Tanpa Gaji':'Unpaid Leave',   color:'#64748B', bg:'rgba(100,116,139,.14)' },
+  }
+  return ty => map[ty] || { label: isBm?'Bercuti':'On Leave', color:'#7C3AED', bg:'rgba(124,58,237,.14)' }
+}
+
 function _dbScrollAttTracker(dir) {
   const el = document.getElementById('db-att-tracker')
   if(el) el.scrollBy({left: dir * 220, behavior: 'smooth'})
@@ -3591,7 +3607,30 @@ async function _dbLoadAttTracker() {
       if(!byEmp[a.employee_id]) byEmp[a.employee_id] = {}
       byEmp[a.employee_id][a.date] = a.status
     })
+    // Approved leave_requests overlapping this month — plotted onto every
+    // day of their start_date..end_date span even when there's no matching
+    // attendance row for that day (attendance takes priority if both exist).
+    const {data: leaves, error: leaveErr} = await sb.from('leave_requests')
+      .select('employee_id, leave_type, start_date, end_date')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('status', 'approved')
+      .is('deleted_at', null)
+      .lte('start_date', to).gte('end_date', from)
+    if(leaveErr) throw leaveErr
+    const byEmpLeave = {}
+    ;(leaves||[]).forEach(l => {
+      const rangeStart = l.start_date < from ? from : l.start_date
+      const rangeEnd = l.end_date > to ? to : l.end_date
+      const startDay = Number(rangeStart.slice(8,10))
+      const endDay = Number(rangeEnd.slice(8,10))
+      if(!byEmpLeave[l.employee_id]) byEmpLeave[l.employee_id] = {}
+      for(let d = startDay; d <= endDay; d++) {
+        const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+        byEmpLeave[l.employee_id][dateStr] = l.leave_type
+      }
+    })
     const badge = _dbAttStatusBadge(isBm)
+    const leaveBadge = _dbLeaveTypeBadge(isBm)
     const emptyColor = 'var(--db-border2)'
     const days = Array.from({length: daysInMonth}, (_,i) => i+1)
     const today = new Date()
@@ -3603,14 +3642,19 @@ async function _dbLoadAttTracker() {
       </tr></thead>
       <tbody>${employees.map(e => {
         const rec = byEmp[e.id] || {}
+        const leaveRec = byEmpLeave[e.id] || {}
         return `<tr>
           <td title="${_aiEscapeHtml(e.name||'')}" style="font-size:12px;color:var(--db-text2);white-space:nowrap;padding-right:10px;position:sticky;left:0;background:var(--db-card);max-width:170px;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(e.name||'-')}</td>
           ${days.map(d => {
             const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
             const status = rec[dateStr]
-            const b = status ? badge(status) : null
-            const title = status ? `${e.name} — ${formatDate(dateStr)}: ${b.label}` : `${e.name} — ${formatDate(dateStr)}: ${isBm?'Tiada rekod':'No record'}`
-            return `<td title="${_aiEscapeHtml(title)}"><div style="width:13px;height:13px;border-radius:3px;background:${status?b.color:emptyColor};opacity:${status?1:0.5}"></div></td>`
+            const leaveType = leaveRec[dateStr]
+            // Actual attendance row wins if both exist; otherwise fall back
+            // to the approved leave_requests-derived colour for that day.
+            const b = status ? badge(status) : (leaveType ? leaveBadge(leaveType) : null)
+            const filled = status || leaveType
+            const title = filled ? `${e.name} — ${formatDate(dateStr)}: ${b.label}` : `${e.name} — ${formatDate(dateStr)}: ${isBm?'Tiada rekod':'No record'}`
+            return `<td title="${_aiEscapeHtml(title)}"><div style="width:13px;height:13px;border-radius:3px;background:${filled?b.color:emptyColor};opacity:${filled?1:0.5}"></div></td>`
           }).join('')}
         </tr>`
       }).join('')}</tbody>
