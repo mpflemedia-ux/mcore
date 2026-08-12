@@ -9082,7 +9082,7 @@ async function renderReconcile() {
       <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_recoReverseAllPosted()"><i class="ti ti-arrow-back-up"></i> ${isBm?'Balikkan Semua Posted':'Reverse All Posted'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoOpenGlMap()"><i class="ti ti-settings"></i> ${isBm?'Kategori → Akaun':'Category → Account'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoClearSession()"><i class="ti ti-trash"></i> ${t.clear}</button>
-      <button type="button" id="reco-delete-all-btn" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_recoDeleteAllBankReconData()" title="${isBm?'Padam terus (bukan balikkan) semua jurnal Bank Recon — untuk mula semula bersih dengan penyata bank lain':'Permanently delete (not reverse) every Bank Recon journal — for starting clean with a different bank statement'}"><i class="ti ti-trash-x"></i> ${isBm?'Padam Semua Data Bank Recon':'Delete All Bank Recon Data'}</button>
+      <button type="button" id="reco-delete-all-btn" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_recoOpenDeleteAllModal()" title="${isBm?'Padam terus (bukan balikkan) semua jurnal Bank Recon — untuk mula semula bersih dengan penyata bank lain':'Permanently delete (not reverse) every Bank Recon journal — for starting clean with a different bank statement'}"><i class="ti ti-trash-x"></i> ${isBm?'Padam Semua Data Bank Recon':'Delete All Bank Recon Data'}</button>
     </div>
   </div>
   <div id="reco-result"></div>
@@ -9097,6 +9097,30 @@ async function renderReconcile() {
       </div>
       <div class="modal-box-footer">
         <button class="btn btn-outline" onclick="document.getElementById('reco-glmap-modal-overlay').classList.remove('active')">${isBm?'Tutup':'Close'}</button>
+      </div>
+    </div>
+  </div>
+  <!-- In-app confirm modal for Delete All Bank Recon Data — deliberately
+       NOT window.prompt()/confirm(): mobile Chrome silently suppresses
+       native dialogs after enough of them fire in one page session ("Prevent
+       this page from creating additional dialogs"), which made the delete
+       button look like it did nothing at all when clicked. A DOM modal
+       can't be suppressed that way. -->
+  <div class="modal-overlay" id="reco-delete-all-modal-overlay">
+    <div class="modal-box" style="max-width:460px">
+      <div class="modal-box-header" style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${isBm?'Padam Semua Data Bank Recon':'Delete All Bank Recon Data'}</div>
+      <div class="modal-box-body">
+        <p style="font-size:13px;color:var(--text-2);line-height:1.5;margin:0">${isBm
+          ? 'Ini akan PADAM TERUS (bukan balikkan) semua jurnal Bank Recon dan sejarah sesi reconciliation untuk tenant ni. Invois/POS/PV/payroll tidak disentuh. Tindakan ini TAK BOLEH DIBATALKAN.'
+          : 'This will PERMANENTLY DELETE (not reverse) every Bank Recon journal entry and the reconciliation session history for this tenant. Invoices/POS/PV/payroll are untouched. This action CANNOT BE UNDONE.'}</p>
+        <div class="form-group" style="margin-top:14px;margin-bottom:0">
+          <label class="form-label">${isBm?'Taip DELETE untuk sahkan':'Type DELETE to confirm'}</label>
+          <input type="text" id="reco-delete-all-confirm-input" class="form-input" placeholder="DELETE" autocomplete="off" oninput="_recoDeleteAllUpdateBtn()">
+        </div>
+      </div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('reco-delete-all-modal-overlay').classList.remove('active')">${isBm?'Batal':'Cancel'}</button>
+        <button type="button" id="reco-delete-all-confirm-btn" class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" disabled onclick="_recoDeleteAllBankReconData()"><i class="ti ti-trash-x"></i> ${isBm?'Padam':'Delete'}</button>
       </div>
     </div>
   </div>`
@@ -11054,6 +11078,22 @@ function _recoClearSession() {
   showToast(APP.language==='bm'?'Sesi dikosongkan.':'Session cleared.', 'info')
 }
 
+// Opens the in-app confirm modal (see its markup/comment in renderReconcile)
+// instead of window.prompt() — resets the typed-confirmation input each
+// time so a leftover "DELETE" from a previous run can't silently arm the
+// button again.
+function _recoOpenDeleteAllModal() {
+  const input = document.getElementById('reco-delete-all-confirm-input')
+  if (input) input.value = ''
+  _recoDeleteAllUpdateBtn()
+  document.getElementById('reco-delete-all-modal-overlay')?.classList.add('active')
+}
+function _recoDeleteAllUpdateBtn() {
+  const input = document.getElementById('reco-delete-all-confirm-input')
+  const btn = document.getElementById('reco-delete-all-confirm-btn')
+  if (btn) btn.disabled = (input?.value !== 'DELETE')
+}
+
 // Full hard-delete of everything this module has ever posted or stored for
 // this tenant — unlike Reverse All Posted (which creates offsetting
 // entries and keeps the originals), this permanently removes the rows.
@@ -11062,22 +11102,19 @@ function _recoClearSession() {
 // clean slate, not for correcting real posted entries — use Reverse All
 // Posted for that. Scoped strictly to source_table IN ('bank_recon',
 // 'bank_recon_reversal'), so invoices/POS/PV/payroll journal entries are
-// never touched. Requires typing DELETE (not just OK/Cancel) since this
-// can't be undone the way Reverse All Posted's confirm() can.
+// never touched. Only reachable via the confirm modal (see
+// _recoOpenDeleteAllModal) whose Delete button stays disabled until
+// "DELETE" is typed exactly — re-checked here too since the button is
+// real DOM, not a browser-enforced gate.
 async function _recoDeleteAllBankReconData() {
   const isBm = APP.language==='bm'
   if (_recoPosting) {
     showToast(isBm?'Sedang memproses, sila tunggu...':'Already processing, please wait...', 'warning')
     return
   }
-  const warn = isBm
-    ? 'Ini akan PADAM TERUS (bukan balikkan) SEMUA jurnal Bank Recon (source_table = bank_recon) dan sejarah sesi reconciliation untuk tenant ni — invois/POS/PV/payroll tidak disentuh. Tak boleh undo. Taip DELETE untuk sahkan.'
-    : 'This will PERMANENTLY DELETE (not reverse) every Bank Recon journal entry and the reconciliation session history for this tenant — invoices/POS/PV/payroll are untouched. This cannot be undone. Type DELETE to confirm.'
-  const typed = prompt(warn)
-  if (typed !== 'DELETE') {
-    showToast(isBm?'Dibatalkan.':'Cancelled.', 'info')
-    return
-  }
+  const typed = document.getElementById('reco-delete-all-confirm-input')?.value
+  if (typed !== 'DELETE') return
+  document.getElementById('reco-delete-all-modal-overlay')?.classList.remove('active')
   _recoPosting = true
   const btn = document.getElementById('reco-delete-all-btn')
   const btnLabel = `<i class="ti ti-trash-x"></i> ${isBm?'Padam Semua Data Bank Recon':'Delete All Bank Recon Data'}`
