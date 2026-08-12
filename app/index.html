@@ -9082,6 +9082,7 @@ async function renderReconcile() {
       <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_recoReverseAllPosted()"><i class="ti ti-arrow-back-up"></i> ${isBm?'Balikkan Semua Posted':'Reverse All Posted'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoOpenGlMap()"><i class="ti ti-settings"></i> ${isBm?'Kategori → Akaun':'Category → Account'}</button>
       <button class="btn btn-outline btn-sm" onclick="_recoClearSession()"><i class="ti ti-trash"></i> ${t.clear}</button>
+      <button type="button" id="reco-delete-all-btn" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_recoDeleteAllBankReconData()" title="${isBm?'Padam terus (bukan balikkan) semua jurnal Bank Recon — untuk mula semula bersih dengan penyata bank lain':'Permanently delete (not reverse) every Bank Recon journal — for starting clean with a different bank statement'}"><i class="ti ti-trash-x"></i> ${isBm?'Padam Semua Data Bank Recon':'Delete All Bank Recon Data'}</button>
     </div>
   </div>
   <div id="reco-result"></div>
@@ -11051,6 +11052,65 @@ function _recoClearSession() {
   if (el) el.innerHTML = ''
   _recoClearPdfTally()
   showToast(APP.language==='bm'?'Sesi dikosongkan.':'Session cleared.', 'info')
+}
+
+// Full hard-delete of everything this module has ever posted or stored for
+// this tenant — unlike Reverse All Posted (which creates offsetting
+// entries and keeps the originals), this permanently removes the rows.
+// Meant for wiping dummy/test reconciliation runs (e.g. trying a new
+// bank's statement format) so the next import starts from a genuinely
+// clean slate, not for correcting real posted entries — use Reverse All
+// Posted for that. Scoped strictly to source_table IN ('bank_recon',
+// 'bank_recon_reversal'), so invoices/POS/PV/payroll journal entries are
+// never touched. Requires typing DELETE (not just OK/Cancel) since this
+// can't be undone the way Reverse All Posted's confirm() can.
+async function _recoDeleteAllBankReconData() {
+  const isBm = APP.language==='bm'
+  if (_recoPosting) {
+    showToast(isBm?'Sedang memproses, sila tunggu...':'Already processing, please wait...', 'warning')
+    return
+  }
+  const warn = isBm
+    ? 'Ini akan PADAM TERUS (bukan balikkan) SEMUA jurnal Bank Recon (source_table = bank_recon) dan sejarah sesi reconciliation untuk tenant ni — invois/POS/PV/payroll tidak disentuh. Tak boleh undo. Taip DELETE untuk sahkan.'
+    : 'This will PERMANENTLY DELETE (not reverse) every Bank Recon journal entry and the reconciliation session history for this tenant — invoices/POS/PV/payroll are untouched. This cannot be undone. Type DELETE to confirm.'
+  const typed = prompt(warn)
+  if (typed !== 'DELETE') {
+    showToast(isBm?'Dibatalkan.':'Cancelled.', 'info')
+    return
+  }
+  _recoPosting = true
+  const btn = document.getElementById('reco-delete-all-btn')
+  const btnLabel = `<i class="ti ti-trash-x"></i> ${isBm?'Padam Semua Data Bank Recon':'Delete All Bank Recon Data'}`
+  if (btn) { btn.disabled = true; btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></div> ${isBm?'Memadam...':'Deleting...'}` }
+  try {
+    const { data: entries, error: fetchErr } = await sb.from('journal_entries')
+      .select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .in('source_table', ['bank_recon', 'bank_recon_reversal'])
+    if (fetchErr) { showToast('Error: '+fetchErr.message, 'error'); return }
+    const ids = (entries||[]).map(e => e.id)
+    if (ids.length) {
+      const { error: linesErr } = await _recoInChunks(chunk =>
+        sb.from('journal_lines').delete().in('entry_id', chunk),
+      ids)
+      if (linesErr) { showToast('Error: '+linesErr.message, 'error'); return }
+      const { error: entriesErr } = await _recoInChunks(chunk =>
+        sb.from('journal_entries').delete().in('id', chunk).eq('tenant_id', APP.tenant.id),
+      ids)
+      if (entriesErr) { showToast('Error: '+entriesErr.message, 'error'); return }
+    }
+    const { error: bslErr } = await sb.from('bank_statement_lines').delete().eq('tenant_id', APP.tenant.id)
+    if (bslErr) console.warn('_recoDeleteAllBankReconData bank_statement_lines', bslErr)
+    _recoClearSession()
+    showToast(isBm
+      ? `Selesai: ${ids.length} jurnal Bank Recon dipadam, sesi & backup dikosongkan.`
+      : `Done: ${ids.length} Bank Recon journal(s) deleted, session & backup cleared.`, 'success')
+  } catch(e) {
+    showToast('Error: '+(e.message||e), 'error')
+  } finally {
+    _recoPosting = false
+    if (btn) { btn.disabled = false; btn.innerHTML = btnLabel }
+  }
 }
 
 async function _recoRunMatch() {
