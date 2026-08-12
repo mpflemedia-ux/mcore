@@ -171,8 +171,8 @@ body.dark .form-input{background:rgba(255,255,255,0.08);border-color:rgba(255,25
    browser's default (light) color-scheme unless told otherwise — on dark
    theme that draws a near-black icon on a near-black field, making the
    picker look broken/unclickable even though it's functionally fine. */
-input[type="date"],input[type="time"],input[type="datetime-local"]{color-scheme:light}
-[data-theme="dark"] input[type="date"],[data-theme="dark"] input[type="time"],[data-theme="dark"] input[type="datetime-local"]{color-scheme:dark}
+input[type="date"],input[type="time"],input[type="datetime-local"],input[type="week"],input[type="month"]{color-scheme:light}
+[data-theme="dark"] input[type="date"],[data-theme="dark"] input[type="time"],[data-theme="dark"] input[type="datetime-local"],[data-theme="dark"] input[type="week"],[data-theme="dark"] input[type="month"]{color-scheme:dark}
 .form-input::placeholder{color:var(--text-3)}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:var(--radius-sm);font-size:14px;font-weight:500;transition:all var(--transition);cursor:pointer;border:none}
@@ -7359,6 +7359,9 @@ async function renderJournalList() {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10)
   const monthEnd = today.toISOString().slice(0,10)
   if(!window._jnlFilter) window._jnlFilter = { from: monthStart, to: monthEnd }
+  const yNow = today.getFullYear()
+  let jnlYearOptions = `<option value="">${t.filterYear}</option>`
+  for (let y = yNow + 1; y >= yNow - 8; y--) jnlYearOptions += `<option value="${y}">${y}</option>`
 
   document.getElementById('main').innerHTML = `
   <div class="page-header">
@@ -7373,13 +7376,12 @@ async function renderJournalList() {
       <input type="date" id="jnl-to" class="form-input" value="${window._jnlFilter.to||''}" style="width:150px"></div>
     <button class="btn btn-primary btn-sm" onclick="_jnlApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
     <button class="btn btn-outline btn-sm" onclick="window._jnlFilter={from:'',to:''};renderJournalList()">${t.clear}</button>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center">
       <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('jnl-pick-week')"><i class="ti ti-calendar-week"></i> ${t.filterWeek}</button>
       <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('jnl-pick-month')"><i class="ti ti-calendar"></i> ${t.filterMonth}</button>
-      <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('jnl-pick-year')"><i class="ti ti-calendar-event"></i> ${t.filterYear}</button>
-      <input type="date" id="jnl-pick-week" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('week',this.value)">
-      <input type="date" id="jnl-pick-month" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('month',this.value)">
-      <input type="date" id="jnl-pick-year" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('year',this.value)">
+      <input type="week" id="jnl-pick-week" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('week',this.value)">
+      <input type="month" id="jnl-pick-month" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('month',this.value)">
+      <select class="form-select" id="jnl-pick-year" style="width:130px;padding:6px 10px;font-size:12px" onchange="_jnlPickRange('year',this.value)">${jnlYearOptions}</select>
     </div>
   </div>
   <div class="card" style="margin-bottom:0">
@@ -7414,29 +7416,37 @@ function _jnlOpenPicker(id) {
   el.focus()
   el.click()
 }
-// Manual week/month/year filter — driven by a single date the user picks
-// from a native calendar (type="date" is used for all three, not
-// type="week"/"month", since those have no usable native picker in
-// Firefox/Safari and would silently fall back to a bare text box there).
-// The picked date is then expanded to the containing week/month/year.
-// Malaysia week convention (CLAUDE.md): week starts Monday. getDay() 0=Sun.
+// Manual week/month/year filter. Week uses <input type="week"> (native
+// "Week NN, YYYY" picker) and month uses <input type="month"> (native
+// month+year picker) — picking a plain day and silently expanding it to
+// "the week/month containing that day" (the earlier approach) left users
+// with no visible way to tell which week/month they'd actually get, since
+// nothing in the picker itself showed week numbers or was scoped to
+// months. Year has no native input type, so it's a plain <select> of
+// years instead. Malaysia week convention (CLAUDE.md): week starts Monday.
 function _jnlPickRange(period, val) {
   if (!val) return
-  const d = new Date(val+'T00:00:00')
   const toISO = x => x.toISOString().slice(0,10)
   let from, to
   if (period === 'week') {
-    const dow = d.getDay()
-    const diffToMon = dow === 0 ? -6 : 1 - dow
-    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diffToMon)
+    // val format: "2026-W33"
+    const [yearStr, weekStr] = val.split('-W')
+    const year = Number(yearStr), week = Number(weekStr)
+    const jan4 = new Date(year, 0, 4)
+    const jan4Dow = jan4.getDay() || 7 // ISO: Monday=1..Sunday=7
+    const monday = new Date(year, 0, 4 - jan4Dow + 1 + (week - 1) * 7)
     const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)
     from = toISO(monday); to = toISO(sunday)
   } else if (period === 'month') {
-    from = toISO(new Date(d.getFullYear(), d.getMonth(), 1))
-    to = toISO(new Date(d.getFullYear(), d.getMonth()+1, 0))
+    // val format: "2026-08"
+    const [yearStr, monthStr] = val.split('-')
+    const year = Number(yearStr), month = Number(monthStr)
+    from = toISO(new Date(year, month-1, 1))
+    to = toISO(new Date(year, month, 0))
   } else if (period === 'year') {
-    from = toISO(new Date(d.getFullYear(), 0, 1))
-    to = toISO(new Date(d.getFullYear(), 11, 31))
+    const year = Number(val)
+    from = toISO(new Date(year, 0, 1))
+    to = toISO(new Date(year, 11, 31))
   } else {
     return
   }
