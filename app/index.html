@@ -12791,22 +12791,19 @@ async function renderInvDetail(id) {
   const t = APP.language==='bm' ? {
     back:'Invois', edit:'Edit', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
     items:'Item', qty:'Kuantiti', price:'Harga', amount:'Jumlah', total:'Jumlah Besar',
-    paid:'Dibayar', balance:'Baki', recordPayment:'Rekod Bayaran', payDate:'Tarikh Bayaran', payAmount:'Jumlah Bayaran', payMethod:'Kaedah', save:'Simpan',
-    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai', history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi', voidPay:'Batal', voidPayConfirm:'Batalkan bayaran ini? Baki invois akan dipulihkan.',
-    createDO:'Cipta Delivery Order', createDOBtn:'Cipta DO', driverName:'Nama Pemandu', vehicleNo:'No. Kenderaan', deliveryAddress:'Alamat Penghantaran *', notes:'Nota',
-    doTitle:'Delivery Order', viewDO:'Lihat DO', addressRequired:'Alamat penghantaran diperlukan.',
+    paid:'Dibayar', balance:'Baki',
+    unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai',
     print:'Cetak', whatsapp:'WhatsApp'
   } : {
     back:'Invoices', edit:'Edit', customer:'Customer', date:'Date', due:'Due Date',
     items:'Items', qty:'Qty', price:'Price', amount:'Amount', total:'Grand Total',
-    paid:'Paid', balance:'Balance', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
-    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet', voidPay:'Void', voidPayConfirm:'Void this payment? Invoice balance will be restored.',
+    paid:'Paid', balance:'Balance',
+    unpaid:'Unpaid', partial:'Partial', paidFull:'Paid',
     print:'Print', whatsapp:'WhatsApp'
   }
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
-  const {data: allocations} = await sb.from('payment_allocations').select('id,amount,payment_id,payments(id,payment_date,payment_method,ref_no)').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
   const {data: custPhone} = inv.customer_id
     ? await sb.from('customers').select('phone,email,address,city,state,postcode').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
     : {data:null}
@@ -12889,23 +12886,6 @@ async function renderInvDetail(id) {
     </div>
     <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · NexERP</div>
-  </div>
-
-  <div class="card" style="max-width:900px;margin-top:16px">
-    <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
-    ${(!allocations||allocations.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
-    `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th><th style="width:48px"></th></tr></thead>
-    <tbody>${allocations.map(a=>`<tr>
-      <td>${formatDate(a.payments?.payment_date)}</td>
-      <td style="text-align:right">${formatRM(a.amount)}</td>
-      <td>${a.payments?.payment_method||'-'}</td>
-      <td style="text-align:center">
-        <button type="button" class="btn btn-outline btn-sm no-print" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
-          onclick="_payVoid('${id}','${a.id}','${a.payment_id||a.payments?.id||''}',${Number(a.amount||0)})" title="${t.voidPay||'Void'}">
-          <i class="ti ti-trash"></i>
-        </button>
-      </td>
-    </tr>`).join('')}</tbody></table>`}
   </div>`
 }
 
