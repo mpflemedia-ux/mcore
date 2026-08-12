@@ -12554,7 +12554,7 @@ async function renderInvForm(id=null) {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('sales',{})">← ${t.back}</div></div></div>
   <div class="card" style="max-width:900px">
     <div id="inv-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
-    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px">
+    <div style="padding:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px">
       <div class="form-group"><label class="form-label">${t.customer}</label>
         <select id="if-customer" class="form-select">
           <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
@@ -12573,7 +12573,7 @@ async function renderInvForm(id=null) {
       </div>
     </div>
     <div style="padding:0 20px">
-      <table>${_slItemsTableHead()}<tbody id="sl-items-body"></tbody></table>
+      <div style="overflow-x:auto"><table>${_slItemsTableHead()}<tbody id="sl-items-body"></tbody></table></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_slAddItem()"><i class="ti ti-plus"></i> ${t.addLine}</button>
       <div style="display:flex;justify-content:flex-end;align-items:flex-start;gap:24px;margin-top:16px;flex-wrap:wrap">
         <div class="form-group" style="margin:0;min-width:160px">
@@ -13422,7 +13422,7 @@ async function renderQuoForm(id=null) {
     </div>`:''}</div>
   <div class="card no-print" style="max-width:900px">
     <div id="quo-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
-    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div style="padding:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px">
       <div class="form-group"><label class="form-label">${t.customer}</label>
         <select id="qf-customer" class="form-select">
           <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
@@ -13433,7 +13433,7 @@ async function renderQuoForm(id=null) {
       <div class="form-group"><label class="form-label">${t.valid}</label><input id="qf-valid" type="date" class="form-input" value="${quo.valid_until||''}"></div>
     </div>
     <div style="padding:0 20px">
-      <table>${_slItemsTableHead()}<tbody id="sl-items-body"></tbody></table>
+      <div style="overflow-x:auto"><table>${_slItemsTableHead()}<tbody id="sl-items-body"></tbody></table></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_slAddItem()"><i class="ti ti-plus"></i> ${t.addLine}</button>
       <div style="text-align:right;margin-top:12px;font-weight:700;font-size:16px" id="sl-grand-total"></div>
     </div>
@@ -14184,7 +14184,7 @@ async function renderPOForm(id=null) {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{})">← ${t.back}</div></div></div>
   <div class="card" style="max-width:900px">
     <div id="po-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
-    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div style="padding:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px">
       <div class="form-group"><label class="form-label">${t.supplier}</label>
         <select id="pf-supplier" class="form-select">
           <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
@@ -14195,7 +14195,7 @@ async function renderPOForm(id=null) {
       <div class="form-group"><label class="form-label">${t.expectedDate}</label><input id="pf-expected-date" type="date" class="form-input" value="${po.expected_date||''}"></div>
     </div>
     <div style="padding:0 20px">
-      <table>${_poItemsTableHead()}<tbody id="po-items-body"></tbody></table>
+      <div style="overflow-x:auto"><table>${_poItemsTableHead()}<tbody id="po-items-body"></tbody></table></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_poAddItem()"><i class="ti ti-plus"></i> ${t.addLine}</button>
       <div style="text-align:right;margin-top:12px;font-weight:700;font-size:16px" id="po-grand-total"></div>
     </div>
