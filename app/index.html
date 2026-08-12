@@ -7697,7 +7697,12 @@ function _jnlOpenPicker(id) {
 // week/month/year math isn't duplicated per page.
 function _periodToRange(period, val) {
   if (!val) return null
-  const toISO = x => x.toISOString().slice(0,10)
+  // Deliberately NOT toISOString() — that converts to UTC first, and for
+  // any timezone ahead of UTC (Malaysia is GMT+8) a Date built at local
+  // midnight lands on the previous UTC day, so "August 2026" silently
+  // became 31/07/2026–30/08/2026 instead of 01/08/2026–31/08/2026. Reading
+  // the local Y/M/D getters directly sidesteps the UTC conversion entirely.
+  const toISO = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
   let from, to
   if (period === 'week') {
     // val format: "2026-W33"
