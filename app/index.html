@@ -167,6 +167,12 @@ input,select,textarea{font-family:inherit}
 .form-input{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px;outline:none;transition:border-color var(--transition);width:100%}
 body.dark .form-input{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.2);color:#E2E8F0}
 .form-input:focus{border-color:var(--primary)}
+/* Native date/time inputs render their calendar icon + popup using the
+   browser's default (light) color-scheme unless told otherwise — on dark
+   theme that draws a near-black icon on a near-black field, making the
+   picker look broken/unclickable even though it's functionally fine. */
+input[type="date"],input[type="time"],input[type="datetime-local"]{color-scheme:light}
+[data-theme="dark"] input[type="date"],[data-theme="dark"] input[type="time"],[data-theme="dark"] input[type="datetime-local"]{color-scheme:dark}
 .form-input::placeholder{color:var(--text-3)}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:var(--radius-sm);font-size:14px;font-weight:500;transition:all var(--transition);cursor:pointer;border:none}
