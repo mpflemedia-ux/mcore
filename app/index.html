@@ -515,7 +515,7 @@ html[data-skip-intro="1"] #intro-skip {
 .db-kpi-sub{font-size:11px;color:var(--db-text4)}
 .db-kpi-spark{display:none!important}
 .db-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
-.db-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:18px}
+.db-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:14px;padding:18px;min-width:0}
 .db-card-title{font-size:14px;font-weight:600;color:var(--db-text2);display:flex;align-items:center;gap:6px}
 .db-toggle-group{display:flex;gap:2px;background:var(--db-bg);border-radius:8px;padding:3px}
 .db-toggle{padding:5px 12px;border-radius:6px;font-size:12px;color:var(--db-text4);cursor:pointer;transition:all .15s}
@@ -531,8 +531,13 @@ html[data-skip-intro="1"] #intro-skip {
 @media (max-width:900px){.db-row,.db-bottom-row{grid-template-columns:1fr}}
 .db-people-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
 @media (max-width:900px){.db-people-row{grid-template-columns:1fr}}
-/* People (narrower) + Staff Attendance Tracker (wider) side by side */
-.db-people-row-2{display:grid;grid-template-columns:1fr 2fr;gap:14px;margin-top:14px}
+/* People (fixed narrow column) + Staff Attendance Tracker (rest of the
+   row) side by side. min-width:0 on .db-card (above) is what actually
+   lets the tracker's wide heatmap table stay inside its grid track
+   instead of forcing the whole row past the viewport — grid items
+   otherwise default to min-width:auto, which lets intrinsic content
+   width (a many-column table) blow out the column and the page. */
+.db-people-row-2{display:grid;grid-template-columns:minmax(0,220px) 1fr;gap:14px;margin-top:14px}
 @media (max-width:900px){.db-people-row-2{grid-template-columns:1fr}}
 @media (max-width:768px) {
   /* Sidebar becomes a fixed overlay drawer instead of pushing/squeezing
@@ -3507,7 +3512,7 @@ async function _dbLoadPeople() {
           <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
           <div style="font-size:11px;color:var(--db-text3)">${position}${position && clock!=='-' ? ' · ' : ''}${clock!=='-' ? 'In '+clock : ''}</div>
         </div>
-        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${b.bg};color:${b.color};font-weight:500">${b.label}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${b.bg};color:${b.color};font-weight:500;white-space:nowrap;flex-shrink:0">${b.label}</span>
       </div>`
     }).join('')
   } catch(err) {
