@@ -7340,11 +7340,15 @@ async function renderJournalList() {
   const t = APP.language==='bm' ? {
     title:'Entri Jurnal', add:'Entri Baru', entryNo:'No. Entri', date:'Tarikh', desc:'Keterangan',
     debit:'Jumlah Debit', credit:'Jumlah Kredit', noData:'Tiada entri jurnal lagi',
-    from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis', source:'Sumber'
+    from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis', source:'Sumber',
+    thisWeek:'Minggu Ini', thisMonth:'Bulan Ini', thisYear:'Tahun Ini',
+    lastMonth:'Bulan Lepas', lastYear:'Tahun Lepas'
   } : {
     title:'Journal Entries', add:'New Entry', entryNo:'Entry No.', date:'Date', desc:'Description',
     debit:'Total Debit', credit:'Total Credit', noData:'No journal entries yet',
-    from:'From', to:'To', apply:'Filter', clear:'Clear', source:'Source'
+    from:'From', to:'To', apply:'Filter', clear:'Clear', source:'Source',
+    thisWeek:'This Week', thisMonth:'This Month', thisYear:'This Year',
+    lastMonth:'Last Month', lastYear:'Last Year'
   }
 
   const today = new Date()
@@ -7365,6 +7369,13 @@ async function renderJournalList() {
       <input type="date" id="jnl-to" class="form-input" value="${window._jnlFilter.to||''}" style="width:150px"></div>
     <button class="btn btn-primary btn-sm" onclick="_jnlApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
     <button class="btn btn-outline btn-sm" onclick="window._jnlFilter={from:'',to:''};renderJournalList()">${t.clear}</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('week')">${t.thisWeek}</button>
+      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('month')">${t.thisMonth}</button>
+      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('lastMonth')">${t.lastMonth}</button>
+      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('year')">${t.thisYear}</button>
+      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('lastYear')">${t.lastYear}</button>
+    </div>
   </div>
   <div class="card" style="margin-bottom:0">
     <div id="jnl-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:60px"><div class="spinner"></div></div></div>
@@ -7378,6 +7389,36 @@ function _jnlApplyFilter() {
     from: document.getElementById('jnl-from')?.value || '',
     to: document.getElementById('jnl-to')?.value || ''
   }
+  renderJournalList()
+}
+
+// Malaysia week convention (CLAUDE.md): week starts Monday. getDay() 0=Sun.
+function _jnlQuickFilter(period) {
+  const now = new Date()
+  const toISO = d => d.toISOString().slice(0,10)
+  let from, to
+  if (period === 'week') {
+    const dow = now.getDay()
+    const diffToMon = dow === 0 ? -6 : 1 - dow
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon)
+    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)
+    from = toISO(monday); to = toISO(sunday)
+  } else if (period === 'month') {
+    from = toISO(new Date(now.getFullYear(), now.getMonth(), 1))
+    to = toISO(new Date(now.getFullYear(), now.getMonth()+1, 0))
+  } else if (period === 'lastMonth') {
+    from = toISO(new Date(now.getFullYear(), now.getMonth()-1, 1))
+    to = toISO(new Date(now.getFullYear(), now.getMonth(), 0))
+  } else if (period === 'year') {
+    from = toISO(new Date(now.getFullYear(), 0, 1))
+    to = toISO(new Date(now.getFullYear(), 11, 31))
+  } else if (period === 'lastYear') {
+    from = toISO(new Date(now.getFullYear()-1, 0, 1))
+    to = toISO(new Date(now.getFullYear()-1, 11, 31))
+  } else {
+    return
+  }
+  window._jnlFilter = { from, to }
   renderJournalList()
 }
 
