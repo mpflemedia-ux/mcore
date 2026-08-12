@@ -8249,6 +8249,17 @@ const _BR_RULES = [
   // material purchases, not a generic operating expense. Specific enough
   // a substring that it shouldn't collide with anything else.
   { keywords:['CASH & CARRY','CASH N CARRY'], category:'Cost of Sales', type:'out', conf:85 },
+  // A payee name carrying a Malaysian business-entity suffix (Enterprise,
+  // Trading, Resources, Holdings, Sdn Bhd, Supplies) is a business/supplier,
+  // not an individual — a generic "TRANSFER TO/FR A/C [Name] * MAE QR"
+  // description otherwise looks identical whether the recipient is staff
+  // being paid wages or a supplier being paid for stock, and confirmed live
+  // this was defaulting to "Salaries & Wages" purely because the name
+  // pattern-matched "paying a person" with no actual salary/gaji/payroll
+  // wording present. Lower confidence than a named-supplier match — this is
+  // a coarse "it's a business, not a person" signal, not proof of WHICH
+  // expense it is, so it's meant to be reviewed, not blindly trusted.
+  { keywords:['ENTERPRISE','TRADING','RESOURCES','HOLDINGS','SDN BHD','SUPPLIES'], category:'Cost of Sales', type:'out', conf:60 },
   // Payment gateway processing fees — same nature as a bank's own
   // transaction fee, so filed under the existing Bank Charges category
   // rather than a new one (per discussion: don't fragment the chart of

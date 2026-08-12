@@ -185,8 +185,15 @@ async function handleCategorizeBank(body: Record<string, unknown>) {
     'You are a bank-transaction categorization assistant for a Malaysian SME. Each line below is ' +
     'one bank statement transaction, tab-separated as: idx\\tdate\\tamount\\tdescription (amount is ' +
     'negative for money out, positive for money in). Classify EVERY line into exactly ONE of these ' +
-    `categories: ${categoryList.join(', ')}. Respond with ONLY a JSON object, no other text, with ` +
-    'EXACTLY this shape: {"suggestions": [{"idx": <the same idx number from the input line>, ' +
+    `categories: ${categoryList.join(', ')}. A generic "TRANSFER TO/FR A/C [Name] * MAE QR" or ` +
+    'DuitNow-style description looks identical whether the recipient is a staff member being paid ' +
+    'wages or a supplier being paid for goods/services — do NOT default it to a salary/wages category ' +
+    'just because the name looks like it could be a person. Only pick a wages/salary category when the ' +
+    'description ALSO contains an explicit salary/wage/payroll/gaji-style word. If the payee name ' +
+    'carries a Malaysian business-entity suffix (Enterprise, Trading, Resources, Holdings, Sdn Bhd, ' +
+    'Supplies), treat it as a business/supplier payment, not a personal one, and prefer a cost-of-sales ' +
+    'or general business-expense category over a wages one. Respond with ONLY a JSON object, no other ' +
+    'text, with EXACTLY this shape: {"suggestions": [{"idx": <the same idx number from the input line>, ' +
     '"category": "<one of the categories listed above, verbatim>", "confidence": <number 0 to 100>}]}. ' +
     'You MUST pick category from the exact list given — never invent a new one. Include a suggestion ' +
     'for every input line; if genuinely unclear, still pick the closest category and use a low ' +
