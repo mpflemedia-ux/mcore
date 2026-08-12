@@ -6468,6 +6468,7 @@ async function renderCustomerSOA(id) {
   const logo = tn && tn.logo_url ? `<img src="${_aiEscapeHtml(tn.logo_url)}" style="height:40px;object-fit:contain;margin-bottom:6px">` : ''
   const addr = (typeof _pdocAddressLine==='function') ? _pdocAddressLine(tn) : ''
   const statusLabel = s => s==='paid'?(isBm?'Lunas':'Paid'):s==='partial'?(isBm?'Separa':'Partial'):(isBm?'Belum bayar':'Unpaid')
+  const soaPrintFilename = `SOA_${_pdocSlug(cust.name)}_${_pdocDateStamp()}`.replace(/'/g,"\\'")
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print">
@@ -6477,7 +6478,7 @@ async function renderCustomerSOA(id) {
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_soaWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
-      <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-primary btn-sm" onclick="_pdocSetPrintFilename('${soaPrintFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
 
@@ -12865,7 +12866,7 @@ async function _tryShowPublicQuotation() {
         <tbody>${(items||[]).map(it=>`<tr style="border-top:1px solid #e2e8f0"><td style="padding:10px">${_aiEscapeHtml(it.description||'')}</td><td style="padding:10px;text-align:right">${it.qty}</td><td style="padding:10px;text-align:right">${Number(it.unit_price||0).toFixed(2)}</td><td style="padding:10px;text-align:right">${Number(it.line_total||0).toFixed(2)}</td></tr>`).join('')}</tbody>
       </table>
       <div style="margin-top:16px;text-align:right;font-size:18px;font-weight:700">Total: MYR ${Number(q.total||0).toFixed(2)}</div>
-      <div style="margin-top:20px;text-align:center"><button onclick="window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer">Print</button></div>
+      <div style="margin-top:20px;text-align:center"><button onclick="_pdocSetPrintFilename('Quotation_${_pdocSlug(q.ref_no)}_${_pdocSlug(q.customer_name)}_${_pdocDateStamp(q.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer">Print</button></div>
       <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
     </div>`
     return true
@@ -13001,7 +13002,7 @@ async function _tryShowPublicInvoice() {
         <div style="color:#dc2626">Balance: MYR ${(Number(inv.total||0)-Number(inv.paid_amt||0)).toFixed(2)}</div>
       </div>
       <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap" class="no-print">
-        <button onclick="window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
+        <button onclick="_pdocSetPrintFilename('Invoice_${_pdocSlug(inv.ref_no)}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
         <button onclick="(function(){var t=location.href;var m='Invoice '+(_aiEscapeHtml(inv.ref_no||''))+': '+t;window.open('https://wa.me/?text='+encodeURIComponent(m),'_blank')})()" style="padding:10px 16px;border-radius:8px;border:1px solid #16a34a;color:#16a34a;background:#fff;cursor:pointer;font-size:13px">WhatsApp</button>
       </div>
       <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
@@ -13894,13 +13895,14 @@ async function renderSupplierSOA(id) {
   })
   const statusLabel = s => s==='paid'?(isBm?'Lunas':'Paid'):s==='partial'?(isBm?'Separa':'Partial'):(isBm?'Belum bayar':'Unpaid')
   const co = (APP.tenant && APP.tenant.name) || 'NexERP'
+  const supSoaPrintFilename = `SOA_${_pdocSlug(sup.name)}_${_pdocDateStamp()}`.replace(/'/g,"\\'")
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print">
     <div>
       <div class="page-title">${t.title}</div>
       <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{view:'suppliers'})">← ${t.back}: ${_aiEscapeHtml(sup.name||'')}</div>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+    <button class="btn btn-primary btn-sm" onclick="_pdocSetPrintFilename('${supSoaPrintFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
   </div>
   <div class="card" style="max-width:960px;padding:24px" id="sup-soa-doc">
     <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;border-bottom:2px solid var(--primary);padding-bottom:16px">
@@ -19243,9 +19245,10 @@ async function renderApAgingReport() {
     print:'Print'
   }
   if(!window._apAgingAsOf) window._apAgingAsOf = new Date().toISOString().slice(0,10)
+  const apAgingPrintFilename = `APAging_${_pdocDateStamp(window._apAgingAsOf)}`
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-outline btn-sm no-print" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
+    <button class="btn btn-outline btn-sm no-print" onclick="_pdocSetPrintFilename('${apAgingPrintFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
   ${_repTabs('ap-aging')}
   <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.asOf}</label>
@@ -19336,9 +19339,10 @@ async function renderArAgingReport() {
     print:'Print'
   }
   if(!window._arAgingAsOf) window._arAgingAsOf = new Date().toISOString().slice(0,10)
+  const arAgingPrintFilename = `ARAging_${_pdocDateStamp(window._arAgingAsOf)}`
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-outline btn-sm no-print" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
+    <button class="btn btn-outline btn-sm no-print" onclick="_pdocSetPrintFilename('${arAgingPrintFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
   ${_repTabs('aging')}
   <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.asOf}</label>
@@ -19590,7 +19594,7 @@ async function renderSstReport() {
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
   </div>
-  <button class="btn btn-outline btn-sm no-print" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+  <button class="btn btn-outline btn-sm no-print" onclick="_pdocSetPrintFilename('SST_'+document.getElementById('sst-from').value.replace(/-/g,'')+'-'+document.getElementById('sst-to').value.replace(/-/g,''));window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
   </div>
   ${_repTabs('sst')}
   <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
