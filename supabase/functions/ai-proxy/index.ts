@@ -8,12 +8,14 @@
 // Actions: chat, categorize, categorize_bank, receipt (vision),
 // scan_application_form (vision), scan_ssm_certificate (vision),
 // scan_bank_statement (vision), extract_bank_transactions (vision),
-// narrate_report, business_insight, draft_reminder, follow_up_suggestion,
-// reconcile_match, month_end_summary, generate_po, marketing_advice,
-// tax_guidance, generate_document, daily_digest, fraud_scan, onboarding_tip,
-// logistics_suggest, production_check, hr_payslip_note.
+// scan_product_image (vision), narrate_report, business_insight,
+// draft_reminder, follow_up_suggestion, reconcile_match, month_end_summary,
+// generate_po, marketing_advice, tax_guidance, generate_document,
+// daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
+// production_check, hr_payslip_note.
 // 'receipt', 'scan_application_form', 'scan_ssm_certificate',
-// 'scan_bank_statement', and 'extract_bank_transactions' use a
+// 'scan_bank_statement', 'extract_bank_transactions', and
+// 'scan_product_image' use a
 // vision-capable model read from the GROQ_VISION_MODEL secret (falls back
 // to qwen/qwen3.6-27b) — kept out of code so it can be swapped without a
 // redeploy if Groq deprecates it, which has happened to every prior Groq
@@ -295,6 +297,78 @@ async function handleReceipt(body: Record<string, unknown>) {
     vendor: typeof parsed.vendor === 'string' ? parsed.vendor : null,
     amount: typeof parsed.amount === 'number' ? parsed.amount : null,
     date: typeof parsed.date === 'string' ? parsed.date : null,
+    description: typeof parsed.description === 'string' ? parsed.description : '',
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+  }
+}
+
+// Inventory: a barcode scan with no matching product offers "scan a photo of
+// the item instead" — this identifies the product from a plain photo
+// (packaging/label/the item itself) and suggests fields for the Add Product
+// form. sku_suggestion is proposed by the model itself (not derived
+// client-side) per the feature request; it's just a suggestion the cashier
+// can edit before saving, same trust level as every other field here.
+async function handleScanProductImage(body: Record<string, unknown>) {
+  const imageBase64 = body.image_base64
+  const mimeType = typeof body.mime_type === 'string' && body.mime_type ? body.mime_type : 'image/jpeg'
+  if (!imageBase64 || typeof imageBase64 !== 'string') throw new Error('image_base64 is required')
+
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+
+  const systemPrompt =
+    'You are a product-recognition assistant for a Malaysian SME inventory system. Look at the ' +
+    'photo of a physical product (packaging, label, or the item itself) and identify what it is. ' +
+    'Respond with ONLY a JSON object, no other text: {"product_name_en": "<product name in ' +
+    'English>", "product_name_bm": "<product name in Bahasa Malaysia>", "sku_suggestion": ' +
+    '"<a short uppercase alphanumeric SKU code you suggest for this product, max 12 characters, ' +
+    'no spaces, based on the brand/product name>", "unit_guess": "<the most likely unit of sale, ' +
+    'one of: pcs, kg, g, l, ml, box, btl, pkt — or null if unclear>", "description": "<one short ' +
+    'sentence describing the product>", "confidence": <number 0 to 1>}. If you cannot identify ' +
+    'the product with confidence, still give your best guess for every field but set confidence low.'
+
+  let raw: string
+  try {
+    raw = await callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Identify this product for inventory entry.' },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        },
+      ],
+      visionModel,
+      { response_format: { type: 'json_object' } },
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Product image vision call failed (model=${visionModel}, base64_len=${imageBase64.length}): ${msg}`)
+  }
+
+  let parsed: {
+    product_name_en?: string
+    product_name_bm?: string
+    sku_suggestion?: string
+    unit_guess?: string
+    description?: string
+    confidence?: number
+  }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${visionModel}): ${raw.slice(0, 300)}`)
+  }
+
+  const validUnits = new Set(['pcs', 'kg', 'g', 'l', 'ml', 'box', 'btl', 'pkt'])
+  return {
+    product_name_en: typeof parsed.product_name_en === 'string' ? parsed.product_name_en : null,
+    product_name_bm: typeof parsed.product_name_bm === 'string' ? parsed.product_name_bm : null,
+    sku_suggestion: typeof parsed.sku_suggestion === 'string'
+      ? parsed.sku_suggestion.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
+      : null,
+    unit_guess: typeof parsed.unit_guess === 'string' && validUnits.has(parsed.unit_guess) ? parsed.unit_guess : null,
     description: typeof parsed.description === 'string' ? parsed.description : '',
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
   }
@@ -1608,6 +1682,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'receipt':
         data = await handleReceipt(body)
+        break
+      case 'scan_product_image':
+        data = await handleScanProductImage(body)
         break
       case 'scan_application_form':
         data = await handleScanApplicationForm(body)
