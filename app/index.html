@@ -19016,12 +19016,15 @@ async function _posComputeSessionTotals(sessionId) {
   const txns = data || []
   const sales = txns.filter(x=>x.txn_type==='sale' && x.status==='completed')
   const refunds = txns.filter(x=>x.txn_type==='refund' && x.status==='completed')
+  const sumByMethod = (rows, method) => rows.filter(x=>x.payment_method===method).reduce((s,x)=>s+Number(x.total||0),0)
   return {
     total_sales: sales.reduce((s,x)=>s+Number(x.total||0),0),
     total_refunds: refunds.reduce((s,x)=>s+Number(x.total||0),0),
     total_txn: txns.length,
-    cash_sales: sales.filter(x=>x.payment_method==='cash').reduce((s,x)=>s+Number(x.total||0),0),
-    cash_refunds: refunds.filter(x=>x.payment_method==='cash').reduce((s,x)=>s+Number(x.total||0),0),
+    cash_sales: sumByMethod(sales, 'cash'),
+    card_sales: sumByMethod(sales, 'card'),
+    qr_sales: sumByMethod(sales, 'online_banking'),
+    cash_refunds: sumByMethod(refunds, 'cash'),
   }
 }
 
@@ -19030,11 +19033,11 @@ async function _posComputeSessionTotals(sessionId) {
 async function _posRenderEndShiftStepSummary() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:"Jualan Shift Ini", txns:'Bil. Transaksi', sales:'Jumlah Jualan', cashSales:'Jualan Tunai',
-    otherSales:'Jualan Lain (Kad/QR)', refunds:'Pemulangan', next:'Seterusnya: Kira Tunai', cancel:'Batal'
+    title:"Jualan Shift Ini", txns:'Bil. Transaksi', sales:'Jumlah Jualan', cashSales:'Tunai',
+    cardSales:'Kad', qrSales:'QR / Online', refunds:'Pemulangan', next:'Seterusnya: Kira Tunai', cancel:'Batal'
   } : {
-    title:"This Shift's Sales", txns:'Transactions', sales:'Total Sales', cashSales:'Cash Sales',
-    otherSales:'Other Sales (Card/QR)', refunds:'Refunds', next:'Next: Count Cash', cancel:'Cancel'
+    title:"This Shift's Sales", txns:'Transactions', sales:'Total Sales', cashSales:'Cash',
+    cardSales:'Card', qrSales:'QR / Online', refunds:'Refunds', next:'Next: Count Cash', cancel:'Cancel'
   }
   document.getElementById('pos-end-shift-title').textContent = t.title
   document.getElementById('pos-end-shift-body').innerHTML = `<div style="padding:20px 0;text-align:center"><div class="spinner"></div></div>`
@@ -19045,8 +19048,9 @@ async function _posRenderEndShiftStepSummary() {
     <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.txns}</span><strong>${totals.total_txn}</strong></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.sales}</span><strong>${formatRM(totals.total_sales)}</strong></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.cashSales}</span><strong>${formatRM(totals.cash_sales)}</strong></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.otherSales}</span><strong>${formatRM(totals.total_sales - totals.cash_sales)}</strong></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)"><i class="ti ti-cash" style="font-size:12px"></i> ${t.cashSales}</span><span>${formatRM(totals.cash_sales)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)"><i class="ti ti-credit-card" style="font-size:12px"></i> ${t.cardSales}</span><span>${formatRM(totals.card_sales)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)"><i class="ti ti-qrcode" style="font-size:12px"></i> ${t.qrSales}</span><span>${formatRM(totals.qr_sales)}</span></div>
       <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><span style="color:var(--text-3)">${t.refunds}</span><strong style="color:var(--danger)">${formatRM(totals.total_refunds)}</strong></div>
     </div>`
   document.getElementById('pos-end-shift-footer').innerHTML = `
@@ -19125,8 +19129,12 @@ function _posConfirmCashAmount() {
 function _posRenderEndShiftSettlement() {
   const L = APP.language
   const t = L==='bm'
-    ? { title:'Penyata Penutupan Shift', staff:'Staf', opening:'Tunai Float', sales:'Jumlah Jualan', expected:'Tunai Dijangka', closing:'Tunai Dikira', variance:'Perbezaan', print:'Cetak Penyata', close:'Tutup Shift' }
-    : { title:'Shift Settlement', staff:'Staff', opening:'Opening Float', sales:'Total Sales', expected:'Expected Cash', closing:'Counted Cash', variance:'Variance', print:'Print Settlement', close:'Close Shift' }
+    ? { title:'Penyata Penutupan Shift', staff:'Staf', opening:'Tunai Float', sales:'Jumlah Jualan',
+        cashSales:'Tunai', cardSales:'Kad', qrSales:'QR / Online', refunds:'Pemulangan',
+        expected:'Tunai Dijangka', closing:'Tunai Dikira', variance:'Perbezaan', print:'Cetak Penyata', close:'Tutup Shift' }
+    : { title:'Shift Settlement', staff:'Staff', opening:'Opening Float', sales:'Total Sales',
+        cashSales:'Cash', cardSales:'Card', qrSales:'QR / Online', refunds:'Refunds',
+        expected:'Expected Cash', closing:'Counted Cash', variance:'Variance', print:'Print Settlement', close:'Close Shift' }
   const session = _posEndShiftTarget
   const totals = _posEndShiftTotals
   const p = _posEndShiftPending
@@ -19145,7 +19153,11 @@ function _posRenderEndShiftSettlement() {
     <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.opening}</span><strong>${formatRM(session.opening_cash)}</strong></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.sales}</span><strong>${formatRM(totals.total_sales)}</strong></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.expected}</span><strong>${formatRM(p.expectedCash)}</strong></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)"><i class="ti ti-cash" style="font-size:12px"></i> ${t.cashSales}</span><span>${formatRM(totals.cash_sales)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)"><i class="ti ti-credit-card" style="font-size:12px"></i> ${t.cardSales}</span><span>${formatRM(totals.card_sales)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)"><i class="ti ti-qrcode" style="font-size:12px"></i> ${t.qrSales}</span><span>${formatRM(totals.qr_sales)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding-left:10px"><span style="color:var(--text-3)">${t.refunds}</span><span style="color:var(--danger)">${formatRM(totals.total_refunds)}</span></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:4px"><span style="color:var(--text-3)">${t.expected}</span><strong>${formatRM(p.expectedCash)}</strong></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-3)">${t.closing}</span><strong>${formatRM(p.closingCash)}</strong></div>
       <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
         <span style="color:var(--text-3)">${t.variance}</span><strong style="color:${varianceColor}">${varianceLabel}</strong>
