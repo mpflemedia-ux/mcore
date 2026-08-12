@@ -12799,27 +12799,18 @@ async function renderInvDetail(id) {
   } : {
     back:'Invoices', edit:'Edit', customer:'Customer', date:'Date', due:'Due Date',
     items:'Items', qty:'Qty', price:'Price', amount:'Amount', total:'Grand Total',
-    paid:'Paid', balance:'Balance', recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
+    paid:'Paid', balance:'Balance', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
     unpaid:'Unpaid', partial:'Partial', paidFull:'Paid', history:'Payment History', noPayments:'No payments yet', voidPay:'Void', voidPayConfirm:'Void this payment? Invoice balance will be restored.',
-    createDO:'Create Delivery Order', createDOBtn:'Create DO', driverName:'Driver Name', vehicleNo:'Vehicle No.', deliveryAddress:'Delivery Address *', notes:'Notes',
-    doTitle:'Delivery Order', viewDO:'View DO', addressRequired:'Delivery address is required.',
     print:'Print', whatsapp:'WhatsApp'
   }
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
   const {data: allocations} = await sb.from('payment_allocations').select('id,amount,payment_id,payments(id,payment_date,payment_method,ref_no)').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).order('created_at',{ascending:false})
-  const {data: existingDO} = await sb.from('delivery_orders').select('id,do_no,status').eq('invoice_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false}).limit(1).maybeSingle()
   const {data: custPhone} = inv.customer_id
     ? await sb.from('customers').select('phone,email,address,city,state,postcode').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
     : {data:null}
   const custAddr = custPhone ? [custPhone.address, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
-  let doCustomerAddr = ''
-  if(!existingDO && inv.customer_id) {
-    const {data: cust} = await sb.from('customers').select('address_line1,city,postcode,state').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
-    if(cust) doCustomerAddr = [cust.address_line1,cust.city,cust.postcode,cust.state].filter(Boolean).join(', ')
-  }
-  const doStatusLabel = s => s==='delivered'?(APP.language==='bm'?'Dihantar':'Delivered'):s==='in_transit'?(APP.language==='bm'?'Dalam Perjalanan':'In Transit'):(APP.language==='bm'?'Menunggu':'Pending')
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
@@ -12896,26 +12887,10 @@ async function renderInvDetail(id) {
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-weight:600;color:${balance>0?'#DC2626':'#64748B'}"><span>${t.balance}</span><span>${formatRM(balance)}</span></div>
       </div>
     </div>
-    <div style="padding:0 16px 8px">${_pdocSigPrintHtml([
-      {name: (APP.user && (APP.user.name||APP.user.full_name)) || '', role: isBm ? 'Disediakan oleh' : 'Prepared by'},
-      {name: tn.name || APP.tenant.name || '', role: isBm ? 'Bagi pihak syarikat' : 'For the company'}
-    ])}</div>
+    <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · NexERP</div>
   </div>
 
-  ${balance>0 ? `
-  <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
-    <div style="font-weight:600;margin-bottom:12px">${t.recordPayment}</div>
-    <div id="pay-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:flex-end">
-      <div class="form-group"><label class="form-label">${t.payDate}</label><input id="pay-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="form-group"><label class="form-label">${t.payAmount}</label><input id="pay-amount" type="number" step="0.01" class="form-input" value="${balance.toFixed(2)}"></div>
-      <div class="form-group"><label class="form-label">${t.payMethod}</label>
-        <select id="pay-method" class="form-select"><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="online_banking">Online Banking</option><option value="card">Card</option></select>
-      </div>
-      <button class="btn btn-primary" onclick="_paySave('${id}', ${balance})">${t.save}</button>
-    </div>
-  </div>` : ''}
   <div class="card" style="max-width:900px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
     ${(!allocations||allocations.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
@@ -12931,22 +12906,6 @@ async function renderInvDetail(id) {
         </button>
       </td>
     </tr>`).join('')}</tbody></table>`}
-  </div>
-  <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
-    ${existingDO ? `
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div><div style="font-weight:600">${t.doTitle}</div><div style="font-size:13px;color:var(--text-3)">${existingDO.do_no||'-'} — ${doStatusLabel(existingDO.status)}</div></div>
-      <button class="btn btn-outline btn-sm" onclick="openPage('logistics',{view:'do-detail',id:'${existingDO.id}'})">${t.viewDO}</button>
-    </div>` : `
-    <div style="font-weight:600;margin-bottom:12px">${t.createDO}</div>
-    <div id="do-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="form-group"><label class="form-label">${t.driverName}</label><input id="do-driver" type="text" class="form-input"></div>
-      <div class="form-group"><label class="form-label">${t.vehicleNo}</label><input id="do-vehicle" type="text" class="form-input"></div>
-      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.deliveryAddress}</label><textarea id="do-address" class="form-input" rows="2">${doCustomerAddr}</textarea></div>
-      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.notes}</label><input id="do-notes" type="text" class="form-input"></div>
-    </div>
-    <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="_doCreate('${id}','${inv.customer_id||''}')"><i class="ti ti-truck-delivery"></i> ${t.createDOBtn}</button>`}
   </div>`
 }
 
@@ -13327,10 +13286,7 @@ async function renderQuoForm(id=null) {
         </div>
       </div>
     </div>
-    <div style="padding:0 16px 8px">${_pdocSigPrintHtml([
-      {name: (APP.user && (APP.user.name||APP.user.full_name)) || '', role: isBmQ ? 'Disediakan oleh' : 'Prepared by'},
-      {name: (tn && tn.name) || APP.tenant.name || '', role: isBmQ ? 'Bagi pihak syarikat' : 'For the company'}
-    ])}</div>
+    <div style="padding:0 16px 8px">${_pdocNoSigNote(isBmQ)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml((tn&&tn.name)||APP.tenant.name||'')} · NexERP</div>
   </div>`:''}`
   _slRenderItems()
@@ -14899,6 +14855,16 @@ function _pdocSigPrintHtml(slots) {
     '</td>'
   ).join('')
   return '<table class="pdoc-sig-print-table" style="width:100%;margin-top:28px;border-collapse:collapse;table-layout:fixed"><tr>'+cells+'</tr></table>'
+}
+
+// Invoice/Quotation printed docs skip signature blocks entirely (unlike
+// Payment Vouchers, which still need Prepared By / For The Company) —
+// this note replaces them.
+function _pdocNoSigNote(isBm) {
+  const msg = isBm
+    ? 'Dokumen ini dijana oleh komputer. Tandatangan tidak diperlukan.'
+    : 'This is a computer generated document. Signature is not required.'
+  return `<div style="text-align:center;margin-top:28px;font-size:11px;font-style:italic;color:#94A3B8">${msg}</div>`
 }
 
 function renderPaymentVouchers(params={}) {
