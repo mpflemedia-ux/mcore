@@ -19735,8 +19735,12 @@ async function _posPrintReceipt() {
   const tn = await _pdocGetTenant()
   const body = document.getElementById('pos-receipt-body')
   if(!body) return
+  // Explicit white background + fixed dark text — same reason .pdoc (the
+  // Payslip/SD letterhead system) does this: this represents printed paper,
+  // so it must stay readable regardless of the app's own light/dark theme
+  // instead of inheriting the modal's dark background with near-black text.
   body.innerHTML = `
-    <div style="max-width:280px;margin:0 auto;font-family:'Space Grotesk',sans-serif;color:#0F172A">
+    <div style="max-width:280px;margin:0 auto;background:#fff;color:#0F172A;padding:16px;border-radius:10px;font-family:'Space Grotesk',sans-serif">
       <div style="text-align:center;margin-bottom:10px">
         <div style="font-weight:800;font-size:16px;color:#2563EB">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
         ${tn.address||tn.city ? `<div style="font-size:10px;color:#64748B;margin-top:2px;line-height:1.5">${_aiEscapeHtml(_pdocAddressLine(tn))}</div>` : ''}
