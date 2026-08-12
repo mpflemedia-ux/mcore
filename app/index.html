@@ -7347,14 +7347,12 @@ async function renderJournalList() {
     title:'Entri Jurnal', add:'Entri Baru', entryNo:'No. Entri', date:'Tarikh', desc:'Keterangan',
     debit:'Jumlah Debit', credit:'Jumlah Kredit', noData:'Tiada entri jurnal lagi',
     from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis', source:'Sumber',
-    thisWeek:'Minggu Ini', thisMonth:'Bulan Ini', thisYear:'Tahun Ini',
-    lastMonth:'Bulan Lepas', lastYear:'Tahun Lepas'
+    filterWeek:'Tapis ikut Minggu', filterMonth:'Tapis ikut Bulan', filterYear:'Tapis ikut Tahun'
   } : {
     title:'Journal Entries', add:'New Entry', entryNo:'Entry No.', date:'Date', desc:'Description',
     debit:'Total Debit', credit:'Total Credit', noData:'No journal entries yet',
     from:'From', to:'To', apply:'Filter', clear:'Clear', source:'Source',
-    thisWeek:'This Week', thisMonth:'This Month', thisYear:'This Year',
-    lastMonth:'Last Month', lastYear:'Last Year'
+    filterWeek:'Filter by Week', filterMonth:'Filter by Month', filterYear:'Filter by Year'
   }
 
   const today = new Date()
@@ -7376,11 +7374,12 @@ async function renderJournalList() {
     <button class="btn btn-primary btn-sm" onclick="_jnlApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
     <button class="btn btn-outline btn-sm" onclick="window._jnlFilter={from:'',to:''};renderJournalList()">${t.clear}</button>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
-      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('week')">${t.thisWeek}</button>
-      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('month')">${t.thisMonth}</button>
-      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('lastMonth')">${t.lastMonth}</button>
-      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('year')">${t.thisYear}</button>
-      <button class="btn btn-outline btn-sm" onclick="_jnlQuickFilter('lastYear')">${t.lastYear}</button>
+      <label class="btn btn-outline btn-sm" style="position:relative;overflow:hidden"><i class="ti ti-calendar-week"></i> ${t.filterWeek}
+        <input type="date" style="position:absolute;inset:0;opacity:0;cursor:pointer" onchange="_jnlPickRange('week',this.value)"></label>
+      <label class="btn btn-outline btn-sm" style="position:relative;overflow:hidden"><i class="ti ti-calendar"></i> ${t.filterMonth}
+        <input type="date" style="position:absolute;inset:0;opacity:0;cursor:pointer" onchange="_jnlPickRange('month',this.value)"></label>
+      <label class="btn btn-outline btn-sm" style="position:relative;overflow:hidden"><i class="ti ti-calendar-event"></i> ${t.filterYear}
+        <input type="date" style="position:absolute;inset:0;opacity:0;cursor:pointer" onchange="_jnlPickRange('year',this.value)"></label>
     </div>
   </div>
   <div class="card" style="margin-bottom:0">
@@ -7398,29 +7397,29 @@ function _jnlApplyFilter() {
   renderJournalList()
 }
 
+// Manual week/month/year filter — driven by a single date the user picks
+// from a native calendar (type="date" is used for all three, not
+// type="week"/"month", since those have no usable native picker in
+// Firefox/Safari and would silently fall back to a bare text box there).
+// The picked date is then expanded to the containing week/month/year.
 // Malaysia week convention (CLAUDE.md): week starts Monday. getDay() 0=Sun.
-function _jnlQuickFilter(period) {
-  const now = new Date()
-  const toISO = d => d.toISOString().slice(0,10)
+function _jnlPickRange(period, val) {
+  if (!val) return
+  const d = new Date(val+'T00:00:00')
+  const toISO = x => x.toISOString().slice(0,10)
   let from, to
   if (period === 'week') {
-    const dow = now.getDay()
+    const dow = d.getDay()
     const diffToMon = dow === 0 ? -6 : 1 - dow
-    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon)
+    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diffToMon)
     const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)
     from = toISO(monday); to = toISO(sunday)
   } else if (period === 'month') {
-    from = toISO(new Date(now.getFullYear(), now.getMonth(), 1))
-    to = toISO(new Date(now.getFullYear(), now.getMonth()+1, 0))
-  } else if (period === 'lastMonth') {
-    from = toISO(new Date(now.getFullYear(), now.getMonth()-1, 1))
-    to = toISO(new Date(now.getFullYear(), now.getMonth(), 0))
+    from = toISO(new Date(d.getFullYear(), d.getMonth(), 1))
+    to = toISO(new Date(d.getFullYear(), d.getMonth()+1, 0))
   } else if (period === 'year') {
-    from = toISO(new Date(now.getFullYear(), 0, 1))
-    to = toISO(new Date(now.getFullYear(), 11, 31))
-  } else if (period === 'lastYear') {
-    from = toISO(new Date(now.getFullYear()-1, 0, 1))
-    to = toISO(new Date(now.getFullYear()-1, 11, 31))
+    from = toISO(new Date(d.getFullYear(), 0, 1))
+    to = toISO(new Date(d.getFullYear(), 11, 31))
   } else {
     return
   }
