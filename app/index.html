@@ -7777,7 +7777,7 @@ async function _jnlLoadTable(t) {
   }
 
   const ids = entries.map(e=>e.id)
-  const {data: lines} = await sb.from('journal_lines').select('entry_id,debit_amt,credit_amt').in('entry_id', ids)
+  const lines = await _acctFetchJournalLines(ids, 'entry_id,debit_amt,credit_amt')
   const totals = {}
   ;(lines||[]).forEach(l=>{
     if(!totals[l.entry_id]) totals[l.entry_id] = {debit:0,credit:0}
@@ -8110,7 +8110,7 @@ async function _fyMonthEndSummary() {
       const perAccount = {}
       let totalRev = 0, totalExp = 0
       if(entryIds.length) {
-        const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+        const lines = await _acctFetchJournalLines(entryIds)
         const byAccount = {}
         ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit_amt||0); byAccount[l.account_id].credit+=Number(l.credit_amt||0) })
         ;(accounts||[]).forEach(a=>{
@@ -19023,7 +19023,7 @@ async function _tbLoad() {
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('code')
   const byAccount = {}
   if(entryIds.length) {
-    const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+    const lines = await _acctFetchJournalLines(entryIds)
     ;(lines||[]).forEach(l => {
       if(!byAccount[l.account_id]) byAccount[l.account_id] = {debit:0, credit:0}
       byAccount[l.account_id].debit += Number(l.debit_amt||0)
@@ -19071,6 +19071,28 @@ async function _tbLoad() {
   </div>`
 }
 
+// journal_lines .in('entry_id', ids) can silently return nothing once a
+// tenant has accumulated enough journal entries — a wide report date range
+// (or Balance Sheet/Trial Balance, which query from inception) can produce
+// hundreds of entry IDs, and the resulting request URL exceeds PostgREST's
+// query-string limit. The Supabase JS client doesn't throw for that; the
+// caller just gets back no rows, which every report here was silently
+// treating as "no data" — e.g. Income Statement showing RM0.00 revenue for
+// a period that plainly has invoices. Chunking keeps each request's ID list
+// short enough to stay under that limit, matching the pattern _dbMonthPnL
+// (Dashboard) already used for exactly this reason.
+async function _acctFetchJournalLines(entryIds, selectCols) {
+  const cols = selectCols || 'account_id,debit_amt,credit_amt'
+  const out = []
+  for (let i = 0; i < entryIds.length; i += 200) {
+    const chunk = entryIds.slice(i, i + 200)
+    const { data, error } = await sb.from('journal_lines').select(cols).in('entry_id', chunk)
+    if (error) { console.warn('_acctFetchJournalLines', error); continue }
+    if (data) out.push(...data)
+  }
+  return out
+}
+
 // ─── Income Statement (P&L) ─────────────────────────────────────────────────────
 async function renderPnL() {
   const t = APP.language==='bm' ? {
@@ -19101,7 +19123,7 @@ async function _pnlLoad() {
 
   if(!entryIds.length || !accounts?.length) { result.innerHTML = `<div class="card"><div class="empty-state" style="padding:50px"><p>${t.noData}</p></div></div>`; return }
 
-  const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+  const lines = await _acctFetchJournalLines(entryIds)
   const byAccount = {}
   ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit_amt||0); byAccount[l.account_id].credit+=Number(l.credit_amt||0) })
 
@@ -19173,7 +19195,7 @@ async function _bsLoad() {
 
   let byAccount = {}
   if(entryIds.length) {
-    const {data: lines} = await sb.from('journal_lines').select('account_id,debit_amt,credit_amt').in('entry_id', entryIds)
+    const lines = await _acctFetchJournalLines(entryIds)
     ;(lines||[]).forEach(l=>{ if(!byAccount[l.account_id]) byAccount[l.account_id]={debit:0,credit:0}; byAccount[l.account_id].debit+=Number(l.debit_amt||0); byAccount[l.account_id].credit+=Number(l.credit_amt||0) })
   }
 
