@@ -11046,6 +11046,23 @@ async function _recoPostUnmatched() {
     _recoPosting = false
   }
 }
+// PostgREST filters like .in('col', ids) get serialized straight into the
+// request URL — with a large bank recon batch (the 751-line/79-page import
+// that triggered this) candidateIds/txnIds can run into the hundreds, and
+// the resulting URL blows past the gateway's request-line size limit. That
+// surfaces to the user as a bare "Bad Request" with no hint that the real
+// cause is batch size, not bad data. Splitting the id list into fixed-size
+// chunks and unioning the results keeps every individual request small
+// regardless of how large the overall batch is.
+async function _recoInChunks(queryFn, ids, size = 150) {
+  const out = []
+  for (let i = 0; i < ids.length; i += size) {
+    const { data, error } = await queryFn(ids.slice(i, i + size))
+    if (error) return { data: null, error }
+    if (data) out.push(...data)
+  }
+  return { data: out, error: null }
+}
 async function _recoPostUnmatchedInner(isBm) {
   // Lines that will never be posted anyway (already posted, or manually
   // tagged with a manual-only category) are excluded up front — both from
@@ -11096,18 +11113,20 @@ async function _recoPostUnmatchedInner(isBm) {
   if (!confirm(msg)) return
 
   // Pre-fetch every candidate's existing 'bank_recon' entries + their
-  // reversals in 2 round trips total, instead of up to 2 per candidate
-  // inside the loop below — a large Post Unmatched batch (this ran against
-  // a real bank statement with 96 imported lines during testing) would
-  // otherwise serialize dozens of sequential awaits just to answer "is this
-  // txn already posted", matching the file's existing "batch instead of N
-  // round trips" convention used elsewhere (e.g. _recoReverseAllPosted).
+  // reversals in a handful of chunked round trips (via _recoInChunks),
+  // instead of up to 2 per candidate inside the loop below — a large Post
+  // Unmatched batch would otherwise serialize dozens/hundreds of sequential
+  // awaits just to answer "is this txn already posted", matching the
+  // file's existing "batch instead of N round trips" convention used
+  // elsewhere (e.g. _recoReverseAllPosted).
   const uuidCandidates = candidates.filter(t => _RECO_UUID_RE.test(t.id))
   let stillActiveBySourceId = new Map()
   if (uuidCandidates.length) {
     const candidateIds = uuidCandidates.map(t => t.id)
-    const { data: existingEntries, error: existingErr } = await sb.from('journal_entries').select('id,ref_no,source_id')
-      .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon').in('source_id', candidateIds)
+    const { data: existingEntries, error: existingErr } = await _recoInChunks(chunk =>
+      sb.from('journal_entries').select('id,ref_no,source_id')
+        .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon').in('source_id', chunk),
+    candidateIds)
     // A failed lookup here must NOT fall through as "nothing was already
     // posted" — with the old per-txn query, a failure only put one row at
     // risk of a duplicate post; now that this is a single batched fetch for
@@ -11120,8 +11139,10 @@ async function _recoPostUnmatchedInner(isBm) {
     }
     if (existingEntries && existingEntries.length) {
       const entryIds = existingEntries.map(e => e.id)
-      const { data: reversalsForThese, error: reversalsErr } = await sb.from('journal_entries').select('source_id')
-        .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon_reversal').in('source_id', entryIds)
+      const { data: reversalsForThese, error: reversalsErr } = await _recoInChunks(chunk =>
+        sb.from('journal_entries').select('source_id')
+          .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon_reversal').in('source_id', chunk),
+      entryIds)
       if (reversalsErr) {
         showToast('Error: '+reversalsErr.message, 'error')
         return
@@ -11262,9 +11283,11 @@ async function _recoReverseAllPosted() {
       showToast(isBm?'Tiada jurnal Bank Recon dijumpai untuk dibalikkan.':'No Bank Recon journal entries found to reverse.', 'info')
       return
     }
-    const { data: allEntries, error: fetchErr } = await sb.from('journal_entries')
-      .select('id, source_id')
-      .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon').in('source_id', txnIds)
+    const { data: allEntries, error: fetchErr } = await _recoInChunks(chunk =>
+      sb.from('journal_entries')
+        .select('id, source_id')
+        .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon').in('source_id', chunk),
+    txnIds)
     if (fetchErr) { showToast('Error: '+fetchErr.message, 'error'); return }
     if (!allEntries || !allEntries.length) {
       showToast(isBm?'Tiada jurnal Bank Recon dijumpai untuk dibalikkan.':'No Bank Recon journal entries found to reverse.', 'info')
@@ -11283,8 +11306,10 @@ async function _recoReverseAllPosted() {
     // (never deleted) and reverse it a second time, injecting a spurious
     // difference into the ledger equal to its amount.
     const allEntryIds = allEntries.map(e => e.id)
-    const { data: existingReversals, error: reversalsErr } = await sb.from('journal_entries').select('source_id')
-      .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon_reversal').in('source_id', allEntryIds)
+    const { data: existingReversals, error: reversalsErr } = await _recoInChunks(chunk =>
+      sb.from('journal_entries').select('source_id')
+        .eq('tenant_id', APP.tenant.id).eq('source_table', 'bank_recon_reversal').in('source_id', chunk),
+    allEntryIds)
     // A failed lookup here must NOT fall through as "nothing was already
     // reversed" — that would defeat this exact double-reversal guard (see
     // comment above) and post a second reversal for an already-reversed
