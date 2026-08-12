@@ -3598,13 +3598,13 @@ async function _dbLoadAttTracker() {
     const isCurrentMonth = (year === today.getFullYear() && month === today.getMonth()+1)
     el.innerHTML = `<table style="border-collapse:separate;border-spacing:3px">
       <thead><tr>
-        <th style="text-align:left;font-size:11px;color:var(--db-text3);font-weight:500;padding-right:10px;position:sticky;left:0;background:var(--db-card)">${isBm?'Staf':'Staff'}</th>
+        <th style="text-align:left;font-size:11px;color:var(--db-text3);font-weight:500;padding-right:10px;position:sticky;left:0;background:var(--db-card);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isBm?'Staf':'Staff'}</th>
         ${days.map(d=>`<th data-day="${d}" style="font-size:10px;color:${isCurrentMonth&&d===today.getDate()?'var(--primary)':'var(--db-text3)'};font-weight:${isCurrentMonth&&d===today.getDate()?700:400};width:13px">${d}</th>`).join('')}
       </tr></thead>
       <tbody>${employees.map(e => {
         const rec = byEmp[e.id] || {}
         return `<tr>
-          <td style="font-size:12px;color:var(--db-text2);white-space:nowrap;padding-right:10px;position:sticky;left:0;background:var(--db-card)">${_aiEscapeHtml(e.name||'-')}</td>
+          <td title="${_aiEscapeHtml(e.name||'')}" style="font-size:12px;color:var(--db-text2);white-space:nowrap;padding-right:10px;position:sticky;left:0;background:var(--db-card);max-width:130px;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(e.name||'-')}</td>
           ${days.map(d => {
             const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
             const status = rec[dateStr]
