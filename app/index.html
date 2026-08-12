@@ -44,6 +44,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <style>
 :root {
   --primary:#0E7490;--primary-dark:#0C6178;--primary-light:#E6FAFD;--on-primary:#fff;
@@ -1825,7 +1826,7 @@ function formatRM(a) { return 'RM '+Number(a||0).toLocaleString('ms-MY',{minimum
 let _pdocTenantCache = null
 async function _pdocGetTenant() {
   if(_pdocTenantCache && _pdocTenantCache.id===APP.tenant.id) return _pdocTenantCache
-  const {data} = await sb.from('tenants').select('id,name,logo_url,address,address_line2,city,postcode,state,country').eq('id',APP.tenant.id).single()
+  const {data} = await sb.from('tenants').select('id,name,logo_url,address,address_line2,city,postcode,state,country,phone,sst_gst_no').eq('id',APP.tenant.id).single()
   _pdocTenantCache = data || {id:APP.tenant.id, name:APP.tenant.name}
   return _pdocTenantCache
 }
@@ -13616,21 +13617,6 @@ function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm, customerName, bala
     _waOpen(phone, msg)
   }
 }
-function _sendPosWhatsApp(receiptNo, total, method, linesText, tender, change) {
-  const isBm = APP.language === 'bm'
-  const co = _waCompanyName()
-  const methodLabel = {cash: isBm?'Tunai':'Cash', card: isBm?'Kad':'Card', online_banking: 'QR / Online'}[method] || method
-  let msg = isBm
-    ? `*${co}* — Resit POS\n\nNo: *${receiptNo}*\n${linesText}\n*Jumlah: ${total}*\nBayaran: ${methodLabel}`
-    : `*${co}* — POS Receipt\n\nNo: *${receiptNo}*\n${linesText}\n*Total: ${total}*\nPayment: ${methodLabel}`
-  if(tender != null && method === 'cash') {
-    msg += isBm ? `\nDiterima: ${tender}\nBaki: ${change}` : `\nTendered: ${tender}\nChange: ${change}`
-  }
-  msg += isBm ? '\n\nTerima kasih!' : '\n\nThank you!'
-  const entered = prompt(isBm ? 'No. WhatsApp (kosong = pilih contact):' : 'WhatsApp number (blank = pick contact):')
-  _waOpen(entered || '', msg)
-}
-
 
 // ─── Quotations: List + Form (mirrors invoice, converts to invoice) ────────────
 async function renderQuoList() {
@@ -19043,9 +19029,10 @@ async function renderPOS(params={}) {
     <div class="modal-box" style="max-width:400px">
       <div class="modal-box-header"><i class="ti ti-circle-check" style="color:var(--success)"></i> ${isBm?'Jualan Berjaya':'Sale Complete'}</div>
       <div class="modal-box-body" id="pos-receipt-body"></div>
-      <div class="modal-box-footer" style="display:flex;gap:8px">
-        <button class="btn btn-outline" style="flex:1;color:#16A34A;border-color:#16A34A" onclick="_posShareWhatsApp()"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
-        <button class="btn btn-primary" style="flex:1" onclick="_posCloseReceipt()"><i class="ti ti-check"></i> ${isBm?'Selesai':'Done'}</button>
+      <div class="modal-box-footer" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline no-print" style="flex:1" onclick="_posPrintReceipt()"><i class="ti ti-printer"></i> ${isBm?'Cetak':'Print'}</button>
+        <button id="pos-wa-btn" class="btn btn-outline no-print" style="flex:1;color:#16A34A;border-color:#16A34A" onclick="_posShareWhatsApp()"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
+        <button class="btn btn-primary no-print" style="flex:1" onclick="_posCloseReceipt()"><i class="ti ti-check"></i> ${isBm?'Selesai':'Done'}</button>
       </div>
     </div>
   </div>
@@ -19736,11 +19723,192 @@ function _posQty(i, delta) {
   _posRenderCart()
 }
 function _posRemove(i) { _posCart.splice(i,1); _posRenderCart() }
-function _posShareWhatsApp() {
+
+// Replaces window._posLastReceipt's simple summary with a themed retail
+// receipt (company header/address/phone/SST no., itemized lines, totals)
+// and prints it — reuses the "print only the active modal" CSS rule added
+// for the POS Shift Settlement report, so nothing else on the page prints.
+async function _posPrintReceipt() {
+  const r = window._posLastReceipt
+  if(!r) return
+  const isBm = APP.language==='bm'
+  const tn = await _pdocGetTenant()
+  const body = document.getElementById('pos-receipt-body')
+  if(!body) return
+  body.innerHTML = `
+    <div style="max-width:280px;margin:0 auto;font-family:'Space Grotesk',sans-serif;color:#0F172A">
+      <div style="text-align:center;margin-bottom:10px">
+        <div style="font-weight:800;font-size:16px;color:#2563EB">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
+        ${tn.address||tn.city ? `<div style="font-size:10px;color:#64748B;margin-top:2px;line-height:1.5">${_aiEscapeHtml(_pdocAddressLine(tn))}</div>` : ''}
+        ${tn.phone ? `<div style="font-size:10px;color:#64748B">Tel: ${_aiEscapeHtml(tn.phone)}</div>` : ''}
+        ${tn.sst_gst_no ? `<div style="font-size:10px;color:#64748B">SST No: ${_aiEscapeHtml(tn.sst_gst_no)}</div>` : ''}
+      </div>
+      <div style="text-align:center;background:#2563EB;color:#fff;font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:6px;border-radius:6px;margin-bottom:10px">${isBm?'Invois Cukai / Resit':'Tax Invoice / Receipt'}</div>
+      <div style="font-size:11px;color:#64748B;display:flex;justify-content:space-between;margin-bottom:2px"><span>${isBm?'No. Resit':'Receipt No.'}</span><strong style="color:#0F172A">${_aiEscapeHtml(r.receiptNo)}</strong></div>
+      <div style="font-size:11px;color:#64748B;display:flex;justify-content:space-between;margin-bottom:2px"><span>${isBm?'Tarikh':'Date'}</span><strong style="color:#0F172A">${_aiEscapeHtml(r.dateLabel)}</strong></div>
+      ${r.cashierName ? `<div style="font-size:11px;color:#64748B;display:flex;justify-content:space-between;margin-bottom:8px"><span>Cashier</span><strong style="color:#0F172A">${_aiEscapeHtml(r.cashierName)}</strong></div>` : ''}
+      <div style="border-top:1px dashed #CBD5E1;border-bottom:1px dashed #CBD5E1;padding:8px 0;margin:8px 0">
+        ${(r.items||[]).map(it=>`<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;gap:8px"><span>${it.qty} × ${_aiEscapeHtml(it.name)}</span><span style="white-space:nowrap">${formatRM(it.qty*Number(it.unit_price||0))}</span></div>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:4px"><span>${isBm?'Jumlah':'Total'}</span><span>${r.totalLabel}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748B"><span>${isBm?'Bayaran':'Payment'}</span><span>${_aiEscapeHtml(r.methodLabel)}</span></div>
+      ${r.method==='cash' && r.tenderLabel ? `
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748B"><span>${isBm?'Diterima':'Tendered'}</span><span>${r.tenderLabel}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748B"><span>${isBm?'Baki':'Change'}</span><span>${r.changeLabel}</span></div>` : ''}
+      <div style="text-align:center;margin-top:16px;font-size:11px;color:#64748B">${isBm?'Terima kasih atas pembelian anda!':'Thank you for your purchase!'}</div>
+      <div style="text-align:center;margin-top:4px;font-size:9px;color:#94A3B8">${isBm?'Ini resit janaan komputer.':'This is a computer-generated receipt.'}</div>
+    </div>`
+  _pdocSetPrintFilename(`Receipt_${_pdocSlug(r.receiptNo)}_${_pdocDateStamp()}`)
+  window.print()
+}
+
+// Builds the same receipt as an actual PDF file (via pdf-lib, loaded from
+// CDN) so it can be handed to navigator.share()/WhatsApp as a real
+// attachment — a wa.me link can only ever carry prefilled TEXT, never a
+// file, so sending an actual PDF needs a real file object, not a URL trick.
+// No logo embedding here (unlike the HTML print view above): that needs an
+// extra network fetch of the logo image + byte-level PNG/JPG detection,
+// which can fail in ways a receipt PDF shouldn't be blocked by — text-only
+// header is a reasonable trade for reliability here.
+async function _posBuildReceiptPdf(r) {
+  const isBm = APP.language==='bm'
+  const tn = await _pdocGetTenant()
+  const { PDFDocument, StandardFonts, rgb } = PDFLib
+  const doc = await PDFDocument.create()
+  const regular = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+
+  const W = 280, marginX = 16, contentW = W - marginX*2, lineH = 14
+  const textColor = rgb(0.06, 0.09, 0.16)
+  const mutedColor = rgb(0.4, 0.45, 0.55)
+  const accentColor = rgb(0.145, 0.388, 0.922)
+
+  const wrapText = (text, f, size, maxW) => {
+    const words = String(text).split(' ')
+    const lines = []
+    let cur = ''
+    for(const w of words) {
+      const test = cur ? cur+' '+w : w
+      if(f.widthOfTextAtSize(test, size) > maxW && cur) { lines.push(cur); cur = w }
+      else cur = test
+    }
+    if(cur) lines.push(cur)
+    return lines
+  }
+  const itemBlocks = (r.items||[]).map(it => ({
+    nameLines: wrapText(`${it.qty} x ${it.name}`, regular, 9, contentW - 55),
+    amount: formatRM(it.qty*Number(it.unit_price||0)),
+  }))
+  const itemLineCount = itemBlocks.reduce((s,b)=>s+b.nameLines.length, 0)
+  const headerLineCount = 2 + (tn.address||tn.city?1:0) + (tn.phone?1:0) + (tn.sst_gst_no?1:0)
+  const totalsLineCount = 2 + (r.method==='cash' && r.tenderLabel ? 2 : 0) + (r.cashierName?1:0)
+  const estHeight = 60 + headerLineCount*lineH + 30 + 30 + itemLineCount*lineH + 30 + totalsLineCount*lineH + 60
+
+  const page = doc.addPage([W, Math.max(estHeight, 320)])
+  let y = page.getHeight() - 24
+
+  const drawCenter = (text, f, size, color=textColor) => {
+    const w = f.widthOfTextAtSize(text, size)
+    page.drawText(text, { x:(W-w)/2, y, size, font:f, color })
+    y -= lineH
+  }
+  const drawRow = (left, right, f=regular, size=9, color=textColor) => {
+    page.drawText(left, { x:marginX, y, size, font:f, color })
+    const rw = f.widthOfTextAtSize(right, size)
+    page.drawText(right, { x:W-marginX-rw, y, size, font:f, color })
+    y -= lineH
+  }
+  const drawDivider = () => {
+    page.drawLine({ start:{x:marginX,y}, end:{x:W-marginX,y}, thickness:0.5, color: rgb(0.8,0.83,0.88), dashArray:[2,2] })
+    y -= 12
+  }
+
+  drawCenter(tn.name || APP.tenant.name || '-', bold, 13, accentColor)
+  if(tn.address||tn.city) drawCenter(_pdocAddressLine(tn), regular, 8, mutedColor)
+  if(tn.phone) drawCenter(`Tel: ${tn.phone}`, regular, 8, mutedColor)
+  if(tn.sst_gst_no) drawCenter(`SST No: ${tn.sst_gst_no}`, regular, 8, mutedColor)
+  y -= 6
+
+  page.drawRectangle({ x:marginX, y:y-14, width:contentW, height:18, color:accentColor })
+  const titleText = isBm ? 'INVOIS CUKAI / RESIT' : 'TAX INVOICE / RECEIPT'
+  const tw = bold.widthOfTextAtSize(titleText, 9)
+  page.drawText(titleText, { x:(W-tw)/2, y:y-10, size:9, font:bold, color: rgb(1,1,1) })
+  y -= 30
+
+  drawRow(isBm?'No. Resit':'Receipt No.', r.receiptNo, regular, 8, mutedColor)
+  drawRow(isBm?'Tarikh':'Date', r.dateLabel, regular, 8, mutedColor)
+  if(r.cashierName) drawRow('Cashier', r.cashierName, regular, 8, mutedColor)
+  y -= 4
+  drawDivider()
+
+  itemBlocks.forEach(b => {
+    b.nameLines.forEach((line, i) => {
+      if(i === b.nameLines.length-1) drawRow(line, b.amount, regular, 9)
+      else { page.drawText(line, {x:marginX, y, size:9, font:regular, color:textColor}); y -= lineH }
+    })
+  })
+  y -= 4
+  drawDivider()
+  y -= 2
+
+  drawRow(isBm?'Jumlah':'Total', r.totalLabel, bold, 11)
+  drawRow(isBm?'Bayaran':'Payment', r.methodLabel, regular, 8, mutedColor)
+  if(r.method==='cash' && r.tenderLabel) {
+    drawRow(isBm?'Diterima':'Tendered', r.tenderLabel, regular, 8, mutedColor)
+    drawRow(isBm?'Baki':'Change', r.changeLabel, regular, 8, mutedColor)
+  }
+
+  y -= 10
+  drawCenter(isBm?'Terima kasih atas pembelian anda!':'Thank you for your purchase!', regular, 9)
+  drawCenter(isBm?'Ini resit janaan komputer.':'This is a computer-generated receipt.', regular, 7, rgb(0.6,0.64,0.7))
+
+  return await doc.save()
+}
+
+async function _posShareWhatsApp() {
   const r = window._posLastReceipt
   if(!r) { showToast(APP.language==='bm'?'Tiada resit':'No receipt', 'error'); return }
-  _sendPosWhatsApp(r.receiptNo, r.total, r.method, r.linesText, r.tender, r.change)
+  const isBm = APP.language==='bm'
+  if(typeof PDFLib === 'undefined') {
+    showToast(isBm?'Penjana PDF tidak tersedia, sila cuba lagi.':'PDF generator unavailable, please retry.', 'error')
+    return
+  }
+  const btn = document.getElementById('pos-wa-btn')
+  const btnLabel = `<i class="ti ti-brand-whatsapp"></i> WhatsApp`
+  if(btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block"></div>' }
+  try {
+    const pdfBytes = await _posBuildReceiptPdf(r)
+    const fileName = `Receipt_${_pdocSlug(r.receiptNo)}_${_pdocDateStamp()}.pdf`
+    const file = new File([pdfBytes], fileName, { type:'application/pdf' })
+
+    if(navigator.canShare && navigator.canShare({ files:[file] })) {
+      // Native share sheet — the person picks WhatsApp (or any other app)
+      // themselves; there's no way to jump straight into WhatsApp with a
+      // file pre-attached from the web.
+      await navigator.share({ files:[file], title: fileName, text: isBm?'Resit pembelian anda':'Your purchase receipt' })
+    } else {
+      // Desktop / browsers without file-sharing support: a wa.me link can
+      // only carry text, never an attachment, so download the PDF and open
+      // WhatsApp with a short note instead of pretending the file went along.
+      const blobUrl = URL.createObjectURL(new Blob([pdfBytes], {type:'application/pdf'}))
+      const a = document.createElement('a')
+      a.href = blobUrl; a.download = fileName; a.click()
+      URL.revokeObjectURL(blobUrl)
+      showToast(isBm?'PDF dimuat turun — sila lampirkan manual dalam WhatsApp.':'PDF downloaded — please attach it manually in WhatsApp.', 'warning')
+      const co = _waCompanyName()
+      const msg = isBm
+        ? `*${co}* — Resit ${r.receiptNo}\n\nSila lihat PDF resit yang baru dimuat turun.`
+        : `*${co}* — Receipt ${r.receiptNo}\n\nPlease see the receipt PDF just downloaded.`
+      _waOpen('', msg)
+    }
+  } catch(err) {
+    if(err?.name === 'AbortError') { /* user cancelled the native share sheet — not an error */ }
+    else { console.error('_posShareWhatsApp error:', err); showToast('Error: '+(err.message||err), 'error') }
+  } finally {
+    if(btn) { btn.disabled = false; btn.innerHTML = btnLabel }
+  }
 }
+
 function _posCloseReceipt() {
   const m = document.getElementById('pos-receipt-modal')
   if(m) m.classList.remove('active')
@@ -19823,11 +19991,26 @@ async function _posCheckout() {
   const tender = Number(document.getElementById('pos-tender')?.value||0)
   const change = method==='cash' && tender ? tender - total : null
   const cartSnapshot = _posCart.slice()
-  const linesText = cartSnapshot.map(c => `${c.qty}x ${c.name} = ${formatRM(c.qty*Number(c.unit_price||0))}`).join('\n')
+
+  // Best-effort — whoever clocked into this shift via the Staff Login PIN
+  // step (falls back to the app account name for older shifts/sessions
+  // opened before that feature existed). Never blocks the receipt on failure.
+  let cashierName = APP.user.name || ''
+  if(session?.employee_id) {
+    try {
+      const {data: emp} = await sb.from('employees').select('name').eq('id', session.employee_id).maybeSingle()
+      if(emp?.name) cashierName = emp.name
+    } catch(e) { console.warn('receipt cashier name lookup (non-blocking):', e) }
+  }
+
   window._posLastReceipt = {
-    receiptNo, total: formatRM(total), method, linesText,
-    tender: tender ? formatRM(tender) : null,
-    change: change !== null ? formatRM(change) : null
+    receiptNo, method, methodLabel,
+    items: cartSnapshot.map(c => ({ name: c.name, qty: c.qty, unit_price: Number(c.unit_price||0) })),
+    totalLabel: formatRM(total),
+    tenderLabel: tender ? formatRM(tender) : null,
+    changeLabel: change !== null ? formatRM(change) : null,
+    dateLabel: new Date().toLocaleString('en-MY'),
+    cashierName,
   }
   const body = document.getElementById('pos-receipt-body')
   if(body) {
