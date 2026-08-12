@@ -7374,12 +7374,12 @@ async function renderJournalList() {
     <button class="btn btn-primary btn-sm" onclick="_jnlApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
     <button class="btn btn-outline btn-sm" onclick="window._jnlFilter={from:'',to:''};renderJournalList()">${t.clear}</button>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
-      <label class="btn btn-outline btn-sm" style="position:relative;overflow:hidden"><i class="ti ti-calendar-week"></i> ${t.filterWeek}
-        <input type="date" style="position:absolute;inset:0;opacity:0;cursor:pointer" onchange="_jnlPickRange('week',this.value)"></label>
-      <label class="btn btn-outline btn-sm" style="position:relative;overflow:hidden"><i class="ti ti-calendar"></i> ${t.filterMonth}
-        <input type="date" style="position:absolute;inset:0;opacity:0;cursor:pointer" onchange="_jnlPickRange('month',this.value)"></label>
-      <label class="btn btn-outline btn-sm" style="position:relative;overflow:hidden"><i class="ti ti-calendar-event"></i> ${t.filterYear}
-        <input type="date" style="position:absolute;inset:0;opacity:0;cursor:pointer" onchange="_jnlPickRange('year',this.value)"></label>
+      <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('jnl-pick-week')"><i class="ti ti-calendar-week"></i> ${t.filterWeek}</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('jnl-pick-month')"><i class="ti ti-calendar"></i> ${t.filterMonth}</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('jnl-pick-year')"><i class="ti ti-calendar-event"></i> ${t.filterYear}</button>
+      <input type="date" id="jnl-pick-week" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('week',this.value)">
+      <input type="date" id="jnl-pick-month" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('month',this.value)">
+      <input type="date" id="jnl-pick-year" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="_jnlPickRange('year',this.value)">
     </div>
   </div>
   <div class="card" style="margin-bottom:0">
@@ -7397,6 +7397,23 @@ function _jnlApplyFilter() {
   renderJournalList()
 }
 
+// Relying on a plain click landing inside a hidden <input type="date"> to
+// open the native picker was unreliable across browsers/OSes (a click on
+// the input's body vs. its calendar-icon hit-region isn't guaranteed to
+// open the popup the same way everywhere) — the button ended up doing
+// nothing visible on click. showPicker() forces the native picker open
+// unconditionally on user-gesture, which is exactly what a button click
+// is; el.focus()+el.click() is kept as a best-effort fallback for browsers
+// without showPicker() support.
+function _jnlOpenPicker(id) {
+  const el = document.getElementById(id)
+  if (!el) return
+  if (typeof el.showPicker === 'function') {
+    try { el.showPicker(); return } catch(e) {}
+  }
+  el.focus()
+  el.click()
+}
 // Manual week/month/year filter — driven by a single date the user picks
 // from a native calendar (type="date" is used for all three, not
 // type="week"/"month", since those have no usable native picker in
