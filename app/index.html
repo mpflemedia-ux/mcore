@@ -1744,6 +1744,11 @@ function openPage(page, params={}) {
   // headed back there.
   _sdUnregisterPrintListeners()
   localStorage.setItem('nexerp_last_page', page)
+  // Persisting params alongside page (not just the top-level page) is what
+  // makes a refresh land back on the actual sub-tab/sub-view the user was
+  // on (e.g. Accounting → Journal Entries, params={view:'journal'}) instead
+  // of always resetting to that page's own default view.
+  try { localStorage.setItem('nexerp_last_params', JSON.stringify(params||{})) } catch(e) {}
   APP.currentPage = page
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page))
   if(item) document.getElementById('header-title').textContent = APP.language==='bm'?item.label_bm:item.label_en
@@ -2538,6 +2543,7 @@ async function doLogout() {
   AI_CHAT.messages = []
   AI_CHAT.open = false
   localStorage.removeItem('nexerp_last_page')
+  localStorage.removeItem('nexerp_last_params')
   _resetSessionLoadGuard()
   showAuthPage()
   showToast('You have been signed out.','info')
@@ -2686,7 +2692,9 @@ function showShell() {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
     buildSidebar()
     updateUserUI()
-    openPage(localStorage.getItem('nexerp_last_page') || 'dashboard')
+    let lastParams = {}
+    try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
+    openPage(localStorage.getItem('nexerp_last_page') || 'dashboard', lastParams)
     setTimeout(() => { try { loadNotifications() } catch(e) {} }, 800)
   }
 }
