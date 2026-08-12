@@ -6789,12 +6789,15 @@ async function renderFixedAssets() {
   const t = APP.language==='bm' ? {
     title:'Aset Tetap', add:'Tambah Aset', assetNo:'No. Aset', name:'Nama', category:'Kategori', purchaseDate:'Tarikh Beli',
     cost:'Kos', accumDep:'Susut Nilai Terkumpul', nbv:'Nilai Buku Bersih', status:'Status', active:'Aktif', disposed:'Dilupuskan',
-    noData:'Tiada aset tetap lagi', runDep:'Jalankan Susut Nilai Bulanan'
+    noData:'Tiada aset tetap lagi', runDep:'Jalankan Susut Nilai Bulanan',
+    from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis'
   } : {
     title:'Fixed Assets', add:'Add Asset', assetNo:'Asset No', name:'Name', category:'Category', purchaseDate:'Purchase Date',
     cost:'Cost', accumDep:'Accumulated Depreciation', nbv:'Net Book Value', status:'Status', active:'Active', disposed:'Disposed',
-    noData:'No fixed assets yet', runDep:'Run Monthly Depreciation'
+    noData:'No fixed assets yet', runDep:'Run Monthly Depreciation',
+    from:'From', to:'To', apply:'Filter', clear:'Clear'
   }
+  if(!window._faDateFilter) window._faDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
   <div class="page-header">
     <div><div class="page-title">${t.title}</div></div>
@@ -6804,12 +6807,36 @@ async function renderFixedAssets() {
     </div>
   </div>
   ${_accTabs('fa')}
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="fa-from" class="form-input" value="${window._faDateFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="fa-to" class="form-input" value="${window._faDateFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_faApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._faDateFilter={from:'',to:''};renderFixedAssets()">${t.clear}</button>
+    <div style="margin-left:auto">${_periodQuickBar('fa','_faPickRange')}</div>
+  </div>
   <div id="fa-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div id="fa-run-summary"></div>
   <div class="card"><div id="fa-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
   ${_faRunModalHtml()}`
   if(!window._faStatusFilter) window._faStatusFilter = 'all'
   await _faLoadList()
+}
+
+function _faApplyFilter() {
+  window._faDateFilter = {
+    from: document.getElementById('fa-from')?.value || '',
+    to: document.getElementById('fa-to')?.value || ''
+  }
+  renderFixedAssets()
+}
+
+function _faPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._faDateFilter = r
+  renderFixedAssets()
 }
 
 async function _faLoadList() {
@@ -6821,7 +6848,11 @@ async function _faLoadList() {
     accumDep:'Accumulated Depreciation', nbv:'Net Book Value', status:'Status', active:'Active', disposed:'Disposed', noData:'No fixed assets yet'
   }
   const wrap = document.getElementById('fa-list-wrap')
-  const {data, error} = await sb.from('fixed_assets').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('asset_no')
+  let faq = sb.from('fixed_assets').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+  const faf = window._faDateFilter || {}
+  if(faf.from) faq = faq.gte('purchase_date', faf.from)
+  if(faf.to) faq = faq.lte('purchase_date', faf.to)
+  const {data, error} = await faq.order('asset_no')
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
@@ -7432,8 +7463,12 @@ function _jnlOpenPicker(id) {
 // nothing in the picker itself showed week numbers or was scoped to
 // months. Year has no native input type, so it's a plain <select> of
 // years instead. Malaysia week convention (CLAUDE.md): week starts Monday.
-function _jnlPickRange(period, val) {
-  if (!val) return
+// Shared across every list/report page with a Filter by Week/Month/Year
+// control (Journal Entries, Payment Vouchers, Fiscal Years, Expense Claims,
+// Fixed Assets, and the Reports pages) — kept as one function so the ISO
+// week/month/year math isn't duplicated per page.
+function _periodToRange(period, val) {
+  if (!val) return null
   const toISO = x => x.toISOString().slice(0,10)
   let from, to
   if (period === 'week') {
@@ -7456,9 +7491,34 @@ function _jnlPickRange(period, val) {
     from = toISO(new Date(year, 0, 1))
     to = toISO(new Date(year, 11, 31))
   } else {
-    return
+    return null
   }
-  window._jnlFilter = { from, to }
+  return { from, to }
+}
+
+// Renders the "Filter by Week / Filter by Month / Filter by Year" button
+// group + its hidden native pickers, reused by every page listed above.
+// idPrefix must be unique per page (e.g. 'pv', 'fy', 'exp'); callbackName is
+// the page's own onchange handler, called as callbackName(period, value).
+function _periodQuickBar(idPrefix, callbackName) {
+  const t = APP.language==='bm' ? { week:'Tapis ikut Minggu', month:'Tapis ikut Bulan', year:'Tapis ikut Tahun' }
+    : { week:'Filter by Week', month:'Filter by Month', year:'Filter by Year' }
+  const yNow = new Date().getFullYear()
+  let yearOptions = `<option value="">${t.year}</option>`
+  for (let y = yNow + 1; y >= yNow - 8; y--) yearOptions += `<option value="${y}">${y}</option>`
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('${idPrefix}-pick-week')"><i class="ti ti-calendar-week"></i> ${t.week}</button>
+    <button type="button" class="btn btn-outline btn-sm" onclick="_jnlOpenPicker('${idPrefix}-pick-month')"><i class="ti ti-calendar"></i> ${t.month}</button>
+    <input type="week" id="${idPrefix}-pick-week" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="${callbackName}('week',this.value)">
+    <input type="month" id="${idPrefix}-pick-month" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" onchange="${callbackName}('month',this.value)">
+    <select class="form-select" id="${idPrefix}-pick-year" style="width:130px;padding:6px 10px;font-size:12px" onchange="${callbackName}('year',this.value)">${yearOptions}</select>
+  </div>`
+}
+
+function _jnlPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._jnlFilter = r
   renderJournalList()
 }
 
@@ -7763,16 +7823,28 @@ async function _jnlSave(id) {
 async function renderFiscalYears() {
   const t = APP.language==='bm' ? {
     title:'Tahun Kewangan', add:'Tambah Tahun', start:'Mula', end:'Tamat', status:'Status',
-    open:'Terbuka', closed:'Ditutup', noData:'Tiada tahun kewangan lagi', del:'Padam'
+    open:'Terbuka', closed:'Ditutup', noData:'Tiada tahun kewangan lagi', del:'Padam',
+    from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis'
   } : {
     title:'Fiscal Years', add:'Add Fiscal Year', start:'Start', end:'End', status:'Status',
-    open:'Open', closed:'Closed', noData:'No fiscal years set up yet', del:'Delete'
+    open:'Open', closed:'Closed', noData:'No fiscal years set up yet', del:'Delete',
+    from:'From', to:'To', apply:'Filter', clear:'Clear'
   }
+  if(!window._fyDateFilter) window._fyDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="_fyShowForm()"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_accTabs('fiscal')}
   <div id="fy-form-wrap"></div>
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="fy-from" class="form-input" value="${window._fyDateFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="fy-to" class="form-input" value="${window._fyDateFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_fyApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._fyDateFilter={from:'',to:''};renderFiscalYears()">${t.clear}</button>
+    <div style="margin-left:auto">${_periodQuickBar('fy','_fyPickRange')}</div>
+  </div>
   <div class="card"><div id="fy-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
 
   <div class="card" style="margin-top:16px">
@@ -7864,8 +7936,11 @@ async function _fyLoad() {
   const t = APP.language==='bm' ? { start:'Mula', end:'Tamat', status:'Status', open:'Terbuka', closed:'Ditutup', current:'Semasa', noData:'Tiada tahun kewangan lagi', close:'Tutup' }
     : { start:'Start', end:'End', status:'Status', open:'Open', closed:'Closed', current:'Current', noData:'No fiscal years set up yet', close:'Close' }
   const wrap = document.getElementById('fy-table-wrap')
-  const {data, error} = await sb.from('fiscal_years').select('id,start_date,end_date,is_closed,is_current')
-    .eq('tenant_id', APP.tenant.id).order('start_date',{ascending:false})
+  let fyq = sb.from('fiscal_years').select('id,start_date,end_date,is_closed,is_current').eq('tenant_id', APP.tenant.id)
+  const fyf = window._fyDateFilter || {}
+  if(fyf.from) fyq = fyq.gte('start_date', fyf.from)
+  if(fyf.to) fyq = fyq.lte('start_date', fyf.to)
+  const {data, error} = await fyq.order('start_date',{ascending:false})
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
@@ -7875,6 +7950,21 @@ async function _fyLoad() {
     <td><span style="color:${f.is_closed?'var(--text-3)':'var(--success)'}">${f.is_closed?t.closed:t.open}</span>${f.is_current?` <span style="color:var(--primary);font-size:11px">(${t.current})</span>`:''}</td>
     <td>${f.is_closed?'':`<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_fyClose('${f.id}')">${t.close}</button>`}</td>
   </tr>`).join('')}</tbody></table>`
+}
+
+function _fyApplyFilter() {
+  window._fyDateFilter = {
+    from: document.getElementById('fy-from')?.value || '',
+    to: document.getElementById('fy-to')?.value || ''
+  }
+  _fyLoad()
+}
+
+function _fyPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._fyDateFilter = r
+  _fyLoad()
 }
 
 async function _fySave() {
@@ -7906,22 +7996,37 @@ async function renderExpenseClaims(params={}) {
   const t = APP.language==='bm' ? {
     title:'Tuntutan Perbelanjaan', add:'Tuntutan Baru', claimant:'Penuntut', date:'Tarikh',
     desc:'Keterangan', amount:'Jumlah', status:'Status', pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak',
-    noData:'Tiada tuntutan lagi', all:'Semua', del:'Padam', paid:'Dibayar'
+    noData:'Tiada tuntutan lagi', all:'Semua', del:'Padam', paid:'Dibayar',
+    from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis'
   } : {
     title:'Expense Claims', add:'New Claim', claimant:'Claimant', date:'Date',
     desc:'Description', amount:'Amount', status:'Status', pending:'Pending', approved:'Approved', rejected:'Rejected',
-    noData:'No expense claims yet', all:'All', del:'Delete', paid:'Paid'
+    noData:'No expense claims yet', all:'All', del:'Delete', paid:'Paid',
+    from:'From', to:'To', apply:'Filter', clear:'Clear'
   }
+  if(!window._expDateFilter) window._expDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'exp-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_accTabs('expense')}
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="exp-from" class="form-input" value="${window._expDateFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="exp-to" class="form-input" value="${window._expDateFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_expApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._expDateFilter={from:'',to:''};renderExpenseClaims()">${t.clear}</button>
+    <div style="margin-left:auto">${_periodQuickBar('exp','_expPickRange')}</div>
+  </div>
   <div id="exp-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="exp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('exp-table-wrap')
-  const {data, error} = await sb.from('expense_claims').select('id,claimed_by,claim_date,description,total_amount,status,ref_no')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('claim_date',{ascending:false})
+  let expq = sb.from('expense_claims').select('id,claimed_by,claim_date,description,total_amount,status,ref_no')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  if(window._expDateFilter.from) expq = expq.gte('claim_date', window._expDateFilter.from)
+  if(window._expDateFilter.to) expq = expq.lte('claim_date', window._expDateFilter.to)
+  const {data, error} = await expq.order('claim_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
 
@@ -7938,6 +8043,21 @@ async function renderExpenseClaims(params={}) {
   if(!window._expStatusFilter) window._expStatusFilter = 'all'
   _expRenderStatusFilters()
   _expRenderListTable()
+}
+
+function _expApplyFilter() {
+  window._expDateFilter = {
+    from: document.getElementById('exp-from')?.value || '',
+    to: document.getElementById('exp-to')?.value || ''
+  }
+  renderExpenseClaims()
+}
+
+function _expPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._expDateFilter = r
+  renderExpenseClaims()
 }
 
 function _expRenderStatusFilters() {
@@ -14793,8 +14913,9 @@ function renderPaymentVouchers(params={}) {
 async function renderPVList() {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal', all:'Semua', del:'Padam' }
-    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void', all:'All', del:'Delete' }
+    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal', all:'Semua', del:'Padam', from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis' }
+    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void', all:'All', del:'Delete', from:'From', to:'To', apply:'Filter', clear:'Clear' }
+  if(!window._pvDateFilter) window._pvDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div>
     <div style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm?'Single PV (portrait) · Disbursement = multi bayaran (landscape)':'Single PV (portrait) · Disbursement = multi-payee batch (landscape)'}</div>
@@ -14805,10 +14926,22 @@ async function renderPVList() {
     </div>
   </div>
   ${_accTabs('pv')}
+  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
+      <input type="date" id="pv-from" class="form-input" value="${window._pvDateFilter.from||''}" style="width:150px"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
+      <input type="date" id="pv-to" class="form-input" value="${window._pvDateFilter.to||''}" style="width:150px"></div>
+    <button class="btn btn-primary btn-sm" onclick="_pvApplyFilter()"><i class="ti ti-filter"></i> ${t.apply}</button>
+    <button class="btn btn-outline btn-sm" onclick="window._pvDateFilter={from:'',to:''};renderPVList()">${t.clear}</button>
+    <div style="margin-left:auto">${_periodQuickBar('pv','_pvPickRange')}</div>
+  </div>
   <div id="pv-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="pv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('pv-list-wrap')
-  const {data, error} = await sb.from('payment_vouchers').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('voucher_date',{ascending:false}).order('created_at',{ascending:false}).limit(200)
+  let pvq = sb.from('payment_vouchers').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null)
+  if(window._pvDateFilter.from) pvq = pvq.gte('voucher_date', window._pvDateFilter.from)
+  if(window._pvDateFilter.to) pvq = pvq.lte('voucher_date', window._pvDateFilter.to)
+  const {data, error} = await pvq.order('voucher_date',{ascending:false}).order('created_at',{ascending:false}).limit(200)
   if(error) {
     wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p>
       <p style="font-size:12px;color:var(--text-3);margin-top:8px">${isBm?'Jalankan SQL migration payment_vouchers di Supabase.':'Run payment_vouchers SQL migration in Supabase.'}</p></div>`
@@ -14820,6 +14953,21 @@ async function renderPVList() {
   if(!window._pvStatusFilter) window._pvStatusFilter = 'all'
   _pvRenderStatusFilters()
   _pvRenderListTable()
+}
+
+function _pvApplyFilter() {
+  window._pvDateFilter = {
+    from: document.getElementById('pv-from')?.value || '',
+    to: document.getElementById('pv-to')?.value || ''
+  }
+  renderPVList()
+}
+
+function _pvPickRange(period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  window._pvDateFilter = r
+  renderPVList()
 }
 
 function _pvRenderStatusFilters() {
@@ -18619,11 +18767,39 @@ function _repDateRangeBar(fromId, toId, onApply) {
   const t = APP.language==='bm' ? { from:'Dari', to:'Hingga', apply:'Guna' } : { from:'From', to:'To', apply:'Apply' }
   const today = new Date().toISOString().slice(0,10)
   const firstOfMonth = today.slice(0,8)+'01'
+  // onApply is always passed as a bare call string like '_pnlLoad()' — strip
+  // the trailing "()" to get the identifier itself so it can be bound as a
+  // real function reference for the week/month/year quick-pick buttons below.
+  const reloadFnName = onApply.replace(/\(\)$/, '')
   return `<div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
     <div class="form-group"><label class="form-label">${t.from}</label><input id="${fromId}" type="date" class="form-input" value="${firstOfMonth}"></div>
     <div class="form-group"><label class="form-label">${t.to}</label><input id="${toId}" type="date" class="form-input" value="${today}"></div>
     <button class="btn btn-primary btn-sm" onclick="${onApply}">${t.apply}</button>
+    <div style="margin-left:auto">${_periodQuickBar(fromId.replace(/-from$/,''), `_repPickRange.bind(null,'${fromId}','${toId}',${reloadFnName})`)}</div>
   </div>`
+}
+
+// Sets the from/to date inputs to the picked week/month/year and reloads —
+// shared by every Reports page that uses _repDateRangeBar (Income Statement,
+// Sales Report). fromId/toId/reloadFn are pre-bound by _repDateRangeBar.
+function _repPickRange(fromId, toId, reloadFn, period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  const fEl = document.getElementById(fromId); if(fEl) fEl.value = r.from
+  const tEl = document.getElementById(toId); if(tEl) tEl.value = r.to
+  if (typeof reloadFn === 'function') reloadFn()
+}
+
+// Same idea but for point-in-time "as of" reports (Balance Sheet, Trial
+// Balance) which have a single date instead of a range — picking a
+// week/month/year sets the as-of date to that period's last day (Sunday /
+// end of month / 31 Dec), i.e. "show the snapshot as it stood at the end of
+// that period."
+function _repPickAsOf(asOfId, reloadFn, period, val) {
+  const r = _periodToRange(period, val)
+  if (!r) return
+  const el = document.getElementById(asOfId); if(el) el.value = r.to
+  if (typeof reloadFn === 'function') reloadFn()
 }
 
 
@@ -18644,6 +18820,7 @@ async function renderTrialBalance() {
   <div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
     <div class="form-group"><label class="form-label">${t.asOf}</label><input id="tb-asof" type="date" class="form-input" value="${today}"></div>
     <button class="btn btn-primary btn-sm" onclick="_tbLoad()">${t.apply}</button>
+    <div style="margin-left:auto">${_periodQuickBar('tb', "_repPickAsOf.bind(null,'tb-asof',_tbLoad)")}</div>
   </div>
   <div id="tb-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _tbLoad()
@@ -18788,9 +18965,10 @@ async function renderBalanceSheet() {
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_repTabs('bs')}
-  <div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;margin-bottom:16px">
+  <div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
     <div class="form-group"><label class="form-label">${t.asOf}</label><input id="bs-asof" type="date" class="form-input" value="${today}"></div>
     <button class="btn btn-primary btn-sm" onclick="_bsLoad()">${t.apply}</button>
+    <div style="margin-left:auto">${_periodQuickBar('bs', "_repPickAsOf.bind(null,'bs-asof',_bsLoad)")}</div>
   </div>
   <div id="bs-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _bsLoad()
@@ -18878,21 +19056,27 @@ async function _bsLoad() {
 async function renderApAgingReport() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Laporan Aging Hutang Belian (AP)', asOf:'Sehingga', noData:'Tiada baki hutang pembekal.',
+    title:'Laporan Aging Hutang Belian (AP)', asOf:'Sehingga', apply:'Guna', noData:'Tiada baki hutang pembekal.',
     supplier:'Pembekal', bill:'Bil', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
     current:'Belum tiba', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari', grand:'Jumlah Besar',
     print:'Cetak'
   } : {
-    title:'AP Aging Report', asOf:'As of', noData:'No outstanding supplier balances.',
+    title:'AP Aging Report', asOf:'As of', apply:'Apply', noData:'No outstanding supplier balances.',
     supplier:'Supplier', bill:'Bill', due:'Due Date', total:'Total', paid:'Paid', balance:'Balance',
     current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days', grand:'Grand Total',
     print:'Print'
   }
+  if(!window._apAgingAsOf) window._apAgingAsOf = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div>
-    <div style="font-size:13px;color:var(--text-3)">${t.asOf}: ${formatDate(new Date().toISOString().slice(0,10))}</div></div>
-    <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-outline btn-sm no-print" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
   ${_repTabs('ap-aging')}
+  <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.asOf}</label>
+      <input type="date" id="ap-asof" class="form-input" value="${window._apAgingAsOf}"></div>
+    <button class="btn btn-primary btn-sm" onclick="_apAgingApply()">${t.apply}</button>
+    <div style="margin-left:auto">${_periodQuickBar('ap', "_repPickAsOf.bind(null,'ap-asof',_apAgingApply)")}</div>
+  </div>
   <div id="ap-aging-body"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
 
   const {data, error} = await sb.from('supplier_bills')
@@ -18901,7 +19085,7 @@ async function renderApAgingReport() {
   const body = document.getElementById('ap-aging-body')
   if(error) { body.innerHTML = `<div class="card"><p style="color:var(--danger);padding:24px">${_aiEscapeHtml(error.message)}</p></div>`; return }
 
-  const today = new Date(); today.setHours(0,0,0,0)
+  const today = new Date(window._apAgingAsOf + 'T00:00:00'); today.setHours(0,0,0,0)
   const rows = []
   const buckets = { current:0, d30:0, d60:0, d90:0, d90p:0 }
   ;(data||[]).forEach(b => {
@@ -18957,24 +19141,35 @@ async function renderApAgingReport() {
   </div>`
 }
 
+function _apAgingApply() {
+  window._apAgingAsOf = document.getElementById('ap-asof')?.value || new Date().toISOString().slice(0,10)
+  renderApAgingReport()
+}
+
 async function renderArAgingReport() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Laporan Aging Hutang (AR)', asOf:'Sehingga', noData:'Tiada baki hutang pelanggan.',
+    title:'Laporan Aging Hutang (AR)', asOf:'Sehingga', apply:'Guna', noData:'Tiada baki hutang pelanggan.',
     customer:'Pelanggan', inv:'Invois', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
     current:'Belum tiba', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari', grand:'Jumlah Besar',
     print:'Cetak'
   } : {
-    title:'AR Aging Report', asOf:'As of', noData:'No outstanding customer balances.',
+    title:'AR Aging Report', asOf:'As of', apply:'Apply', noData:'No outstanding customer balances.',
     customer:'Customer', inv:'Invoice', due:'Due Date', total:'Total', paid:'Paid', balance:'Balance',
     current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days', grand:'Grand Total',
     print:'Print'
   }
+  if(!window._arAgingAsOf) window._arAgingAsOf = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div>
-    <div style="font-size:13px;color:var(--text-3)">${t.asOf}: ${formatDate(new Date().toISOString().slice(0,10))}</div></div>
-    <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <button class="btn btn-outline btn-sm no-print" onclick="window.print()"><i class="ti ti-printer"></i> ${t.print}</button></div>
   ${_repTabs('aging')}
+  <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <div class="form-group" style="margin:0"><label class="form-label">${t.asOf}</label>
+      <input type="date" id="ar-asof" class="form-input" value="${window._arAgingAsOf}"></div>
+    <button class="btn btn-primary btn-sm" onclick="_arAgingApply()">${t.apply}</button>
+    <div style="margin-left:auto">${_periodQuickBar('ar', "_repPickAsOf.bind(null,'ar-asof',_arAgingApply)")}</div>
+  </div>
   <div id="ar-aging-body"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
 
   const {data, error} = await sb.from('invoices')
@@ -18984,7 +19179,7 @@ async function renderArAgingReport() {
   const body = document.getElementById('ar-aging-body')
   if(error) { body.innerHTML = `<div class="card"><p style="color:var(--danger);padding:24px">${_aiEscapeHtml(error.message)}</p></div>`; return }
 
-  const today = new Date(); today.setHours(0,0,0,0)
+  const today = new Date(window._arAgingAsOf + 'T00:00:00'); today.setHours(0,0,0,0)
   const rows = []
   const buckets = { current:0, d30:0, d60:0, d90:0, d90p:0 }
   ;(data||[]).forEach(inv => {
@@ -19038,6 +19233,11 @@ async function renderArAgingReport() {
     </tr>
     </tbody></table>
   </div>`
+}
+
+function _arAgingApply() {
+  window._arAgingAsOf = document.getElementById('ar-asof')?.value || new Date().toISOString().slice(0,10)
+  renderArAgingReport()
 }
 
 async function renderSalesReport() {
@@ -19223,6 +19423,7 @@ async function renderSstReport() {
     <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
       <input type="date" id="sst-to" class="form-input" value="${toDef}"></div>
     <button class="btn btn-primary btn-sm" onclick="_sstRun()"><i class="ti ti-refresh"></i> ${t.run}</button>
+    <div style="margin-left:auto">${_periodQuickBar('sst', "_repPickRange.bind(null,'sst-from','sst-to',_sstRun)")}</div>
   </div>
   <div id="sst-out"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _sstRun()
