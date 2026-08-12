@@ -2814,7 +2814,20 @@ function renderDashboard() {
           <div class="db-toggle" data-r="year" onclick="_dbSetRange('year')">${isBm?'Tahun':'Year'}</div>
         </div>
         <span id="db-range-picker-slot"></span>
-        <span class="db-btn" style="pointer-events:none;opacity:.9;font-size:12px" id="db-range-label"><i class="ti ti-calendar"></i> ${monthLabel}</span>
+        <span style="position:relative;display:inline-block">
+          <span class="db-btn" style="font-size:12px" id="db-range-label" onclick="_dbToggleCustomPanel()"><i class="ti ti-calendar"></i> ${monthLabel}</span>
+          <div id="db-custom-range-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:50;background:var(--db-card);border:1px solid var(--db-border2);border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:250px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--db-text2)">${isBm?'Julat Tarikh Tersendiri':'Custom Date Range'}</div>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <div class="form-group" style="margin:0;flex:1"><label class="form-label" style="font-size:11px">${isBm?'Dari':'From'}</label><input type="date" id="db-custom-from" class="form-input" style="padding:6px 8px;font-size:12px"></div>
+              <div class="form-group" style="margin:0;flex:1"><label class="form-label" style="font-size:11px">${isBm?'Hingga':'To'}</label><input type="date" id="db-custom-to" class="form-input" style="padding:6px 8px;font-size:12px"></div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button type="button" class="btn btn-outline btn-sm" onclick="_dbCloseCustomPanel()">${isBm?'Batal':'Cancel'}</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="_dbApplyCustomRange()">${isBm?'Guna':'Apply'}</button>
+            </div>
+          </div>
+        </span>
       </div>
     </div>
 
@@ -3284,7 +3297,7 @@ async function loadDashboardData() {
     _dbRenderRangePicker()
     const lab = document.getElementById('db-range-label')
     if(lab) {
-      const names = isBm ? {day:'Hari',week:'Minggu',month:'Bulan',year:'Tahun'} : {day:'Day',week:'Week',month:'Month',year:'Year'}
+      const names = isBm ? {day:'Hari',week:'Minggu',month:'Bulan',year:'Tahun',custom:'Tersendiri'} : {day:'Day',week:'Week',month:'Month',year:'Year',custom:'Custom'}
       lab.innerHTML = `<i class="ti ti-calendar"></i> ${names[_dbRange]||_dbRange}: ${ms} → ${periodEnd}`
     }
     document.querySelectorAll('#db-range-toggle .db-toggle').forEach(el => el.classList.toggle('active', el.dataset.r === (_dbRange||'month')))
@@ -3691,7 +3704,7 @@ function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
 
 
 let _dbPeriod = 'daily'
-let _dbRange = 'month' // day|week|month|year — KPI / P&L window
+let _dbRange = 'month' // day|week|month|year|custom — KPI / P&L window
 let _dbCharts = {}
 let _dbInvCache = []
 
@@ -3742,6 +3755,17 @@ function _dbRangeBounds() {
     end = new Date(y, 11, 31)
     prevStart = new Date(y-1, 0, 1)
     prevEnd = new Date(y-1, 11, 31)
+  } else if(range === 'custom') {
+    const fromStr = window._dbCustomFrom || _dbFmtYMD(now)
+    const toStr = window._dbCustomTo || _dbFmtYMD(now)
+    start = new Date(fromStr+'T00:00:00')
+    end = new Date(toStr+'T00:00:00')
+    if(end < start) { const tmp = start; start = end; end = tmp }
+    // Prior-period comparison uses an equal-length window immediately
+    // before the picked range, same idea as day/week/month/year above.
+    const spanDays = Math.round((end - start) / 86400000) + 1
+    prevEnd = new Date(start); prevEnd.setDate(prevEnd.getDate() - 1)
+    prevStart = new Date(prevEnd); prevStart.setDate(prevEnd.getDate() - (spanDays - 1))
   } else {
     let y = now.getFullYear(), m = now.getMonth()
     if(window._dbAnchorMonth && /^\d{4}-\d{2}$/.test(window._dbAnchorMonth)) {
@@ -3768,7 +3792,11 @@ function _dbRenderRangePicker() {
   const isBm = APP.language==='bm'
   const today = _dbFmtYMD(new Date())
   const anchor = window._dbAnchor || today
-  if(range === 'day') {
+  if(range === 'custom') {
+    // Custom range is picked via the "Filter by Week/Month/Year"-style
+    // popover opened from the db-range-label chip, not this slot.
+    slot.innerHTML = ''
+  } else if(range === 'day') {
     slot.innerHTML = `<input type="date" id="db-pick" value="${anchor}" aria-label="${isBm?'Pilih hari':'Pick day'}" onchange="window._dbAnchor=this.value;window._dbAnchorMonth=null;window._dbAnchorYear=null;loadDashboardData()">`
   } else if(range === 'week') {
     slot.innerHTML = `<input type="date" id="db-pick" value="${anchor}" aria-label="${isBm?'Pilih tarikh dalam minggu':'Pick date in week'}" onchange="window._dbAnchor=this.value;window._dbAnchorMonth=null;window._dbAnchorYear=null;loadDashboardData()">`
@@ -3788,6 +3816,50 @@ function _dbRenderRangePicker() {
 function _dbSetRange(r) {
   _dbRange = r
   document.querySelectorAll('#db-range-toggle .db-toggle').forEach(el => el.classList.toggle('active', el.dataset.r === r))
+  _dbRenderRangePicker()
+  loadDashboardData()
+}
+
+// Custom date-range popover opened by clicking the "Month: … → …" chip
+// next to the Day/Week/Month/Year toggle — lets the user pick any from/to
+// window instead of just a whole day/week/month/year.
+function _dbToggleCustomPanel() {
+  const panel = document.getElementById('db-custom-range-panel')
+  if(!panel) return
+  const opening = panel.style.display === 'none' || !panel.style.display
+  panel.style.display = opening ? 'block' : 'none'
+  if(opening) {
+    const b = _dbRangeBounds()
+    const fromEl = document.getElementById('db-custom-from')
+    const toEl = document.getElementById('db-custom-to')
+    if(fromEl) fromEl.value = (_dbRange==='custom' && window._dbCustomFrom) ? window._dbCustomFrom : b.start
+    if(toEl) toEl.value = (_dbRange==='custom' && window._dbCustomTo) ? window._dbCustomTo : b.end
+    if(!window._dbCustomPanelOutsideClickBound) {
+      window._dbCustomPanelOutsideClickBound = true
+      document.addEventListener('click', e => {
+        const p = document.getElementById('db-custom-range-panel')
+        const lbl = document.getElementById('db-range-label')
+        if(!p || p.style.display==='none') return
+        if(p.contains(e.target) || (lbl && lbl.contains(e.target))) return
+        p.style.display = 'none'
+      })
+    }
+  }
+}
+function _dbCloseCustomPanel() {
+  const panel = document.getElementById('db-custom-range-panel')
+  if(panel) panel.style.display = 'none'
+}
+function _dbApplyCustomRange() {
+  const isBm = APP.language==='bm'
+  const from = document.getElementById('db-custom-from')?.value
+  const to = document.getElementById('db-custom-to')?.value
+  if(!from || !to) { showToast(isBm?'Sila pilih kedua-dua tarikh.':'Please pick both dates.', 'warning'); return }
+  window._dbCustomFrom = from
+  window._dbCustomTo = to
+  _dbRange = 'custom'
+  document.querySelectorAll('#db-range-toggle .db-toggle').forEach(el => el.classList.remove('active'))
+  _dbCloseCustomPanel()
   _dbRenderRangePicker()
   loadDashboardData()
 }
