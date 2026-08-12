@@ -3594,10 +3594,12 @@ async function _dbLoadAttTracker() {
     const badge = _dbAttStatusBadge(isBm)
     const emptyColor = 'var(--db-border2)'
     const days = Array.from({length: daysInMonth}, (_,i) => i+1)
+    const today = new Date()
+    const isCurrentMonth = (year === today.getFullYear() && month === today.getMonth()+1)
     el.innerHTML = `<table style="border-collapse:separate;border-spacing:3px">
       <thead><tr>
         <th style="text-align:left;font-size:11px;color:var(--db-text3);font-weight:500;padding-right:10px;position:sticky;left:0;background:var(--db-card)">${isBm?'Staf':'Staff'}</th>
-        ${days.map(d=>`<th style="font-size:9px;color:var(--db-text4);font-weight:400;width:13px">${d}</th>`).join('')}
+        ${days.map(d=>`<th data-day="${d}" style="font-size:9px;color:${isCurrentMonth&&d===today.getDate()?'var(--primary)':'var(--db-text4)'};font-weight:${isCurrentMonth&&d===today.getDate()?700:400};width:13px">${d}</th>`).join('')}
       </tr></thead>
       <tbody>${employees.map(e => {
         const rec = byEmp[e.id] || {}
@@ -3613,6 +3615,21 @@ async function _dbLoadAttTracker() {
         </tr>`
       }).join('')}</tbody>
     </table>`
+    // Default to showing today's column instead of day 1 — otherwise the
+    // tracker opens scrolled to the start of the month, which for most of
+    // the month looks like "no data" (nothing logged yet for those early
+    // days) even though today's attendance is there, just off-screen to
+    // the right (this is what looked like a mobile-only bug: it wasn't
+    // mobile-specific, the desktop view just happened to already be
+    // scrolled over from an earlier manual scroll).
+    if(isCurrentMonth) {
+      const todayTh = el.querySelector(`th[data-day="${today.getDate()}"]`)
+      if(todayTh) {
+        const contRect = el.getBoundingClientRect()
+        const thRect = todayTh.getBoundingClientRect()
+        el.scrollLeft = Math.max(0, el.scrollLeft + (thRect.left - contRect.left) - 60)
+      }
+    }
   } catch(err) {
     console.error('_dbLoadAttTracker', err)
     el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Tiada data kehadiran':'No attendance data'}</div>`
