@@ -19739,10 +19739,12 @@ async function _posPrintReceipt() {
   // Payslip/SD letterhead system) does this: this represents printed paper,
   // so it must stay readable regardless of the app's own light/dark theme
   // instead of inheriting the modal's dark background with near-black text.
+  _pdocSetPageOrientation('portrait')
   body.innerHTML = `
-    <div style="width:100%;max-width:280px;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;margin:0 auto;background:#fff;color:#0F172A;padding:16px;border-radius:10px;font-family:'Space Grotesk',sans-serif">
+    <div style="width:100%;max-width:480px;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;margin:0 auto;background:#fff;color:#0F172A;padding:24px;border-radius:10px;font-family:'Space Grotesk',sans-serif">
       <div style="text-align:center;margin-bottom:10px">
-        <div style="font-weight:800;font-size:16px;color:#2563EB">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
+        ${tn.logo_url ? `<img src="${_aiEscapeHtml(tn.logo_url)}" alt="" style="height:56px;max-width:200px;object-fit:contain;margin:0 auto 10px;display:block">` : ''}
+        <div style="font-weight:800;font-size:18px;color:#2563EB">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
         ${tn.address||tn.city ? `<div style="font-size:10px;color:#64748B;margin-top:2px;line-height:1.5">${_aiEscapeHtml(_pdocAddressLine(tn))}</div>` : ''}
         ${tn.phone ? `<div style="font-size:10px;color:#64748B">Tel: ${_aiEscapeHtml(tn.phone)}</div>` : ''}
         ${tn.sst_gst_no ? `<div style="font-size:10px;color:#64748B">SST No: ${_aiEscapeHtml(tn.sst_gst_no)}</div>` : ''}
@@ -19770,10 +19772,10 @@ async function _posPrintReceipt() {
 // CDN) so it can be handed to navigator.share()/WhatsApp as a real
 // attachment — a wa.me link can only ever carry prefilled TEXT, never a
 // file, so sending an actual PDF needs a real file object, not a URL trick.
-// No logo embedding here (unlike the HTML print view above): that needs an
-// extra network fetch of the logo image + byte-level PNG/JPG detection,
-// which can fail in ways a receipt PDF shouldn't be blocked by — text-only
-// header is a reasonable trade for reliability here.
+// A4 page (matches the browser-print version); the receipt itself stays a
+// narrower centered card on it rather than stretched edge-to-edge. The logo
+// is fetched and embedded best-effort — never blocks the PDF if the fetch,
+// CORS, or format detection fails.
 async function _posBuildReceiptPdf(r) {
   const isBm = APP.language==='bm'
   const tn = await _pdocGetTenant()
@@ -19782,10 +19784,15 @@ async function _posBuildReceiptPdf(r) {
   const regular = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
 
-  const W = 280, marginX = 16, contentW = W - marginX*2, lineH = 14
+  const PAGE_W = 595.28, PAGE_H = 841.89 // A4 in points
+  const cardW = 380, cardX = (PAGE_W - cardW) / 2
+  const marginX = 16, contentW = cardW - marginX*2, lineH = 14
   const textColor = rgb(0.06, 0.09, 0.16)
   const mutedColor = rgb(0.4, 0.45, 0.55)
   const accentColor = rgb(0.145, 0.388, 0.922)
+
+  const page = doc.addPage([PAGE_W, PAGE_H])
+  let y = PAGE_H - 70
 
   const wrapText = (text, f, size, maxW) => {
     const words = String(text).split(' ')
@@ -19799,44 +19806,50 @@ async function _posBuildReceiptPdf(r) {
     if(cur) lines.push(cur)
     return lines
   }
-  const itemBlocks = (r.items||[]).map(it => ({
-    nameLines: wrapText(`${it.qty} x ${it.name}`, regular, 9, contentW - 55),
-    amount: formatRM(it.qty*Number(it.unit_price||0)),
-  }))
-  const itemLineCount = itemBlocks.reduce((s,b)=>s+b.nameLines.length, 0)
-  const headerLineCount = 2 + (tn.address||tn.city?1:0) + (tn.phone?1:0) + (tn.sst_gst_no?1:0)
-  const totalsLineCount = 2 + (r.method==='cash' && r.tenderLabel ? 2 : 0) + (r.cashierName?1:0)
-  const estHeight = 60 + headerLineCount*lineH + 30 + 30 + itemLineCount*lineH + 30 + totalsLineCount*lineH + 60
-
-  const page = doc.addPage([W, Math.max(estHeight, 320)])
-  let y = page.getHeight() - 24
-
   const drawCenter = (text, f, size, color=textColor) => {
     const w = f.widthOfTextAtSize(text, size)
-    page.drawText(text, { x:(W-w)/2, y, size, font:f, color })
+    page.drawText(text, { x: cardX + (cardW-w)/2, y, size, font:f, color })
     y -= lineH
   }
+  const drawCenterWrapped = (text, f, size, color=textColor, maxW=contentW) => {
+    wrapText(text, f, size, maxW).forEach(line => drawCenter(line, f, size, color))
+  }
   const drawRow = (left, right, f=regular, size=9, color=textColor) => {
-    page.drawText(left, { x:marginX, y, size, font:f, color })
+    page.drawText(left, { x: cardX+marginX, y, size, font:f, color })
     const rw = f.widthOfTextAtSize(right, size)
-    page.drawText(right, { x:W-marginX-rw, y, size, font:f, color })
+    page.drawText(right, { x: cardX+cardW-marginX-rw, y, size, font:f, color })
     y -= lineH
   }
   const drawDivider = () => {
-    page.drawLine({ start:{x:marginX,y}, end:{x:W-marginX,y}, thickness:0.5, color: rgb(0.8,0.83,0.88), dashArray:[2,2] })
+    page.drawLine({ start:{x:cardX+marginX,y}, end:{x:cardX+cardW-marginX,y}, thickness:0.5, color: rgb(0.8,0.83,0.88), dashArray:[2,2] })
     y -= 12
   }
 
-  drawCenter(tn.name || APP.tenant.name || '-', bold, 13, accentColor)
-  if(tn.address||tn.city) drawCenter(_pdocAddressLine(tn), regular, 8, mutedColor)
+  if(tn.logo_url) {
+    try {
+      const res = await fetch(tn.logo_url)
+      const bytes = await res.arrayBuffer()
+      const contentType = res.headers.get('content-type') || ''
+      const isPng = contentType.includes('png') || /\.png(\?|$)/i.test(tn.logo_url)
+      const img = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes)
+      const maxLogoH = 48
+      const scale = Math.min(1, maxLogoH / img.height)
+      const lw = img.width*scale, lh = img.height*scale
+      page.drawImage(img, { x: cardX + (cardW-lw)/2, y: y-lh, width: lw, height: lh })
+      y -= lh + 10
+    } catch(e) { console.warn('_posBuildReceiptPdf logo embed (non-blocking):', e) }
+  }
+
+  drawCenter(tn.name || APP.tenant.name || '-', bold, 14, accentColor)
+  if(tn.address||tn.city) drawCenterWrapped(_pdocAddressLine(tn), regular, 8, mutedColor)
   if(tn.phone) drawCenter(`Tel: ${tn.phone}`, regular, 8, mutedColor)
   if(tn.sst_gst_no) drawCenter(`SST No: ${tn.sst_gst_no}`, regular, 8, mutedColor)
   y -= 6
 
-  page.drawRectangle({ x:marginX, y:y-14, width:contentW, height:18, color:accentColor })
+  page.drawRectangle({ x:cardX+marginX, y:y-14, width:contentW, height:18, color:accentColor })
   const titleText = isBm ? 'INVOIS CUKAI / RESIT' : 'TAX INVOICE / RECEIPT'
   const tw = bold.widthOfTextAtSize(titleText, 9)
-  page.drawText(titleText, { x:(W-tw)/2, y:y-10, size:9, font:bold, color: rgb(1,1,1) })
+  page.drawText(titleText, { x: cardX + (cardW-tw)/2, y:y-10, size:9, font:bold, color: rgb(1,1,1) })
   y -= 30
 
   drawRow(isBm?'No. Resit':'Receipt No.', r.receiptNo, regular, 8, mutedColor)
@@ -19845,10 +19858,14 @@ async function _posBuildReceiptPdf(r) {
   y -= 4
   drawDivider()
 
+  const itemBlocks = (r.items||[]).map(it => ({
+    nameLines: wrapText(`${it.qty} x ${it.name}`, regular, 9, contentW - 55),
+    amount: formatRM(it.qty*Number(it.unit_price||0)),
+  }))
   itemBlocks.forEach(b => {
     b.nameLines.forEach((line, i) => {
       if(i === b.nameLines.length-1) drawRow(line, b.amount, regular, 9)
-      else { page.drawText(line, {x:marginX, y, size:9, font:regular, color:textColor}); y -= lineH }
+      else { page.drawText(line, {x:cardX+marginX, y, size:9, font:regular, color:textColor}); y -= lineH }
     })
   })
   y -= 4
