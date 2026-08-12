@@ -1375,7 +1375,7 @@ const LANG = {
       needsAttn:'Needs attention',thisMonth:'This month',active:'Active',invoices:'invoices',
       monthlySales:'Monthly Sales',recentInv:'Recent Invoices',viewAll:'View All',noInv:'No invoices yet',
       chartNote:'Will load with Chart.js',export:'Export',
-      people:'People',peopleSub:'Staff present today',viewHR:'View HR',
+      people:'People',peopleSub:"Today's attendance",viewHR:'View HR',
       recentActivity:'Recent Activity',noPeople:'No team members yet',noActivity:'No recent activity',
       active:'Active'
     },
@@ -1393,7 +1393,7 @@ const LANG = {
       needsAttn:'Perlu perhatian',thisMonth:'Bulan ini',active:'Aktif',invoices:'invois',
       monthlySales:'Jualan Bulanan',recentInv:'Invois Terkini',viewAll:'Lihat Semua',noInv:'Tiada invois lagi',
       chartNote:'Akan dimuatkan dengan Chart.js',export:'Eksport',
-      people:'Pasukan',peopleSub:'Staff hadir hari ini',viewHR:'Lihat SDM',
+      people:'Pasukan',peopleSub:'Kehadiran hari ini',viewHR:'Lihat SDM',
       recentActivity:'Aktiviti Terkini',noPeople:'Tiada ahli pasukan lagi',noActivity:'Tiada aktiviti terkini',
       active:'Aktif'
     },
@@ -2924,6 +2924,28 @@ function renderDashboard() {
         </div>
       </div>
     </div>
+
+    <!-- Staff Attendance Tracker (monthly heatmap: employees × days) -->
+    <div class="db-card" style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div class="db-card-title"><i class="ti ti-calendar-stats"></i> ${isBm?'Penjejak Kehadiran Staff':'Staff Attendance Tracker'}</div>
+          <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Status setiap staff, hari demi hari':"Every staff member's status, day by day"}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="db-att-month" class="form-select" style="padding:6px 10px;font-size:12px" onchange="_dbLoadAttTracker()">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===(new Date()).getMonth()+1?'selected':''}>${new Date(2000,i,1).toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'long'})}</option>`).join('')}</select>
+          <input id="db-att-year" type="number" class="form-input" style="width:80px;padding:6px 8px;font-size:12px" value="${(new Date()).getFullYear()}" onchange="_dbLoadAttTracker()">
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--db-text3)">
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#16A34A;display:inline-block"></span>${isBm?'Hadir':'Present'}</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#7C3AED;display:inline-block"></span>${isBm?'Bercuti':'On Leave'}</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;display:inline-block"></span>${isBm?'Tidak Hadir':'Absent'}</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#D97706;display:inline-block"></span>${isBm?'Setengah Hari':'Half Day'}</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--db-border2);display:inline-block"></span>${isBm?'Tiada rekod':'No record'}</span>
+      </div>
+      <div id="db-att-tracker" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+    </div>
   </div>`
 
   _dbSyncGlobalTheme()
@@ -3346,6 +3368,7 @@ async function loadDashboardData() {
   _dbRenderLowStock()
   _dbLoadPeople()
   _dbLoadRecentActivity()
+  _dbLoadAttTracker()
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
@@ -3425,19 +3448,20 @@ async function _dbLoadPeople() {
   const now = new Date()
   const today = new Date(now.getTime() + (8*60*60*1000)).toISOString().slice(0,10)
   try {
-    // Step 1: get today's Present attendance
+    // Every status logged for today — present, absent, late, half day, on
+    // leave — not just "present", so this card reflects the full picture
+    // of who's in/out today, not only who clocked in.
     const {data: att, error: attErr} = await sb.from('attendance')
       .select('id, status, clock_in, clock_out, employee_id, date')
       .eq('tenant_id', APP.tenant.id)
       .eq('date', today)
-      .ilike('status', 'present')
       .is('deleted_at', null)
       .order('clock_in', {ascending: true})
-      .limit(20)
+      .limit(50)
     if(attErr) throw attErr
     const list = att || []
     if(!list.length) {
-      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada staff hadir hari ini':'No staff present today'}</div>`
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada rekod kehadiran hari ini':'No attendance logged today'}</div>`
       return
     }
     // Step 2: get employee names
@@ -3450,24 +3474,105 @@ async function _dbLoadPeople() {
         .is('deleted_at', null)
       ;(emps||[]).forEach(e => { empMap[e.id] = e })
     }
+    const badge = _dbAttStatusBadge(isBm)
     el.innerHTML = list.map(a => {
       const emp = empMap[a.employee_id] || {}
       const name = emp.name || 'Staff'
       const position = emp.position || ''
       const initials = _dbInitials(name)
       const clock = a.clock_in ? String(a.clock_in).slice(0,5) : '-'
+      const b = badge(a.status)
       return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
         <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
           <div style="font-size:11px;color:var(--db-text3)">${position}${position && clock!=='-' ? ' · ' : ''}${clock!=='-' ? 'In '+clock : ''}</div>
         </div>
-        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(22,163,74,.12);color:#16A34A;font-weight:500">${isBm?'Hadir':'Present'}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${b.bg};color:${b.color};font-weight:500">${b.label}</span>
       </div>`
     }).join('')
   } catch(err) {
     console.error('_dbLoadPeople', err)
     el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada data kehadiran':'No attendance data'}</div>`
+  }
+}
+
+// Shared status → {label, color, bg} for attendance status chips/cells —
+// used by the Dashboard People card and the Staff Attendance Tracker
+// heatmap so both agree on the same 4-status legend (Design System colors
+// per CLAUDE.md: success/warning/danger + secondary purple for On Leave).
+function _dbAttStatusBadge(isBm) {
+  const map = {
+    present:  { label: isBm?'Hadir':'Present',        color:'#16A34A', bg:'rgba(22,163,74,.14)' },
+    absent:   { label: isBm?'Tidak Hadir':'Absent',    color:'#DC2626', bg:'rgba(220,38,38,.14)' },
+    late:     { label: isBm?'Lewat':'Late',            color:'#D97706', bg:'rgba(217,119,6,.14)' },
+    half_day: { label: isBm?'Setengah Hari':'Half Day',color:'#D97706', bg:'rgba(217,119,6,.14)' },
+    on_leave: { label: isBm?'Bercuti':'On Leave',      color:'#7C3AED', bg:'rgba(124,58,237,.14)' },
+  }
+  return s => map[s] || { label: isBm?'Bercuti':'On Leave', color:'#7C3AED', bg:'rgba(124,58,237,.14)' }
+}
+
+// Monthly employees × days heatmap — one row per employee, one cell per
+// calendar day of the picked month (28-31 depending on month/year),
+// coloured by that day's attendance status. Empty/grey cell = no record
+// logged for that employee that day (e.g. weekend or just not logged yet).
+async function _dbLoadAttTracker() {
+  const el = document.getElementById('db-att-tracker')
+  if(!el || !APP.tenant.id) return
+  const isBm = APP.language === 'bm'
+  const month = Number(document.getElementById('db-att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('db-att-year')?.value) || new Date().getFullYear()
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const from = `${year}-${String(month).padStart(2,'0')}-01`
+  const to = `${year}-${String(month).padStart(2,'0')}-${String(daysInMonth).padStart(2,'0')}`
+  try {
+    const {data: employees, error: empErr} = await sb.from('employees')
+      .select('id, name')
+      .eq('tenant_id', APP.tenant.id)
+      .is('deleted_at', null)
+      .order('name', {ascending: true})
+      .limit(50)
+    if(empErr) throw empErr
+    if(!employees || !employees.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Tiada staf lagi':'No staff yet'}</div>`
+      return
+    }
+    const {data: att, error: attErr} = await sb.from('attendance')
+      .select('employee_id, date, status')
+      .eq('tenant_id', APP.tenant.id)
+      .is('deleted_at', null)
+      .gte('date', from).lte('date', to)
+    if(attErr) throw attErr
+    const byEmp = {}
+    ;(att||[]).forEach(a => {
+      if(!byEmp[a.employee_id]) byEmp[a.employee_id] = {}
+      byEmp[a.employee_id][a.date] = a.status
+    })
+    const badge = _dbAttStatusBadge(isBm)
+    const emptyColor = 'var(--db-border2)'
+    const days = Array.from({length: daysInMonth}, (_,i) => i+1)
+    el.innerHTML = `<table style="border-collapse:separate;border-spacing:3px">
+      <thead><tr>
+        <th style="text-align:left;font-size:11px;color:var(--db-text3);font-weight:500;padding-right:10px;position:sticky;left:0;background:var(--db-card)">${isBm?'Staf':'Staff'}</th>
+        ${days.map(d=>`<th style="font-size:9px;color:var(--db-text4);font-weight:400;width:13px">${d}</th>`).join('')}
+      </tr></thead>
+      <tbody>${employees.map(e => {
+        const rec = byEmp[e.id] || {}
+        return `<tr>
+          <td style="font-size:12px;color:var(--db-text2);white-space:nowrap;padding-right:10px;position:sticky;left:0;background:var(--db-card)">${_aiEscapeHtml(e.name||'-')}</td>
+          ${days.map(d => {
+            const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+            const status = rec[dateStr]
+            const b = status ? badge(status) : null
+            const title = status ? `${e.name} — ${formatDate(dateStr)}: ${b.label}` : `${e.name} — ${formatDate(dateStr)}: ${isBm?'Tiada rekod':'No record'}`
+            return `<td title="${_aiEscapeHtml(title)}"><div style="width:13px;height:13px;border-radius:3px;background:${status?b.color:emptyColor};opacity:${status?1:0.5}"></div></td>`
+          }).join('')}
+        </tr>`
+      }).join('')}</tbody>
+    </table>`
+  } catch(err) {
+    console.error('_dbLoadAttTracker', err)
+    el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Tiada data kehadiran':'No attendance data'}</div>`
   }
 }
 
@@ -17692,6 +17797,7 @@ async function renderAttendance(params={}) {
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="absent"> ${t.absent}</label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="late"> ${t.late}</label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="half_day"> ${t.halfDay}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="on_leave"> ${t.onLeave}</label>
         </div>
       </div>
       <div class="form-group"><label class="form-label">${t.clockIn}</label><input id="att-clock-in" type="time" class="form-input"></div>
@@ -17748,7 +17854,7 @@ async function _attendanceLoadTable(month, year) {
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _attendanceRecords = data || []
   if(_attendanceRecords.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
-  const statusColor = s => s==='present'?'var(--success)':s==='absent'?'var(--danger)':s==='late'?'var(--warning)':'var(--text-3)'
+  const statusColor = s => s==='present'?'var(--success)':s==='absent'?'var(--danger)':s==='late'||s==='half_day'?'var(--warning)':'#7C3AED'
   const statusLabel = s => s==='present'?t.present:s==='absent'?t.absent:s==='late'?t.late:s==='half_day'?t.halfDay:t.onLeave
   wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.employee}</th><th>${t.status}</th><th>${t.notes}</th><th></th></tr></thead>
   <tbody>${_attendanceRecords.map(a=>`<tr>
