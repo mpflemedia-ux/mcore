@@ -4593,7 +4593,7 @@ FOR SELECT USING (
       <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.filter(d=>d.onboarding_completed).length}</div>
     </div>
   </div>
-  <table><thead><tr>
+  <div style="overflow-x:auto"><table><thead><tr>
     <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.users}</th><th>${t.created}</th>
   </tr></thead><tbody>
   ${data.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
@@ -4605,7 +4605,7 @@ FOR SELECT USING (
     <td>${countMap[d.id]||'—'}</td>
     <td style="font-size:12px">${d.created_at?formatDate(String(d.created_at).slice(0,10)):'—'}</td>
   </tr>`).join('')}
-  </tbody></table>`
+  </tbody></table></div>`
 }
 
 async function renderAdminTenantDetail(tenantId) {
@@ -6557,6 +6557,7 @@ async function renderCustomerSOA(id) {
     <div style="margin-top:28px">
       <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--primary)">${t.payments}</div>
       ${(!pays||!pays.length) ? `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${t.noPay}</div>` : `
+      <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--bg)">
           <th style="padding:10px;text-align:left">${t.date}</th>
@@ -6580,7 +6581,8 @@ async function renderCustomerSOA(id) {
             <td style="padding:12px 10px;text-align:right;color:var(--success)">${formatRM(pays.reduce((s,p)=>s+Number(p.amount||0),0))}</td>
           </tr>
         </tfoot>
-      </table>`}
+      </table>
+      </div>`}
     </div>
   </div>`
 
@@ -7244,7 +7246,7 @@ async function renderFADetail(id) {
 
   <div class="card" style="max-width:800px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.projTitle}</div>
-    <div style="max-height:320px;overflow-y:auto"><table><thead><tr><th>${t.month}</th><th style="text-align:right">${t.depAmount}</th><th style="text-align:right">${t.accumulated}</th><th style="text-align:right">${t.nbv}</th></tr></thead>
+    <div style="max-height:320px;overflow:auto"><table><thead><tr><th>${t.month}</th><th style="text-align:right">${t.depAmount}</th><th style="text-align:right">${t.accumulated}</th><th style="text-align:right">${t.nbv}</th></tr></thead>
     <tbody>${scheduleRows.map(r=>`<tr><td>${r.month.toLocaleDateString('en-MY',{month:'short',year:'numeric'})}</td><td style="text-align:right">${formatRM(r.amount)}</td><td style="text-align:right">${formatRM(r.accum)}</td><td style="text-align:right">${formatRM(r.nbv)}</td></tr>`).join('')}</tbody></table></div>
   </div>
 
@@ -7909,10 +7911,10 @@ async function renderJournalForm(id=null) {
       </div>
     </div>
     <div style="padding:0 20px">
-      <table>
+      <div style="overflow-x:auto"><table>
         <thead><tr><th>${t.account}</th><th style="width:140px;text-align:right">${t.debit}</th><th style="width:140px;text-align:right">${t.credit}</th><th style="width:40px"></th></tr></thead>
         <tbody id="jnl-lines-body"></tbody>
-      </table>
+      </table></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_jnlAddLine()"><i class="ti ti-plus"></i> ${t.addLine}</button>
       <div style="text-align:right;margin-top:12px;font-weight:600" id="jnl-totals"></div>
     </div>
@@ -12086,7 +12088,7 @@ function _bomCard(productId) {
   return `
   <div class="card" style="max-width:600px;margin-top:16px">
     <div class="card-header"><div class="card-title"><i class="ti ti-list-details"></i> ${t.title}</div></div>
-    <div style="padding:0 20px 8px">
+    <div style="padding:0 20px 8px;overflow-x:auto">
       <table><thead><tr><th>${t.component}</th><th style="width:100px">${t.qty}</th><th style="width:36px"></th></tr></thead>
       <tbody>${_bomItems.length ? _bomItems.map(it=>`<tr>
         <td>${prodName(it.products)}</td>
@@ -13927,6 +13929,7 @@ async function renderSupplierSOA(id) {
       </div>
     </div>
     ${(!rows.length) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
+    <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--bg)">
         <th style="padding:10px;text-align:left">${t.bill}</th>
@@ -13955,7 +13958,8 @@ async function renderSupplierSOA(id) {
           <td></td>
         </tr>
       </tfoot>
-    </table>`}
+    </table>
+    </div>`}
   </div>`
 }
 
@@ -14295,14 +14299,14 @@ async function renderPODetail(id) {
       <div><div style="color:var(--text-3);font-size:12px">${t.expectedDate}</div>${formatDate(po.expected_date)}</div>
       <div><span style="color:${statusColor(po.status)};font-weight:700">${statusLabel(po.status)}</span></div>
     </div>
-    <table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.qtyReceived}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.amount}</th></tr></thead>
+    <div style="overflow-x:auto"><table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.qtyReceived}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.amount}</th></tr></thead>
     <tbody>${(items||[]).map(it=>`<tr>
       <td>${it.description||prodName(it.products)||'-'}</td>
       <td style="text-align:right">${it.qty}</td>
       <td style="text-align:right;${Number(it.qty_received)>=Number(it.qty)?'color:var(--success);font-weight:600':''}">${it.qty_received}</td>
       <td style="text-align:right">${formatRM(it.unit_cost)}</td>
       <td style="text-align:right">${formatRM(it.line_total)}</td>
-    </tr>`).join('')}</tbody></table>
+    </tr>`).join('')}</tbody></table></div>
     <div style="text-align:right;margin-top:16px;font-weight:700;font-size:16px">${t.total}: ${formatRM(po.total)}</div>
     ${po.notes ? `<div style="margin-top:12px;color:var(--text-2);font-size:13px">${t.notes}: ${_aiEscapeHtml(po.notes)}</div>` : ''}
   </div>
@@ -14347,7 +14351,7 @@ async function renderGRNForm(poId) {
       <div class="form-group"><label class="form-label">${t.receivedDate}</label><input id="grn-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div style="padding:0 20px">
-      <table><thead><tr><th>${t.product}</th><th style="text-align:right">${t.qtyOrdered}</th><th style="text-align:right">${t.qtyReceivedSoFar}</th><th style="text-align:right">${t.qtyReceiveNow}</th></tr></thead>
+      <div style="overflow-x:auto"><table><thead><tr><th>${t.product}</th><th style="text-align:right">${t.qtyOrdered}</th><th style="text-align:right">${t.qtyReceivedSoFar}</th><th style="text-align:right">${t.qtyReceiveNow}</th></tr></thead>
       <tbody id="grn-items-body">${_grnItems.map((it,i)=>{
         const remaining = Number(it.qty) - Number(it.qty_received)
         return `<tr>
@@ -14356,7 +14360,7 @@ async function renderGRNForm(poId) {
           <td style="text-align:right">${it.qty_received}</td>
           <td style="width:110px"><input type="number" min="0" max="${remaining}" class="form-input" style="text-align:right" value="${Math.max(0,remaining)}" oninput="_grnItems[${i}].receive_now=this.value" ${remaining<=0?'disabled':''}></td>
         </tr>`
-      }).join('')}</tbody></table>
+      }).join('')}</tbody></table></div>
     </div>
     <div style="padding:20px"><div class="form-group"><label class="form-label">${t.notes}</label><textarea id="grn-notes" class="form-input" rows="2"></textarea></div></div>
     <div style="padding:0 20px 20px;display:flex;gap:12px;flex-wrap:wrap">
@@ -14741,7 +14745,7 @@ async function renderSupplierBillDetail(id) {
   <div class="card" style="max-width:900px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
     ${(!payments||payments.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
-    `<table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th><th style="width:48px"></th></tr></thead>
+    `<div style="overflow-x:auto"><table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th><th style="width:48px"></th></tr></thead>
     <tbody>${payments.map(p=>`<tr>
       <td>${formatDate(p.payment_date)}</td>
       <td style="text-align:right">${formatRM(p.amount)}</td>
@@ -14752,7 +14756,7 @@ async function renderSupplierBillDetail(id) {
           <i class="ti ti-ban"></i>
         </button>
       </td>
-    </tr>`).join('')}</tbody></table>`}
+    </tr>`).join('')}</tbody></table></div>`}
   </div>`
 }
 
@@ -15945,8 +15949,8 @@ async function renderWOForm(productId) {
     ${_woBomItems.length>0 ? `
     <div class="form-group">
       <label class="form-label">${t.materialsReq}</label>
-      <table><thead><tr><th>${t.component}</th><th style="text-align:right">${t.required}</th><th style="text-align:right">${t.currentStock}</th><th>${t.status}</th></tr></thead>
-      <tbody id="wo-materials-body"></tbody></table>
+      <div style="overflow-x:auto"><table><thead><tr><th>${t.component}</th><th style="text-align:right">${t.required}</th><th style="text-align:right">${t.currentStock}</th><th>${t.status}</th></tr></thead>
+      <tbody id="wo-materials-body"></tbody></table></div>
     </div>` : ''}
     <div class="form-group"><label class="form-label">${t.materials}</label><textarea id="wo-materials" class="form-input" rows="3" placeholder="${t.materialsPh}"></textarea></div>
     <div class="form-group">
@@ -16737,17 +16741,17 @@ async function renderApplicantForm(id) {
     </div>
 
     <div style="font-weight:700;margin:20px 0 12px">${t.sec3}</div>
-    <table><thead><tr><th>${t.qualification}</th><th>${t.institution}</th><th>${t.yearCompleted}</th><th></th></tr></thead>
-    <tbody id="app-edu-body"></tbody></table>
+    <div style="overflow-x:auto"><table><thead><tr><th>${t.qualification}</th><th>${t.institution}</th><th>${t.yearCompleted}</th><th></th></tr></thead>
+    <tbody id="app-edu-body"></tbody></table></div>
     <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_appAddEduRow()"><i class="ti ti-plus"></i> ${t.addRow}</button>
 
     <div style="font-weight:700;margin:20px 0 12px">${t.sec4}</div>
-    <table><thead><tr><th>${t.company}</th><th>${t.positionDuration}</th><th>${t.reasonLeaving}</th><th></th></tr></thead>
-    <tbody id="app-emp-body"></tbody></table>
+    <div style="overflow-x:auto"><table><thead><tr><th>${t.company}</th><th>${t.positionDuration}</th><th>${t.reasonLeaving}</th><th></th></tr></thead>
+    <tbody id="app-emp-body"></tbody></table></div>
     <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_appAddEmpRow()"><i class="ti ti-plus"></i> ${t.addRow}</button>
 
     <div style="font-weight:700;margin:20px 0 12px">${t.sec5}</div>
-    <table><thead><tr><th></th><th>${t.spoken}</th><th>${t.written}</th></tr></thead>
+    <div style="overflow-x:auto"><table><thead><tr><th></th><th>${t.spoken}</th><th>${t.written}</th></tr></thead>
     <tbody>
       <tr><td>${t.bm}</td>
         <td><select id="app-lang-bm-spoken" class="form-select">${_appProficiencyOptions(lang.bm?.spoken)}</select></td>
@@ -16761,7 +16765,7 @@ async function renderApplicantForm(id) {
         <td><select id="app-lang-others-spoken" class="form-select">${_appProficiencyOptions(lang.others?.spoken)}</select></td>
         <td><select id="app-lang-others-written" class="form-select">${_appProficiencyOptions(lang.others?.written)}</select></td>
       </tr>
-    </tbody></table>
+    </tbody></table></div>
 
     <div style="font-weight:700;margin:20px 0 12px">${t.sec6}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
