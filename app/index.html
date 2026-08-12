@@ -18857,16 +18857,34 @@ function _posRenderShiftStatus() {
   const el = document.getElementById('pos-shift-status')
   if(!el) return
   const t = APP.language==='bm'
-    ? { open:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift', closeShift:'Tutup Shift' }
-    : { open:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift', closeShift:'Close Shift' }
+    ? { open:'Shift dibuka', openingCash:'Tunai Pembukaan', noShift:'Tiada shift dibuka', startShift:'Mula Shift', closeShift:'Tutup Shift', shiftSales:'Jualan Shift' }
+    : { open:'Shift open', openingCash:'Opening Cash', noShift:'No shift open', startShift:'Start Shift', closeShift:'Close Shift', shiftSales:'Shift Sales' }
   if(_posCurrentSession) {
     const opened = _posCurrentSession.opened_at ? new Date(_posCurrentSession.opened_at).toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit'}) : ''
     el.innerHTML = `<span style="color:var(--success);font-weight:600"><i class="ti ti-circle-check"></i> ${t.open}</span>
       <span style="color:var(--text-3);margin-left:8px">${t.openingCash}: ${formatRM(_posCurrentSession.opening_cash)} — ${opened}</span>
+      <span id="pos-shift-sales-badge" style="margin-left:10px;padding:4px 12px;border-radius:999px;background:var(--bg-card);border:1px solid var(--border);font-weight:700;color:var(--primary);white-space:nowrap"><i class="ti ti-cash-register"></i> ${t.shiftSales}: <span id="pos-shift-sales-val">…</span></span>
       <button class="btn btn-outline btn-sm" style="margin-left:10px" onclick="_posOpenEndShiftModal('${_posCurrentSession.id}')"><i class="ti ti-clock-stop"></i> ${t.closeShift}</button>`
+    _posLoadShiftSalesTotal()
   } else {
     el.innerHTML = `<span style="color:var(--text-3)">${t.noShift}</span>
       <button class="btn btn-primary btn-sm" style="margin-left:10px" onclick="_posOpenShiftModal()"><i class="ti ti-clock-play"></i> ${t.startShift}</button>`
+  }
+}
+
+// Running total for the badge next to "Close Shift" — net of any refunds
+// already voided against this session, so it reads as "what's actually in
+// the till right now", not just gross sales. Re-called after every
+// checkout (_posCheckout) so it updates live without a page refresh.
+async function _posLoadShiftSalesTotal() {
+  const el = document.getElementById('pos-shift-sales-val')
+  if(!el || !_posCurrentSession) return
+  try {
+    const totals = await _posComputeSessionTotals(_posCurrentSession.id)
+    el.textContent = formatRM(totals.total_sales - totals.total_refunds)
+  } catch(e) {
+    console.error('_posLoadShiftSalesTotal error:', e)
+    el.textContent = '-'
   }
 }
 
@@ -19336,6 +19354,7 @@ async function _posCheckout() {
   _posProducts = refreshed || []
   _posRenderGrid()
   _posRenderCart()
+  _posLoadShiftSalesTotal()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
