@@ -4872,7 +4872,35 @@ async function renderSettings(params={}) {
   }
   document.getElementById('main').innerHTML=`
   <div class="page-header"><div class="page-title">${t.title}</div></div>
-  <div class="card" style="max-width:500px">
+  ${(() => {
+    const isBm = APP.language==='bm'
+    const items = [{id:'stg-account', en:'Account', bm:'Akaun'}]
+    if(isAdmin) items.push(
+      {id:'stg-company', en:'Company Profile', bm:'Profil Syarikat'},
+      {id:'stg-golive', en:'Go-Live Checklist', bm:'Go-Live'},
+      {id:'stg-default-accounts', en:'Default Accounts', bm:'Akaun Default'},
+      {id:'stg-backfill', en:'Backfill Journals', bm:'Backfill Jurnal'}
+    )
+    items.push(
+      {id:'stg-compliance', en:'Compliance', bm:'Pematuhan'},
+      {id:'stg-tax', en:'Tax Guidance', bm:'Panduan Cukai'},
+      {id:'stg-docgen', en:'Doc Generator', bm:'Penjana Dokumen'}
+    )
+    if(isAdmin) items.push({id:'stg-periodlock', en:'Period Lock', bm:'Kunci Tempoh'})
+    items.push(
+      {id:'stg-pin', en:'Security PIN', bm:'PIN Keselamatan'},
+      {id:'stg-backup', en:'Data Backup', bm:'Sandaran Data'},
+      {id:'stg-fraud', en:'Fraud Check', bm:'Semakan Penipuan'}
+    )
+    if(isAdmin) items.push(
+      {id:'stg-audit', en:'Audit Log', bm:'Log Audit'},
+      {id:'stg-roles', en:'Role Permissions', bm:'Kebenaran Peranan'}
+    )
+    return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:16px">
+      ${items.map(it=>`<button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;flex:none" onclick="document.getElementById('${it.id}')?.scrollIntoView({behavior:'smooth',block:'start'})">${isBm?it.bm:it.en}</button>`).join('')}
+    </div>`
+  })()}
+  <div class="card" style="max-width:500px" id="stg-account">
     <div class="card-header"><div class="card-title">${t.account}</div></div>
     <div style="display:flex;flex-direction:column;gap:14px">
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.name}</label><input type="text" class="form-select" value="${APP.user.name||''}" readonly></div>
@@ -4883,7 +4911,7 @@ async function renderSettings(params={}) {
     </div>
   </div>
   ${isAdmin ? `
-  <div class="card" style="max-width:900px;margin-top:16px">
+  <div class="card" style="max-width:900px;margin-top:16px" id="stg-company">
     <div class="card-header"><div class="card-title">${cp.title}</div></div>
     <div style="padding:16px">
       <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px">
@@ -4992,7 +5020,7 @@ async function renderSettings(params={}) {
     </div>
   </div>` : ''}
   ${isAdmin ? `
-  <div class="card" style="max-width:700px;margin-top:16px">
+  <div class="card" style="max-width:700px;margin-top:16px" id="stg-golive">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Senarai Semak Go-Live':'Go-Live Checklist'}</div></div>
     <div style="padding:16px">
       <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5">${APP.language==='bm'
@@ -5032,7 +5060,7 @@ async function renderSettings(params={}) {
     </div>
   </div>` : ''}
   ${isAdmin ? `
-  <div class="card" style="max-width:700px;margin-top:16px">
+  <div class="card" style="max-width:700px;margin-top:16px" id="stg-default-accounts">
     <div class="card-header"><div class="card-title">${da.title}</div></div>
     <div style="padding:16px">
       <div style="font-size:12px;color:var(--text-3);margin-bottom:16px;line-height:1.5">${da.note}</div>
@@ -5055,7 +5083,7 @@ async function renderSettings(params={}) {
     </div>
   </div>` : ''}
   ${isAdmin ? `
-  <div class="card" style="max-width:900px;margin-top:16px">
+  <div class="card" style="max-width:900px;margin-top:16px" id="stg-backfill">
     <div class="card-header"><div class="card-title">${bf.title}</div></div>
     <div style="padding:16px">
       <div style="font-size:12px;color:var(--text-3);margin-bottom:16px;line-height:1.5">${bf.note}</div>
@@ -5070,11 +5098,11 @@ async function renderSettings(params={}) {
       <div id="bf-result-wrap"></div>
     </div>
   </div>` : ''}
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-compliance">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Peringatan Pematuhan':'Compliance Reminders'}</div></div>
     <div id="compliance-reminders-wrap" style="padding:16px"></div>
   </div>
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-tax">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Panduan Cukai AI':'AI Tax Guidance'}</div></div>
     <div style="padding:16px">
       <div style="font-size:12px;color:var(--warning);background:var(--warning-light,rgba(217,119,6,.1));border:1px solid var(--warning);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px">
@@ -5087,7 +5115,7 @@ async function renderSettings(params={}) {
       <div id="tax-answer-out" style="margin-top:12px;font-size:13px;line-height:1.6"></div>
     </div>
   </div>
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-docgen">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Penjana Dokumen AI':'AI Document Generator'}</div></div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <div class="form-group">
@@ -5105,7 +5133,7 @@ async function renderSettings(params={}) {
     </div>
   </div>
   ${isAdmin ? `
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-periodlock">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Kunci Tempoh':'Period Lock'}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.5">${APP.language==='bm'
@@ -5119,7 +5147,7 @@ async function renderSettings(params={}) {
       </div>
     </div>
   </div>` : ''}
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-pin">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'PIN Keselamatan (2FA)':'Security PIN (2FA)'}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
@@ -5136,7 +5164,7 @@ async function renderSettings(params={}) {
       <button class="btn btn-primary btn-sm" onclick="_settingsSavePin()"><i class="ti ti-lock"></i> ${APP.language==='bm'?'Simpan PIN':'Save PIN'}</button>
     </div>
   </div>
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-backup">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Sandaran Data':'Data Backup'}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
@@ -5151,7 +5179,7 @@ async function renderSettings(params={}) {
       <div id="backup-export-status" style="margin-top:10px;font-size:12px;color:var(--text-3)"></div>
     </div>
   </div>
-  <div class="card" style="max-width:500px;margin-top:16px">
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-fraud">
     <div class="card-header"><div class="card-title">${APP.language==='bm'?'Semakan Penipuan AI':'AI Fraud Check'}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
@@ -5176,7 +5204,7 @@ async function renderSettings(params={}) {
     </div>
   </div>
   ${isAdmin ? `
-  <div class="card" style="max-width:700px;margin-top:16px">
+  <div class="card" style="max-width:700px;margin-top:16px" id="stg-audit">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
       <div class="card-title">${APP.language==='bm'?'Log Audit':'Audit Log'}</div>
       <button class="btn btn-outline btn-sm" onclick="openPage('settings',{view:'audit'})"><i class="ti ti-list"></i> ${APP.language==='bm'?'Lihat semua':'View all'}</button>
@@ -5186,7 +5214,7 @@ async function renderSettings(params={}) {
       <div id="settings-audit-preview"><div class="spinner" style="width:16px;height:16px"></div></div>
     </div>
   </div>
-  <div class="card" style="max-width:600px;margin-top:16px">
+  <div class="card" style="max-width:600px;margin-top:16px" id="stg-roles">
     <div class="card-header"><div class="card-title">${rp.title}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:12px">${rp.note}</p>
