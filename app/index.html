@@ -22325,33 +22325,38 @@ async function obFinish() {
   if(btn) { btn.disabled = true; btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> ${L==='bm'?'Menyimpan...':'Saving...'}` }
 
   try {
-    // Resolve tenant id: memory → localStorage → profile → register_tenant repair
-    if(!APP.tenant.id) {
-      try { APP.tenant.id = localStorage.getItem('nexerp_pending_tenant_id') || null } catch(e) {}
-    }
+    // Resolve tenant: memory → localStorage → get_my_tenant_id RPC → profile → register_tenant
     const { data: { user } } = await sb.auth.getUser()
     if(!user) throw new Error(L==='bm'?'Sesi tamat. Sila log masuk semula.':'Session expired. Please sign in again.')
     APP.user.id = user.id
     if(!APP.tenant.id) {
-      for(let attempt = 0; attempt < 5 && !APP.tenant.id; attempt++) {
-        if(attempt > 0) await new Promise(r => setTimeout(r, 700))
-        const { data: profiles, error: pErr } = await sb.from('user_profiles')
-          .select('id, tenant_id, role, full_name')
+      try { APP.tenant.id = localStorage.getItem('nexerp_pending_tenant_id') || null } catch(e) {}
+    }
+    if(!APP.tenant.id) {
+      try {
+        const { data: tid, error: tRpcErr } = await sb.rpc('get_my_tenant_id')
+        if(!tRpcErr && tid) APP.tenant.id = tid
+        else if(tRpcErr) console.warn('get_my_tenant_id', tRpcErr)
+      } catch(e) { console.warn(e) }
+    }
+    if(!APP.tenant.id) {
+      for(let attempt = 0; attempt < 3 && !APP.tenant.id; attempt++) {
+        if(attempt > 0) await new Promise(r => setTimeout(r, 500))
+        const { data: profile, error: pErr } = await sb.from('user_profiles')
+          .select('tenant_id, role, full_name')
           .eq('id', user.id)
+          .maybeSingle()
         if(pErr) console.warn('profile fetch', pErr)
-        const profile = (profiles && profiles[0]) || null
-        if(profile?.tenant_id) {
+        if(profile && profile.tenant_id) {
           APP.tenant.id = profile.tenant_id
           if(profile.role) APP.user.role = profile.role
           if(profile.full_name) APP.user.name = profile.full_name
         }
       }
     }
-    // Repair if still no tenant: profile may exist (409 on register_tenant)
     if(!APP.tenant.id) {
       const company = OB.data.company_name || 'My Company'
       const tenantCode = (company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) || 'NEX') + Math.floor(Math.random()*900+100)
-      // Try register_tenant once
       const { data: rpcData, error: rpcError } = await sb.rpc('register_tenant', {
         p_user_id: user.id,
         p_tenant_name: company,
@@ -22362,46 +22367,22 @@ async function obFinish() {
         p_plan_code: 'starter'
       })
       if(!rpcError) {
-        const tid = rpcData?.tenant_id || rpcData?.id || (typeof rpcData==='string' ? rpcData : null)
-        if(tid) APP.tenant.id = tid
+        APP.tenant.id = (rpcData && (rpcData.tenant_id || rpcData.id)) || null
       } else {
-        console.warn('repair register_tenant', rpcError)
-        // Duplicate profile: re-read tenant_id after brief wait
-        await new Promise(r => setTimeout(r, 500))
-        const { data: profiles } = await sb.from('user_profiles').select('tenant_id, role, full_name').eq('id', user.id)
-        const p2 = profiles && profiles[0]
-        if(p2?.tenant_id) {
-          APP.tenant.id = p2.tenant_id
-          if(p2.role) APP.user.role = p2.role
-        } else {
-          // Manual: insert tenant + link profile (no second profile insert)
-          const tid = crypto.randomUUID()
-          const { error: tErr } = await sb.from('tenants').insert({
-            id: tid,
-            name: company,
-            code: tenantCode,
-            onboarding_completed: false
-          })
-          if(tErr) {
-            console.error('tenant insert', tErr)
-            throw new Error((L==='bm'?'Gagal cipta syarikat: ':'Could not create company: ') + (tErr.message || rpcError.message))
-          }
-          const { error: uErr } = await sb.from('user_profiles').update({
-            tenant_id: tid,
-            role: 'owner',
-            full_name: APP.user.name || user.email || 'Owner'
-          }).eq('id', user.id)
-          if(uErr) {
-            console.error('profile link', uErr)
-            throw new Error((L==='bm'?'Gagal pautkan profil: ':'Could not link profile: ') + uErr.message)
-          }
-          APP.tenant.id = tid
-          APP.user.role = 'owner'
-        }
+        console.warn('register_tenant', rpcError)
+        try {
+          const { data: tid2 } = await sb.rpc('get_my_tenant_id')
+          if(tid2) APP.tenant.id = tid2
+        } catch(e) {}
       }
-      if(APP.tenant.id) try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
     }
-    if(!APP.tenant.id) throw new Error(L==='bm'?'ID tenant tidak dijumpai. Sila log masuk semula.':'Tenant ID not found. Please sign in again.')
+    if(!APP.tenant.id) {
+      throw new Error(L==='bm'
+        ? 'ID tenant tidak dijumpai. Jalankan SQL get_my_tenant_id + RLS, kemudian cuba lagi.'
+        : 'Tenant ID not found. Apply get_my_tenant_id RPC + RLS, then try again.')
+    }
+    try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
+    if(!APP.user.role) APP.user.role = 'owner'
 
     const companyData = {
       name: OB.data.company_name,
