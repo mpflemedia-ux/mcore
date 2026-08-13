@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-mystates">
+<meta name="nexerp-build" content="2026-08-14-tidnull">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1429,6 +1429,20 @@ const APP = {
   tenantConfig: { modules:{}, features:{}, roles:{} },
   language: 'en', theme: 'light', currentPage: null,
 }
+
+/** Normalize tenant UUID — never pass string "null" to PostgREST */
+function _validTenantId(id) {
+  if(id == null || id === false) return null
+  const s = String(id).trim()
+  if(!s || s === 'null' || s === 'undefined' || s === 'NaN') return null
+  // basic UUID shape
+  if(s.length < 32) return null
+  return s
+}
+function getTenantId() {
+  return _validTenantId(APP.tenant && APP.tenant.id)
+}
+
 
 // LANG
 const LANG = {
@@ -3099,19 +3113,43 @@ async function loadUserSession(user, opts={}) {
     APP.language=profile.language||'en'
     APP.theme = localStorage.getItem('nexerp_theme') || profile.theme || 'light'
     applyTheme(APP.theme)
+    // Always prefer profile.tenant_id (even when tenants embed/select fails RLS)
+    APP.tenant.id = _validTenantId(profile.tenant_id) || _validTenantId(profile.tenants && profile.tenants.id)
+    if(!APP.tenant.id) {
+      try {
+        const { data: tid } = await sb.rpc('get_my_tenant_id')
+        APP.tenant.id = _validTenantId(tid)
+      } catch(e) { console.warn('get_my_tenant_id session', e) }
+    }
     if(profile.tenants){
-      APP.tenant.id=profile.tenants.id
-      APP.tenant.code=profile.tenants.code
-      APP.tenant.name=profile.tenants.name
-      APP.tenant.config=profile.tenants.config||{}
-      APP.tenantConfig.roles=(function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
-      if(!profile.tenants.onboarding_completed) {
+      APP.tenant.id = _validTenantId(profile.tenants.id) || APP.tenant.id
+      APP.tenant.code = profile.tenants.code
+      APP.tenant.name = profile.tenants.name
+      APP.tenant.config = profile.tenants.config || {}
+      APP.tenantConfig.roles = (function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
+    } else if(APP.tenant.id) {
+      // Fetch tenant row separately when embed missing
+      try {
+        const { data: trow } = await sb.from('tenants').select('*').eq('id', APP.tenant.id).maybeSingle()
+        if(trow) {
+          profile.tenants = trow
+          APP.tenant.code = trow.code
+          APP.tenant.name = trow.name
+          APP.tenant.config = trow.config || {}
+          APP.tenantConfig.roles = (function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
+        }
+      } catch(e) { console.warn('tenant fetch', e) }
+    }
+    if(APP.tenant.id) {
+      try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
+    }
+    const onboardDone = profile.tenants ? profile.tenants.onboarding_completed : true
+    if(APP.tenant.id && profile.tenants && !profile.tenants.onboarding_completed) {
         const r = String(profile.role||APP.user.role||'').toLowerCase()
         if(r==='owner'||r==='admin'||isPlatformAdmin()) {
           showOnboarding()
           return
         }
-        // Staff/invite: enter app; admin still finishing setup
         showShell()
         setTimeout(() => {
           try {
@@ -3120,7 +3158,10 @@ async function loadUserSession(user, opts={}) {
           } catch(e) {}
         }, 800)
         return
-      }
+    }
+    if(!APP.tenant.id) {
+      console.error('Session: no tenant_id for user', user.id)
+      showToast(APP.language==='bm'?'Akaun tiada syarikat dipautkan. Hubungi admin.':'Account has no company linked. Contact admin.','error')
     }
     showShell()
   })()
@@ -22333,7 +22374,7 @@ async function obFinish() {
     if(!user) throw new Error(L==='bm'?'Sesi tamat. Sila log masuk semula.':'Session expired. Please sign in again.')
     APP.user.id = user.id
     if(!APP.tenant.id) {
-      try { APP.tenant.id = localStorage.getItem('nexerp_pending_tenant_id') || null } catch(e) {}
+      try { APP.tenant.id = _validTenantId(localStorage.getItem('nexerp_pending_tenant_id')) } catch(e) {}
     }
     if(!APP.tenant.id) {
       try {
