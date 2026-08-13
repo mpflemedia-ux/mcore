@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-att">
+<meta name="nexerp-build" content="2026-08-13-att2">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18452,16 +18452,46 @@ async function renderAttendance(params={}) {
 
   // Staff: lock to self (match email or full name). Admin/owner keep full list.
   const isStaffOnly = !isTenantAdmin() && !isPlatformAdmin() && APP.user.role !== 'manager'
-  const norm = s => String(s||'').trim().toLowerCase()
+  const norm = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ')
   const myEmail = norm(APP.user.email)
   const myName = norm(APP.user.name)
-  let selfEmp = null
-  if(employees && employees.length) {
-    selfEmp = employees.find(e => myEmail && norm(e.email) && norm(e.email) === myEmail)
-      || employees.find(e => myName && norm(e.name) === myName)
-      || employees.find(e => myName && (norm(e.name).includes(myName) || myName.includes(norm(e.name))))
+  // Agustus vs Augustus etc. — allow small typos (edit distance ≤ 2)
+  const _namesClose = (a, b) => {
+    if(!a || !b) return false
+    if(a === b) return true
+    if(a.includes(b) || b.includes(a)) return true
+    const aa = a.replace(/[^a-z]/g,''), bb = b.replace(/[^a-z]/g,'')
+    if(aa === bb) return true
+    if(Math.abs(aa.length - bb.length) > 2) return false
+    // simple Levenshtein capped
+    const m = aa.length, n = bb.length
+    const dp = Array.from({length: m+1}, (_,i) => Array(n+1).fill(0))
+    for(let i=0;i<=m;i++) dp[i][0]=i
+    for(let j=0;j<=n;j++) dp[0][j]=j
+    for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)
+      dp[i][j] = aa[i-1]===bb[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+    return dp[m][n] <= 2
   }
-  const empList = (isStaffOnly && selfEmp) ? [selfEmp] : (employees||[])
+  let selfEmp = null
+  let empRows = employees || []
+  // Direct email lookup (in case list is incomplete under RLS)
+  if(myEmail && !selfEmp) {
+    try {
+      const {data: byMail} = await sb.from('employees').select('id,name,email')
+        .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+        .ilike('email', myEmail)
+      if(byMail && byMail.length) {
+        selfEmp = byMail[0]
+        // merge into list
+        if(!empRows.find(e => e.id === selfEmp.id)) empRows = [selfEmp, ...empRows]
+      }
+    } catch(e) { console.warn('att email lookup', e) }
+  }
+  if(!selfEmp && empRows.length) {
+    selfEmp = empRows.find(e => myEmail && norm(e.email) && norm(e.email) === myEmail)
+      || empRows.find(e => myName && _namesClose(norm(e.name), myName))
+  }
+  const empList = (isStaffOnly && selfEmp) ? [selfEmp] : empRows
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
