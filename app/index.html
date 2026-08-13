@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-attrls">
+<meta name="nexerp-build" content="2026-08-13-hrstaff">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1500,6 +1500,13 @@ function isTenantAdmin() {
   return role === 'owner' || role === 'admin' || isPlatformAdmin()
 }
 
+/** HR admin: payroll, employees master, job applicants — not rank-and-file staff */
+function canManageHR() {
+  if(isTenantAdmin() || isPlatformAdmin()) return true
+  const role = String((APP.user && APP.user.role) || '').toLowerCase()
+  return role === 'manager' || role === 'hr'
+}
+
 // Default module map when tenant has not configured custom role permissions yet
 const _DEFAULT_ROLE_MODULES = {
   manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','accounting'],
@@ -2840,6 +2847,10 @@ function buildSidebar() {
   NAV_ITEMS.forEach(item=>{
     if(item.section){const s=document.createElement('div');s.className='nav-section';s.textContent=item.section;nav.appendChild(s);return}
     if(!canAccess(item.module)) return
+    // Job Applicants = recruitment admin only
+    if(item.id === 'applicants' && !canManageHR()) return
+    // Reports: staff with only pos/hr must not see financial reports unless role grants reports
+    if(item.id === 'reports' && !canAccess('reports') && !canAccess('accounting')) return
     const label=APP.language==='bm'?item.label_bm:item.label_en
     const el=document.createElement('div')
     el.className='nav-item'
@@ -16851,6 +16862,14 @@ function _calcPayroll(employee) {
 }
 
 function renderHR(params={}) {
+  const hrAdmin = canManageHR()
+  // Staff with HR module: attendance + leave only
+  if(!hrAdmin) {
+    const v = params.view || 'attendance'
+    if(v === 'leave') { renderLeave(params); return }
+    if(v === 'attendance' || !v) { renderAttendance(params); return }
+    renderAccessDenied(); return
+  }
   if(params.view==='employee-form') { renderEmployeeForm(params.id, params.fromApplicantId); return }
   if(params.view==='payroll-run') { renderPayrollRun(); return }
   if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year); return }
@@ -17145,6 +17164,8 @@ async function _employeeDelete(id, name) {
 
 // ─── Job Applicants (Recruitment) ────────────────────────────────────────────
 function renderJobApplicants(params={}) {
+  if(!canManageHR()) { renderAccessDenied(); return }
+
   if(params.view==='applicant-form') { renderApplicantForm(params.id); return }
   renderApplicantList()
 }
