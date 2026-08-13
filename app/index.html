@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-hrstaff">
+<meta name="nexerp-build" content="2026-08-13-hidekpi">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -2992,7 +2992,13 @@ function renderDashboard() {
         {k:'customers', icon:'ti-users', go:"openPage('crm',{})"},
         {k:'topProduct', icon:'ti-package', go:"openPage('inventory',{})"},
         {k:'topInvoice', icon:'ti-file-description', go:"openPage('sales',{})"}
-      ].map(({k,icon,go})=>{
+      ].filter(({k}) => {
+        // Staff: hide financial P&L / payroll cost cards (owner-admin-manager only)
+        if(!canManageHR() && !isTenantAdmin()) {
+          if(k === 'revenue' || k === 'netPL' || k === 'expenses' || k === 'payroll') return false
+        }
+        return true
+      }).map(({k,icon,go})=>{
         // Derive required module from go target so staff with POS-only cannot open Sales/Reports via KPI
         let need = null
         if(/openPage\('sales'/.test(go)) need = 'sales'
