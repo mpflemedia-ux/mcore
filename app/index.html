@@ -5066,9 +5066,8 @@ async function renderSettings(params={}) {
   <div class="page-header"><div class="page-title">${t.title}</div></div>
   ${(() => {
     const isBm = APP.language==='bm'
-    const items = [{id:'stg-account', en:'Account', bm:'Akaun'}]
+    const items = []
     if(isAdmin) items.push(
-      {id:'stg-company', en:'Company Profile', bm:'Profil Syarikat'},
       {id:'stg-golive', en:'Go-Live Checklist', bm:'Go-Live'},
       {id:'stg-default-accounts', en:'Default Accounts', bm:'Akaun Default'},
       {id:'stg-backfill', en:'Backfill Journals', bm:'Backfill Jurnal'}
