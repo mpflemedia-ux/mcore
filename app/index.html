@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-tncol">
+<meta name="nexerp-build" content="2026-08-14-mystates">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -5390,6 +5390,9 @@ async function renderAdminTenantDetail(tenantId) {
     </tr>`).join('')}</tbody></table>`}
   </div>`
 }
+
+
+const MY_STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','Kuala Lumpur','Labuan','Putrajaya']
 
 async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
