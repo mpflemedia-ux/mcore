@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-cintap">
+<meta name="nexerp-build" content="2026-08-13-actall">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3923,30 +3923,44 @@ async function _dbLoadRecentActivity() {
   const el = document.getElementById('db-activity-list')
   if(!el || !APP.tenant.id) return
   const isBm = APP.language === 'bm'
+  // All authenticated roles may view tenant activity (no canAccess gate)
   try {
-    // Only select columns that exist on audit_logs (no user_name / record_id)
-    const {data, error} = await sb.from('audit_logs')
+    let data = null, error = null
+    let res = await sb.from('audit_logs')
       .select('id, action, table_name, created_at, user_id')
       .eq('tenant_id', APP.tenant.id)
       .order('created_at', {ascending: false})
-      .limit(10)
+      .limit(15)
+    data = res.data; error = res.error
+    if(error) {
+      console.warn('_dbLoadRecentActivity audit_logs', error)
+      // Fallback without order (some RLS setups)
+      res = await sb.from('audit_logs')
+        .select('id, action, table_name, created_at, user_id')
+        .eq('tenant_id', APP.tenant.id)
+        .limit(15)
+      data = res.data; error = res.error
+    }
     if(error) throw error
-    const list = data || []
+    let list = data || []
+    list.sort((a,b) => String(b.created_at||'').localeCompare(String(a.created_at||'')))
+    list = list.slice(0, 10)
     if(!list.length) {
       el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada aktiviti terkini':'No recent activity'}</div>`
       return
     }
-    // Resolve user names from user_profiles if possible
     const uids = [...new Set(list.map(a => a.user_id).filter(Boolean))]
     let nameMap = {}
     if(uids.length) {
-      const {data: profiles} = await sb.from('user_profiles')
-        .select('id, full_name')
-        .in('id', uids)
-      ;(profiles||[]).forEach(p => { nameMap[p.id] = p.full_name })
+      try {
+        const {data: profiles} = await sb.from('user_profiles')
+          .select('id, full_name')
+          .in('id', uids)
+        ;(profiles||[]).forEach(p => { nameMap[p.id] = p.full_name })
+      } catch(e) { console.warn('activity names', e) }
     }
     el.innerHTML = list.map(a => {
-      const who = nameMap[a.user_id] || (isBm ? 'Sistem' : 'System')
+      const who = _aiEscapeHtml(nameMap[a.user_id] || (isBm ? 'Sistem' : 'System'))
       const act = _dbActionLabel(a.action)
       const tbl = _dbTableLabel(a.table_name)
       const ago = _dbTimeAgo(a.created_at)
