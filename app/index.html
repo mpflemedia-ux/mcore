@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-access">
+<meta name="nexerp-build" content="2026-08-14-tid">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -2924,17 +2924,22 @@ async function doRegister() {
         p_tenant_name: company || (name + ' Workspace'),
         p_tenant_code: tenantCode,
         p_full_name:   name,
-        p_entity_type: 'pending',
-        p_industry:    'pending',
+        p_entity_type: 'sdn_bhd',
+        p_industry:    'general',
         p_plan_code:   'starter'
       })
       if(rpcError) {
         console.error('register_tenant error:', rpcError)
+        // Still allow account — onboarding can repair tenant link
+        errEl.textContent = 'Account created but company setup had an issue: ' + rpcError.message + ' — Sign in and continue onboarding.'
+        errEl.classList.add('show')
       } else if(rpcData) {
-        APP.tenant.id   = rpcData.tenant_id || null
+        const tid = rpcData.tenant_id || rpcData.id || (typeof rpcData==='string'?rpcData:null)
+        APP.tenant.id   = tid
         APP.tenant.name = company
         APP.user.id     = data.user.id
         APP.user.name   = name
+        if(tid) try { localStorage.setItem('nexerp_pending_tenant_id', tid) } catch(e) {}
         console.log('Tenant created:', rpcData)
       }
       sucEl.textContent='✓ Account created! You can now sign in.'
@@ -22310,19 +22315,50 @@ async function obFinish() {
   if(btn) { btn.disabled = true; btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> ${L==='bm'?'Menyimpan...':'Saving...'}` }
 
   try {
+    // Resolve tenant id: memory → localStorage → profile → register_tenant repair
     if(!APP.tenant.id) {
-      const { data: { user } } = await sb.auth.getUser()
-      if(user) {
-        let profile = null
-        for(let attempt = 0; attempt < 3 && !profile?.tenant_id; attempt++) {
-          if(attempt > 0) await new Promise(r => setTimeout(r, 600))
-          const { data } = await sb.from('user_profiles').select('tenant_id').eq('id', user.id).single()
-          profile = data
+      try { APP.tenant.id = localStorage.getItem('nexerp_pending_tenant_id') || null } catch(e) {}
+    }
+    const { data: { user } } = await sb.auth.getUser()
+    if(!user) throw new Error(L==='bm'?'Sesi tamat. Sila log masuk semula.':'Session expired. Please sign in again.')
+    APP.user.id = user.id
+    if(!APP.tenant.id) {
+      for(let attempt = 0; attempt < 5 && !APP.tenant.id; attempt++) {
+        if(attempt > 0) await new Promise(r => setTimeout(r, 700))
+        const { data: profiles, error: pErr } = await sb.from('user_profiles')
+          .select('id, tenant_id, role, full_name')
+          .eq('id', user.id)
+        if(pErr) console.warn('profile fetch', pErr)
+        const profile = (profiles && profiles[0]) || null
+        if(profile?.tenant_id) {
+          APP.tenant.id = profile.tenant_id
+          if(profile.role) APP.user.role = profile.role
+          if(profile.full_name) APP.user.name = profile.full_name
         }
-        if(profile) APP.tenant.id = profile.tenant_id
       }
     }
-    if(!APP.tenant.id) throw new Error(L==='bm'?'ID tenant tidak dijumpai. Sila log masuk semula.':'Tenant ID not found. Please sign in again.')
+    // Repair: create tenant if still missing (register_tenant failed earlier)
+    if(!APP.tenant.id) {
+      const company = OB.data.company_name || 'My Company'
+      const tenantCode = company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) + Math.floor(Math.random()*100)
+      const { data: rpcData, error: rpcError } = await sb.rpc('register_tenant', {
+        p_user_id: user.id,
+        p_tenant_name: company,
+        p_tenant_code: tenantCode,
+        p_full_name: APP.user.name || user.email || 'Owner',
+        p_entity_type: OB.data.entity_type || 'sdn_bhd',
+        p_industry: OB.data.industry || 'general',
+        p_plan_code: 'starter'
+      })
+      if(rpcError) {
+        console.error('repair register_tenant', rpcError)
+        throw new Error((L==='bm'?'Gagal cipta syarikat: ':'Could not create company: ') + rpcError.message)
+      }
+      const tid = rpcData?.tenant_id || rpcData?.id || (typeof rpcData==='string' ? rpcData : null)
+      if(!tid) throw new Error(L==='bm'?'ID tenant tidak dijumpai selepas cipta.':'Tenant ID missing after create.')
+      APP.tenant.id = tid
+      try { localStorage.setItem('nexerp_pending_tenant_id', tid) } catch(e) {}
+    }
 
     const companyData = {
       name: OB.data.company_name,
@@ -22360,6 +22396,7 @@ async function obFinish() {
     if(upErr) console.warn('tenant flag update', upErr)
 
     APP.tenant.name = OB.data.company_name
+    try { localStorage.removeItem('nexerp_pending_tenant_id') } catch(e) {}
 
     const el = document.getElementById('ob-step-content')
     document.getElementById('ob-steps-indicator').innerHTML = ''
