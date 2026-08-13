@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-rpsyntax">
+<meta name="nexerp-build" content="2026-08-13-leavetab2">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18678,11 +18678,19 @@ async function renderAttendance(params={}) {
   }
   const empList = (isStaffOnly && selfEmp) ? [selfEmp] : empRows
 
+  const attLeaveTabs = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.title}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${APP.language==='bm'?'Cuti':'Leave'}</button>
+      ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
+    </div>`
+
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
   </div></div>
+  ${attLeaveTabs}
   <div class="card" style="max-width:700px;padding:20px;margin-bottom:16px">
     <div class="card-title" style="margin-bottom:12px">${t.logTitle}</div>
     <input type="hidden" id="att-edit-id" value="">
@@ -18846,21 +18854,45 @@ async function renderLeave(params={}) {
     save:'Submit Request', selectEmployee:'-- Select Employee --', balance:'Annual Leave Balance'
   }
 
-  const {data: employees} = await sb.from('employees').select('id,name')
+  const {data: employees} = await sb.from('employees').select('id,name,email')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+
+  const isStaffOnly = !canManageHR()
+  const norm = s => String(s||'').trim().toLowerCase()
+  const myEmail = norm(APP.user.email), myName = norm(APP.user.name)
+  let selfEmp = null
+  let empRows = employees || []
+  try {
+    const {data: mine} = await sb.rpc('my_employee_row')
+    if(mine && mine.length) selfEmp = mine[0]
+  } catch(e) {}
+  if(!selfEmp && empRows.length) {
+    selfEmp = empRows.find(e => myEmail && norm(e.email)===myEmail)
+      || empRows.find(e => myName && norm(e.name)===myName)
+  }
+  if(selfEmp && !empRows.find(e=>e.id===selfEmp.id)) empRows = [selfEmp, ...empRows]
+  const empList = (isStaffOnly && selfEmp) ? [selfEmp] : empRows
+
+  const leaveAttTabs = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${APP.language==='bm'?'Kehadiran':'Attendance'}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.title}</button>
+      ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
+    </div>`
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
   </div></div>
+  ${leaveAttTabs}
   <div class="card" style="max-width:700px;padding:20px;margin-bottom:16px">
     <div class="card-title" style="margin-bottom:12px">${t.applyTitle}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.employee}</label>
         <select id="lv-employee" class="form-select">
           <option value="">${t.selectEmployee}</option>
-          ${(employees||[]).map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}
+          ${empList.map(e=>`<option value="${e.id}" ${selfEmp&&e.id===selfEmp.id?'selected':''}>${_aiEscapeHtml(e.name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label class="form-label">${t.leaveType}</label>
