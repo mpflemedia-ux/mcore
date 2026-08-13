@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-cards">
+<meta name="nexerp-build" content="2026-08-13-hist">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1814,6 +1814,48 @@ document.addEventListener('keydown', function(e) {
   if(e.key === 'Escape') closeGlobalSearch()
 })
 
+let _navFromPopstate = false
+
+function _navHistoryUrl(page, params) {
+  let u = '#/' + encodeURIComponent(page || 'dashboard')
+  if (params && params.view) u += '/' + encodeURIComponent(params.view)
+  return u
+}
+
+
+// Phone/browser Back: navigate previous in-app page instead of leaving to landing
+window.addEventListener('popstate', function nexerpPopstate(e) {
+  const shell = document.getElementById('shell')
+  if (!shell || !shell.classList.contains('active')) return
+  const st = e.state
+  if (st && st.nexerp && st.page) {
+    _navFromPopstate = true
+    openPage(st.page, st.params || {})
+    return
+  }
+  // No in-app state — keep user in app on dashboard (one more Back can leave)
+  try {
+    const page = APP.currentPage || 'dashboard'
+    let params = {}
+    try { params = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(err) {}
+    history.pushState({ nexerp: true, page, params }, '', _navHistoryUrl(page, params))
+  } catch(err) {}
+})
+
+function _navPushHistory(page, params) {
+  if (_navFromPopstate) { _navFromPopstate = false; return }
+  try {
+    const state = { nexerp: true, page, params: params || {} }
+    const url = _navHistoryUrl(page, params)
+    const cur = history.state
+    if (cur && cur.nexerp && cur.page === page && JSON.stringify(cur.params || {}) === JSON.stringify(params || {})) {
+      history.replaceState(state, '', url)
+    } else {
+      history.pushState(state, '', url)
+    }
+  } catch (e) {}
+}
+
 function openPage(page, params={}) {
   try{closeUserDropdown()}catch(e){}
   const item = NAV_ITEMS.find(n=>n.id===page)
@@ -1830,6 +1872,7 @@ function openPage(page, params={}) {
   // of always resetting to that page's own default view.
   try { localStorage.setItem('nexerp_last_params', JSON.stringify(params||{})) } catch(e) {}
   APP.currentPage = page
+  _navPushHistory(page, params)
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page))
   if(item) document.getElementById('header-title').textContent = APP.language==='bm'?item.label_bm:item.label_en
   const main = document.getElementById('main')
@@ -2772,6 +2815,13 @@ function showShell() {
   const alreadyActive = document.getElementById('shell').classList.contains('active')
   document.getElementById('auth-page').style.display='none'
   document.getElementById('shell').classList.add('active')
+  // Replace landing-page history entry so phone Back stays inside the app
+  try {
+    const lp = localStorage.getItem('nexerp_last_page') || 'dashboard'
+    let lpar = {}
+    try { lpar = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e2) {}
+    history.replaceState({ nexerp: true, page: lp, params: lpar }, '', _navHistoryUrl(lp, lpar))
+  } catch(e) {}
   try{ if(typeof _hideIntroAll==='function') _hideIntroAll() }catch(e){}
   if(!alreadyActive) {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
