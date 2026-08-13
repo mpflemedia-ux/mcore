@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-att2">
+<meta name="nexerp-build" content="2026-08-13-attrls">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18447,15 +18447,15 @@ async function renderAttendance(params={}) {
   const year = params.year || now.getFullYear()
   const reload = "openPage('hr',{view:'attendance',month:Number(document.getElementById('att-month').value),year:Number(document.getElementById('att-year').value)})"
 
-  const {data: employees} = await sb.from('employees').select('id,name,email')
+  let {data: employees, error: empListErr} = await sb.from('employees').select('id,name,email')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  if(empListErr) console.warn('attendance employees list', empListErr)
 
   // Staff: lock to self (match email or full name). Admin/owner keep full list.
   const isStaffOnly = !isTenantAdmin() && !isPlatformAdmin() && APP.user.role !== 'manager'
   const norm = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ')
   const myEmail = norm(APP.user.email)
   const myName = norm(APP.user.name)
-  // Agustus vs Augustus etc. — allow small typos (edit distance ≤ 2)
   const _namesClose = (a, b) => {
     if(!a || !b) return false
     if(a === b) return true
@@ -18463,7 +18463,6 @@ async function renderAttendance(params={}) {
     const aa = a.replace(/[^a-z]/g,''), bb = b.replace(/[^a-z]/g,'')
     if(aa === bb) return true
     if(Math.abs(aa.length - bb.length) > 2) return false
-    // simple Levenshtein capped
     const m = aa.length, n = bb.length
     const dp = Array.from({length: m+1}, (_,i) => Array(n+1).fill(0))
     for(let i=0;i<=m;i++) dp[i][0]=i
@@ -18474,7 +18473,14 @@ async function renderAttendance(params={}) {
   }
   let selfEmp = null
   let empRows = employees || []
-  // Direct email lookup (in case list is incomplete under RLS)
+  // RPC bypasses RLS gaps — resolves employee by auth email / profile full_name
+  try {
+    const {data: mine, error: mineErr} = await sb.rpc('my_employee_row')
+    if(!mineErr && mine && mine.length) {
+      selfEmp = mine[0]
+      if(!empRows.find(e => e.id === selfEmp.id)) empRows = [selfEmp, ...empRows]
+    }
+  } catch(e) { console.warn('my_employee_row', e) }
   if(myEmail && !selfEmp) {
     try {
       const {data: byMail} = await sb.from('employees').select('id,name,email')
@@ -18482,7 +18488,6 @@ async function renderAttendance(params={}) {
         .ilike('email', myEmail)
       if(byMail && byMail.length) {
         selfEmp = byMail[0]
-        // merge into list
         if(!empRows.find(e => e.id === selfEmp.id)) empRows = [selfEmp, ...empRows]
       }
     } catch(e) { console.warn('att email lookup', e) }
