@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-hidekpi">
+<meta name="nexerp-build" content="2026-08-13-swv3">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -22097,7 +22097,13 @@ init()
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js?v=2').catch(err=>console.warn('SW register failed',err))
+    navigator.serviceWorker.register('./sw.js?v=3').then(reg=>{
+      try { reg.update() } catch(e) {}
+      // Drop ancient caches that can pin a broken shell
+      if(navigator.serviceWorker.controller) {
+        caches.keys().then(keys => keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v3').forEach(k => caches.delete(k)))
+      }
+    }).catch(err=>console.warn('SW register failed',err))
   })
 }
 </script>
