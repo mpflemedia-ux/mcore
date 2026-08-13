@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-hist">
+<meta name="nexerp-build" content="2026-08-13-dbfix">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3179,7 +3179,17 @@ async function _dbMonthPnL(fromDate, toDateInclusive) {
 }
 
 async function loadDashboardData() {
-  if(!APP.tenant.id) return
+  if(!APP.tenant?.id) {
+    // Session may still be hydrating after login — retry once
+    if(!loadDashboardData._retried) {
+      loadDashboardData._retried = true
+      setTimeout(() => { loadDashboardData._retried = false; loadDashboardData() }, 600)
+    }
+    return
+  }
+  const _gen = (loadDashboardData._gen = (loadDashboardData._gen||0) + 1)
+  const _still = () => _gen === loadDashboardData._gen && APP.currentPage === 'dashboard'
+  try {
   _warnIfDefaultAccountsMissing()
   const isBm = APP.language==='bm'
   const now = new Date()
@@ -3290,10 +3300,10 @@ async function loadDashboardData() {
 
   let curCOGS = 0, prevCOGS = 0
   if(allRelevantIds.length) {
-    const {data: items} = await sb.from('invoice_items')
+    const {data: items, error: itemsErr} = await sb.from('invoice_items')
       .select('invoice_id,qty,product_id,products(unit_cost)')
-      .eq('tenant_id', APP.tenant.id)
       .in('invoice_id', allRelevantIds)
+    if(itemsErr) console.warn('dashboard invoice_items', itemsErr)
     const invById = {}
     ;[...thisMonth, ...lastMonth].forEach(i => { invById[i.id] = i })
     const thisSet = new Set(thisMonthIds), lastSet = new Set(lastMonthIds)
@@ -3520,14 +3530,30 @@ async function loadDashboardData() {
     }
   })
 
-  _dbRenderGrowthChart(inv)
-  _dbRenderStatusDonut(thisMonthAll)
-  _dbRenderPnLChart()
-  _dbRenderTopCustomers(thisMonth)
-  _dbRenderLowStock()
-  _dbLoadPeople()
-  _dbLoadRecentActivity()
-  _dbLoadAttTracker()
+  if(!_still()) return
+  try { _dbRenderGrowthChart(inv) } catch(e) { console.warn('chart growth', e) }
+  try { _dbRenderStatusDonut(thisMonthAll) } catch(e) { console.warn('chart status', e) }
+  try { _dbRenderPnLChart() } catch(e) { console.warn('chart pnl', e) }
+  try { _dbRenderTopCustomers(thisMonth) } catch(e) { console.warn('top cust', e) }
+  try { _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
+  try { _dbLoadPeople() } catch(e) { console.warn('people', e) }
+  try { _dbLoadRecentActivity() } catch(e) { console.warn('activity', e) }
+  try { _dbLoadAttTracker() } catch(e) { console.warn('att tracker', e) }
+  } catch(err) {
+    console.error('loadDashboardData failed', err)
+    try {
+      const isBm = APP.language==='bm'
+      showToast((isBm?'Dashboard gagal dimuatkan: ':'Dashboard failed to load: ')+(err.message||err), 'error')
+      // Clear stuck Loading... placeholders
+      ;['db-people-list','db-activity-list','db-low-stock','db-top-customers'].forEach(id => {
+        const el = document.getElementById(id)
+        if(el && /Loading|Memuatkan/i.test(el.textContent||'')) el.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">—</div>'
+      })
+      // Show zeros on KPI cards so UI is not blank
+      document.querySelectorAll('.db-kpi-value').forEach(el => { if(el.textContent.trim()==='-') el.textContent = 'RM 0.00' })
+      document.querySelectorAll('.db-kpi-label').forEach(el => { if(el.textContent.trim()==='-') el.textContent = '…' })
+    } catch(e2) {}
+  }
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
