@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-dbfix">
+<meta name="nexerp-build" content="2026-08-13-att">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18447,8 +18447,21 @@ async function renderAttendance(params={}) {
   const year = params.year || now.getFullYear()
   const reload = "openPage('hr',{view:'attendance',month:Number(document.getElementById('att-month').value),year:Number(document.getElementById('att-year').value)})"
 
-  const {data: employees} = await sb.from('employees').select('id,name')
+  const {data: employees} = await sb.from('employees').select('id,name,email')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+
+  // Staff: lock to self (match email or full name). Admin/owner keep full list.
+  const isStaffOnly = !isTenantAdmin() && !isPlatformAdmin() && APP.user.role !== 'manager'
+  const norm = s => String(s||'').trim().toLowerCase()
+  const myEmail = norm(APP.user.email)
+  const myName = norm(APP.user.name)
+  let selfEmp = null
+  if(employees && employees.length) {
+    selfEmp = employees.find(e => myEmail && norm(e.email) && norm(e.email) === myEmail)
+      || employees.find(e => myName && norm(e.name) === myName)
+      || employees.find(e => myName && (norm(e.name).includes(myName) || myName.includes(norm(e.name))))
+  }
+  const empList = (isStaffOnly && selfEmp) ? [selfEmp] : (employees||[])
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
@@ -18460,10 +18473,12 @@ async function renderAttendance(params={}) {
     <input type="hidden" id="att-edit-id" value="">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.employee}</label>
-        <select id="att-employee" class="form-select">
-          <option value="">${t.selectEmployee}</option>
-          ${(employees||[]).map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}
+        <select id="att-employee" class="form-select" ${isStaffOnly && selfEmp ? 'disabled' : ''}>
+          ${!(isStaffOnly && selfEmp) ? `<option value="">${t.selectEmployee}</option>` : ''}
+          ${empList.map(e=>`<option value="${e.id}" ${selfEmp && e.id===selfEmp.id ? 'selected' : ''}>${_aiEscapeHtml(e.name)}</option>`).join('')}
         </select>
+        ${isStaffOnly && selfEmp ? `<input type="hidden" id="att-employee-locked" value="${selfEmp.id}">` : ''}
+        ${isStaffOnly && !selfEmp ? `<div style="font-size:12px;color:var(--warning);margin-top:6px">${isBm?'Nama anda tiada dalam senarai pekerja. Minta admin tambah rekod Employee yang sepadan.':'Your name is not in the employee list. Ask admin to add a matching Employee record.'}</div>` : ''}
       </div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="att-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.status}</label>
@@ -18501,7 +18516,8 @@ async function renderAttendance(params={}) {
 
 function _attendanceResetForm() {
   document.getElementById('att-edit-id').value = ''
-  document.getElementById('att-employee').value = ''
+  const _lock = document.getElementById('att-employee-locked')
+  document.getElementById('att-employee').value = _lock ? _lock.value : ''
   document.getElementById('att-date').value = new Date().toISOString().slice(0,10)
   document.querySelectorAll('input[name="att-status"]').forEach(r=>{ r.checked = r.value==='present' })
   document.getElementById('att-clock-in').value = ''
@@ -18560,7 +18576,7 @@ function _attendanceEdit(id) {
 async function _attendanceSave() {
   const isBm = APP.language==='bm'
   const id = document.getElementById('att-edit-id').value
-  const employeeId = document.getElementById('att-employee').value
+  const employeeId = (document.getElementById('att-employee-locked')||{}).value || document.getElementById('att-employee').value
   const date = document.getElementById('att-date').value
   const statusEl = document.querySelector('input[name="att-status"]:checked')
   if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
