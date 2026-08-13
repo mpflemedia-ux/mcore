@@ -1928,6 +1928,9 @@ function openPage(page, params={}) {
   // of always resetting to that page's own default view.
   try { localStorage.setItem('nexerp_last_params', JSON.stringify(params||{})) } catch(e) {}
   APP.currentPage = page
+  // Getting Started checklist item #3 ("Try the X module") — first visit only,
+  // no-op after that (see _obcMarkChecklist's in-memory guard).
+  if(page!=='dashboard' && page!=='settings' && item) _obcMarkChecklist('visited_'+page)
   _navPushHistory(page, params)
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page))
   if(item) document.getElementById('header-title').textContent = APP.language==='bm'?item.label_bm:item.label_en
@@ -2594,6 +2597,250 @@ async function _settingsSavePin() {
   showToast(isBm?'PIN disimpan.':'PIN saved.', 'success')
 }
 
+// ── Staff onboarding: Getting Started checklist + Welcome Tour ──────────
+// Reuses the same user_profiles.permissions jsonb column _settingsSavePin()
+// above already writes to (pin_enabled/pin_hash) — same read-merge-write
+// pattern, no new column/table needed. New keys used here:
+//   onboarding_tour_done            boolean
+//   onboarding_checklist_dismissed  boolean
+//   onboarding_checklist_items      { [itemKey]: true }
+async function _obcSavePerms(patch) {
+  if(!APP.user.id) return false
+  const {data: cur} = await sb.from('user_profiles').select('permissions').eq('id', APP.user.id).single()
+  let perms = cur?.permissions || {}
+  if(typeof perms === 'string') { try { perms = JSON.parse(perms) } catch(e) { perms = {} } }
+  perms = Object.assign({}, perms || {}, patch)
+  const {error} = await sb.from('user_profiles').update({ permissions: perms }).eq('id', APP.user.id)
+  if(error) { console.error('_obcSavePerms', error); return false }
+  APP.user.permissions = perms
+  return true
+}
+
+// Same accessible-module filter buildSidebar() applies (canAccess() +
+// applicants/reports special cases), reused here so the Getting Started
+// checklist and the Welcome Tour both only ever list modules the current
+// role/module_override combo actually shows in the sidebar — never a
+// hardcoded module list.
+function _onbVisibleNavItems() {
+  return NAV_ITEMS.filter(item => {
+    if(item.section) return false
+    if(item.id==='dashboard' || item.id==='settings') return false
+    if(!canAccess(item.module)) return false
+    if(item.id==='applicants' && !canAccess('hr_recruit') && !canManageHR()) return false
+    if(item.id==='reports' && !canAccess('reports') && !canAccess('accounting')) return false
+    return true
+  })
+}
+
+async function _obcMarkChecklist(key) {
+  const already = APP.user.permissions && APP.user.permissions.onboarding_checklist_items && APP.user.permissions.onboarding_checklist_items[key]
+  if(already) return
+  const items = Object.assign({}, (APP.user.permissions && APP.user.permissions.onboarding_checklist_items) || {}, { [key]: true })
+  await _obcSavePerms({ onboarding_checklist_items: items })
+  if(document.getElementById('db-onboarding-checklist')) _obcRenderChecklist()
+}
+
+function _obcItems() {
+  const perms = APP.user.permissions || {}
+  const stored = perms.onboarding_checklist_items || {}
+  const items = [
+    { key:'first_login', en:'First login', bm:'Log masuk pertama kali', done:true, onclick:'' },
+    { key:'security_pin', en:'Set up your security PIN', bm:'Tetapkan PIN keselamatan anda', done: !!perms.pin_enabled, onclick:"openPage('settings',{})" },
+  ]
+  _onbVisibleNavItems().forEach(item => {
+    const k = 'visited_'+item.id
+    items.push({ key:k, en:'Try the '+item.label_en+' module', bm:'Cuba modul '+item.label_bm, done: !!stored[k], onclick:`openPage('${item.id}')` })
+  })
+  items.push({ key:'profile_reviewed', en:'Review your profile', bm:'Semak profil anda', done: !!stored.profile_reviewed, onclick:"openPage('settings',{})" })
+  return items
+}
+
+function _obcRenderChecklist() {
+  const el = document.getElementById('db-onboarding-checklist')
+  if(!el) return
+  const isBm = APP.language==='bm'
+  const perms = APP.user.permissions || {}
+  if(perms.onboarding_checklist_dismissed) { el.innerHTML = ''; return }
+  const items = _obcItems()
+  const doneCount = items.filter(i=>i.done).length
+  const pct = items.length ? Math.round(doneCount/items.length*100) : 0
+  el.innerHTML = `
+  <div class="db-card" style="margin-bottom:14px;border:1px solid var(--primary,#2563EB);position:relative">
+    <button type="button" onclick="_obcDismissChecklist()" title="${isBm?'Tutup':'Dismiss'}" style="position:absolute;top:14px;right:14px;background:none;border:none;color:var(--db-text3);cursor:pointer;font-size:16px;line-height:1;padding:2px"><i class="ti ti-x"></i></button>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;padding-right:26px;flex-wrap:wrap">
+      <div class="db-card-title" style="margin:0"><i class="ti ti-checklist"></i> ${isBm?'Mulakan Dengan NexERP':'Getting Started with NexERP'}</div>
+      <div style="font-size:12px;color:var(--db-text3);font-weight:600">${doneCount}/${items.length} ${isBm?'selesai':'done'}</div>
+    </div>
+    <div style="height:6px;background:var(--db-border2);border-radius:3px;margin:10px 0 14px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:var(--primary,#2563EB);border-radius:3px;transition:width .3s"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${items.map(it => {
+        const style = `display:flex;align-items:center;gap:10px;font-size:13px;${it.done?'opacity:.55':'cursor:pointer'}`
+        const onclick = it.done ? '' : ` onclick="${it.onclick}"`
+        return `<div style="${style}"${onclick}>
+          <i class="ti ${it.done?'ti-circle-check-filled':'ti-circle'}" style="color:${it.done?'var(--success)':'var(--db-text3)'};font-size:18px;flex-shrink:0"></i>
+          <span style="${it.done?'text-decoration:line-through':''}">${isBm?it.bm:it.en}</span>
+        </div>`
+      }).join('')}
+    </div>
+  </div>`
+}
+
+async function _obcDismissChecklist() {
+  await _obcSavePerms({ onboarding_checklist_dismissed: true })
+  const el = document.getElementById('db-onboarding-checklist')
+  if(el) el.innerHTML = ''
+}
+
+// ── Welcome Tour: role-aware spotlight walkthrough ───────────────────────
+// Native CSS/JS spotlight overlay (fixed-position mask rectangles cut around
+// the target's bounding rect) — no external tour library, per the file's
+// no-external-framework rule.
+let _obtActive = false
+let _obtStepIdx = 0
+let _obtSteps = []
+let _obtResizeHandler = null
+
+const _OBT_MODULE_BLURB = {
+  crm:        { en:'Manage your customers and contacts here.',             bm:'Urus pelanggan dan kenalan anda di sini.' },
+  sales:      { en:'Create quotations and invoices for customers.',        bm:'Cipta sebut harga dan invois untuk pelanggan.' },
+  pos:        { en:'Ring up sales at the counter with Point of Sale.',     bm:'Buat jualan di kaunter dengan POS.' },
+  inventory:  { en:'Track products and stock levels.',                    bm:'Jejak produk dan tahap stok.' },
+  logistics:  { en:'Track delivery status for outgoing orders.',          bm:'Jejak status penghantaran pesanan.' },
+  purchasing: { en:'Manage suppliers, purchase orders and bills.',         bm:'Urus pembekal, pesanan belian dan bil.' },
+  production: { en:'Track work orders and production status.',            bm:'Jejak pesanan kerja dan status pengeluaran.' },
+  hr:         { en:'Manage employees, attendance and payroll.',            bm:'Urus pekerja, kehadiran dan penggajian.' },
+  applicants: { en:'Review job applicants and recruitment.',               bm:'Semak pemohon kerja dan pengambilan.' },
+  accounting: { en:'Chart of Accounts, journal entries and fiscal years.', bm:'Carta Akaun, entri jurnal dan tahun fiskal.' },
+  vouchers:   { en:'Formal payment vouchers that post to the ledger.',     bm:'Baucar bayaran rasmi yang disiar ke lejar.' },
+  reports:    { en:'Financial and operational reports.',                  bm:'Laporan kewangan dan operasi.' },
+  admin:      { en:'Manage your team and their module access.',           bm:'Urus pasukan anda dan akses modul mereka.' },
+}
+
+// Role-aware by construction: one step per sidebar item canAccess() (which
+// already accounts for module_override) currently grants — two different
+// roles/overrides naturally produce two different step lists with no
+// per-role branching hardcoded here.
+function _obtBuildSteps() {
+  const steps = []
+  steps.push({
+    selector: null,
+    en: `Welcome to NexERP, ${APP.user.name||''}! Let's take a quick look around ${APP.tenant.name||'your workspace'}.`,
+    bm: `Selamat datang ke NexERP, ${APP.user.name||''}! Jom kita lihat sekeliling ${APP.tenant.name||'ruang kerja anda'} sekejap.`
+  })
+  _onbVisibleNavItems().forEach(item => {
+    const blurb = _OBT_MODULE_BLURB[item.id] || { en:'Explore this module.', bm:'Terokai modul ini.' }
+    steps.push({
+      selector: `.nav-item[data-page="${item.id}"]`,
+      en: `<strong>${item.label_en}</strong> — ${blurb.en}`,
+      bm: `<strong>${item.label_bm}</strong> — ${blurb.bm}`
+    })
+  })
+  steps.push({ selector:'.header-search', en:'Use Search to quickly jump to any customer, invoice or product.', bm:'Guna Carian untuk terus ke mana-mana pelanggan, invois atau produk.' })
+  steps.push({ selector:'.notif-wrap', en:'Notifications — overdue invoices, low stock and other alerts show up here.', bm:'Notifikasi — invois tertunggak, stok rendah dan makluman lain muncul di sini.' })
+  steps.push({ selector:'#user-avatar-header', en:'Your profile menu — update Settings, set a security PIN, or replay this tour anytime.', bm:'Menu profil anda — kemas kini Tetapan, tetapkan PIN keselamatan, atau ulang tayang tour ini bila-bila masa.' })
+  return steps
+}
+
+function _obtStart() {
+  if(_obtActive) return
+  _obtSteps = _obtBuildSteps()
+  _obtStepIdx = 0
+  _obtActive = true
+  _obtRenderStep()
+  _obtResizeHandler = () => _obtRenderStep()
+  window.addEventListener('resize', _obtResizeHandler)
+}
+
+async function _obtMarkDone() { await _obcSavePerms({ onboarding_tour_done: true }) }
+
+function _obtEnd(markDone) {
+  _obtActive = false
+  const el = document.getElementById('obt-overlay')
+  if(el) el.remove()
+  if(_obtResizeHandler) { window.removeEventListener('resize', _obtResizeHandler); _obtResizeHandler = null }
+  if(markDone) _obtMarkDone()
+}
+
+function _obtNext() {
+  _obtStepIdx++
+  if(_obtStepIdx >= _obtSteps.length) { _obtEnd(true); return }
+  _obtRenderStep()
+}
+function _obtSkip() { _obtEnd(true) }
+
+function _obtRenderStep() {
+  let el = document.getElementById('obt-overlay')
+  if(!el) {
+    el = document.createElement('div')
+    el.id = 'obt-overlay'
+    el.style.cssText = 'position:fixed;inset:0;z-index:99990'
+    document.body.appendChild(el)
+  }
+  const isBm = APP.language==='bm'
+  const step = _obtSteps[_obtStepIdx]
+  const total = _obtSteps.length
+  const isLast = _obtStepIdx === total-1
+  const target = step.selector ? document.querySelector(step.selector) : null
+  const pad = 8
+  const M = 'rgba(15,23,42,.72)'
+  let maskHtml, tooltipPos
+  if(target) {
+    try { target.scrollIntoView({ block:'nearest' }) } catch(e) {}
+    const rect = target.getBoundingClientRect()
+    const top = Math.max(rect.top - pad, 0)
+    const left = Math.max(rect.left - pad, 0)
+    const right = Math.min(rect.right + pad, window.innerWidth)
+    const bottom = Math.min(rect.bottom + pad, window.innerHeight)
+    maskHtml = `
+      <div style="position:fixed;left:0;top:0;right:0;height:${top}px;background:${M}"></div>
+      <div style="position:fixed;left:0;top:${bottom}px;right:0;bottom:0;background:${M}"></div>
+      <div style="position:fixed;left:0;top:${top}px;width:${left}px;height:${bottom-top}px;background:${M}"></div>
+      <div style="position:fixed;left:${right}px;top:${top}px;right:0;height:${bottom-top}px;background:${M}"></div>
+      <div style="position:fixed;left:${left}px;top:${top}px;width:${right-left}px;height:${bottom-top}px;border:2px solid var(--primary,#2563EB);border-radius:8px;box-shadow:0 0 0 4px rgba(37,99,235,.35);pointer-events:none"></div>
+    `
+    const tipWidth = 300
+    const tipLeft = Math.min(Math.max(left, 12), Math.max(window.innerWidth - tipWidth - 12, 12))
+    const spaceBelow = window.innerHeight - bottom
+    tooltipPos = spaceBelow > 160
+      ? `position:fixed;top:${bottom+14}px;left:${tipLeft}px`
+      : `position:fixed;top:${Math.max(top-14,12)}px;left:${tipLeft}px;transform:translateY(-100%)`
+  } else {
+    maskHtml = `<div style="position:fixed;inset:0;background:${M}"></div>`
+    tooltipPos = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%)'
+  }
+  el.innerHTML = `
+    ${maskHtml}
+    <div style="${tooltipPos};max-width:300px;background:var(--card,#fff);color:var(--text,#0F172A);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.35);padding:16px;z-index:99991">
+      <div style="font-size:11px;color:var(--text-3,#64748B);font-weight:600;margin-bottom:8px">${_obtStepIdx+1} / ${total}</div>
+      <div style="font-size:14px;line-height:1.5;margin-bottom:16px">${isBm?step.bm:step.en}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <button type="button" onclick="_obtSkip()" style="background:none;border:none;color:var(--text-3,#64748B);font-size:13px;cursor:pointer;padding:4px">${isBm?'Langkau':'Skip'}</button>
+        <button type="button" onclick="_obtNext()" class="btn btn-primary btn-sm">${isLast ? (isBm?'Selesai':'Finish') : (isBm?'Seterusnya':'Next')}</button>
+      </div>
+    </div>
+  `
+}
+
+// Auto-trigger gate: staff who joined via invite (role !== 'owner' — the
+// only other way a user_profiles row is ever created, see
+// join_tenant_by_invite) on their first dashboard load only. Tenant owners
+// go through their own separate showOnboarding() company-setup wizard and
+// are excluded here — that flow is untouched by any of this.
+function _obtMaybeAutoStart() {
+  if(!APP.user.role || APP.user.role==='owner') return
+  if(APP.user.permissions && APP.user.permissions.onboarding_tour_done) return
+  if(_obtActive) return
+  setTimeout(() => { try { _obtStart() } catch(e) { console.error(e) } }, 400)
+}
+
+// Manual replay (Settings button) — works regardless of role or done-state.
+async function _obtReplay() {
+  await _obcSavePerms({ onboarding_tour_done: false })
+  _obtStart()
+}
+
 
 async function doLogin() {
   const email=document.getElementById('login-email').value.trim()
@@ -3026,6 +3273,9 @@ function renderDashboard() {
       </div>
     </div>
 
+    <!-- Getting Started checklist — populated by _obcRenderChecklist(), hides itself once dismissed -->
+    <div id="db-onboarding-checklist"></div>
+
     <!-- Focus KPI: Revenue / Sales / GP / Net P&L -->
     <div class="db-kpi-grid db-kpi-focus" id="db-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">
       ${[
@@ -3202,6 +3452,8 @@ function renderDashboard() {
   _dbSyncGlobalTheme()
   try { _dbRenderRangePicker() } catch(e) {}
   loadDashboardData()
+  try { _obcRenderChecklist() } catch(e) { console.error(e) }
+  try { _obtMaybeAutoStart() } catch(e) { console.error(e) }
 }
 
 // Dashboard sales formula (LOCKED — keep charts/KPIs aligned):
@@ -5094,6 +5346,7 @@ async function renderAdminTenantDetail(tenantId) {
 
 async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
+  _obcMarkChecklist('profile_reviewed')
   const t = LANG[APP.language].settings
   const c = LANG[APP.language].common
   const isAdmin = isTenantAdmin()
@@ -5198,13 +5451,17 @@ async function renderSettings(params={}) {
         {id:'stg-docgen', en:'Doc Generator', bm:'Penjana Dokumen'},
         {id:'stg-periodlock', en:'Period Lock', bm:'Kunci Tempoh'},
         {id:'stg-pin', en:'Security PIN', bm:'PIN Keselamatan'},
+        {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tour Panduan'},
         {id:'stg-backup', en:'Data Backup', bm:'Sandaran Data'},
         {id:'stg-fraud', en:'Fraud Check', bm:'Semakan Penipuan'},
         {id:'stg-audit', en:'Audit Log', bm:'Log Audit'},
         {id:'stg-roles', en:'Role Permissions', bm:'Kebenaran Peranan'}
       )
     } else {
-      items.push({id:'stg-docgen', en:'Doc Generator', bm:'Penjana Dokumen'})
+      items.push(
+        {id:'stg-docgen', en:'Doc Generator', bm:'Penjana Dokumen'},
+        {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tour Panduan'}
+      )
     }
     return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:16px">
       ${items.map(it=>`<button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;flex:none" onclick="document.getElementById('${it.id}')?.scrollIntoView({behavior:'smooth',block:'start'})">${isBm?it.bm:it.en}</button>`).join('')}
@@ -5472,6 +5729,15 @@ async function renderSettings(params={}) {
       <div class="form-group"><label class="form-label">${APP.language==='bm'?'Sahkan PIN':'Confirm PIN'}</label>
         <input type="password" id="pin-confirm" class="form-input" inputmode="numeric" maxlength="8" placeholder="••••••"></div>
       <button class="btn btn-primary btn-sm" onclick="_settingsSavePin()"><i class="ti ti-lock"></i> ${APP.language==='bm'?'Simpan PIN':'Save PIN'}</button>
+    </div>
+  </div>
+  <div class="card" style="max-width:500px;margin-top:16px" id="stg-replay-tour">
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Tour Panduan':'Welcome Tour'}</div></div>
+    <div style="padding:16px">
+      <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
+        ?'Ulang tayang tour pengenalan ringkas sistem ni — berguna kalau anda terlepas kali pertama atau perlukan penyegaran.'
+        :'Replay the short walkthrough tour of the system — handy if you missed it the first time or need a refresher.'}</p>
+      <button type="button" class="btn btn-primary btn-sm" onclick="_obtReplay()"><i class="ti ti-player-play"></i> ${APP.language==='bm'?'Tunjuk tour semula':'Replay tour'}</button>
     </div>
   </div>
   <div class="card" style="max-width:500px;margin-top:16px;${isAdmin?'':'display:none'}" id="stg-backup">
