@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-tid">
+<meta name="nexerp-build" content="2026-08-14-406">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -2493,7 +2493,7 @@ async function _requirePinGate(user) {
   // After password auth, if user has PIN enabled and not verified this session
   let profile = null
   try {
-    const res = await sb.from('user_profiles').select('permissions,full_name,role,language,theme,tenant_id,tenants(*)').eq('id', user.id).single()
+    const res = await sb.from('user_profiles').select('permissions,full_name,role,language,theme,tenant_id').eq('id', user.id).maybeSingle()
     profile = res.data
   } catch(e) { console.warn('pin gate profile', e); return false }
   if(!profile) return false // let normal flow handle
@@ -3062,7 +3062,17 @@ async function loadUserSession(user, opts={}) {
       const gated = await _requirePinGate(user)
       if(gated) { _sessionLoadPromise = null; _sessionLoadUserId = null; return }
     }
-    const {data:profile}=await sb.from('user_profiles').select('*,tenants(*)').eq('id',user.id).single()
+    let profile = null
+    {
+      // Avoid 406 from .single() + embed when 0 rows or RLS on tenants
+      let res = await sb.from('user_profiles').select('*').eq('id', user.id).maybeSingle()
+      if(res.error) console.warn('profile load', res.error)
+      profile = res.data
+      if(profile?.tenant_id) {
+        const tr = await sb.from('tenants').select('*').eq('id', profile.tenant_id).maybeSingle()
+        if(tr.data) profile.tenants = tr.data
+      }
+    }
     // New user — no profile yet: try invite join, else onboarding (new tenant)
     if(!profile){
       APP.user.name = user.user_metadata?.full_name || user.email.split('@')[0]
@@ -22337,10 +22347,11 @@ async function obFinish() {
         }
       }
     }
-    // Repair: create tenant if still missing (register_tenant failed earlier)
+    // Repair if still no tenant: profile may exist (409 on register_tenant)
     if(!APP.tenant.id) {
       const company = OB.data.company_name || 'My Company'
-      const tenantCode = company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) + Math.floor(Math.random()*100)
+      const tenantCode = (company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) || 'NEX') + Math.floor(Math.random()*900+100)
+      // Try register_tenant once
       const { data: rpcData, error: rpcError } = await sb.rpc('register_tenant', {
         p_user_id: user.id,
         p_tenant_name: company,
@@ -22350,15 +22361,51 @@ async function obFinish() {
         p_industry: OB.data.industry || 'general',
         p_plan_code: 'starter'
       })
-      if(rpcError) {
-        console.error('repair register_tenant', rpcError)
-        throw new Error((L==='bm'?'Gagal cipta syarikat: ':'Could not create company: ') + rpcError.message)
+      if(!rpcError) {
+        const tid = rpcData?.tenant_id || rpcData?.id || (typeof rpcData==='string' ? rpcData : null)
+        if(tid) APP.tenant.id = tid
+      } else {
+        console.warn('repair register_tenant', rpcError)
+        // Duplicate profile: re-read tenant_id after brief wait
+        await new Promise(r => setTimeout(r, 500))
+        const { data: profiles } = await sb.from('user_profiles').select('tenant_id, role, full_name').eq('id', user.id)
+        const p2 = profiles && profiles[0]
+        if(p2?.tenant_id) {
+          APP.tenant.id = p2.tenant_id
+          if(p2.role) APP.user.role = p2.role
+        } else {
+          // Manual: insert tenant + link profile (no second profile insert)
+          const tid = crypto.randomUUID()
+          const { error: tErr } = await sb.from('tenants').insert({
+            id: tid,
+            name: company,
+            code: tenantCode,
+            plan: 'starter',
+            status: 'active',
+            onboarding_completed: false,
+            entity_type: OB.data.entity_type || 'sdn_bhd',
+            industry: OB.data.industry || 'general'
+          })
+          if(tErr) {
+            console.error('tenant insert', tErr)
+            throw new Error((L==='bm'?'Gagal cipta syarikat: ':'Could not create company: ') + (tErr.message || rpcError.message))
+          }
+          const { error: uErr } = await sb.from('user_profiles').update({
+            tenant_id: tid,
+            role: 'owner',
+            full_name: APP.user.name || user.email || 'Owner'
+          }).eq('id', user.id)
+          if(uErr) {
+            console.error('profile link', uErr)
+            throw new Error((L==='bm'?'Gagal pautkan profil: ':'Could not link profile: ') + uErr.message)
+          }
+          APP.tenant.id = tid
+          APP.user.role = 'owner'
+        }
       }
-      const tid = rpcData?.tenant_id || rpcData?.id || (typeof rpcData==='string' ? rpcData : null)
-      if(!tid) throw new Error(L==='bm'?'ID tenant tidak dijumpai selepas cipta.':'Tenant ID missing after create.')
-      APP.tenant.id = tid
-      try { localStorage.setItem('nexerp_pending_tenant_id', tid) } catch(e) {}
+      if(APP.tenant.id) try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
     }
+    if(!APP.tenant.id) throw new Error(L==='bm'?'ID tenant tidak dijumpai. Sila log masuk semula.':'Tenant ID not found. Please sign in again.')
 
     const companyData = {
       name: OB.data.company_name,
