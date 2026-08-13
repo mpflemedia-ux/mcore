@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-stg2">
+<meta name="nexerp-build" content="2026-08-13-aiinsight">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3163,6 +3163,25 @@ function renderDashboard() {
         <div id="db-att-tracker" class="db-hscroll" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
       </div>
     </div>
+
+    <!-- AI Business Insight + Marketing (above Recent Activity) -->
+    ${(isTenantAdmin() || canAccess('reports') || canAccess('sales')) ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="db-card-title" style="margin:0"><i class="ti ti-bulb"></i> ${isBm?'Wawasan AI Perniagaan':'AI Business Insight'}</div>
+          <button type="button" id="db-insight-btn" class="btn btn-outline btn-sm" onclick="_dbLoadAiInsight()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
+        </div>
+        <div id="db-insight-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk analisis ringkas bulan ini.':'Click Generate for a short analysis of this month.'}</div>
+      </div>
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="db-card-title" style="margin:0"><i class="ti ti-speakerphone"></i> ${isBm?'Idea Pemasaran AI':'AI Marketing Ideas'}</div>
+          <button type="button" id="db-marketing-btn" class="btn btn-outline btn-sm" onclick="_dbLoadMarketingAdvice()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
+        </div>
+        <div id="db-marketing-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk idea pemasaran.':'Click Generate for marketing ideas.'}</div>
+      </div>
+    </div>` : ''}
 
     <!-- Recent Activity — always last; keep any new dashboard card above this one -->
     <div class="db-card" style="margin-top:14px">
