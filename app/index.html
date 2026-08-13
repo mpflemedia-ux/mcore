@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-aiinsight">
+<meta name="nexerp-build" content="2026-08-13-ampm2">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3750,7 +3750,7 @@ async function _dbLoadPeople() {
       const name = emp.name || 'Staff'
       const position = emp.position || ''
       const initials = _dbInitials(name)
-      const clock = a.clock_in ? String(a.clock_in).slice(0,5) : '-'
+      const clock = a.clock_in ? _fmtTime12(a.clock_in) : '-'
       const b = badge(a.status)
       return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
         <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
@@ -18762,8 +18762,10 @@ function _attendanceResetForm() {
   document.getElementById('att-employee').value = _lock ? _lock.value : ''
   document.getElementById('att-date').value = new Date().toISOString().slice(0,10)
   document.querySelectorAll('input[name="att-status"]').forEach(r=>{ r.checked = r.value==='present' })
-  document.getElementById('att-clock-in').value = ''
-  document.getElementById('att-clock-out').value = ''
+  ;['att-clock-in','att-clock-out'].forEach(p => {
+    const h=document.getElementById(p+'-h'), m=document.getElementById(p+'-m'), a=document.getElementById(p+'-ap')
+    if(h) h.value=''; if(m) m.value=''; if(a) a.value='AM'
+  })
   document.getElementById('att-notes').value = ''
 }
 
@@ -18811,8 +18813,14 @@ function _attendanceEdit(id) {
   document.getElementById('att-employee').value = rec.employee_id
   document.getElementById('att-date').value = rec.date
   document.querySelectorAll('input[name="att-status"]').forEach(r=>{ r.checked = r.value===rec.status })
-  document.getElementById('att-clock-in').value = rec.clock_in || ''
-  document.getElementById('att-clock-out').value = rec.clock_out || ''
+  ;(() => {
+    const cin = _timeTo12Parts(rec.clock_in)
+    const cout = _timeTo12Parts(rec.clock_out)
+    ;[['att-clock-in',cin],['att-clock-out',cout]].forEach(([p,v]) => {
+      const h=document.getElementById(p+'-h'), m=document.getElementById(p+'-m'), a=document.getElementById(p+'-ap')
+      if(h) h.value=v.h; if(m) m.value=v.min; if(a) a.value=v.ap
+    })
+  })()
   document.getElementById('att-notes').value = rec.notes || ''
   window.scrollTo({top:0, behavior:'smooth'})
 }
@@ -18830,8 +18838,16 @@ async function _attendanceSave() {
     employee_id: employeeId,
     date,
     status: statusEl ? statusEl.value : 'present',
-    clock_in: document.getElementById('att-clock-in').value || null,
-    clock_out: document.getElementById('att-clock-out').value || null,
+    clock_in: _timeFrom12Parts(
+      document.getElementById('att-clock-in-h')?.value,
+      document.getElementById('att-clock-in-m')?.value,
+      document.getElementById('att-clock-in-ap')?.value
+    ),
+    clock_out: _timeFrom12Parts(
+      document.getElementById('att-clock-out-h')?.value,
+      document.getElementById('att-clock-out-m')?.value,
+      document.getElementById('att-clock-out-ap')?.value
+    ),
     notes: document.getElementById('att-notes').value.trim() || null,
   }
   let error
