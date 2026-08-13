@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-leavetab2">
+<meta name="nexerp-build" content="2026-08-13-staffscope">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18777,13 +18777,15 @@ async function _attendanceLoadTable(month, year) {
     <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
     <td style="color:var(--text-2)">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_attendanceEdit('${a.id}')"><i class="ti ti-edit"></i></button>
-      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_attendanceDelete('${a.id}')"><i class="ti ti-trash"></i></button>
+      ${canManageHR()?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_attendanceEdit('${a.id}')"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_attendanceDelete('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
     </td>
   </tr>`).join('')}</tbody></table>`
 }
 
 function _attendanceEdit(id) {
+  if(!canManageHR()) { showToast(APP.language==='bm'?'Tiada kebenaran':'Not permitted','error'); return }
+
   const rec = _attendanceRecords.find(a=>String(a.id)===String(id))
   if(!rec) return
   document.getElementById('att-edit-id').value = rec.id
@@ -18829,6 +18831,8 @@ async function _attendanceSave() {
 }
 
 async function _attendanceDelete(id) {
+  if(!canManageHR()) { showToast(APP.language==='bm'?'Tiada kebenaran':'Not permitted','error'); return }
+
   const isBm = APP.language==='bm'
   if(!confirm(isBm?'Padam rekod kehadiran ini?':'Delete this attendance record?')) return
   const {error} = await sb.from('attendance').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
@@ -18921,7 +18925,7 @@ async function renderLeave(params={}) {
 
   if(!window._leaveStatusFilter) window._leaveStatusFilter = 'all'
   await _leaveLoadTable()
-  await _leaveLoadBalances(employees||[])
+  await _leaveLoadBalances(empList||employees||[])
 }
 
 function _leaveCalcDays() {
@@ -18976,11 +18980,28 @@ async function _leaveLoadTable() {
     noData:'No leave requests yet'
   }
   const wrap = document.getElementById('lv-table-wrap')
-  const {data, error} = await sb.from('leave_requests').select('id,leave_type,start_date,end_date,days_count,status,approved_by,employees(name)')
+  const {data, error} = await sb.from('leave_requests').select('id,leave_type,start_date,end_date,days_count,status,approved_by,employee_id,employees(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _leaveRequests = data || []
-  const allRows = _leaveRequests
+  // Staff: only own leave rows
+  let allRows = _leaveRequests
+  if(!canManageHR()) {
+    let selfId = null
+    try {
+      const {data: mine} = await sb.rpc('my_employee_row')
+      if(mine && mine.length) selfId = mine[0].id
+    } catch(e) {}
+    if(!selfId && APP.user) {
+      const nm = String(APP.user.name||'').trim().toLowerCase()
+      const em = String(APP.user.email||'').trim().toLowerCase()
+      const hit = allRows.find(r => r.employees && String(r.employees.name||'').trim().toLowerCase()===nm)
+      if(hit) selfId = hit.employee_id
+    }
+    if(selfId) allRows = allRows.filter(r => String(r.employee_id)===String(selfId))
+    else allRows = []
+  }
+  _leaveRequests = allRows
   // status filter chips
   const bar = document.getElementById('lv-status-filters')
   if(bar) {
