@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-ai3">
+<meta name="nexerp-build" content="2026-08-13-pplclock">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18640,6 +18640,35 @@ const ANNUAL_LEAVE_ENTITLEMENT = 14
 let _attendanceRecords = []
 let _leaveRequests = []
 
+
+function _fmtTime12(t) {
+  if(t == null || t === '') return '-'
+  const s = String(t).trim()
+  const m = s.match(/^(\d{1,2}):(\d{2})/)
+  if(!m) return s
+  let h = parseInt(m[1], 10)
+  const min = m[2]
+  if(isNaN(h)) return s
+  const ap = h >= 12 ? 'PM' : 'AM'
+  h = h % 12
+  if(h === 0) h = 12
+  return h + ':' + min + ' ' + ap
+}
+function _nowTime24() {
+  const n = new Date()
+  return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')
+}
+function _nowDateLocal() {
+  const n = new Date()
+  return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0')
+}
+function _fmtDateDisplay(iso) {
+  if(!iso) return ''
+  const p = String(iso).slice(0,10).split('-')
+  if(p.length!==3) return iso
+  return p[2]+'/'+p[1]+'/'+p[0]
+}
+
 async function renderAttendance(params={}) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
@@ -18846,25 +18875,27 @@ async function _attendanceSave() {
   const isBm = APP.language==='bm'
   const id = document.getElementById('att-edit-id').value
   const employeeId = (document.getElementById('att-employee-locked')||{}).value || document.getElementById('att-employee').value
-  const date = document.getElementById('att-date').value
+  let date = document.getElementById('att-date')?.value
+  let clockIn = document.getElementById('att-clock-in')?.value || null
+  let clockOut = document.getElementById('att-clock-out')?.value || null
+  // Staff: force current date + clock-in time (cannot manipulate)
+  if(!canManageHR()) {
+    date = _nowDateLocal()
+    clockIn = _nowTime24()
+    clockOut = null
+  }
   const statusEl = document.querySelector('input[name="att-status"]:checked')
   if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
   if(!date) { showToast(isBm?'Sila pilih tarikh':'Please select a date', 'error'); return }
+  if(clockIn && clockIn.length === 5) clockIn = clockIn + ':00'
+  if(clockOut && clockOut.length === 5) clockOut = clockOut + ':00'
   const payload = {
     tenant_id: APP.tenant.id,
     employee_id: employeeId,
     date,
     status: statusEl ? statusEl.value : 'present',
-    clock_in: _timeFrom12Parts(
-      document.getElementById('att-clock-in-h')?.value,
-      document.getElementById('att-clock-in-m')?.value,
-      document.getElementById('att-clock-in-ap')?.value
-    ),
-    clock_out: _timeFrom12Parts(
-      document.getElementById('att-clock-out-h')?.value,
-      document.getElementById('att-clock-out-m')?.value,
-      document.getElementById('att-clock-out-ap')?.value
-    ),
+    clock_in: clockIn || null,
+    clock_out: clockOut || null,
     notes: document.getElementById('att-notes').value.trim() || null,
   }
   let error
