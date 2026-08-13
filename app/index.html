@@ -2812,7 +2812,7 @@ function _obtRenderStep() {
   }
   el.innerHTML = `
     ${maskHtml}
-    <div style="${tooltipPos};max-width:300px;background:var(--card,#fff);color:var(--text,#0F172A);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.35);padding:16px;z-index:99991">
+    <div style="${tooltipPos};max-width:300px;background:var(--bg-card,#fff);color:var(--text,#0F172A);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.35);padding:16px;z-index:99991;border:1px solid var(--border,transparent)">
       <div style="font-size:11px;color:var(--text-3,#64748B);font-weight:600;margin-bottom:8px">${_obtStepIdx+1} / ${total}</div>
       <div style="font-size:14px;line-height:1.5;margin-bottom:16px">${isBm?step.bm:step.en}</div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
