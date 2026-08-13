@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-ob2">
+<meta name="nexerp-build" content="2026-08-14-access">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1607,14 +1607,15 @@ function assertNotPeriodLocked(dateStr) {
 }
 
 function canAccess(module) {
-  const role = APP.user.role
+  const role = (APP.user && APP.user.role) ? String(APP.user.role).toLowerCase() : ''
+  // Dashboard / core always allowed when session exists (role may lag after register)
+  if(module==='core') return true
   if(!role) return false
   if(role==='owner' || role==='admin' || isPlatformAdmin()) return true
   if(module==='admin') {
     const mods = _rpModulesForCurrentUser()
     return mods.includes('admin')
   }
-  if(module==='core') return true
   const ov = APP.user && APP.user.module_override
   let mods
   if(Array.isArray(ov)) mods = ov.map(String)
@@ -3069,7 +3070,7 @@ async function loadUserSession(user, opts={}) {
       return
     }
     APP.user.name=profile.full_name
-    APP.user.role=profile.role
+    APP.user.role=profile.role || (profile.tenant_id ? 'owner' : 'staff')
     // Per-user module-access override (Phase 2 of the invite modal) — null
     // for every user created before this feature, or any invite where the
     // admin left "use role default" on; canAccess() only consults this
