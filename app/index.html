@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-rpstrict">
+<meta name="nexerp-build" content="2026-08-14-nophion">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1664,15 +1664,10 @@ function canAccess(module) {
 
 
 function isPlatformAdmin() {
-  // Platform admin = cross-tenant operator only.
-  // Do NOT match tenant staff emails like mpflemedia@gmail.com — that bypassed all role permissions.
-  if(APP.user.role === 'platform_admin') return true
-  // Explicit opt-in for testing (console: localStorage.setItem('nexerp_platform_admin','1'))
-  if(localStorage.getItem('nexerp_platform_admin') === '1') return true
-  const email = (APP.user.email || '').toLowerCase().trim()
-  // Allowlist only company operator domains — not personal gmail
-  if(email.endsWith('@phion.my') || email.endsWith('@mpflemedia.my')) return true
-  return false
+  // Cross-tenant operator ONLY when role is explicitly platform_admin.
+  // Never grant by email domain — @phion.my staff were getting full sidebar access.
+  const role = String((APP.user && APP.user.role) || '').toLowerCase()
+  return role === 'platform_admin'
 }
 
 
