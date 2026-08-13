@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-ampm2">
+<meta name="nexerp-build" content="2026-08-13-ai3">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3166,7 +3166,7 @@ function renderDashboard() {
 
     <!-- AI Business Insight + Marketing (above Recent Activity) -->
     ${(isTenantAdmin() || canAccess('reports') || canAccess('sales')) ? `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <div class="db-card-title" style="margin:0"><i class="ti ti-bulb"></i> ${isBm?'Wawasan AI Perniagaan':'AI Business Insight'}</div>
@@ -3180,6 +3180,13 @@ function renderDashboard() {
           <button type="button" id="db-marketing-btn" class="btn btn-outline btn-sm" onclick="_dbLoadMarketingAdvice()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
         </div>
         <div id="db-marketing-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk idea pemasaran.':'Click Generate for marketing ideas.'}</div>
+      </div>
+      <div class="db-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="db-card-title" style="margin:0"><i class="ti ti-list-check"></i> ${isBm?'Ringkasan Harian AI':'AI Daily Digest'}</div>
+          <button type="button" id="db-digest-btn" class="btn btn-outline btn-sm" onclick="_dbLoadDailyDigest()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
+        </div>
+        <div id="db-digest-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk item tindakan hari ini.':'Click Generate for today\'s action items.'}</div>
       </div>
     </div>` : ''}
 
@@ -3714,20 +3721,30 @@ async function _dbLoadPeople() {
   const el = document.getElementById('db-people-list')
   if(!el || !APP.tenant.id) return
   const isBm = APP.language === 'bm'
-  // Use local date in GMT+8 (Malaysia)
-  const now = new Date()
-  const today = new Date(now.getTime() + (8*60*60*1000)).toISOString().slice(0,10)
+  // Local calendar date (browser timezone — Malaysia users are GMT+8)
+  const _n = new Date()
+  const today = _n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0')+'-'+String(_n.getDate()).padStart(2,'0')
   try {
     // Every status logged for today — present, absent, late, half day, on
     // leave — not just "present", so this card reflects the full picture
     // of who's in/out today, not only who clocked in.
-    const {data: att, error: attErr} = await sb.from('attendance')
+    let {data: att, error: attErr} = await sb.from('attendance')
       .select('id, status, clock_in, clock_out, employee_id, date')
       .eq('tenant_id', APP.tenant.id)
       .eq('date', today)
       .is('deleted_at', null)
       .order('clock_in', {ascending: true})
       .limit(50)
+    // Fallback: if empty, retry with ISO-UTC date (edge near midnight)
+    if(!attErr && !(att||[]).length) {
+      const utcDay = new Date().toISOString().slice(0,10)
+      if(utcDay !== today) {
+        const r2 = await sb.from('attendance').select('id, status, clock_in, clock_out, employee_id, date')
+          .eq('tenant_id', APP.tenant.id).eq('date', utcDay).is('deleted_at', null)
+          .order('clock_in', {ascending: true}).limit(50)
+        if(!r2.error && r2.data && r2.data.length) att = r2.data
+      }
+    }
     if(attErr) throw attErr
     const list = att || []
     if(!list.length) {
