@@ -2649,7 +2649,7 @@ function _obcItems() {
   ]
   _onbVisibleNavItems().forEach(item => {
     const k = 'visited_'+item.id
-    items.push({ key:k, en:'Try the '+item.label_en+' module', bm:'Cuba modul '+item.label_bm, done: !!stored[k], onclick:`openPage('${item.id}')` })
+    items.push({ key:k, en:'Try the '+item.label_en+' module', bm:'Sila terokai modul '+item.label_bm, done: !!stored[k], onclick:`openPage('${item.id}')` })
   })
   items.push({ key:'profile_reviewed', en:'Review your profile', bm:'Semak profil anda', done: !!stored.profile_reviewed, onclick:"openPage('settings',{})" })
   return items
@@ -2668,7 +2668,7 @@ function _obcRenderChecklist() {
   <div class="db-card" style="margin-bottom:14px;border:1px solid var(--primary,#2563EB);position:relative">
     <button type="button" onclick="_obcDismissChecklist()" title="${isBm?'Tutup':'Dismiss'}" style="position:absolute;top:14px;right:14px;background:none;border:none;color:var(--db-text3);cursor:pointer;font-size:16px;line-height:1;padding:2px"><i class="ti ti-x"></i></button>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;padding-right:26px;flex-wrap:wrap">
-      <div class="db-card-title" style="margin:0"><i class="ti ti-checklist"></i> ${isBm?'Mulakan Dengan NexERP':'Getting Started with NexERP'}</div>
+      <div class="db-card-title" style="margin:0"><i class="ti ti-checklist"></i> ${isBm?'Mula Bermula dengan NexERP':'Getting Started with NexERP'}</div>
       <div style="font-size:12px;color:var(--db-text3);font-weight:600">${doneCount}/${items.length} ${isBm?'selesai':'done'}</div>
     </div>
     <div style="height:6px;background:var(--db-border2);border-radius:3px;margin:10px 0 14px;overflow:hidden">
@@ -2705,11 +2705,11 @@ let _obtResizeHandler = null
 const _OBT_MODULE_BLURB = {
   crm:        { en:'Manage your customers and contacts here.',             bm:'Urus pelanggan dan kenalan anda di sini.' },
   sales:      { en:'Create quotations and invoices for customers.',        bm:'Cipta sebut harga dan invois untuk pelanggan.' },
-  pos:        { en:'Ring up sales at the counter with Point of Sale.',     bm:'Buat jualan di kaunter dengan POS.' },
-  inventory:  { en:'Track products and stock levels.',                    bm:'Jejak produk dan tahap stok.' },
-  logistics:  { en:'Track delivery status for outgoing orders.',          bm:'Jejak status penghantaran pesanan.' },
+  pos:        { en:'Ring up sales at the counter with Point of Sale.',     bm:'Uruskan jualan di kaunter menggunakan POS.' },
+  inventory:  { en:'Track products and stock levels.',                    bm:'Jejaki produk dan tahap stok.' },
+  logistics:  { en:'Track delivery status for outgoing orders.',          bm:'Jejaki status penghantaran pesanan.' },
   purchasing: { en:'Manage suppliers, purchase orders and bills.',         bm:'Urus pembekal, pesanan belian dan bil.' },
-  production: { en:'Track work orders and production status.',            bm:'Jejak pesanan kerja dan status pengeluaran.' },
+  production: { en:'Track work orders and production status.',            bm:'Jejaki pesanan kerja dan status pengeluaran.' },
   hr:         { en:'Manage employees, attendance and payroll.',            bm:'Urus pekerja, kehadiran dan penggajian.' },
   applicants: { en:'Review job applicants and recruitment.',               bm:'Semak pemohon kerja dan pengambilan.' },
   accounting: { en:'Chart of Accounts, journal entries and fiscal years.', bm:'Carta Akaun, entri jurnal dan tahun fiskal.' },
@@ -2727,7 +2727,7 @@ function _obtBuildSteps() {
   steps.push({
     selector: null,
     en: `Welcome to NexERP, ${APP.user.name||''}! Let's take a quick look around ${APP.tenant.name||'your workspace'}.`,
-    bm: `Selamat datang ke NexERP, ${APP.user.name||''}! Jom kita lihat sekeliling ${APP.tenant.name||'ruang kerja anda'} sekejap.`
+    bm: `Selamat datang ke NexERP, ${APP.user.name||''}! Mari kita tinjau ${APP.tenant.name||'ruang kerja anda'} sebentar.`
   })
   _onbVisibleNavItems().forEach(item => {
     const blurb = _OBT_MODULE_BLURB[item.id] || { en:'Explore this module.', bm:'Terokai modul ini.' }
@@ -2737,9 +2737,9 @@ function _obtBuildSteps() {
       bm: `<strong>${item.label_bm}</strong> — ${blurb.bm}`
     })
   })
-  steps.push({ selector:'.header-search', en:'Use Search to quickly jump to any customer, invoice or product.', bm:'Guna Carian untuk terus ke mana-mana pelanggan, invois atau produk.' })
-  steps.push({ selector:'.notif-wrap', en:'Notifications — overdue invoices, low stock and other alerts show up here.', bm:'Notifikasi — invois tertunggak, stok rendah dan makluman lain muncul di sini.' })
-  steps.push({ selector:'#user-avatar-header', en:'Your profile menu — update Settings, set a security PIN, or replay this tour anytime.', bm:'Menu profil anda — kemas kini Tetapan, tetapkan PIN keselamatan, atau ulang tayang tour ini bila-bila masa.' })
+  steps.push({ selector:'.header-search', en:'Use Search to quickly jump to any customer, invoice or product.', bm:'Gunakan Carian untuk terus ke mana-mana pelanggan, invois atau produk.' })
+  steps.push({ selector:'.notif-wrap', en:'Notifications — overdue invoices, low stock and other alerts show up here.', bm:'Notifikasi — invois tertunggak, stok rendah dan makluman lain dipaparkan di sini.' })
+  steps.push({ selector:'#user-avatar-header', en:'Your profile menu — update Settings, set a security PIN, or replay this tour anytime.', bm:'Menu profil anda — kemas kini Tetapan, tetapkan PIN keselamatan, atau ulang tayang tur ini pada bila-bila masa.' })
   return steps
 }
 
@@ -5451,7 +5451,7 @@ async function renderSettings(params={}) {
         {id:'stg-docgen', en:'Doc Generator', bm:'Penjana Dokumen'},
         {id:'stg-periodlock', en:'Period Lock', bm:'Kunci Tempoh'},
         {id:'stg-pin', en:'Security PIN', bm:'PIN Keselamatan'},
-        {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tour Panduan'},
+        {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tur Panduan'},
         {id:'stg-backup', en:'Data Backup', bm:'Sandaran Data'},
         {id:'stg-fraud', en:'Fraud Check', bm:'Semakan Penipuan'},
         {id:'stg-audit', en:'Audit Log', bm:'Log Audit'},
@@ -5460,7 +5460,7 @@ async function renderSettings(params={}) {
     } else {
       items.push(
         {id:'stg-docgen', en:'Doc Generator', bm:'Penjana Dokumen'},
-        {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tour Panduan'}
+        {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tur Panduan'}
       )
     }
     return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:16px">
@@ -5732,12 +5732,12 @@ async function renderSettings(params={}) {
     </div>
   </div>
   <div class="card" style="max-width:500px;margin-top:16px" id="stg-replay-tour">
-    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Tour Panduan':'Welcome Tour'}</div></div>
+    <div class="card-header"><div class="card-title">${APP.language==='bm'?'Tur Panduan':'Welcome Tour'}</div></div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'
-        ?'Ulang tayang tour pengenalan ringkas sistem ni — berguna kalau anda terlepas kali pertama atau perlukan penyegaran.'
+        ?'Ulang tayang tur pengenalan ringkas sistem ini — berguna sekiranya anda terlepas pada kali pertama atau memerlukan penyegaran semula.'
         :'Replay the short walkthrough tour of the system — handy if you missed it the first time or need a refresher.'}</p>
-      <button type="button" class="btn btn-primary btn-sm" onclick="_obtReplay()"><i class="ti ti-player-play"></i> ${APP.language==='bm'?'Tunjuk tour semula':'Replay tour'}</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="_obtReplay()"><i class="ti ti-player-play"></i> ${APP.language==='bm'?'Ulang Tayang Tur':'Replay tour'}</button>
     </div>
   </div>
   <div class="card" style="max-width:500px;margin-top:16px;${isAdmin?'':'display:none'}" id="stg-backup">
