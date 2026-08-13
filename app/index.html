@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-actall">
+<meta name="nexerp-build" content="2026-08-14-ob2">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -251,7 +251,7 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 #onboarding-page::before{content:'';position:absolute;inset:0;background:url('./Phion%20Background%20Image.png') center/cover no-repeat;opacity:.20;pointer-events:none;z-index:0}
 #onboarding-page>*{position:relative;z-index:1}
 #onboarding-page.active{display:flex}
-.ob-wrap{width:100%;max-width:680px}
+.ob-wrap{width:100%;max-width:520px}.ob-card{border-radius:16px!important}
 .ob-header{text-align:center;margin-bottom:32px}
 .ob-logo{height:40px;width:auto;object-fit:contain;margin-bottom:18px}
 .ob-title{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px}
@@ -2920,11 +2920,11 @@ async function doRegister() {
       // Step 3: Call register_tenant RPC
       const {data:rpcData, error:rpcError}=await sb.rpc('register_tenant',{
         p_user_id:     data.user.id,
-        p_tenant_name: company,
+        p_tenant_name: company || (name + ' Workspace'),
         p_tenant_code: tenantCode,
         p_full_name:   name,
-        p_entity_type: 'sdn_bhd',
-        p_industry:    'general',
+        p_entity_type: 'pending',
+        p_industry:    'pending',
         p_plan_code:   'starter'
       })
       if(rpcError) {
@@ -3090,7 +3090,19 @@ async function loadUserSession(user, opts={}) {
       APP.tenant.config=profile.tenants.config||{}
       APP.tenantConfig.roles=(function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
       if(!profile.tenants.onboarding_completed) {
-        showOnboarding()
+        const r = String(profile.role||APP.user.role||'').toLowerCase()
+        if(r==='owner'||r==='admin'||isPlatformAdmin()) {
+          showOnboarding()
+          return
+        }
+        // Staff/invite: enter app; admin still finishing setup
+        showShell()
+        setTimeout(() => {
+          try {
+            const bm = APP.language==='bm'
+            showToast(bm?'Admin masih menyediakan syarikat. Sesetengah fungsi mungkin terhad.':'Admin is still setting up the company. Some features may be limited.','info')
+          } catch(e) {}
+        }, 800)
         return
       }
     }
@@ -3523,6 +3535,25 @@ async function _dbMonthPnL(fromDate, toDateInclusive) {
 }
 
 async function loadDashboardData() {
+  try {
+    if(localStorage.getItem('nexerp_show_golive_banner')==='1' && isTenantAdmin()) {
+      setTimeout(() => {
+        const host = document.getElementById('page-content') || document.querySelector('main')
+        if(!host || document.getElementById('ob-golive-banner')) return
+        const bm = APP.language==='bm'
+        const bar = document.createElement('div')
+        bar.id = 'ob-golive-banner'
+        bar.style.cssText = 'margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(14,116,144,.12);border:1px solid rgba(14,116,144,.35);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'
+        bar.innerHTML = `<div style="font-size:13px;color:var(--text)"><strong>${bm?'Selesaikan Go-Live':'Finish Go-Live setup'}</strong> — ${bm?'akaun lalai & semakan awal':'default accounts & quick checks'}</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="openPage('settings')">${bm?'Buka Settings':'Open Settings'}</button>
+            <button class="btn btn-outline btn-sm" onclick="localStorage.removeItem('nexerp_show_golive_banner');document.getElementById('ob-golive-banner')?.remove()">Dismiss</button>
+          </div>`
+        host.insertBefore(bar, host.firstChild)
+      }, 600)
+    }
+  } catch(e) {}
+
   if(!APP.tenant?.id) {
     // Session may still be hydrating after login — retry once
     if(!loadDashboardData._retried) {
@@ -21975,459 +22006,398 @@ function _exportTableToCsv(rows, columns, filename) {
 
 // ─── ONBOARDING WIZARD ───────────────────────────────────────────────────────
 
+
 const OB = {
-  step: 1,
-  totalSteps: 4,
+  step: 0, // 0 welcome … 5 COA · then done
+  totalSteps: 5,
   data: {
-    // Step 1: Company Info
-    company_name:'', ssm_no:'', entity_type:'', address:'', city:'', postcode:'', state:'', phone:'', email_biz:'', website:'',
-    // Step 2: Industry
-    industry:'', business_desc:'',
-    // Step 3: Fiscal Year
-    fiscal_start:'', fiscal_end:'', currency:'MYR',
-    // Step 4: COA Template
-    coa_template:'general'
+    company_name: '', entity_type: '', industry: '', business_desc: '',
+    fiscal_start: '', fiscal_end: '', currency: 'MYR', coa_template: 'general',
+    ssm_no: '', address: '', city: '', postcode: '', state: '', phone: '', email_biz: '', website: ''
   }
 }
 
 const OB_STEPS = [
-  { num:1, label_en:'Company',    label_bm:'Syarikat',    icon:'ti-building' },
-  { num:2, label_en:'Industry',   label_bm:'Industri',    icon:'ti-briefcase' },
-  { num:3, label_en:'Fiscal Year',label_bm:'Tahun Fiskal',icon:'ti-calendar' },
-  { num:4, label_en:'Accounts',   label_bm:'Akaun',       icon:'ti-chart-dots' },
+  { num:1, label_en:'Company',  label_bm:'Syarikat' },
+  { num:2, label_en:'Entity',   label_bm:'Entiti' },
+  { num:3, label_en:'Industry', label_bm:'Industri' },
+  { num:4, label_en:'Fiscal',   label_bm:'Fiskal' },
+  { num:5, label_en:'Accounts', label_bm:'Akaun' },
+]
+
+const OB_ENTITIES = [
+  { id:'sdn_bhd', en:'Sdn. Bhd.', bm:'Sdn. Bhd.' },
+  { id:'enterprise', en:'Enterprise', bm:'Enterprise' },
+  { id:'sole_prop', en:'Sole Proprietor', bm:'Pemilik Tunggal' },
+  { id:'llp', en:'LLP / Partnership', bm:'LLP / Perkongsian' },
+  { id:'other', en:'Other', bm:'Lain-lain' },
 ]
 
 const OB_INDUSTRIES = [
-  { id:'retail',       icon:'ti-shopping-cart',   en:'Retail',           bm:'Runcit' },
-  { id:'food',         icon:'ti-tools-kitchen-2', en:'F&B',              bm:'Makanan & Minuman' },
-  { id:'services',     icon:'ti-briefcase',        en:'Services',         bm:'Perkhidmatan' },
-  { id:'construction', icon:'ti-building-factory', en:'Construction',     bm:'Pembinaan' },
-  { id:'trading',      icon:'ti-arrows-exchange',  en:'Trading',          bm:'Perdagangan' },
-  { id:'education',    icon:'ti-school',           en:'Education',        bm:'Pendidikan' },
-  { id:'healthcare',   icon:'ti-heart-rate-monitor',en:'Healthcare',      bm:'Kesihatan' },
-  { id:'technology',   icon:'ti-device-laptop',    en:'Technology',       bm:'Teknologi' },
-  { id:'other',        icon:'ti-dots-circle-horizontal',en:'Other',       bm:'Lain-lain' },
+  { id:'retail', icon:'ti-shopping-cart', en:'Retail', bm:'Runcit', tip_en:'Stock, POS & COGS accounts', tip_bm:'Stok, POS & akaun COGS' },
+  { id:'food', icon:'ti-tools-kitchen-2', en:'F&B', bm:'F&B', tip_en:'Outlets, inventory & daily sales', tip_bm:'Cawangan, stok & jualan harian' },
+  { id:'services', icon:'ti-briefcase', en:'Services', bm:'Perkhidmatan', tip_en:'Invoices, projects & retainers', tip_bm:'Invois, projek & retainer' },
+  { id:'construction', icon:'ti-building-factory', en:'Construction', bm:'Pembinaan', tip_en:'Job costing & progress claims', tip_bm:'Kos projek & tuntutan' },
+  { id:'trading', icon:'ti-arrows-exchange', en:'Trading', bm:'Perdagangan', tip_en:'Buy/sell & multi-currency ready', tip_bm:'Beli/jual & sedia multi-matawang' },
+  { id:'other', icon:'ti-building', en:'Other', bm:'Lain-lain', tip_en:'General SME chart of accounts', tip_bm:'Carta akaun PKS umum' },
 ]
 
 const OB_COA_TEMPLATES = [
-  { id:'general',      icon:'ti-layout-grid',      en:'General Business', bm:'Perniagaan Umum',    desc_en:'Suitable for most SMEs', desc_bm:'Sesuai untuk kebanyakan PKS' },
-  { id:'retail',       icon:'ti-shopping-cart',    en:'Retail / Trading', bm:'Runcit / Perdagangan',desc_en:'Includes COGS, merchandise accounts', desc_bm:'Termasuk COGS, akaun barangan' },
-  { id:'service',      icon:'ti-briefcase',        en:'Service Based',    bm:'Berasaskan Servis',   desc_en:'Optimized for service businesses', desc_bm:'Dioptimumkan untuk perniagaan servis' },
-  { id:'fnb',          icon:'ti-tools-kitchen-2',  en:'F&B / Restaurant', bm:'Makanan & Minuman',   desc_en:'Includes kitchen cost, wastage accounts', desc_bm:'Termasuk kos dapur, akaun pembaziran' },
+  { id:'general', icon:'ti-layout-grid', en:'General Business', bm:'Perniagaan Umum', desc_en:'Best for most SMEs', desc_bm:'Sesuai kebanyakan PKS', recommended: true },
+  { id:'retail', icon:'ti-shopping-cart', en:'Retail / Trading', bm:'Runcit / Trading', desc_en:'COGS & merchandise', desc_bm:'COGS & barangan' },
+  { id:'service', icon:'ti-briefcase', en:'Service Based', bm:'Berasaskan Servis', desc_en:'Services & retainers', desc_bm:'Servis & retainer' },
+  { id:'fnb', icon:'ti-tools-kitchen-2', en:'F&B', bm:'F&B', desc_en:'Outlets & daily sales', desc_bm:'Cawangan & jualan harian' },
 ]
-
-const MY_STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','Kuala Lumpur','Labuan','Putrajaya']
 
 function showOnboarding() {
   document.getElementById('auth-page').style.display = 'none'
   document.getElementById('shell').classList.remove('active')
   const obPage = document.getElementById('onboarding-page')
   obPage.classList.add('active')
-  // set logo
   const logoImgs = document.querySelectorAll('.sidebar-logo-img')
-  if(logoImgs.length) document.getElementById('ob-logo').src = logoImgs[0].src
-  OB.step = 1
+  if(logoImgs.length && document.getElementById('ob-logo')) document.getElementById('ob-logo').src = logoImgs[0].src
+  // Prefill from session / metadata
+  try {
+    const meta = (sb?.auth?.user?.()?.user_metadata) || {}
+    if(!OB.data.company_name) OB.data.company_name = APP.tenant?.name || meta.company_name || ''
+    if(OB.data.company_name === 'pending' || OB.data.company_name === 'Workspace') OB.data.company_name = meta.company_name || ''
+  } catch(e) {}
+  OB.step = 0
   obUpdateLang()
-  obRenderSteps()
   obRenderStep()
 }
 
 function hideOnboarding() {
-  document.getElementById('onboarding-page').classList.remove('active')
+  document.getElementById('onboarding-page')?.classList.remove('active')
 }
 
 function obUpdateLang() {
   const L = APP.language
-  document.getElementById('ob-title').textContent = L==='bm' ? 'Selamat Datang ke NexERP' : 'Welcome to NexERP'
-  document.getElementById('ob-sub').textContent   = L==='bm' ? 'Jom sediakan syarikat anda dalam beberapa langkah sahaja' : "Let's set up your company in just a few steps"
+  const elT = document.getElementById('ob-title')
+  const elS = document.getElementById('ob-sub')
+  if(elT) elT.textContent = L==='bm' ? 'Selamat datang ke NexERP' : 'Welcome to NexERP'
+  if(elS) elS.textContent = L==='bm' ? 'Sediakan ruang kerja anda dalam ~2 minit' : 'Set up your workspace in about 2 minutes'
 }
 
-function obRenderSteps() {
+function obProgressHtml() {
+  if(OB.step < 1 || OB.step > OB.totalSteps) return ''
+  const pct = Math.round((OB.step / OB.totalSteps) * 100)
   const L = APP.language
-  const el = document.getElementById('ob-steps-indicator')
-  el.innerHTML = OB_STEPS.map((s,i) => {
-    const isDone   = OB.step > s.num
-    const isActive = OB.step === s.num
-    const dotClass = isDone ? 'done' : isActive ? 'active' : ''
-    const dotContent = isDone ? '<i class="ti ti-check" style="font-size:13px"></i>' : s.num
-    const lineClass = isDone ? 'done' : ''
-    const line = i < OB_STEPS.length-1 ? `<div class="ob-step-line ${lineClass}"></div>` : ''
-    const label = L==='bm' ? s.label_bm : s.label_en
-    return `<div class="ob-step-dot ${dotClass}">${dotContent}</div>${i < OB_STEPS.length-1 ? `<div class="ob-step-label">${label}</div>${line}` : `<div class="ob-step-label">${label}</div>`}`
-  }).join('')
-}
-
-function obRenderStep() {
-  obRenderSteps()
-  const L = APP.language
-  const el = document.getElementById('ob-step-content')
-  document.getElementById('ob-error').classList.remove('show')
-
-  if(OB.step === 1) {
-    el.innerHTML = `
-    <div class="ob-section-title">${L==='bm'?'Maklumat Syarikat':'Company Information'}</div>
-    <div class="ob-section-sub">${L==='bm'?'Masukkan maklumat asas syarikat anda':'Enter your basic company details'}</div>
-    <div class="ob-grid ob-full" style="grid-template-columns:1fr;margin-bottom:14px">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Nama Syarikat':'Company Name'} <span>*</span></label>
-        <input class="ob-input" id="ob-company" placeholder="${L==='bm'?'Contoh: Syarikat Maju Sdn Bhd':'e.g. Maju Trading Sdn Bhd'}" value="${OB.data.company_name}">
-      </div>
+  return `<div style="margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.45);margin-bottom:6px">
+      <span>${L==='bm'?'Langkah':'Step'} ${OB.step} / ${OB.totalSteps}</span>
+      <span>${pct}%</span>
     </div>
-    <div class="ob-grid" style="margin-bottom:14px">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'No. SSM / ROC':'SSM / ROC No.'}</label>
-        <input class="ob-input" id="ob-ssm" placeholder="202201012345" value="${OB.data.ssm_no}">
-      </div>
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Jenis Entiti':'Entity Type'} <span>*</span></label>
-        <select class="ob-select" id="ob-entity">
-          <option value="">${L==='bm'?'-- Pilih --':'-- Select --'}</option>
-          <option value="sole_proprietor"  ${OB.data.entity_type==='sole_proprietor'?'selected':''}>Sole Proprietor / Milikan Tunggal</option>
-          <option value="partnership"      ${OB.data.entity_type==='partnership'?'selected':''}>Partnership / Perkongsian</option>
-          <option value="sdn_bhd"          ${OB.data.entity_type==='sdn_bhd'?'selected':''}>Sdn Bhd</option>
-          <option value="llp"              ${OB.data.entity_type==='llp'?'selected':''}>LLP / PLT</option>
-          <option value="enterprise"       ${OB.data.entity_type==='enterprise'?'selected':''}>Enterprise</option>
-        </select>
-      </div>
+    <div style="height:4px;background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:var(--primary);border-radius:99px;transition:width .35s ease"></div>
     </div>
-    <div class="ob-grid ob-full" style="grid-template-columns:1fr;margin-bottom:14px">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Alamat':'Address'}</label>
-        <textarea class="ob-textarea" id="ob-address" placeholder="${L==='bm'?'No, Jalan, Taman...':'Street address...'}">${OB.data.address}</textarea>
-      </div>
-    </div>
-    <div class="ob-grid" style="margin-bottom:14px">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Bandar':'City'}</label>
-        <input class="ob-input" id="ob-city" placeholder="${L==='bm'?'Contoh: Kuala Lumpur':'e.g. Kuala Lumpur'}" value="${OB.data.city}">
-      </div>
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Poskod':'Postcode'}</label>
-        <input class="ob-input" id="ob-postcode" placeholder="50000" maxlength="5" value="${OB.data.postcode}">
-      </div>
-    </div>
-    <div class="ob-grid" style="margin-bottom:14px">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Negeri':'State'}</label>
-        <select class="ob-select" id="ob-state">
-          <option value="">${L==='bm'?'-- Pilih Negeri --':'-- Select State --'}</option>
-          ${MY_STATES.map(s=>`<option value="${s}" ${OB.data.state===s?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </div>
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'No. Telefon':'Phone Number'}</label>
-        <input class="ob-input" id="ob-phone" placeholder="+6011-12345678" value="${OB.data.phone}">
-      </div>
-    </div>
-    <div class="ob-grid">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Email Perniagaan':'Business Email'}</label>
-        <input class="ob-input" type="email" id="ob-email-biz" placeholder="info@syarikat.com" value="${OB.data.email_biz}">
-      </div>
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Laman Web (pilihan)':'Website (optional)'}</label>
-        <input class="ob-input" id="ob-website" placeholder="www.syarikat.com" value="${OB.data.website}">
-      </div>
-    </div>
-    <div class="ob-actions">
-      <span></span>
-      <button class="ob-btn ob-btn-primary" onclick="obNext()">
-        ${L==='bm'?'Seterusnya':'Next'} <i class="ti ti-arrow-right"></i>
-      </button>
-    </div>`
-
-  } else if(OB.step === 2) {
-    el.innerHTML = `
-    <div class="ob-section-title">${L==='bm'?'Industri & Profil Perniagaan':'Industry & Business Profile'}</div>
-    <div class="ob-section-sub">${L==='bm'?'Ini membantu kami menyesuaikan NexERP untuk perniagaan anda':'This helps us customize NexERP for your business'}</div>
-    <label class="ob-label" style="margin-bottom:10px;display:block">${L==='bm'?'Pilih industri anda:':'Select your industry:'} <span>*</span></label>
-    <div class="ob-industry-grid" id="ob-industry-grid">
-      ${OB_INDUSTRIES.map(ind=>`
-        <div class="ob-industry-card${OB.data.industry===ind.id?' selected':''}" onclick="obSelectIndustry('${ind.id}')">
-          <i class="ti ${ind.icon}"></i>
-          <span>${L==='bm'?ind.bm:ind.en}</span>
-        </div>`).join('')}
-    </div>
-    <div class="ob-form-group" style="margin-top:20px">
-      <label class="ob-label">${L==='bm'?'Penerangan Ringkas Perniagaan (pilihan)':'Brief Business Description (optional)'}</label>
-      <textarea class="ob-textarea" id="ob-biz-desc" placeholder="${L==='bm'?'Ceritakan serba sedikit tentang perniagaan anda...':'Tell us a bit about your business...'}">${OB.data.business_desc}</textarea>
-    </div>
-    <div class="ob-actions">
-      <button class="ob-btn ob-btn-outline" onclick="obBack()">
-        <i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}
-      </button>
-      <button class="ob-btn ob-btn-primary" onclick="obNext()">
-        ${L==='bm'?'Seterusnya':'Next'} <i class="ti ti-arrow-right"></i>
-      </button>
-    </div>`
-
-  } else if(OB.step === 3) {
-    // Default fiscal year: current year Jan 1 - Dec 31
-    const curY = new Date().getFullYear()
-    if(!OB.data.fiscal_start) OB.data.fiscal_start = `${curY}-01-01`
-    if(!OB.data.fiscal_end)   OB.data.fiscal_end   = `${curY}-12-31`
-    el.innerHTML = `
-    <div class="ob-section-title">${L==='bm'?'Tahun Fiskal':'Fiscal Year'}</div>
-    <div class="ob-section-sub">${L==='bm'?'Tetapkan tahun kewangan syarikat anda':'Set your company financial year'}</div>
-    <div class="ob-grid" style="margin-bottom:20px">
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Tarikh Mula':'Start Date'} <span>*</span></label>
-        <input class="ob-input" type="date" id="ob-fy-start" value="${OB.data.fiscal_start}" onchange="obAutoEndDate()">
-      </div>
-      <div class="ob-form-group">
-        <label class="ob-label">${L==='bm'?'Tarikh Tamat':'End Date'} <span>*</span></label>
-        <input class="ob-input" type="date" id="ob-fy-end" value="${OB.data.fiscal_end}">
-      </div>
-    </div>
-    <div class="ob-form-group" style="margin-bottom:20px">
-      <label class="ob-label">${L==='bm'?'Mata Wang':'Currency'}</label>
-      <select class="ob-select" id="ob-currency" style="max-width:280px">
-        <option value="MYR" selected>MYR — Malaysian Ringgit</option>
-        <option value="USD">USD — US Dollar</option>
-        <option value="SGD">SGD — Singapore Dollar</option>
-      </select>
-    </div>
-    <div style="background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.25);border-radius:10px;padding:14px 16px;font-size:12px;color:rgba(255,255,255,.6)">
-      <i class="ti ti-info-circle" style="color:var(--primary);margin-right:6px"></i>
-      ${L==='bm'?'Standard Malaysia: 1 Jan – 31 Dis. Kau boleh ubah kemudian dalam tetapan.':'Malaysia standard: 1 Jan – 31 Dec. You can change this later in settings.'}
-    </div>
-    <div class="ob-actions">
-      <button class="ob-btn ob-btn-outline" onclick="obBack()">
-        <i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}
-      </button>
-      <button class="ob-btn ob-btn-primary" onclick="obNext()">
-        ${L==='bm'?'Seterusnya':'Next'} <i class="ti ti-arrow-right"></i>
-      </button>
-    </div>`
-
-  } else if(OB.step === 4) {
-    el.innerHTML = `
-    <div class="ob-section-title">${L==='bm'?'Templat Carta Akaun':'Chart of Accounts Template'}</div>
-    <div class="ob-section-sub">${L==='bm'?'Pilih templat yang paling sesuai — anda boleh sesuaikan kemudian':'Choose the most suitable template — you can customize later'}</div>
-    <div class="ob-coa-grid">
-      ${OB_COA_TEMPLATES.map(t=>`
-        <div class="ob-coa-card${OB.data.coa_template===t.id?' selected':''}" onclick="obSelectCOA('${t.id}')">
-          <i class="ti ${t.icon}"></i>
-          <div class="ob-coa-info">
-            <h4>${L==='bm'?t.bm:t.en}</h4>
-            <p>${L==='bm'?t.desc_bm:t.desc_en}</p>
-          </div>
-          <div class="ob-coa-check">${OB.data.coa_template===t.id?'<i class="ti ti-check" style="font-size:11px"></i>':''}</div>
-        </div>`).join('')}
-    </div>
-    <div class="ob-actions">
-      <button class="ob-btn ob-btn-outline" onclick="obBack()">
-        <i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}
-      </button>
-      <button class="ob-btn ob-btn-success" id="ob-finish-btn" onclick="obFinish()">
-        <i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Persediaan!':'Complete Setup!'}
-      </button>
-    </div>`
-  }
-
-  obLoadAiTip()
-}
-
-const OB_STEP_TOPICS = {
-  1: 'entering basic company information (name, SSM/ROC number, entity type, address) during ERP onboarding for a Malaysian SME',
-  2: "choosing their business industry and describing their business during ERP onboarding",
-  3: 'setting up their fiscal year (start/end date) during ERP onboarding',
-  4: 'choosing a chart-of-accounts template during ERP onboarding',
-}
-
-// Best-effort contextual tip — never blocks the wizard. On any failure the tip
-// box is simply hidden rather than showing an error during a new user's setup.
-async function obLoadAiTip() {
-  const el = document.getElementById('ob-ai-tip')
-  if(!el) return
-  const isBm = APP.language==='bm'
-  el.style.display = 'block'
-  el.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Memuatkan tip...':'Loading tip...'}</div>`
-
-  try {
-    const topic = OB_STEP_TOPICS[OB.step] || 'onboarding a new business'
-    const industry = OB.data.industry || null
-    const context = `Step topic: ${topic}.${industry ? ` The user has selected industry: ${industry}.` : ''}`
-
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'onboarding_tip', context, language: APP.language } })
-    if(error) throw error
-    if(!data?.success) throw new Error(data?.error || 'Unknown error')
-    el.innerHTML = `<i class="ti ti-bulb" style="color:var(--primary)"></i> <strong>${isBm?'Tip AI':'AI Tip'}:</strong> ${_aiEscapeHtml(data.data.tip)}`
-  } catch(err) {
-    console.error('Onboarding tip error (non-blocking):', err)
-    el.style.display = 'none'
-  }
-}
-
-function obSelectIndustry(id) {
-  OB.data.industry = id
-  document.querySelectorAll('.ob-industry-card').forEach(el => el.classList.toggle('selected', el.getAttribute('onclick').includes(`'${id}'`)))
-}
-
-function obSelectCOA(id) {
-  OB.data.coa_template = id
-  document.querySelectorAll('.ob-coa-card').forEach(el => {
-    const sel = el.getAttribute('onclick').includes(`'${id}'`)
-    el.classList.toggle('selected', sel)
-    const check = el.querySelector('.ob-coa-check')
-    if(check) check.innerHTML = sel ? '<i class="ti ti-check" style="font-size:11px"></i>' : ''
-  })
-}
-
-function obAutoEndDate() {
-  const start = document.getElementById('ob-fy-start')?.value
-  if(!start) return
-  const d = new Date(start)
-  d.setFullYear(d.getFullYear() + 1)
-  d.setDate(d.getDate() - 1)
-  const end = document.getElementById('ob-fy-end')
-  if(end) end.value = d.toISOString().slice(0,10)
+  </div>`
 }
 
 function obShowError(msg) {
   const el = document.getElementById('ob-error')
+  if(!el) return
   el.textContent = msg
   el.classList.add('show')
-  el.scrollIntoView({behavior:'smooth', block:'nearest'})
+}
+
+function obSelectEntity(id) {
+  OB.data.entity_type = id
+  obRenderStep()
+}
+
+function obSelectIndustry(id) {
+  OB.data.industry = id
+  // smart COA default
+  if(id==='retail' || id==='trading') OB.data.coa_template = 'retail'
+  else if(id==='food') OB.data.coa_template = 'fnb'
+  else if(id==='services') OB.data.coa_template = 'service'
+  else OB.data.coa_template = 'general'
+  obRenderStep()
+}
+
+function obSelectCOA(id) {
+  OB.data.coa_template = id
+  obRenderStep()
+}
+
+function obSelectFY(preset) {
+  const y = new Date().getFullYear()
+  if(preset==='calendar') {
+    OB.data.fiscal_start = y + '-01-01'
+    OB.data.fiscal_end = y + '-12-31'
+  } else if(preset==='mar') {
+    OB.data.fiscal_start = y + '-04-01'
+    OB.data.fiscal_end = (y+1) + '-03-31'
+  } else if(preset==='jun') {
+    OB.data.fiscal_start = y + '-07-01'
+    OB.data.fiscal_end = (y+1) + '-06-30'
+  }
+  OB.data.currency = 'MYR'
+  obRenderStep()
+}
+
+function obRenderSteps() {
+  // progress handled in content for v2
+  const el = document.getElementById('ob-steps-indicator')
+  if(el) el.innerHTML = ''
+}
+
+function obRenderStep() {
+  const L = APP.language
+  const el = document.getElementById('ob-step-content')
+  const err = document.getElementById('ob-error')
+  if(err) err.classList.remove('show')
+  if(!el) return
+  const name = (APP.user?.name || APP.user?.full_name || '').split(' ')[0] || ''
+
+  // WELCOME
+  if(OB.step === 0) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:12px 8px 8px">
+        <div style="font-size:28px;font-weight:700;color:var(--text);letter-spacing:-0.02em;margin-bottom:10px;font-family:'Space Grotesk',sans-serif">
+          ${L==='bm'?`Hai${name?', '+name:''}`:`Hey${name?', '+name:''}`}
+        </div>
+        <p style="font-size:15px;color:var(--text-2);line-height:1.55;margin:0 0 28px">
+          ${L==='bm'?'Mari sediakan ruang kerja syarikat anda. Hanya beberapa soalan — kurang dari 2 minit.':'Lets set up your company workspace. A few questions — under 2 minutes.'}
+        </p>
+        <button class="ob-btn ob-btn-primary" style="width:100%;justify-content:center" onclick="OB.step=1;obRenderStep()">
+          ${L==='bm'?'Mula':'Get started'} <i class="ti ti-arrow-right"></i>
+        </button>
+      </div>`
+    return
+  }
+
+  let body = obProgressHtml()
+
+  // 1 COMPANY
+  if(OB.step === 1) {
+    body += `
+      <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Nama syarikat anda?':'What is your company name?'}</div>
+      <p style="font-size:13px;color:var(--text-3);margin:0 0 18px">${L==='bm'?'Akan dipaparkan pada invois & dokumen.':'Shown on invoices and documents.'}</p>
+      <input class="ob-input" id="ob-company" value="${(OB.data.company_name||'').replace(/"/g,'&quot;')}" placeholder="${L==='bm'?'cth. Atas Angin My Sdn. Bhd.':'e.g. Atas Angin My Sdn. Bhd.'}" style="font-size:16px;padding:14px 16px" oninput="OB.data.company_name=this.value">
+      <div class="ob-actions" style="margin-top:24px">
+        <button class="ob-btn ob-btn-outline" onclick="OB.step=0;obRenderStep()"><i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}</button>
+        <button class="ob-btn ob-btn-primary" onclick="obNext()">${L==='bm'?'Teruskan':'Continue'} <i class="ti ti-arrow-right"></i></button>
+      </div>`
+  }
+
+  // 2 ENTITY
+  else if(OB.step === 2) {
+    body += `
+      <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Jenis entiti?':'Entity type?'}</div>
+      <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">${L==='bm'?'Boleh diubah kemudian dalam Settings.':'You can change this later in Settings.'}</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${OB_ENTITIES.map(e => `
+          <button type="button" onclick="obSelectEntity('${e.id}')" class="ob-input" style="text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1.5px solid ${OB.data.entity_type===e.id?'var(--primary)':'var(--border)'};background:${OB.data.entity_type===e.id?'rgba(14,116,144,.12)':'transparent'}">
+            <span style="font-weight:600;color:var(--text)">${L==='bm'?e.bm:e.en}</span>
+            ${OB.data.entity_type===e.id?'<i class="ti ti-circle-check" style="color:var(--primary)"></i>':''}
+          </button>`).join('')}
+      </div>
+      <div class="ob-actions" style="margin-top:24px">
+        <button class="ob-btn ob-btn-outline" onclick="OB.step=1;obRenderStep()"><i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}</button>
+        <button class="ob-btn ob-btn-primary" onclick="obNext()">${L==='bm'?'Teruskan':'Continue'} <i class="ti ti-arrow-right"></i></button>
+      </div>`
+  }
+
+  // 3 INDUSTRY
+  else if(OB.step === 3) {
+    body += `
+      <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Apakah industri anda?':'What is your industry?'}</div>
+      <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">${L==='bm'?'Kami akan sediakan akaun yang sesuai.':'We will prepare matching accounts.'}</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        ${OB_INDUSTRIES.map(ind => `
+          <button type="button" onclick="obSelectIndustry('${ind.id}')" style="text-align:left;padding:12px;border-radius:12px;border:1.5px solid ${OB.data.industry===ind.id?'var(--primary)':'var(--border)'};background:${OB.data.industry===ind.id?'rgba(14,116,144,.12)':'var(--bg-card)'};cursor:pointer">
+            <div style="font-size:20px;margin-bottom:6px;color:var(--primary)"><i class="ti ${ind.icon}"></i></div>
+            <div style="font-weight:600;font-size:13px;color:var(--text)">${L==='bm'?ind.bm:ind.en}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:4px;line-height:1.3">${L==='bm'?ind.tip_bm:ind.tip_en}</div>
+          </button>`).join('')}
+      </div>
+      <div class="ob-actions" style="margin-top:24px">
+        <button class="ob-btn ob-btn-outline" onclick="OB.step=2;obRenderStep()"><i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}</button>
+        <button class="ob-btn ob-btn-primary" onclick="obNext()">${L==='bm'?'Teruskan':'Continue'} <i class="ti ti-arrow-right"></i></button>
+      </div>`
+  }
+
+  // 4 FISCAL
+  else if(OB.step === 4) {
+    const y = new Date().getFullYear()
+    const presets = [
+      { id:'calendar', en:`Calendar year ${y}`, bm:`Tahun kalendar ${y}`, sub:'1 Jan – 31 Dec' },
+      { id:'mar', en:'Year ending 31 Mar', bm:'Tamat 31 Mac', sub:`1 Apr ${y} – 31 Mar ${y+1}` },
+      { id:'jun', en:'Year ending 30 Jun', bm:'Tamat 30 Jun', sub:`1 Jul ${y} – 30 Jun ${y+1}` },
+    ]
+    const cur = OB.data.fiscal_start === (y+'-01-01') ? 'calendar'
+      : OB.data.fiscal_start === (y+'-04-01') ? 'mar'
+      : OB.data.fiscal_start === (y+'-07-01') ? 'jun' : ''
+    body += `
+      <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Tahun fiskal?':'Fiscal year?'}</div>
+      <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">${L==='bm'?'Mata wang lalai: MYR.':'Default currency: MYR.'}</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${presets.map(p => `
+          <button type="button" onclick="obSelectFY('${p.id}')" class="ob-input" style="text-align:left;cursor:pointer;padding:12px 14px;border:1.5px solid ${cur===p.id?'var(--primary)':'var(--border)'};background:${cur===p.id?'rgba(14,116,144,.12)':'transparent'}">
+            <div style="font-weight:600;color:var(--text)">${L==='bm'?p.bm:p.en}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:2px">${p.sub}</div>
+          </button>`).join('')}
+      </div>
+      <div class="ob-actions" style="margin-top:24px">
+        <button class="ob-btn ob-btn-outline" onclick="OB.step=3;obRenderStep()"><i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}</button>
+        <button class="ob-btn ob-btn-primary" onclick="obNext()">${L==='bm'?'Teruskan':'Continue'} <i class="ti ti-arrow-right"></i></button>
+      </div>`
+  }
+
+  // 5 COA
+  else if(OB.step === 5) {
+    body += `
+      <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Carta akaun?':'Chart of accounts?'}</div>
+      <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">${L==='bm'?'Disyorkan mengikut industri anda — boleh ubah kemudian.':'Recommended for your industry — editable later.'}</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${OB_COA_TEMPLATES.map(t => `
+          <button type="button" onclick="obSelectCOA('${t.id}')" style="text-align:left;padding:12px 14px;border-radius:12px;border:1.5px solid ${OB.data.coa_template===t.id?'var(--primary)':'var(--border)'};background:${OB.data.coa_template===t.id?'rgba(14,116,144,.12)':'var(--bg-card)'};cursor:pointer;display:flex;gap:12px;align-items:flex-start">
+            <i class="ti ${t.icon}" style="font-size:20px;color:var(--primary);margin-top:2px"></i>
+            <div style="flex:1">
+              <div style="font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px">
+                ${L==='bm'?t.bm:t.en}
+                ${t.recommended && OB.data.coa_template===t.id ? `<span style="font-size:10px;padding:2px 6px;border-radius:99px;background:var(--primary);color:#fff">${L==='bm'?'Disyorkan':'Recommended'}</span>` : ''}
+              </div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:2px">${L==='bm'?t.desc_bm:t.desc_en}</div>
+            </div>
+            ${OB.data.coa_template===t.id?'<i class="ti ti-circle-check" style="color:var(--primary)"></i>':''}
+          </button>`).join('')}
+      </div>
+      <div class="ob-actions" style="margin-top:24px">
+        <button class="ob-btn ob-btn-outline" onclick="OB.step=4;obRenderStep()"><i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}</button>
+        <button class="ob-btn ob-btn-success" id="ob-finish-btn" onclick="obFinish()">
+          <i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan ruang kerja':'Finish setup'}
+        </button>
+      </div>`
+  }
+
+  el.innerHTML = body
+  // focus company input
+  if(OB.step===1) setTimeout(() => document.getElementById('ob-company')?.focus(), 50)
 }
 
 function obNext() {
   const L = APP.language
-  document.getElementById('ob-error').classList.remove('show')
-
+  document.getElementById('ob-error')?.classList.remove('show')
   if(OB.step === 1) {
-    const name    = document.getElementById('ob-company')?.value.trim()
-    const entity  = document.getElementById('ob-entity')?.value
-    if(!name)   { obShowError(L==='bm'?'Nama syarikat wajib diisi.':'Company name is required.'); return }
-    if(!entity) { obShowError(L==='bm'?'Sila pilih jenis entiti.':'Please select entity type.'); return }
+    const name = (document.getElementById('ob-company')?.value || OB.data.company_name || '').trim()
+    if(!name) { obShowError(L==='bm'?'Nama syarikat diperlukan.':'Company name is required.'); return }
     OB.data.company_name = name
-    OB.data.ssm_no       = document.getElementById('ob-ssm')?.value.trim() || ''
-    OB.data.entity_type  = entity
-    OB.data.address      = document.getElementById('ob-address')?.value.trim() || ''
-    OB.data.city         = document.getElementById('ob-city')?.value.trim() || ''
-    OB.data.postcode     = document.getElementById('ob-postcode')?.value.trim() || ''
-    OB.data.state        = document.getElementById('ob-state')?.value || ''
-    OB.data.phone        = document.getElementById('ob-phone')?.value.trim() || ''
-    OB.data.email_biz    = document.getElementById('ob-email-biz')?.value.trim() || ''
-    OB.data.website      = document.getElementById('ob-website')?.value.trim() || ''
-
   } else if(OB.step === 2) {
-    if(!OB.data.industry) { obShowError(L==='bm'?'Sila pilih industri perniagaan anda.':'Please select your industry.'); return }
-    OB.data.business_desc = document.getElementById('ob-biz-desc')?.value.trim() || ''
-
+    if(!OB.data.entity_type) { obShowError(L==='bm'?'Sila pilih jenis entiti.':'Please select an entity type.'); return }
   } else if(OB.step === 3) {
-    const start = document.getElementById('ob-fy-start')?.value
-    const end   = document.getElementById('ob-fy-end')?.value
-    if(!start || !end) { obShowError(L==='bm'?'Sila lengkapkan tarikh tahun fiskal.':'Please complete fiscal year dates.'); return }
-    if(new Date(end) <= new Date(start)) { obShowError(L==='bm'?'Tarikh tamat mesti selepas tarikh mula.':'End date must be after start date.'); return }
-    OB.data.fiscal_start = start
-    OB.data.fiscal_end   = end
-    OB.data.currency     = document.getElementById('ob-currency')?.value || 'MYR'
+    if(!OB.data.industry) { obShowError(L==='bm'?'Sila pilih industri.':'Please select an industry.'); return }
+  } else if(OB.step === 4) {
+    if(!OB.data.fiscal_start || !OB.data.fiscal_end) { obShowError(L==='bm'?'Sila pilih tahun fiskal.':'Please pick a fiscal year.'); return }
   }
-
   if(OB.step < OB.totalSteps) { OB.step++; obRenderStep() }
 }
 
 function obBack() {
-  if(OB.step > 1) { OB.step--; obRenderStep() }
+  if(OB.step > 0) { OB.step--; obRenderStep() }
 }
 
 async function obFinish() {
   const L = APP.language
+  if(!OB.data.coa_template) {
+    obShowError(L==='bm'?'Sila pilih templat akaun.':'Please choose an accounts template.')
+    return
+  }
   const btn = document.getElementById('ob-finish-btn')
-  if(btn) { btn.disabled=true; btn.innerHTML=`<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> ${L==='bm'?'Menyimpan...':'Saving...'}` }
+  if(btn) { btn.disabled = true; btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> ${L==='bm'?'Menyimpan...':'Saving...'}` }
 
   try {
-    // If tenant_id not in APP state, fetch from Supabase. Refresh the
-    // session first — a stale/expired client session can make this SELECT
-    // come back empty even though the tenant row genuinely exists — then
-    // retry the read a couple of times (short delay) before giving up with
-    // the "Tenant ID not found" error, in case it's a transient/timing issue.
     if(!APP.tenant.id) {
-      const {error: refreshErr} = await sb.auth.refreshSession()
-      if(refreshErr) console.error('obFinish: session refresh failed:', refreshErr)
-
-      const {data:{user}} = await sb.auth.getUser()
+      const { data: { user } } = await sb.auth.getUser()
       if(user) {
         let profile = null
-        for(let attempt=0; attempt<3 && !profile?.tenant_id; attempt++) {
-          if(attempt>0) await new Promise(r => setTimeout(r, 600))
-          const {data, error} = await sb.from('user_profiles').select('tenant_id').eq('id', user.id).single()
-          if(error) console.error(`obFinish: user_profiles fetch failed (attempt ${attempt+1}):`, error)
+        for(let attempt = 0; attempt < 3 && !profile?.tenant_id; attempt++) {
+          if(attempt > 0) await new Promise(r => setTimeout(r, 600))
+          const { data } = await sb.from('user_profiles').select('tenant_id').eq('id', user.id).single()
           profile = data
         }
         if(profile) APP.tenant.id = profile.tenant_id
       }
     }
-
-    if(!APP.tenant.id) throw new Error('Tenant ID not found. Please try logging in again.')
+    if(!APP.tenant.id) throw new Error(L==='bm'?'ID tenant tidak dijumpai. Sila log masuk semula.':'Tenant ID not found. Please sign in again.')
 
     const companyData = {
-      name:        OB.data.company_name,
-      ssm_no:      OB.data.ssm_no,
+      name: OB.data.company_name,
+      ssm_no: OB.data.ssm_no || '',
       entity_type: OB.data.entity_type,
-      address:     OB.data.address,
-      city:        OB.data.city,
-      postcode:    OB.data.postcode,
-      state:       OB.data.state,
-      phone:       OB.data.phone,
-      email:       OB.data.email_biz,
-      website:     OB.data.website,
-      industry:    OB.data.industry,
-      description: OB.data.business_desc,
-      currency:    OB.data.currency,
+      address: OB.data.address || '',
+      city: OB.data.city || '',
+      postcode: OB.data.postcode || '',
+      state: OB.data.state || '',
+      phone: OB.data.phone || '',
+      email: OB.data.email_biz || '',
+      website: OB.data.website || '',
+      industry: OB.data.industry,
+      description: OB.data.business_desc || '',
+      currency: OB.data.currency || 'MYR',
     }
     const startYear = new Date(OB.data.fiscal_start).getFullYear()
-    const endYear   = new Date(OB.data.fiscal_end).getFullYear()
+    const endYear = new Date(OB.data.fiscal_end).getFullYear()
     const yearLabel = startYear === endYear ? `FY${startYear}` : `FY${startYear}/${String(endYear).slice(-2)}`
-    const fiscalYear = { start_date: OB.data.fiscal_start, end_date: OB.data.fiscal_end, currency: OB.data.currency, year_label: yearLabel }
+    const fiscalYear = { start_date: OB.data.fiscal_start, end_date: OB.data.fiscal_end, currency: OB.data.currency || 'MYR', year_label: yearLabel }
 
-    // Fire RPC in background — non-blocking
-    sb.rpc('complete_onboarding', {
-      p_tenant_id:    APP.tenant.id,
+    // P0: await RPC — do not mark complete on failure
+    const { error: rpcErr } = await sb.rpc('complete_onboarding', {
+      p_tenant_id: APP.tenant.id,
       p_company_data: companyData,
-      p_fiscal_year:  fiscalYear,
+      p_fiscal_year: fiscalYear,
       p_coa_template: OB.data.coa_template,
-    }).then(({error}) => {
-      if(error) console.error('complete_onboarding error:', error)
-      else console.log('Onboarding completed successfully')
     })
+    if(rpcErr) throw new Error(rpcErr.message || 'complete_onboarding failed')
 
-    // Update local state & proceed regardless
+    const { error: upErr } = await sb.from('tenants').update({
+      onboarding_completed: true,
+      name: OB.data.company_name,
+    }).eq('id', APP.tenant.id)
+    if(upErr) console.warn('tenant flag update', upErr)
+
     APP.tenant.name = OB.data.company_name
 
-    // Update onboarding_completed in tenants table directly
-    if(APP.tenant.id) {
-      sb.from('tenants').update({onboarding_completed: true}).eq('id', APP.tenant.id)
-        .then(({error}) => { if(error) console.error('tenant update error:', error) })
-    }
-
-    // Show success
     const el = document.getElementById('ob-step-content')
-    el.innerHTML = `
-    <div class="ob-complete">
-      <i class="ti ti-circle-check"></i>
-      <h3>${L==='bm'?'Persediaan Selesai! 🎉':'Setup Complete! 🎉'}</h3>
-      <p>${L==='bm'?`Selamat datang ke NexERP, ${APP.tenant.name}. Sistem anda telah sedia!`:`Welcome to NexERP, ${APP.tenant.name}. Your system is ready!`}</p>
-      <button class="ob-btn ob-btn-primary" style="margin-top:24px" onclick="obGoToDashboard()">
-        ${L==='bm'?'Pergi ke Dashboard':'Go to Dashboard'} <i class="ti ti-arrow-right"></i>
-      </button>
-    </div>`
     document.getElementById('ob-steps-indicator').innerHTML = ''
-
+    el.innerHTML = `
+      <div style="text-align:center;padding:8px 4px">
+        <div style="width:64px;height:64px;border-radius:50%;background:rgba(22,163,74,.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+          <i class="ti ti-check" style="font-size:32px;color:#16A34A"></i>
+        </div>
+        <h3 style="font-size:22px;font-weight:700;color:var(--text);margin:0 0 8px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Ruang kerja sedia':'Your workspace is ready'}</h3>
+        <p style="font-size:14px;color:var(--text-2);margin:0 0 24px;line-height:1.5">${L==='bm'?`Selamat datang, <strong>${OB.data.company_name}</strong>.`: `Welcome, <strong>${OB.data.company_name}</strong>.`}</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="ob-btn ob-btn-primary" style="width:100%;justify-content:center" onclick="obGoToDashboard()">
+            <i class="ti ti-layout-dashboard"></i> ${L==='bm'?'Ke Dashboard':'Go to Dashboard'}
+          </button>
+          <button class="ob-btn ob-btn-outline" style="width:100%;justify-content:center" onclick="obGoToDashboard();setTimeout(()=>openPage('settings'),400)">
+            <i class="ti ti-user-plus"></i> ${L==='bm'?'Jemput pasukan':'Invite team'}
+          </button>
+          <button class="ob-btn ob-btn-outline" style="width:100%;justify-content:center" onclick="obGoToDashboard();setTimeout(()=>{try{openPage('settings');document.querySelector("[data-stg='stg-golive']")?.click()}catch(e){}},500)">
+            <i class="ti ti-list-check"></i> ${L==='bm'?'Go-Live checklist':'Go-Live checklist'}
+          </button>
+        </div>
+      </div>`
   } catch(err) {
     console.error('Onboarding error:', err)
-    obShowError((L==='bm'?'Ralat: ':'Error: ') + (err.message || 'Something went wrong. Please try again.'))
-    if(btn) { btn.disabled=false; btn.innerHTML=`<i class="ti ti-rocket"></i> ${L==='bm'?'Siapkan Persediaan!':'Complete Setup!'}` }
+    obShowError((L==='bm'?'Ralat: ':'Error: ') + (err.message || 'Something went wrong'))
+    if(btn) {
+      btn.disabled = false
+      btn.innerHTML = `<i class="ti ti-rocket"></i> ${L==='bm'?'Cuba lagi':'Try again'}`
+    }
   }
 }
 
 function obGoToDashboard() {
   hideOnboarding()
   showShell()
+  try { localStorage.setItem('nexerp_show_golive_banner','1') } catch(e) {}
 }
 
-// ─── END ONBOARDING ───────────────────────────────────────────────────────────
+// ─── END ONBOARDING ────────────────────────────────────────────────────
 
 // ─── Scroll-to-top FAB ────────────────────────────────────────────────────────
 // Wired once here at shell level (not per-page) so it automatically covers
