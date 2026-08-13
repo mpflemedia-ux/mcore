@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-406">
+<meta name="nexerp-build" content="2026-08-14-tncol">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -22380,11 +22380,7 @@ async function obFinish() {
             id: tid,
             name: company,
             code: tenantCode,
-            plan: 'starter',
-            status: 'active',
-            onboarding_completed: false,
-            entity_type: OB.data.entity_type || 'sdn_bhd',
-            industry: OB.data.industry || 'general'
+            onboarding_completed: false
           })
           if(tErr) {
             console.error('tenant insert', tErr)
