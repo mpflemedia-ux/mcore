@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-tidnull">
+<meta name="nexerp-build" content="2026-08-14-fydup">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -22455,13 +22455,28 @@ async function obFinish() {
       p_fiscal_year: fiscalYear,
       p_coa_template: OB.data.coa_template,
     })
-    if(rpcErr) throw new Error(rpcErr.message || 'complete_onboarding failed')
+    if(rpcErr) {
+      const msg = (rpcErr.message || '') + ' ' + (rpcErr.details || '')
+      // Partial prior run: fiscal year / COA already inserted — treat as recoverable
+      const recoverable = /fiscal_years_tenant_id_year_label|duplicate key|unique constraint|already exists/i.test(msg)
+      if(!recoverable) throw new Error(rpcErr.message || 'complete_onboarding failed')
+      console.warn('complete_onboarding recoverable:', msg)
+    }
 
+    // Always mark complete + set company name (works even if RPC partially failed)
     const { error: upErr } = await sb.from('tenants').update({
       onboarding_completed: true,
       name: OB.data.company_name,
     }).eq('id', APP.tenant.id)
     if(upErr) console.warn('tenant flag update', upErr)
+
+    // Best-effort company fields
+    try {
+      await sb.from('tenants').update({
+        entity_type: companyData.entity_type || null,
+        industry: companyData.industry || null,
+      }).eq('id', APP.tenant.id)
+    } catch(e) {}
 
     APP.tenant.name = OB.data.company_name
     try { localStorage.removeItem('nexerp_pending_tenant_id') } catch(e) {}
