@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-cb">
+<meta name="nexerp-build" content="2026-08-13-perm">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1594,10 +1594,13 @@ function canAccess(module) {
   // feature, or any invite where "use role default" stayed on — those
   // fall through to the exact same role-config/fallback logic as before).
   if(Array.isArray(APP.user.module_override)) return APP.user.module_override.includes(module)
-  const configured = APP.tenantConfig && APP.tenantConfig.roles && APP.tenantConfig.roles[role]
-  if(Array.isArray(configured) && configured.length) return configured.includes(module)
-  // Fallback defaults so roles without custom map are not full-access
-  const fallback = _DEFAULT_ROLE_MODULES[role]
+  // Tenant Role Permissions (Settings). Empty array [] means intentionally no modules.
+  const rolesMap = (APP.tenantConfig && APP.tenantConfig.roles) || {}
+  const roleKey = String(role).toLowerCase()
+  const configured = rolesMap[role] || rolesMap[roleKey] || rolesMap[roleKey.replace(/\s+/g,'_')]
+  if(Array.isArray(configured)) return configured.includes(module)
+  // Fallback only when role key missing from config
+  const fallback = _DEFAULT_ROLE_MODULES[roleKey] || _DEFAULT_ROLE_MODULES[role]
   if(Array.isArray(fallback)) return fallback.includes(module)
   return false
 }
@@ -2737,7 +2740,7 @@ async function loadUserSession(user, opts={}) {
       APP.tenant.code=profile.tenants.code
       APP.tenant.name=profile.tenants.name
       APP.tenant.config=profile.tenants.config||{}
-      APP.tenantConfig.roles=APP.tenant.config.roles||{}
+      APP.tenantConfig.roles=(function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
       if(!profile.tenants.onboarding_completed) {
         showOnboarding()
         return
@@ -5722,12 +5725,14 @@ async function _tenantConfigPatch(patch) {
 async function _rpSave() {
   const t = APP.language==='bm' ? { saved:'Kebenaran peranan disimpan!' } : { saved:'Role permissions saved!' }
   const msgEl = document.getElementById('rp-save-msg')
+  const rolesNorm = (function(r){const o={};Object.keys(r||{}).forEach(k=>{o[String(k).toLowerCase()]=Array.isArray(r[k])?r[k]:[]});return o})(_rolePermsState)
   try {
-    await _tenantConfigPatch({ roles: _rolePermsState })
+    await _tenantConfigPatch({ roles: rolesNorm })
   } catch(error) {
     msgEl.style.color='var(--danger)'; msgEl.textContent='Error: '+error.message; return
   }
-  APP.tenantConfig.roles = _rolePermsState
+  APP.tenantConfig.roles = rolesNorm
+  _rolePermsState = rolesNorm
   buildSidebar()
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
