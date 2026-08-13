@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-pplclock">
+<meta name="nexerp-build" content="2026-08-13-cout">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3721,44 +3721,44 @@ async function _dbLoadPeople() {
   const el = document.getElementById('db-people-list')
   if(!el || !APP.tenant.id) return
   const isBm = APP.language === 'bm'
-  // Local calendar date (browser timezone — Malaysia users are GMT+8)
-  const _n = new Date()
-  const today = _n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0')+'-'+String(_n.getDate()).padStart(2,'0')
+  const today = _nowDateLocal()
   try {
-    // Every status logged for today — present, absent, late, half day, on
-    // leave — not just "present", so this card reflects the full picture
-    // of who's in/out today, not only who clocked in.
-    let {data: att, error: attErr} = await sb.from('attendance')
-      .select('id, status, clock_in, clock_out, employee_id, date')
+    let res = await sb.from('attendance')
+      .select('id, status, clock_in, clock_out, employee_id, date, created_at')
       .eq('tenant_id', APP.tenant.id)
       .eq('date', today)
-      .is('deleted_at', null)
-      .order('clock_in', {ascending: true})
-      .limit(50)
-    // Fallback: if empty, retry with ISO-UTC date (edge near midnight)
-    if(!attErr && !(att||[]).length) {
-      const utcDay = new Date().toISOString().slice(0,10)
-      if(utcDay !== today) {
-        const r2 = await sb.from('attendance').select('id, status, clock_in, clock_out, employee_id, date')
-          .eq('tenant_id', APP.tenant.id).eq('date', utcDay).is('deleted_at', null)
-          .order('clock_in', {ascending: true}).limit(50)
-        if(!r2.error && r2.data && r2.data.length) att = r2.data
-      }
+      .limit(100)
+    if(res.error) {
+      console.warn('_dbLoadPeople', res.error)
+      res = await sb.from('attendance')
+        .select('id, status, clock_in, clock_out, employee_id, date, created_at')
+        .eq('tenant_id', APP.tenant.id)
+        .gte('date', today).lte('date', today)
+        .limit(100)
     }
-    if(attErr) throw attErr
-    const list = att || []
+    if(res.error) throw res.error
+    let list = (res.data || []).filter(a => !a.deleted_at)
+    // One row per employee — latest by created_at / clock_in
+    const byEmp = {}
+    list.forEach(a => {
+      const k = String(a.employee_id||'')
+      if(!k) return
+      const prev = byEmp[k]
+      if(!prev) { byEmp[k] = a; return }
+      const tNew = String(a.created_at||a.clock_in||'')
+      const tOld = String(prev.created_at||prev.clock_in||'')
+      if(tNew >= tOld) byEmp[k] = a
+    })
+    list = Object.values(byEmp)
+    list.sort((a,b) => String(a.clock_in||'').localeCompare(String(b.clock_in||'')))
     if(!list.length) {
       el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada rekod kehadiran hari ini':'No attendance logged today'}</div>`
       return
     }
-    // Step 2: get employee names
     const empIds = [...new Set(list.map(a => a.employee_id).filter(Boolean))]
     let empMap = {}
     if(empIds.length) {
-      const {data: emps} = await sb.from('employees')
-        .select('id, name, position')
-        .in('id', empIds)
-        .is('deleted_at', null)
+      const {data: emps} = await sb.from('employees').select('id, name, position').in('id', empIds)
       ;(emps||[]).forEach(e => { empMap[e.id] = e })
     }
     const badge = _dbAttStatusBadge(isBm)
@@ -3767,13 +3767,18 @@ async function _dbLoadPeople() {
       const name = emp.name || 'Staff'
       const position = emp.position || ''
       const initials = _dbInitials(name)
-      const clock = a.clock_in ? _fmtTime12(a.clock_in) : '-'
+      const cin = a.clock_in ? _fmtTime12(a.clock_in) : null
+      const cout = a.clock_out ? _fmtTime12(a.clock_out) : null
+      let timeLine = ''
+      if(cin && cout) timeLine = (isBm?'Masuk ':'In ')+cin+' · '+(isBm?'Keluar ':'Out ')+cout
+      else if(cin) timeLine = (isBm?'Masuk ':'In ')+cin
+      else if(cout) timeLine = (isBm?'Keluar ':'Out ')+cout
       const b = badge(a.status)
       return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
         <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
-          <div style="font-size:11px;color:var(--db-text3)">${position}${position && clock!=='-' ? ' · ' : ''}${clock!=='-' ? 'In '+clock : ''}</div>
+          <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(name)}</div>
+          <div style="font-size:11px;color:var(--db-text3)">${_aiEscapeHtml(position)}${position && timeLine ? ' · ' : ''}${timeLine}</div>
         </div>
         <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${b.bg};color:${b.color};font-weight:500;white-space:nowrap;flex-shrink:0">${b.label}</span>
       </div>`
@@ -18768,7 +18773,11 @@ async function renderAttendance(params={}) {
         ${isStaffOnly && selfEmp ? `<input type="hidden" id="att-employee-locked" value="${selfEmp.id}">` : ''}
         ${isStaffOnly && !selfEmp ? `<div style="font-size:12px;color:var(--warning);margin-top:6px">${isBm?'Nama anda tiada dalam senarai pekerja. Minta admin tambah rekod Employee yang sepadan.':'Your name is not in the employee list. Ask admin to add a matching Employee record.'}</div>` : ''}
       </div>
-      <div class="form-group"><label class="form-label">${t.date}</label><input id="att-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="form-label">${t.date}</label>
+        ${!canManageHR()
+          ? `<input type="hidden" id="att-date" value="${_nowDateLocal()}"><div class="form-input" style="opacity:.95;cursor:default">${_fmtDateDisplay(_nowDateLocal())}</div>`
+          : `<input id="att-date" type="date" class="form-input" value="${_nowDateLocal()}">`}
+      </div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.status}</label>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="present" checked> ${t.present}</label>
@@ -18778,8 +18787,16 @@ async function renderAttendance(params={}) {
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="att-status" value="on_leave"> ${t.onLeave}</label>
         </div>
       </div>
-      <div class="form-group"><label class="form-label">${t.clockIn}</label><input id="att-clock-in" type="time" class="form-input"></div>
-      <div class="form-group"><label class="form-label">${t.clockOut}</label><input id="att-clock-out" type="time" class="form-input"></div>
+      <div class="form-group"><label class="form-label">${t.clockIn}</label>
+        ${!canManageHR()
+          ? `<input type="hidden" id="att-clock-in" value="${_nowTime24()}"><div class="form-input" style="opacity:.95;cursor:default">${_fmtTime12(_nowTime24())}</div>`
+          : `<input id="att-clock-in" type="time" class="form-input" value="${_nowTime24()}">`}
+      </div>
+      <div class="form-group"><label class="form-label">${t.clockOut}</label>
+        ${!canManageHR()
+          ? `<input type="hidden" id="att-clock-out" value=""><div class="form-input" style="opacity:.7;cursor:default">—</div>`
+          : `<input id="att-clock-out" type="time" class="form-input">`}
+      </div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.notes}</label><textarea id="att-notes" class="form-input" rows="2"></textarea></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
