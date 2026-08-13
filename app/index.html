@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-fydup">
+<meta name="nexerp-build" content="2026-08-14-rpstrict">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1546,7 +1546,7 @@ const _DEFAULT_ROLE_MODULES = {
   manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
   accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
   cashier: ['pos','sales'],
-  staff: ['pos','hr_attendance'],
+  staff: ['hr_attendance'],
   admin: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports','admin'],
 }
 
@@ -3208,31 +3208,38 @@ function showShell() {
 
 function buildSidebar() {
   const nav=document.getElementById('sidebar-nav')
+  if(!nav) return
   nav.innerHTML=''
+  const rows = []
+  let pendingSection = null
   NAV_ITEMS.forEach(item=>{
-    if(item.section){const s=document.createElement('div');s.className='nav-section';s.textContent=item.section;nav.appendChild(s);return}
+    if(item.section){ pendingSection = item.section; return }
     if(!canAccess(item.module)) return
-    // Job Applicants = recruitment permission
     if(item.id === 'applicants' && !canAccess('hr_recruit') && !canManageHR()) return
-    // Reports: staff with only pos/hr must not see financial reports unless role grants reports
     if(item.id === 'reports' && !canAccess('reports') && !canAccess('accounting')) return
+    if(item.id === 'admin' && !isTenantAdmin() && !canAccess('admin')) return
+    if(item.id === 'settings' && !isTenantAdmin()) {
+      // staff may open settings but renderSettings already limits tabs
+    }
+    if(pendingSection){ rows.push({ type:'section', name: pendingSection }); pendingSection = null }
+    rows.push({ type:'item', item })
+  })
+  rows.forEach(row=>{
+    if(row.type==='section'){
+      const s=document.createElement('div');s.className='nav-section';s.textContent=row.name;nav.appendChild(s);return
+    }
+    const item = row.item
     const label=APP.language==='bm'?item.label_bm:item.label_en
     const el=document.createElement('div')
     el.className='nav-item'
     el.dataset.page=item.id
     el.dataset.label=label
     el.innerHTML=`<i class="ti ${item.icon} nav-icon"></i><span class="nav-label">${label}</span>`
-    el.onclick=()=>{
-      openPage(item.id)
-      if(window.innerWidth <= 768) {
-        document.getElementById('sidebar').classList.add('collapsed')
-        const backdrop = document.getElementById('sidebar-backdrop')
-        if(backdrop) backdrop.style.display = 'none'
-      }
-    }
+    el.onclick=()=>openPage(item.id)
     nav.appendChild(el)
   })
 }
+
 
 function updateUserUI() {
   const init=(APP.user.name||'U').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
@@ -5025,7 +5032,7 @@ const RP_SECTIONS = [
 const RP_MODULES = RP_SECTIONS.reduce((a,s)=>a.concat(s.modules), [])
 
 const RP_ROLE_DEFAULTS = {
-  staff: ['pos','hr_attendance'],
+  staff: ['hr_attendance'],
   cashier: ['pos','sales'],
   accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
   manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
