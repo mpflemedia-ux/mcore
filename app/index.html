@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-cout">
+<meta name="nexerp-build" content="2026-08-13-coutap">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -18674,6 +18674,29 @@ function _fmtDateDisplay(iso) {
   return p[2]+'/'+p[1]+'/'+p[0]
 }
 
+
+function _attClockOutTap() {
+  const t = _nowTime24()
+  const hidden = document.getElementById('att-clock-out')
+  const disp = document.getElementById('att-clock-out-display')
+  if(hidden) hidden.value = t
+  if(disp) {
+    disp.textContent = _fmtTime12(t)
+    disp.style.opacity = '1'
+    disp.style.fontWeight = '600'
+  }
+}
+function _attClockOutClear() {
+  const hidden = document.getElementById('att-clock-out')
+  const disp = document.getElementById('att-clock-out-display')
+  if(hidden) hidden.value = ''
+  if(disp) {
+    disp.textContent = '—'
+    disp.style.fontWeight = ''
+    disp.style.opacity = '0.95'
+  }
+}
+
 async function renderAttendance(params={}) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
@@ -18794,7 +18817,8 @@ async function renderAttendance(params={}) {
       </div>
       <div class="form-group"><label class="form-label">${t.clockOut}</label>
         ${!canManageHR()
-          ? `<input type="hidden" id="att-clock-out" value=""><div class="form-input" style="opacity:.7;cursor:default">—</div>`
+          ? `<input type="hidden" id="att-clock-out" value="">
+             <div id="att-clock-out-display" class="form-input" style="opacity:.95;cursor:pointer;user-select:none" onclick="_attClockOutTap()" title="${APP.language==='bm'?'Klik untuk set masa keluar':'Click to set clock-out time'}">—</div>`
           : `<input id="att-clock-out" type="time" class="form-input">`}
       </div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.notes}</label><textarea id="att-notes" class="form-input" rows="2"></textarea></div>
@@ -18898,8 +18922,10 @@ async function _attendanceSave() {
   // Staff: force current date + clock-in time (cannot manipulate)
   if(!canManageHR()) {
     date = _nowDateLocal()
-    clockIn = _nowTime24()
-    clockOut = null
+    // clock-in always now unless already saved edit; for new log use now
+    if(!id) clockIn = _nowTime24()
+    // clock-out: only if user tapped (hidden input has value)
+    clockOut = document.getElementById('att-clock-out')?.value || null
   }
   const statusEl = document.querySelector('input[name="att-status"]:checked')
   if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
