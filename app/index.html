@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-invroles">
+<meta name="nexerp-build" content="2026-08-14-parity">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -17465,6 +17465,14 @@ function _calcPayroll(employee) {
 }
 
 function renderHR(params={}) {
+  // Ensure tenant id for invited members (RLS + filters)
+  if(!_validTenantId(APP.tenant.id)) {
+    try {
+      const tid = _validTenantId(localStorage.getItem('nexerp_pending_tenant_id'))
+      if(tid) APP.tenant.id = tid
+    } catch(e) {}
+  }
+
   const hrAdmin = canManageHR()
   // Staff with HR module: attendance + leave only
   if(!hrAdmin) {
@@ -17527,8 +17535,26 @@ async function renderEmployeeList() {
     </td>
   </tr>`).join('')}</tbody></table>`
 
-  const {data: payrolls} = await sb.from('payroll_records').select('id,month,year,net_pay,generated_at,employees(name)')
-    .eq('tenant_id',APP.tenant.id).order('generated_at',{ascending:false}).limit(20)
+  const {data: payrolls} = await (async () => {
+    const tid = _validTenantId(APP.tenant.id)
+    if(!tid) return { data: [], error: { message: 'No tenant' } }
+    // Avoid embed employees(name) — RLS on embed often fails for non-owner roles
+    const res = await sb.from('payroll_records')
+      .select('id,month,year,net_pay,generated_at,employee_id')
+      .eq('tenant_id', tid)
+      .order('generated_at', { ascending: false })
+      .limit(20)
+    if(res.error) return res
+    const rows = res.data || []
+    const empIds = [...new Set(rows.map(r => r.employee_id).filter(Boolean))]
+    let nameMap = {}
+    if(empIds.length) {
+      const { data: emps } = await sb.from('employees').select('id,name').eq('tenant_id', tid).in('id', empIds)
+      ;(emps||[]).forEach(e => { nameMap[e.id] = e.name })
+    }
+    rows.forEach(r => { r.employees = { name: nameMap[r.employee_id] || '-' } })
+    return { data: rows, error: null }
+  })()
   const historyHtml = (!payrolls || payrolls.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noPayroll}</p></div>` : `
     <table><thead><tr><th>${t.period}</th><th>${t.name}</th><th style="text-align:right">${t.netPay}</th><th style="width:56px"></th></tr></thead>
     <tbody>${payrolls.map(p=>{
