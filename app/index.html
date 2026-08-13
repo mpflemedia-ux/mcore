@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-pa">
+<meta name="nexerp-build" content="2026-08-13-cards">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -2931,15 +2931,28 @@ function renderDashboard() {
         {k:'customers', icon:'ti-users', go:"openPage('crm',{})"},
         {k:'topProduct', icon:'ti-package', go:"openPage('inventory',{})"},
         {k:'topInvoice', icon:'ti-file-description', go:"openPage('sales',{})"}
-      ].map(({k,icon,go})=>`
-      <div class="db-kpi-card" role="button" tabindex="0" onclick="${go}" style="cursor:pointer">
+      ].map(({k,icon,go})=>{
+        // Derive required module from go target so staff with POS-only cannot open Sales/Reports via KPI
+        let need = null
+        if(/openPage\('sales'/.test(go)) need = 'sales'
+        else if(/openPage\('reports'/.test(go)) need = 'reports'
+        else if(/openPage\('pos'/.test(go)) need = 'pos'
+        else if(/openPage\('hr'/.test(go)) need = 'hr'
+        else if(/openPage\('crm'/.test(go)) need = 'crm'
+        else if(/openPage\('inventory'/.test(go)) need = 'inventory'
+        const allowed = !need || canAccess(need)
+        const click = allowed ? go : "showToast(APP.language==='bm'?'Anda tidak mempunyai akses modul ini.':'You do not have access to this module.','warning')"
+        const cur = allowed ? 'pointer' : 'default'
+        const opac = allowed ? '1' : '0.55'
+        return `
+      <div class="db-kpi-card" role="button" tabindex="0" onclick="${click}" style="cursor:${cur};opacity:${opac}">
         <div class="db-kpi-head">
           <div class="db-kpi-icon"><i class="ti ${icon}"></i></div>
           <div class="db-kpi-label" id="db-lbl-${k}">-</div>
         </div>
         <div class="db-kpi-value" id="db-val-${k}">-</div>
         <div class="db-kpi-footer" id="db-delta-${k}"></div>
-      </div>`).join('')}
+      </div>`}).join('')}
     </div>
 
     <!-- Hero charts: Sales trend (wide) + Invoice mix -->
@@ -4354,7 +4367,7 @@ function _dbRenderOverdueTable(list) {
     </tr></thead>
     <tbody>${rows.map(i => {
       const bal = _dbOutstanding(i)
-      return `<tr data-href="1" onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})">
+      return `<tr data-href="1" onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')">
         <td style="font-weight:600;color:var(--db-text)">${_aiEscapeHtml(i.ref_no||'-')}</td>
         <td>${_aiEscapeHtml(i.customer_name||'-')}</td>
         <td>${formatDate(i.due_date)}</td>
@@ -6919,7 +6932,7 @@ async function renderCustomerDetail(id) {
             const bal = Math.max(0, Number(i.total||0)-Number(i.paid_amt||0))
             const st = String(i.status||'')
             const badge = st==='paid'?'badge-green':st==='partial'?'badge-yellow':st==='cancelled'?'badge-gray':'badge-red'
-            return `<tr style="cursor:pointer" onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})">
+            return `<tr style="cursor:pointer" onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')">
             <td style="font-size:11px">${i.ref_no||'-'}</td>
             <td style="font-size:12px">${i.issue_date ? new Date(i.issue_date).toLocaleDateString('en-MY') : '-'}</td>
             <td style="text-align:right">${formatRM(i.total)}</td>
@@ -12946,7 +12959,7 @@ function _invRenderListTable(t) {
   wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th><th></th></tr></thead>
   <tbody>${rows.map(i=>{
     const overdue = i.status!=='paid' && i.status!=='cancelled' && i.due_date && i.due_date < today
-    return `<tr onclick="openPage('sales',{view:'inv-detail',id:'${i.id}'})" style="cursor:pointer">
+    return `<tr onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')" style="cursor:pointer">
     <td><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
     <td>${formatDate(i.issue_date)}</td><td>${formatDate(i.due_date)}</td>
     <td style="text-align:right">${formatRM(i.total)}</td>
