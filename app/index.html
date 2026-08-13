@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-nophion">
+<meta name="nexerp-build" content="2026-08-14-invroles">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -4999,6 +4999,37 @@ function _dbRenderMonthlyBar(inv) {
 // Standard invite roles (same labels as Admin → Invite New Member)
 const RP_STANDARD_ROLES = ['staff','cashier','accountant','manager','admin']
 
+/** Standard + custom roles from tenant Role Permissions (all tenants) */
+function _allTenantRoles() {
+  const map = (APP.tenantConfig && APP.tenantConfig.roles) || (APP.tenant && APP.tenant.config && APP.tenant.config.roles) || {}
+  const custom = Object.keys(map || {}).map(k => String(k).toLowerCase()).filter(Boolean)
+  const base = ['owner', ...RP_STANDARD_ROLES]
+  const seen = new Set()
+  const out = []
+  for (const r of [...base, ...custom]) {
+    const k = String(r).toLowerCase().trim()
+    if (!k || seen.has(k)) continue
+    seen.add(k)
+    out.push(k)
+  }
+  return out
+}
+function _roleLabel(role, isBm) {
+  const r = String(role || '').toLowerCase()
+  const labels = {
+    owner: isBm ? 'Owner' : 'Owner',
+    staff: isBm ? 'Staf' : 'Staff',
+    cashier: isBm ? 'Juruwang' : 'Cashier',
+    accountant: isBm ? 'Akauntan' : 'Accountant',
+    manager: isBm ? 'Pengurus' : 'Manager',
+    admin: 'Admin',
+  }
+  if (labels[r]) return labels[r]
+  // custom: title-case
+  return r.replace(/[_-]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
+}
+
+
 // Sectioned modules — every controllable area (incl. HR breakdown + reports)
 const RP_SECTIONS = [
   { key:'operations', en:'Operations', bm:'Operasi', modules:[
@@ -5091,11 +5122,7 @@ async function renderAdminTeam() {
         <div class="form-group">
           <label class="form-label">${isBm?'Peranan':'Role'}</label>
           <select id="ai-invite-role" class="form-select" onchange="_adminInviteRoleChanged()">
-            <option value="staff">${isBm?'Staf':'Staff'}</option>
-            <option value="cashier">${isBm?'Juruwang':'Cashier'}</option>
-            <option value="accountant">${isBm?'Akauntan':'Accountant'}</option>
-            <option value="manager">${isBm?'Pengurus':'Manager'}</option>
-            <option value="admin">Admin</option>
+            ${_allTenantRoles().filter(r=>r!=='owner').map(r=>`<option value="${r}">${_roleLabel(r,isBm)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -5132,7 +5159,7 @@ async function renderAdminTeam() {
     return
   }
 
-  const roles = ['owner','admin','manager','staff','accountant','cashier']
+  const roles = _allTenantRoles()
   wrap.innerHTML = `<table><thead><tr>
     <th>${t.name}</th><th>${t.role}</th><th>${t.status}</th><th>${t.lastLogin}</th><th></th>
   </tr></thead><tbody>
@@ -5141,7 +5168,7 @@ async function renderAdminTeam() {
     const roleCell = isSelf
       ? `<span style="display:inline-block;padding:6px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:13px;text-transform:capitalize">${_aiEscapeHtml(u.role||'-')}</span>`
       : `<select class="form-select" style="width:auto;min-width:120px" id="adm-role-${u.id}">
-          ${roles.map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`).join('')}
+          ${roles.map(r=>`<option value="${r}" ${(u.role||'').toLowerCase()===r?'selected':''}>${_roleLabel(r,isBm)}</option>`).join('')}
         </select>`
     const statusCell = isSelf
       ? `<span style="display:inline-block;padding:6px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:13px">${u.is_active===false?t.inactive:t.active}</span>`
