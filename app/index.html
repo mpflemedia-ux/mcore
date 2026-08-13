@@ -3875,7 +3875,7 @@ async function _dbLoadDailyDigest() {
 function _dbRenderSparkline(key, color, thisMonth, lastMonth) {
   const canvas = document.getElementById('db-spark-'+key)
   if(!canvas) return
-  _dbDestroy('spark-'+key)
+  _dbDestroy('spark-'+key, canvas)
   // Force internal bitmap size to match CSS box so Chart.js never
   // stretches the line across neighbouring KPI cards.
   const W = 72, H = 28
@@ -3916,7 +3916,25 @@ let _dbRange = 'month' // day|week|month|year|custom — KPI / P&L window
 let _dbCharts = {}
 let _dbInvCache = []
 
-function _dbDestroy(key) { if(_dbCharts[key]) { _dbCharts[key].destroy(); delete _dbCharts[key] } }
+// canvas (optional) is a defensive fallback: _dbCharts is OUR OWN
+// bookkeeping of which chart instance we last created for a given key, but
+// Chart.js tracks canvas-to-chart binding independently (Chart.getChart).
+// The two can get out of sync — e.g. two overlapping Dashboard renders (this
+// app has shown duplicate SIGNED_IN auth events re-triggering
+// loadUserSession/renderDashboard for the same login) can race so that a
+// SECOND render's _dbDestroy(key) call finds nothing in _dbCharts (the
+// FIRST render's `new Chart()` hadn't run yet when this one checked) but the
+// canvas ends up bound moments later by whichever render's `new Chart()`
+// call actually executes second — Chart.js then throws "Canvas is already
+// in use" on that call. Checking Chart.getChart(canvas) directly closes
+// that gap regardless of why our own bookkeeping missed it.
+function _dbDestroy(key, canvas) {
+  if(_dbCharts[key]) { try { _dbCharts[key].destroy() } catch(e) {} ; delete _dbCharts[key] }
+  if(canvas && typeof Chart!=='undefined' && typeof Chart.getChart==='function') {
+    const existing = Chart.getChart(canvas)
+    if(existing) { try { existing.destroy() } catch(e) {} }
+  }
+}
 
 function _dbColors() {
   const wrap = document.getElementById('dashboard-wrap')
@@ -4082,7 +4100,7 @@ function _dbRenderGrowthChart(inv) {
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-growth-chart')
   if(!ctx) return
-  _dbDestroy('growth')
+  _dbDestroy('growth', ctx)
   let labels=[], data=[]
   const now = new Date()
 
@@ -4136,7 +4154,7 @@ async function _dbRenderPnLChart() {
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-pnl-chart')
   if(!ctx || typeof Chart==='undefined') return
-  _dbDestroy('pnl')
+  _dbDestroy('pnl', ctx)
   const now = new Date()
   const labels = []
   const revData = [], expData = [], netData = []
@@ -4181,7 +4199,7 @@ function _dbRenderStatusDonut(thisMonthAll) {
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-status-donut')
   if(!ctx) return
-  _dbDestroy('status')
+  _dbDestroy('status', ctx)
   const norm = i => String(i.status||'unpaid').toLowerCase()
   const paid = thisMonthAll.filter(i=>norm(i)==='paid').length
   const partial = thisMonthAll.filter(i=>norm(i)==='partial').length
@@ -4328,7 +4346,7 @@ function _dbRenderCustomerDonut(thisMonth) {
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-customer-donut')
   if(!ctx) return
-  _dbDestroy('customer')
+  _dbDestroy('customer', ctx)
   const byCustomer = {}
   thisMonth.forEach(i=>{ const name = i.customer_name || (isBm?'Tanpa Nama':'Unnamed'); byCustomer[name] = (byCustomer[name]||0) + Number(i.total||0) })
   const sorted = Object.entries(byCustomer).sort((a,b)=>b[1]-a[1])
@@ -4358,7 +4376,7 @@ function _dbRenderMonthlyBar(inv) {
   const isBm = APP.language==='bm'
   const ctx = document.getElementById('db-monthly-bar')
   if(!ctx) return
-  _dbDestroy('monthlybar')
+  _dbDestroy('monthlybar', ctx)
   const now = new Date()
   const labels=[], data=[]
   for(let m=5; m>=0; m--) {
