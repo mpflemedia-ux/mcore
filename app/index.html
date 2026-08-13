@@ -1560,6 +1560,14 @@ function canAccess(module) {
   if(module==='admin') return false
   // Core shell (dashboard + basic settings profile) always allowed for authenticated users
   if(module==='core') return true
+  // Per-user override (set at invite time, Phase 2) REPLACES the role's
+  // default module set entirely for this user — not a union with it — so
+  // an admin can use it to restrict a user more tightly than their role's
+  // default, not just grant extra. Only takes effect when it's an actual
+  // array (module_override is null for every user created before this
+  // feature, or any invite where "use role default" stayed on — those
+  // fall through to the exact same role-config/fallback logic as before).
+  if(Array.isArray(APP.user.module_override)) return APP.user.module_override.includes(module)
   const configured = APP.tenantConfig && APP.tenantConfig.roles && APP.tenantConfig.roles[role]
   if(Array.isArray(configured) && configured.length) return configured.includes(module)
   // Fallback defaults so roles without custom map are not full-access
@@ -2578,7 +2586,7 @@ async function doLogout() {
   // Reset session-scoped state so a stale tenant/user never lingers in memory
   // if another account logs in on the same tab afterwards.
   APP.tenant = { id:null, code:null, name:null, plan:null, config:{} }
-  APP.user = { id:null, name:null, email:null, role:null, language:APP.language, theme:APP.theme }
+  APP.user = { id:null, name:null, email:null, role:null, module_override:null, language:APP.language, theme:APP.theme }
   APP.tenantConfig = { modules:{}, features:{}, roles:{} }
   APP.currentPage = null
   AI_CHAT.messages = []
@@ -2685,6 +2693,11 @@ async function loadUserSession(user, opts={}) {
     }
     APP.user.name=profile.full_name
     APP.user.role=profile.role
+    // Per-user module-access override (Phase 2 of the invite modal) — null
+    // for every user created before this feature, or any invite where the
+    // admin left "use role default" on; canAccess() only consults this
+    // when it's actually an array.
+    APP.user.module_override = Array.isArray(profile.module_override) ? profile.module_override : null
     let _perms = profile.permissions
     if(typeof _perms === 'string') { try { _perms = JSON.parse(_perms) } catch(e) { _perms = {} } }
     APP.user.permissions = _perms || {}
@@ -4470,11 +4483,13 @@ async function renderAdminTeam() {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">${isBm?'Akses Modul (pratonton)':'Module Access (preview)'}</label>
+          <label class="form-label">${isBm?'Akses Modul':'Module Access'}</label>
+          <label id="ai-invite-toggle-row" style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:10px;cursor:pointer">
+            <input type="checkbox" id="ai-invite-use-default" checked onchange="_adminInviteRoleChanged()">
+            ${isBm?'Guna default peranan':'Use role default'}
+          </label>
           <div id="ai-invite-modules" style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
-          <p style="font-size:11px;color:var(--text-3);margin-top:6px">${isBm
-            ? 'Pratonton akses standard peranan ini (ditetapkan di Role Permissions). Jemputan akan guna akses penuh peranan yang dipilih — override individu akan datang kemudian.'
-            : "Preview of this role's standard access (set in Role Permissions). The invite will use the selected role's full access — per-invite overrides coming later."}</p>
+          <p id="ai-invite-modules-hint" style="font-size:11px;color:var(--text-3);margin-top:6px"></p>
         </div>
       </div>
       <div class="modal-box-footer">
@@ -4575,6 +4590,8 @@ async function _adminLoadInvites() {
 function _adminShowInviteModal() {
   const sel = document.getElementById('ai-invite-role')
   if(sel) sel.value = 'staff'
+  const useDefault = document.getElementById('ai-invite-use-default')
+  if(useDefault) useDefault.checked = true
   _adminInviteRoleChanged()
   document.getElementById('admin-invite-modal-overlay')?.classList.add('active')
 }
@@ -4583,37 +4600,59 @@ function _adminHideInviteModal() {
   document.getElementById('admin-invite-modal-overlay')?.classList.remove('active')
 }
 
-// Read-only preview of what the selected role can access — pulled from the
-// tenant's configured Role Permissions (Settings) if set, else the
-// hardcoded _DEFAULT_ROLE_MODULES fallback canAccess() itself uses. Not
-// editable here: there's no per-invite override storage yet (team_invites
-// has no module-override column), so an editable checkbox would silently
-// do nothing when toggled — showing it read-only is the honest version
-// until that's built.
+// Re-renders the module checkbox grid on every role change AND every
+// "use role default" toggle flip — checkboxes are always seeded from the
+// role's default modules (tenant's configured Role Permissions, falling
+// back to _DEFAULT_ROLE_MODULES, same source canAccess() itself reads) so
+// switching into override mode starts from a sensible baseline instead of
+// blank. They stay disabled while "use default" is on; the admin has to
+// explicitly opt into override mode before anything becomes editable —
+// this is what keeps a distracted admin from saving a half-edited,
+// accidental restriction when all they wanted was the plain role default.
 function _adminInviteRoleChanged() {
   const role = document.getElementById('ai-invite-role')?.value
   const wrap = document.getElementById('ai-invite-modules')
+  const hint = document.getElementById('ai-invite-modules-hint')
+  const toggleRow = document.getElementById('ai-invite-toggle-row')
   if(!wrap || !role) return
   const isBm = APP.language==='bm'
+  // Admin role bypasses the module list entirely in canAccess() (it's
+  // granted full access before the override/role-config checks are ever
+  // reached), so an override would be silently meaningless here — hide the
+  // toggle rather than let an admin set one that can never take effect.
   if(role === 'admin') {
+    if(toggleRow) toggleRow.style.display = 'none'
     wrap.innerHTML = `<span style="font-size:13px;color:var(--text-2)">${isBm?'Akses penuh ke semua modul.':'Full access to all modules.'}</span>`
+    if(hint) hint.textContent = ''
     return
   }
-  const modules = (APP.tenantConfig && APP.tenantConfig.roles && APP.tenantConfig.roles[role]) || _DEFAULT_ROLE_MODULES[role] || []
+  if(toggleRow) toggleRow.style.display = 'flex'
+  const useDefault = document.getElementById('ai-invite-use-default')?.checked !== false
+  const defaults = (APP.tenantConfig && APP.tenantConfig.roles && APP.tenantConfig.roles[role]) || _DEFAULT_ROLE_MODULES[role] || []
   wrap.innerHTML = RP_MODULES.map(m => `
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-3)">
-      <input type="checkbox" disabled ${modules.includes(m.id)?'checked':''}>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:${useDefault?'var(--text-3)':'var(--text)'}">
+      <input type="checkbox" data-module="${m.id}" ${useDefault?'disabled':''} ${defaults.includes(m.id)?'checked':''}>
       ${isBm?m.bm:m.en}
     </label>`).join('')
+  if(hint) hint.textContent = useDefault
+    ? (isBm ? 'Ikut akses standard peranan ini (ditetapkan di Role Permissions).' : "Follows this role's standard access (set in Role Permissions).")
+    : (isBm ? 'Override ini GANTIKAN akses default sepenuhnya untuk ahli ini sahaja — bukan tambahan kepada default.' : "This override REPLACES the role's default access entirely for this member only — it does not add to the default.")
 }
 
 function _adminSubmitInvite() {
   const role = document.getElementById('ai-invite-role')?.value || 'staff'
+  const useDefault = document.getElementById('ai-invite-use-default')?.checked !== false
+  let moduleOverride = null
+  if(role !== 'admin' && !useDefault) {
+    moduleOverride = Array.from(document.querySelectorAll('#ai-invite-modules input[data-module]'))
+      .filter(cb => cb.checked)
+      .map(cb => cb.dataset.module)
+  }
   _adminHideInviteModal()
-  _adminCreateInvite(role)
+  _adminCreateInvite(role, moduleOverride)
 }
 
-async function _adminCreateInvite(role) {
+async function _adminCreateInvite(role, moduleOverride) {
   const isBm = APP.language==='bm'
   const token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'').slice(0,16)) || (Date.now().toString(36)+Math.random().toString(36).slice(2,10))
   const expires = new Date(Date.now() + 7*86400000).toISOString()
@@ -4621,6 +4660,7 @@ async function _adminCreateInvite(role) {
     tenant_id: APP.tenant.id,
     token,
     role,
+    module_override: (moduleOverride && Array.isArray(moduleOverride)) ? moduleOverride : null,
     created_by: APP.user.id,
     expires_at: expires
   })
