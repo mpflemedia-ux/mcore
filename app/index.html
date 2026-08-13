@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-swv3">
+<meta name="nexerp-build" content="2026-08-13-dim">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1863,7 +1863,22 @@ function _navPushHistory(page, params) {
   } catch (e) {}
 }
 
+
+function _clearUiOverlays() {
+  try {
+    document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'))
+    document.querySelectorAll('[id$="-modal-overlay"]').forEach(el => el.classList.remove('active'))
+    const intro = document.getElementById('intro-screen')
+    if (intro) { intro.classList.add('hidden'); intro.classList.add('fade-out'); intro.style.display = 'none' }
+    document.documentElement.setAttribute('data-skip-intro', '1')
+    document.body.style.overflow = ''
+    document.body.style.pointerEvents = ''
+  } catch (e) {}
+}
+
 function openPage(page, params={}) {
+  _clearUiOverlays()
+
   try{closeUserDropdown()}catch(e){}
   const item = NAV_ITEMS.find(n=>n.id===page)
   if(item && !canAccess(item.module)) { renderAccessDenied(); return }
