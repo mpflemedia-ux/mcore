@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-dim">
+<meta name="nexerp-build" content="2026-08-13-rpfull">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1484,11 +1484,11 @@ const NAV_ITEMS = [
   { id:'production', icon:'ti-tools',             label_en:'Production',  label_bm:'Pengeluaran',  module:'production' },
   { section:'People' },
   { id:'hr',         icon:'ti-id-badge-2',        label_en:'HR & Payroll', label_bm:'SDM & Gaji',   module:'hr' },
-  { id:'applicants', icon:'ti-user-search',       label_en:'Job Applicants', label_bm:'Permohonan Kerja', module:'hr' },
+  { id:'applicants', icon:'ti-user-search',       label_en:'Job Applicants', label_bm:'Permohonan Kerja', module:'hr_recruit' },
   { section:'Finance' },
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
-  { id:'vouchers',   icon:'ti-file-invoice',      label_en:'Payment Vouchers', label_bm:'Baucar Bayaran', module:'accounting' },
-  { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'core' },
+  { id:'vouchers',   icon:'ti-file-invoice',      label_en:'Payment Vouchers', label_bm:'Baucar Bayaran', module:'vouchers' },
+  { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'reports' },
   { section:'System' },
   { id:'admin',      icon:'ti-shield-cog',        label_en:'Admin',       label_bm:'Admin',        module:'admin' },
   { id:'settings',   icon:'ti-settings',          label_en:'Settings',    label_bm:'Tetapan',      module:'core' },
@@ -1504,15 +1504,36 @@ function isTenantAdmin() {
 function canManageHR() {
   if(isTenantAdmin() || isPlatformAdmin()) return true
   const role = String((APP.user && APP.user.role) || '').toLowerCase()
-  return role === 'manager' || role === 'hr'
+  if(role === 'manager' || role === 'hr') return true
+  // Granular role permissions
+  try {
+    const mods = _rpModulesForCurrentUser()
+    if(mods.includes('hr_employees') || mods.includes('hr_payroll') || mods.includes('hr_recruit')) return true
+    // Legacy full HR tick (not attendance-only)
+    if(mods.includes('hr') && !mods.includes('hr_attendance')) return true
+    if(mods.includes('hr') && (mods.includes('hr_employees') || mods.includes('hr_payroll'))) return true
+  } catch(e) {}
+  return false
+}
+function _rpModulesForCurrentUser() {
+  const role = String((APP.user && APP.user.role) || '').toLowerCase()
+  if(role==='owner' || role==='admin') return RP_MODULES.map(m=>m.id)
+  const ov = APP.user && APP.user.module_override
+  if(Array.isArray(ov)) return ov.map(String)
+  const rolesMap = (APP.tenantConfig && APP.tenantConfig.roles) || {}
+  const configured = rolesMap[role]
+  if(Array.isArray(configured)) return configured.map(String)
+  const fb = (_DEFAULT_ROLE_MODULES[role] || RP_ROLE_DEFAULTS[role] || [])
+  return Array.isArray(fb) ? fb.map(String) : []
 }
 
 // Default module map when tenant has not configured custom role permissions yet
 const _DEFAULT_ROLE_MODULES = {
-  manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','accounting'],
-  accountant: ['accounting','reports','purchasing','sales'],
+  manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
+  accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
   cashier: ['pos','sales'],
-  staff: ['pos'],
+  staff: ['pos','hr_attendance'],
+  admin: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports','admin'],
 }
 
 
@@ -1589,28 +1610,41 @@ function canAccess(module) {
   const role = APP.user.role
   if(!role) return false
   if(role==='owner' || role==='admin' || isPlatformAdmin()) return true
-  // Admin console: owner/admin/platform only
-  if(module==='admin') return false
-  // Core shell (dashboard + basic settings profile) always allowed for authenticated users
+  if(module==='admin') {
+    const mods = _rpModulesForCurrentUser()
+    return mods.includes('admin')
+  }
   if(module==='core') return true
-  // Per-user override (set at invite time, Phase 2) REPLACES the role's
-  // default module set entirely for this user — not a union with it — so
-  // an admin can use it to restrict a user more tightly than their role's
-  // default, not just grant extra. Only takes effect when it's an actual
-  // array (module_override is null for every user created before this
-  // feature, or any invite where "use role default" stayed on — those
-  // fall through to the exact same role-config/fallback logic as before).
-  if(Array.isArray(APP.user.module_override)) return APP.user.module_override.includes(module)
-  // Tenant Role Permissions (Settings). Empty array [] means intentionally no modules.
-  const rolesMap = (APP.tenantConfig && APP.tenantConfig.roles) || {}
-  const roleKey = String(role).toLowerCase()
-  const configured = rolesMap[role] || rolesMap[roleKey] || rolesMap[roleKey.replace(/\s+/g,'_')]
-  if(Array.isArray(configured)) return configured.includes(module)
-  // Fallback only when role key missing from config
-  const fallback = _DEFAULT_ROLE_MODULES[roleKey] || _DEFAULT_ROLE_MODULES[role]
-  if(Array.isArray(fallback)) return fallback.includes(module)
+  const ov = APP.user && APP.user.module_override
+  let mods
+  if(Array.isArray(ov)) mods = ov.map(String)
+  else {
+    const rolesMap = (APP.tenantConfig && APP.tenantConfig.roles) || {}
+    const roleKey = String(role).toLowerCase()
+    const configured = rolesMap[role] || rolesMap[roleKey] || rolesMap[roleKey.replace(/\s+/g,'_')]
+    if(Array.isArray(configured)) mods = configured.map(String)
+    else {
+      const fallback = _DEFAULT_ROLE_MODULES[roleKey] || _DEFAULT_ROLE_MODULES[role] || RP_ROLE_DEFAULTS[roleKey] || []
+      mods = Array.isArray(fallback) ? fallback.map(String) : []
+    }
+  }
+  if(mods.includes(module)) return true
+  // HR aliases
+  if(module==='hr') {
+    return mods.includes('hr') || mods.some(m => String(m).startsWith('hr_'))
+  }
+  if(module==='hr_attendance' || module==='hr_employees' || module==='hr_payroll' || module==='hr_recruit') {
+    if(mods.includes('hr')) return true // legacy full HR
+    return mods.includes(module)
+  }
+  // Vouchers fall under accounting if not explicit
+  if(module==='vouchers' && mods.includes('accounting')) return true
+  // Reports explicit only (no longer core)
+  if(module==='reports') return mods.includes('reports')
   return false
 }
+
+
 function isPlatformAdmin() {
   // Platform admin = cross-tenant operator only.
   // Do NOT match tenant staff emails like mpflemedia@gmail.com — that bypassed all role permissions.
@@ -2862,8 +2896,8 @@ function buildSidebar() {
   NAV_ITEMS.forEach(item=>{
     if(item.section){const s=document.createElement('div');s.className='nav-section';s.textContent=item.section;nav.appendChild(s);return}
     if(!canAccess(item.module)) return
-    // Job Applicants = recruitment admin only
-    if(item.id === 'applicants' && !canManageHR()) return
+    // Job Applicants = recruitment permission
+    if(item.id === 'applicants' && !canAccess('hr_recruit') && !canManageHR()) return
     // Reports: staff with only pos/hr must not see financial reports unless role grants reports
     if(item.id === 'reports' && !canAccess('reports') && !canAccess('accounting')) return
     const label=APP.language==='bm'?item.label_bm:item.label_en
@@ -4562,17 +4596,47 @@ function _dbRenderMonthlyBar(inv) {
   })
 }
 
-const RP_MODULES = [
-  { id:'crm',        en:'Customers', bm:'Pelanggan' },
-  { id:'sales',      en:'Sales',     bm:'Jualan' },
-  { id:'pos',        en:'POS',       bm:'POS' },
-  { id:'inventory',  en:'Inventory', bm:'Inventori' },
-  { id:'accounting', en:'Accounting',bm:'Perakaunan' },
-  { id:'logistics',  en:'Logistics', bm:'Logistik' },
-  { id:'purchasing', en:'Purchasing',bm:'Perolehan' },
-  { id:'production', en:'Production',bm:'Pengeluaran' },
-  { id:'hr',         en:'HR',        bm:'Sumber Manusia' },
+const // Standard invite roles (same labels as Admin → Invite New Member)
+const RP_STANDARD_ROLES = ['staff','cashier','accountant','manager','admin']
+
+// Sectioned modules — every controllable area (incl. HR breakdown + reports)
+const RP_SECTIONS = [
+  { key:'operations', en:'Operations', bm:'Operasi', modules:[
+    { id:'crm',        en:'Customers', bm:'Pelanggan' },
+    { id:'sales',      en:'Sales / Invoices', bm:'Jualan / Invois' },
+    { id:'pos',        en:'POS', bm:'POS' },
+    { id:'inventory',  en:'Inventory', bm:'Inventori' },
+    { id:'logistics',  en:'Logistics', bm:'Logistik' },
+    { id:'purchasing', en:'Purchasing', bm:'Perolehan' },
+    { id:'production', en:'Production', bm:'Pengeluaran' },
+  ]},
+  { key:'people', en:'People', bm:'Pekerja', modules:[
+    { id:'hr_attendance', en:'HR — Attendance & Leave', bm:'HR — Kehadiran & Cuti' },
+    { id:'hr_employees',  en:'HR — Employees master', bm:'HR — Master pekerja' },
+    { id:'hr_payroll',    en:'HR — Payroll & Disbursement', bm:'HR — Gaji & Penyaluran' },
+    { id:'hr_recruit',    en:'Job Applicants', bm:'Permohonan Kerja' },
+    { id:'hr',            en:'HR (full legacy)', bm:'HR (penuh / lama)' },
+  ]},
+  { key:'finance', en:'Finance', bm:'Kewangan', modules:[
+    { id:'accounting', en:'Accounting / Journals', bm:'Perakaunan / Jurnal' },
+    { id:'vouchers',   en:'Payment Vouchers', bm:'Baucar Bayaran' },
+    { id:'reports',    en:'Reports (P&L, BS, Sales…)', bm:'Laporan (P&L, BS, Jualan…)' },
+  ]},
+  { key:'system', en:'System', bm:'Sistem', modules:[
+    { id:'admin', en:'Admin / Team', bm:'Admin / Pasukan' },
+  ]},
 ]
+// Flat list for toggles / includes checks
+const RP_MODULES = RP_SECTIONS.reduce((a,s)=>a.concat(s.modules), [])
+
+const RP_ROLE_DEFAULTS = {
+  staff: ['pos','hr_attendance'],
+  cashier: ['pos','sales'],
+  accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
+  manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
+  admin: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','hr','accounting','vouchers','reports','admin'],
+}
+
 let _rolePermsState = {}
 
 
@@ -5421,6 +5485,7 @@ async function renderSettings(params={}) {
 
   if(isAdmin) {
     _rolePermsState = JSON.parse(JSON.stringify(APP.tenantConfig.roles||{}))
+    _rpEnsureStandardRoles()
     _rpRenderList()
     _settingsAuditPreview()
   }
@@ -5791,26 +5856,63 @@ async function _fraudScan() {
   if(btn) btn.disabled = false
 }
 
+function _rpEnsureStandardRoles() {
+  RP_STANDARD_ROLES.forEach(role => {
+    if(!_rolePermsState[role]) {
+      _rolePermsState[role] = (RP_ROLE_DEFAULTS[role] || []).slice()
+    }
+  })
+  // Migrate legacy staff: hr → hr_attendance (keep pos)
+  const st = _rolePermsState['staff']
+  if(Array.isArray(st) && st.includes('hr') && !st.includes('hr_attendance') && !st.includes('hr_payroll') && !st.includes('hr_employees')) {
+    _rolePermsState['staff'] = st.filter(m => m !== 'hr').concat(['hr_attendance'])
+  }
+}
+
 function _rpRenderList() {
   const wrap = document.getElementById('role-perms-wrap')
   if(!wrap) return
-  const t = APP.language==='bm' ? { noRoles:'Tiada peranan custom lagi.' } : { noRoles:'No custom roles yet.' }
-  const roles = Object.keys(_rolePermsState)
+  _rpEnsureStandardRoles()
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { noRoles:'Tiada peranan.', selectAll:'Pilih semua', clear:'Kosongkan', standard:'Standard' }
+    : { noRoles:'No roles.', selectAll:'Select all', clear:'Clear', standard:'Standard' }
+  const roles = [...RP_STANDARD_ROLES, ...Object.keys(_rolePermsState).filter(r => !RP_STANDARD_ROLES.includes(r)).sort()]
   if(roles.length===0) { wrap.innerHTML = `<p style="font-size:13px;color:var(--text-3)">${t.noRoles}</p>`; return }
-  wrap.innerHTML = roles.map(role => `
-    <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <strong style="text-transform:capitalize">${role}</strong>
-        <button class="btn btn-outline btn-sm" style="padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="_rpRemoveRole('${role}')"><i class="ti ti-trash"></i></button>
+  wrap.innerHTML = roles.map(role => {
+    const isStd = RP_STANDARD_ROLES.includes(role)
+    const label = role.charAt(0).toUpperCase() + role.slice(1)
+    const mods = _rolePermsState[role] || []
+    const sectionsHtml = RP_SECTIONS.map(sec => {
+      const secLabel = isBm ? sec.bm : sec.en
+      const boxes = sec.modules.map(m => {
+        const checked = mods.includes(m.id) ? 'checked' : ''
+        const lab = isBm ? m.bm : m.en
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;min-width:180px;padding:4px 0">
+            <input type="checkbox" ${checked} onchange="_rpToggleModule('${role}','${m.id}',this.checked)">
+            ${lab}
+          </label>`
+      }).join('')
+      return `<div style="margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${secLabel}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 14px">${boxes}</div>
+      </div>`
+    }).join('')
+    return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px">
+          <strong style="font-size:14px">${label}</strong>
+          ${isStd ? `<span style="font-size:10px;padding:2px 7px;border-radius:99px;background:var(--primary-light);color:var(--primary-dark);border:1px solid var(--border)">${t.standard}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="_rpSelectAll('${role}',true)">${t.selectAll}</button>
+          <button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="_rpSelectAll('${role}',false)">${t.clear}</button>
+          ${isStd ? '' : `<button class="btn btn-outline btn-sm" style="padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="_rpRemoveRole('${role}')"><i class="ti ti-trash"></i></button>`}
+        </div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:12px">
-        ${RP_MODULES.map(m => `
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="checkbox" ${(_rolePermsState[role]||[]).includes(m.id)?'checked':''} onchange="_rpToggleModule('${role}','${m.id}',this.checked)">
-            ${APP.language==='bm'?m.bm:m.en}
-          </label>`).join('')}
-      </div>
-    </div>`).join('')
+      ${sectionsHtml}
+    </div>`
+  }).join('')
 }
 
 function _rpToggleModule(role, moduleId, checked) {
@@ -5818,6 +5920,11 @@ function _rpToggleModule(role, moduleId, checked) {
   if(checked) { if(!arr.includes(moduleId)) arr.push(moduleId) }
   else { const i=arr.indexOf(moduleId); if(i>-1) arr.splice(i,1) }
   _rolePermsState[role] = arr
+}
+function _rpSelectAll(role, on) {
+  if(on) _rolePermsState[role] = RP_MODULES.map(m => m.id)
+  else _rolePermsState[role] = []
+  _rpRenderList()
 }
 
 function _rpAddRole() {
@@ -5832,6 +5939,10 @@ function _rpAddRole() {
 }
 
 function _rpRemoveRole(role) {
+  if(RP_STANDARD_ROLES.includes(String(role).toLowerCase())) {
+    showToast(APP.language==='bm'?'Peranan standard tak boleh dipadam.':'Standard roles cannot be removed.','error')
+    return
+  }
   delete _rolePermsState[role]
   _rpRenderList()
 }
