@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-13-perm">
+<meta name="nexerp-build" content="2026-08-13-pa">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -1505,7 +1505,7 @@ const _DEFAULT_ROLE_MODULES = {
   manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','accounting'],
   accountant: ['accounting','reports','purchasing','sales'],
   cashier: ['pos','sales'],
-  staff: ['crm','sales','inventory','pos'],
+  staff: ['pos'],
 }
 
 
@@ -1605,11 +1605,13 @@ function canAccess(module) {
   return false
 }
 function isPlatformAdmin() {
-  const email = (APP.user.email || '').toLowerCase()
+  // Platform admin = cross-tenant operator only.
+  // Do NOT match tenant staff emails like mpflemedia@gmail.com — that bypassed all role permissions.
   if(APP.user.role === 'platform_admin') return true
+  // Explicit opt-in for testing (console: localStorage.setItem('nexerp_platform_admin','1'))
   if(localStorage.getItem('nexerp_platform_admin') === '1') return true
-  // Phion / MPFLE operators
-  if(email.includes('mpflemedia') || email.includes('phion')) return true
+  const email = (APP.user.email || '').toLowerCase().trim()
+  // Allowlist only company operator domains — not personal gmail
   if(email.endsWith('@phion.my') || email.endsWith('@mpflemedia.my')) return true
   return false
 }
