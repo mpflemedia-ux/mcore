@@ -1973,10 +1973,10 @@ function openPage(page, params={}) {
       case 'hr':         _safeRender(() => renderHR(params)); break
       case 'applicants': _safeRender(() => renderJobApplicants(params)); break
       case 'accounting': _safeRender(() => renderAccounting(params)); break
-      case 'vouchers':   renderPaymentVouchers(params); break
-      case 'reports':    renderReports(params); break
-      case 'admin':      renderAdmin(params); break
-      case 'settings':   renderSettings(params); break
+      case 'vouchers':   _safeRender(() => renderPaymentVouchers(params)); break
+      case 'reports':    _safeRender(() => renderReports(params)); break
+      case 'admin':      _safeRender(() => renderAdmin(params)); break
+      case 'settings':   _safeRender(() => renderSettings(params)); break
       default: main.innerHTML=`<div class="empty-state"><i class="ti ti-mood-confuzed"></i><h3>Page not found</h3></div>`
     }
   },150)
