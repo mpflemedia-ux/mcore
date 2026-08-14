@@ -8612,14 +8612,16 @@ async function renderCOAList() {
   }
 
   document.getElementById('main').innerHTML = `
-  <div class="page-header">
+  <div class="page-header no-print">
     <div><div class="page-title">${t.title}</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${_repPrintToolbar('ChartOfAccounts')}
       <button id="coa-seed-btn" class="btn btn-outline btn-sm" onclick="_coaSeedDefaults()"><i class="ti ti-database-import"></i> ${APP.language==='bm'?'Seed Akaun Default':'Seed Default Accounts'}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'coa-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
     </div>
   </div>
-  ${_accTabs('coa')}
+  <div class="no-print">${_accTabs('coa')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
   <div class="card" style="margin-bottom:0">
     <div style="display:flex;gap:12px;padding:16px;border-bottom:1px solid var(--border);flex-wrap:wrap">
       <div class="input-group" style="flex:1;min-width:220px">
