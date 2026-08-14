@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-opta">
+<meta name="nexerp-build" content="2026-08-15-pzb">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2111,6 +2111,7 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
   if(Number(rec.socso_employee) > 0) dedRows.push({ label: 'SOCSO', amount: rec.socso_employee })
   if(Number(rec.eis_employee) > 0) dedRows.push({ label: 'EIS', amount: rec.eis_employee })
   if(Number(rec.pcb) > 0) dedRows.push({ label: t.pcb, amount: rec.pcb })
+  if(Number(rec.zakat) > 0) dedRows.push({ label: isBm?'Zakat (PZB)':'Zakat (PZB)', amount: rec.zakat })
   if(Number(rec.advance) > 0) dedRows.push({ label: t.advance, amount: rec.advance })
   ;[[rec.deduction_type_1, rec.deduction_1], [rec.deduction_type_2, rec.deduction_2]].forEach(([type, amt]) => {
     if(Number(amt) > 0) dedRows.push({ label: _sdTypeLabel(SD_DEDUCTION_TYPES, type), amount: amt })
@@ -3870,7 +3871,7 @@ async function loadDashboardData() {
     const pStart = bounds.prevStart.split('-').map(Number)
     const pEnd = bounds.prevEnd.split('-').map(Number)
     const {data: pr} = await sb.from('payroll_records')
-      .select('net_pay,month,year,basic_salary,epf_employer,socso_employer,eis_employer,epf_employee,socso_employee,eis_employee,pcb')
+      .select('net_pay,month,year,basic_salary,epf_employer,socso_employer,eis_employer,epf_employee,socso_employee,eis_employee,pcb,zakat')
       .eq('tenant_id', APP.tenant.id)
     const costOf = (r) => {
       const gross = Number(r.basic_salary||0)
@@ -7222,7 +7223,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
   // employees(name) purely so an unbalanced-entry error can name WHICH
   // employee's record is the problem, since the entry description alone
   // ("Payroll MM/YYYY") doesn't distinguish employees.
-  const {data: payrolls} = await sb.from('payroll_records').select('id,employee_id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,generated_at,allowance_1,allowance_2,allowance_3,advance,deduction_1,deduction_2,employees(name)')
+  const {data: payrolls} = await sb.from('payroll_records').select('id,employee_id,month,year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,zakat,net_pay,generated_at,allowance_1,allowance_2,allowance_3,advance,deduction_1,deduction_2,employees(name)')
     .eq('tenant_id',APP.tenant.id).lt('generated_at',cutoffDate)
   report.payroll.candidates = (payrolls||[]).length
   for(const pr of (payrolls||[])) {
@@ -17628,8 +17629,12 @@ function _calcPayroll(employee) {
   }
   const pcb = r2(annualTax / 12)
 
-  const net_pay = r2(b - epf_employee - socso_employee - eis_employee - pcb)
-  return { basic_salary: b, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, net_pay }
+  // PZB — fixed monthly zakat (employee deduction only). 0 if not enabled.
+  const zakatOn = !!(employee && (employee.zakat_enabled === true || employee.zakat_enabled === 'true' || employee.zakat_enabled === 1))
+  const zakat = zakatOn ? r2(Math.max(0, Number(employee.zakat_amount) || 0)) : 0
+
+  const net_pay = r2(b - epf_employee - socso_employee - eis_employee - pcb - zakat)
+  return { basic_salary: b, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, zakat, net_pay }
 }
 
 function renderHR(params={}) {
@@ -17796,6 +17801,17 @@ async function renderEmployeeForm(id, fromApplicantId) {
       <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${src.basic_salary??''}"></div>
       <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
+      <div class="form-group" style="grid-column:1/-1;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-2)">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:8px">
+          <input type="checkbox" id="emp-zakat-on" ${(emp?.zakat_enabled)?'checked':''}>
+          ${isBm?'Potongan Zakat Bulanan (PZB)':'Monthly Zakat Deduction (PZB)'}
+        </label>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">${isBm?'Jumlah zakat sebulan (RM)':'Monthly zakat amount (RM)'}</label>
+          <input id="emp-zakat-amt" type="number" step="0.01" min="0" class="form-input" value="${emp?.zakat_amount??''}" placeholder="0.00">
+        </div>
+        <p style="font-size:11px;color:var(--text-3);margin:6px 0 0">${isBm?'Jumlah tetap dipotong setiap run payroll. Bukan PCB (LHDN).':'Fixed amount deducted each payroll run. Not PCB (LHDN).'}</p>
+      </div>
       <div class="form-group"><label class="form-label">${t.bankName}</label><input id="emp-bank-name" class="form-input" placeholder="Maybank / CIMB / ..." value="${_aiEscapeHtml(emp?.bank_name||'')}"></div>
       <div class="form-group"><label class="form-label">${t.bankAcc}</label><input id="emp-bank-acc" class="form-input" placeholder="1234567890" value="${_aiEscapeHtml(emp?.bank_account_no||'')}"></div>
       <div class="form-group"><label class="form-label">${t.phone}</label><input id="emp-phone" class="form-input" value="${src.phone||''}"></div>
@@ -17887,6 +17903,8 @@ async function _employeeSave(id, fromApplicantId) {
     basic_salary: Number(document.getElementById('emp-salary').value) || 0,
     epf_no: document.getElementById('emp-epf').value.trim() || null,
     socso_no: document.getElementById('emp-socso').value.trim() || null,
+    zakat_enabled: !!document.getElementById('emp-zakat-on')?.checked,
+    zakat_amount: Math.max(0, Number(document.getElementById('emp-zakat-amt')?.value) || 0),
     bank_name: document.getElementById('emp-bank-name')?.value.trim() || null,
     bank_account_no: document.getElementById('emp-bank-acc')?.value.trim() || null,
     phone: document.getElementById('emp-phone').value.trim() || null,
@@ -17909,6 +17927,19 @@ async function _employeeSave(id, fromApplicantId) {
     const {data, error: insErr} = await sb.from('employees').insert(payload).select('id').single()
     error = insErr
     if(data) newId = data.id
+  }
+  // Soft-fail if PZB columns not migrated yet
+  if(error && /zakat/i.test(error.message||'')) {
+    delete payload.zakat_enabled
+    delete payload.zakat_amount
+    if(id) {
+      ({error} = await sb.from('employees').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+    } else {
+      const {data, error: insErr2} = await sb.from('employees').insert(payload).select('id').single()
+      error = insErr2
+      if(data) newId = data.id
+    }
+    if(!error) showToast(APP.language==='bm'?'Disimpan tanpa PZB — run SQL migration zakat':'Saved without PZB — run zakat SQL migration','info')
   }
   if(error) { showToast('Error: '+error.message, 'error'); return }
   if(!id && fromApplicantId) {
@@ -18398,7 +18429,7 @@ async function renderPayrollRun() {
     regenWarn:'Checking an "already generated" employee will OVERWRITE their existing payroll record for this period (basic salary + all EPF/SOCSO/EIS/PCB figures recalculated from current employee data).'
   }
   const now = new Date()
-  const {data: employees} = await sb.from('employees').select('id,name,basic_salary,ic_no').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  const {data: employees} = await sb.from('employees').select('id,name,basic_salary,ic_no,zakat_enabled,zakat_amount').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
   const month = now.getMonth()+1, year = now.getFullYear()
   const {data: existing} = await sb.from('payroll_records').select('employee_id').eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year)
   const existingIds = new Set((existing||[]).map(r=>String(r.employee_id)))
@@ -18521,7 +18552,12 @@ async function _payrollRunExecute() {
     if(!emp) { errCount++; continue }
     const calc = _calcPayroll(emp)
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
-    const {data: prRow, error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single()
+    let prRow=null, error=null
+    ;({data: prRow, error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
+    if(error && /zakat/i.test(error.message||'')) {
+      const {zakat, ...rest} = payload
+      ;({data: prRow, error} = await sb.from('payroll_records').upsert(rest, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
+    }
     if(error) errCount++; else {
       okCount++; auditLog('create','payroll_records', empId)
       try { await _postPayrollJournal(calc, month, year, prRow?.id) } catch(e) { console.error('Payroll journal post failed for employee '+empId+':', e) }
@@ -18786,10 +18822,11 @@ async function renderSalaryDisbursement(month, year) {
   const sumSOCSO = data.reduce((s,r)=>s+Number(r.socso_employee||0)+Number(r.socso_employer||0),0)
   const sumEIS = data.reduce((s,r)=>s+Number(r.eis_employee||0)+Number(r.eis_employer||0),0)
   const sumPCB = data.reduce((s,r)=>s+Number(r.pcb||0),0)
+  const sumZakat = data.reduce((s,r)=>s+Number(r.zakat||0),0)
   const grandTotal = data.reduce((s,r) => {
     const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
     const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
-    return s + Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - totalDeduction
+    return s + Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - Number(r.zakat||0) - totalDeduction
   }, 0)
   // Company cost = gross earnings (basic+allow) + employer statutory contributions
   const companyCost = sumSalary + sumAllow + sumEmployer
@@ -18913,6 +18950,7 @@ async function renderSalaryDisbursement(month, year) {
         <th>SOCSO</th>
         <th>EIS</th>
         <th>PCB</th>
+        <th>Zakat</th>
         <th class="budget">${isBm?'Bajet Diperlukan':'Budget Required'}</th>
       </tr></thead>
       <tbody>
@@ -18922,10 +18960,11 @@ async function renderSalaryDisbursement(month, year) {
         <td id="sd-grand-socso">${formatRM(sumSOCSO)}</td>
         <td id="sd-grand-eis">${formatRM(sumEIS)}</td>
         <td id="sd-grand-pcb">${formatRM(sumPCB)}</td>
+        <td id="sd-grand-zakat">${formatRM(sumZakat)}</td>
         <td class="budget" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
       </tr>
       <tr class="sd-sig-row" id="sd-sig-row">
-        <td colspan="6" id="sd-sig-cell" style="padding-top:28px;text-align:center"></td>
+        <td colspan="7" id="sd-sig-cell" style="padding-top:28px;text-align:center"></td>
       </tr>
       </tbody>
     </table>
