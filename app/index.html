@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-zindep">
+<meta name="nexerp-build" content="2026-08-15-wa">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18568,7 +18568,42 @@ async function _payrollRunExecute() {
 }
 
 
-async function _payslipShareWhatsApp(id) {
+async 
+/** Normalize MY mobile to WhatsApp international (60…). Empty → ''. */
+function _waNormalizeMyPhone(raw) {
+  let p = String(raw || '').replace(/\D/g, '')
+  if(!p) return ''
+  if(p.startsWith('00')) p = p.slice(2)
+  if(p.startsWith('0')) p = '60' + p.slice(1)
+  if(!p.startsWith('60') && p.length >= 9 && p.length <= 11) p = '60' + p
+  // already 60…
+  return p
+}
+/** Open WhatsApp chat with prefilled text. Reliable on desktop + mobile. */
+function _waOpenShare(phone, msg) {
+  const isBm = APP.language === 'bm'
+  const p = _waNormalizeMyPhone(phone)
+  const text = String(msg || '').slice(0, 1200)
+  const url = p
+    ? ('https://wa.me/' + p + '?text=' + encodeURIComponent(text))
+    : ('https://wa.me/?text=' + encodeURIComponent(text))
+  let w = null
+  try { w = window.open(url, '_blank', 'noopener,noreferrer') } catch(e) { w = null }
+  if(!w) {
+    try {
+      if(navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+        showToast(isBm ? 'Popup disekat. Teks slip disalin — buka WhatsApp & tampal.' : 'Popup blocked. Payslip text copied — open WhatsApp & paste.', 'info')
+      } else {
+        showToast(isBm ? 'Benarkan popup untuk buka WhatsApp.' : 'Allow popups to open WhatsApp.', 'error')
+      }
+    } catch(e2) {
+      showToast(isBm ? 'Benarkan popup untuk buka WhatsApp.' : 'Allow popups to open WhatsApp.', 'error')
+    }
+  }
+}
+
+function _payslipShareWhatsApp(id) {
   const isBm = APP.language==='bm'
   const {data: rec} = await sb.from('payroll_records').select('*,employees(name,phone,email,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { showToast('Not found','error'); return }
@@ -18580,15 +18615,17 @@ async function _payslipShareWhatsApp(id) {
   const msg = isBm
     ? ('*' + co + ' — Slip Gaji*\n\nPekerja: *' + name + '*\nTempoh: ' + period + '\nGaji bersih: *' + net + '*\nBank: ' + bank + '\n\nSila semak slip gaji anda. Sebarang pertanyaan hubungi HR.\n\n_Nota: PDF penuh — NexERP → HR → Print._')
     : ('*' + co + ' — Payslip*\n\nEmployee: *' + name + '*\nPeriod: ' + period + '\nNet pay: *' + net + '*\nBank: ' + bank + '\n\nPlease review your payslip. Contact HR for questions.\n\n_Note: Full PDF — NexERP → HR → Print._')
-  let phone = (rec.employees?.phone || '').replace(/\D/g,'')
-  if(phone.startsWith('0')) phone = '60' + phone.slice(1)
-  if(phone && !phone.startsWith('60') && phone.length >= 9) phone = '60' + phone
+  let phone = _waNormalizeMyPhone(rec.employees?.phone || '')
   if(!phone) {
-    const entered = prompt(isBm ? 'No. WhatsApp staf (cth 60123456789):' : 'Staff WhatsApp no. (e.g. 60123456789):', '')
-    if(!entered) return
-    phone = String(entered).replace(/\D/g,'')
+    const entered = prompt(isBm ? 'No. WhatsApp staf (cth 012-3456789):' : 'Staff WhatsApp no. (e.g. 012-3456789):', '')
+    if(entered == null || String(entered).trim() === '') return
+    phone = _waNormalizeMyPhone(entered)
   }
-  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank')
+  if(!phone) {
+    showToast(isBm ? 'No. telefon tidak sah.' : 'Invalid phone number.', 'error')
+    return
+  }
+  _waOpenShare(phone, msg)
 }
 
 async function _payslipShareEmail(id) {
