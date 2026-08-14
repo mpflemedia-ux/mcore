@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-accall">
+<meta name="nexerp-build" content="2026-08-15-petty">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8085,12 +8085,13 @@ function renderAccounting(params={}) {
   if(params.view==='fa-detail') { renderFADetail(params.id); return }
   if(params.view==='vouchers' || params.view==='pv-form' || params.view==='pv-detail') { renderPaymentVouchers(params); return }
   if(params.view==='opening-balance') { renderOpeningBalance(); return }
+  if(params.view==='petty' || params.view==='petty-detail') { renderPettyCash(params); return }
   renderCOAList()
 }
 
 function _accTabs(active) {
-  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap', pv:'Baucar Bayaran', ob:'Baki Pembukaan' }
-    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets', pv:'Payment Vouchers', ob:'Opening Balance' }
+  const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap', pv:'Baucar Bayaran', ob:'Baki Pembukaan', petty:'Petty Cash' }
+    : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets', pv:'Payment Vouchers', ob:'Opening Balance', petty:'Petty Cash' }
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
     <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
@@ -8100,7 +8101,377 @@ function _accTabs(active) {
     <button class="btn btn-sm ${active==='reconcile'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'reconcile'})"><i class="ti ti-arrows-left-right"></i> ${t.reconcile}</button>
     <button class="btn btn-sm ${active==='fa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'fixed-assets'})"><i class="ti ti-building"></i> ${t.fa}</button>
     <button class="btn btn-sm ${active==='ob'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'opening-balance'})"><i class="ti ti-building-bank"></i> ${t.ob}</button>
+    <button class="btn btn-sm ${active==='petty'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'petty'})"><i class="ti ti-wallet"></i> ${t.petty}</button>
   </div>`
+}
+
+
+
+// ─── Petty Cash (Imprest) ─────────────────────────────────────────────────────
+/** Issue float → expenses (1 receipt = 1 row) → balance → close. Soft-fail if tables missing. */
+async function renderPettyCash(params={}) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Petty Cash (Imprest)', issue:'Issue Float', holder:'Pegangan staff', amount:'Jumlah float (RM)',
+    date:'Tarikh', notes:'Nota', open:'Open', closed:'Closed', spent:'Belanja', balance:'Baki',
+    addExp:'Tambah belanja', merchant:'Kedai / merchant', desc:'Keterangan', receipt:'Status resit',
+    ok:'OK', damaged:'Rosak', missing:'Tiada', save:'Simpan', closeFloat:'Tutup float',
+    returnCash:'Baki cash dipulangkan (RM)', noData:'Tiada float lagi. Issue float untuk mula.',
+    needTable:'Jadual petty cash belum wujud. Jalankan migrasi SQL di Supabase.',
+    confirmClose:'Tutup float ini? Pastikan baki cash + jumlah resit = float asal.',
+    aiHint:'AI Scan: upload foto resit, isi manual & confirm (OCR penuh fasa seterusnya).',
+    list:'Senarai float', back:'Kembali'
+  } : {
+    title:'Petty Cash (Imprest)', issue:'Issue Float', holder:'Holder (staff)', amount:'Float amount (RM)',
+    date:'Date', notes:'Notes', open:'Open', closed:'Closed', spent:'Spent', balance:'Balance',
+    addExp:'Add expense', merchant:'Merchant', desc:'Description', receipt:'Receipt status',
+    ok:'OK', damaged:'Damaged', missing:'Missing', save:'Save', closeFloat:'Close float',
+    returnCash:'Cash returned (RM)', noData:'No floats yet. Issue a float to start.',
+    needTable:'Petty cash tables missing. Run the SQL migration in Supabase.',
+    confirmClose:'Close this float? Ensure cash returned + receipt total = original float.',
+    aiHint:'AI Scan: upload receipt photo, fill/confirm amounts (full OCR in a later phase).',
+    list:'Float list', back:'Back'
+  }
+
+  if(params.view==='petty-detail' && params.id) {
+    await _pcRenderDetail(params.id, t, isBm)
+    return
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header no-print">
+    <div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${_repPrintToolbar('PettyCash')}
+      <button type="button" class="btn btn-primary btn-sm" onclick="_pcShowIssue()"><i class="ti ti-plus"></i> ${t.issue}</button>
+    </div>
+  </div>
+  <div class="no-print">${_accTabs('petty')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
+  <div id="pc-issue-wrap" class="no-print"></div>
+  <div class="card acc-print-body"><div id="pc-list-wrap" style="padding:24px"><div class="spinner"></div></div></div>`
+  await _pcLoadList(t, isBm)
+}
+
+function _pcShowIssue() {
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { issue:'Issue Float', holder:'Nama staff', amount:'Jumlah (RM)', date:'Tarikh', notes:'Nota', save:'Simpan', cancel:'Batal' }
+    : { issue:'Issue Float', holder:'Staff name', amount:'Amount (RM)', date:'Date', notes:'Notes', save:'Save', cancel:'Cancel' }
+  const today = new Date().toISOString().slice(0,10)
+  const el = document.getElementById('pc-issue-wrap')
+  if(!el) return
+  el.innerHTML = `
+  <div class="card" style="padding:16px;margin-bottom:16px;max-width:520px">
+    <div style="font-weight:600;margin-bottom:12px">${t.issue}</div>
+    <div class="form-group"><label class="form-label">${t.holder}</label>
+      <input id="pc-holder" class="form-input" placeholder="e.g. Mike Paul"></div>
+    <div class="form-group"><label class="form-label">${t.amount}</label>
+      <input id="pc-amount" type="number" step="0.01" min="0.01" class="form-input" value="1000"></div>
+    <div class="form-group"><label class="form-label">${t.date}</label>
+      <input id="pc-date" type="date" class="form-input" value="${today}"></div>
+    <div class="form-group"><label class="form-label">${t.notes}</label>
+      <input id="pc-notes" class="form-input" placeholder="Petty cash float"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button type="button" class="btn btn-primary btn-sm" onclick="_pcIssueSave()">${t.save}</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('pc-issue-wrap').innerHTML=''">${t.cancel}</button>
+    </div>
+  </div>`
+}
+
+async function _pcIssueSave() {
+  const holder = (document.getElementById('pc-holder')?.value || '').trim()
+  const amount = Number(document.getElementById('pc-amount')?.value || 0)
+  const issued_date = document.getElementById('pc-date')?.value || new Date().toISOString().slice(0,10)
+  const notes = (document.getElementById('pc-notes')?.value || '').trim()
+  if(!holder) { showToast(APP.language==='bm'?'Isi nama staff':'Enter staff name', 'error'); return }
+  if(!(amount > 0)) { showToast(APP.language==='bm'?'Jumlah tidak sah':'Invalid amount', 'error'); return }
+  if(!_validTenantId(APP.tenant.id)) { showToast('No tenant', 'error'); return }
+
+  const row = {
+    tenant_id: APP.tenant.id,
+    holder_name: holder,
+    issued_date,
+    amount,
+    status: 'open',
+    notes: notes || null
+  }
+  const {data, error} = await sb.from('petty_cash_floats').insert(row).select('id').single()
+  if(error) {
+    console.error(error)
+    showToast((APP.language==='bm'?'Gagal simpan: ':'Save failed: ')+(error.message||error)+' — run SQL migration if table missing', 'error')
+    return
+  }
+  try {
+    await _pcPostIssueJournal(data.id, holder, amount, issued_date)
+  } catch(e) { console.warn('pc journal', e) }
+  showToast(APP.language==='bm'?'Float dikeluarkan':'Float issued', 'success')
+  openPage('accounting', {view:'petty-detail', id: data.id})
+}
+
+async function _pcPostIssueJournal(floatId, holder, amount, date) {
+  const cashAcc = await _getDefaultAccountId('cash')
+  // Prefer general_expense only as last resort; try find COA named petty
+  let pettyAcc = await _getDefaultAccountId('petty_cash')
+  if(!pettyAcc && cashAcc) {
+    try {
+      const {data: accs} = await sb.from('chart_of_accounts').select('id,name_en,code')
+        .eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
+      if(accs && accs[0]) pettyAcc = accs[0].id
+    } catch(e) {}
+  }
+  if(!cashAcc || !pettyAcc) {
+    showToast(APP.language==='bm'
+      ? 'Float disimpan. Journal skip — cipta akaun "Petty Cash" (Asset) & map cash di Default Accounts.'
+      : 'Float saved. Journal skipped — create "Petty Cash" (Asset) COA & map Cash in Default Accounts.', 'warning')
+    return null
+  }
+  if(await _journalAlreadyPosted('petty_cash_floats', floatId)) return null
+  return _postJournalEntry({
+    description: `Petty cash float — ${holder}`,
+    entryDate: date,
+    entryType: 'auto',
+    lines: [
+      { account_id: pettyAcc, debit: amount, credit: 0 },
+      { account_id: cashAcc, debit: 0, credit: amount }
+    ],
+    sourceTable: 'petty_cash_floats',
+    sourceId: floatId
+  })
+}
+
+async function _pcLoadList(t, isBm) {
+  const wrap = document.getElementById('pc-list-wrap')
+  if(!wrap) return
+  const {data, error} = await sb.from('petty_cash_floats').select('id,holder_name,issued_date,amount,status,notes')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    .order('issued_date', {ascending:false})
+  if(error) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${t.needTable}</p>
+      <p style="font-size:12px;color:var(--text-3);margin-top:8px">${_aiEscapeHtml(error.message||'')}</p></div>`
+    return
+  }
+  if(!data || !data.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`
+    return
+  }
+  // spent totals
+  const ids = data.map(d => d.id)
+  const {data: exps} = await sb.from('petty_cash_expenses').select('float_id,amount')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).in('float_id', ids)
+  const spentMap = {}
+  ;(exps||[]).forEach(e => { spentMap[e.float_id] = (spentMap[e.float_id]||0) + Number(e.amount||0) })
+
+  wrap.innerHTML = `<div style="overflow-x:auto"><table>
+    <thead><tr>
+      <th>${t.holder}</th><th>${t.date}</th><th style="text-align:right">${t.amount}</th>
+      <th style="text-align:right">${t.spent}</th><th style="text-align:right">${t.balance}</th><th>Status</th>
+    </tr></thead>
+    <tbody>${data.map(f => {
+      const spent = spentMap[f.id]||0
+      const bal = Number(f.amount) - spent
+      const st = f.status==='closed' ? t.closed : t.open
+      return `<tr style="cursor:pointer" onclick="openPage('accounting',{view:'petty-detail',id:'${f.id}'})">
+        <td><strong>${_aiEscapeHtml(f.holder_name)}</strong></td>
+        <td>${formatDate(f.issued_date)}</td>
+        <td style="text-align:right">${formatRM(f.amount)}</td>
+        <td style="text-align:right">${formatRM(spent)}</td>
+        <td style="text-align:right;font-weight:600">${formatRM(bal)}</td>
+        <td>${st}</td>
+      </tr>`
+    }).join('')}</tbody></table></div>`
+}
+
+async function _pcRenderDetail(floatId, t, isBm) {
+  const {data: f, error} = await sb.from('petty_cash_floats').select('*')
+    .eq('id', floatId).eq('tenant_id', APP.tenant.id).is('deleted_at', null).maybeSingle()
+  if(error || !f) {
+    document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:48px"><p>${error?error.message:'Not found'}</p>
+      <button class="btn btn-outline btn-sm" onclick="openPage('accounting',{view:'petty'})">${t.back}</button></div>`
+    return
+  }
+  const {data: exps} = await sb.from('petty_cash_expenses').select('*')
+    .eq('float_id', floatId).eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    .order('expense_date', {ascending:false})
+  const spent = (exps||[]).reduce((s,e)=>s+Number(e.amount||0), 0)
+  const bal = Number(f.amount) - spent
+  const today = new Date().toISOString().slice(0,10)
+  const closed = f.status==='closed'
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header no-print">
+    <div>
+      <div class="page-title">${t.title}</div>
+      <div style="font-size:13px;color:var(--text-3);cursor:pointer;margin-top:2px" onclick="openPage('accounting',{view:'petty'})">← ${t.list}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${_repPrintToolbar('PettyCashFloat')}
+      ${!closed?`<button type="button" class="btn btn-outline btn-sm" onclick="_pcCloseFloat('${f.id}',${bal})">${t.closeFloat}</button>`:''}
+    </div>
+  </div>
+  <div class="no-print">${_accTabs('petty')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${_aiEscapeHtml(f.holder_name)}</div>
+  <div class="card acc-print-body" style="padding:16px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+      <div><div style="font-size:11px;color:var(--text-3)">${t.holder}</div><div style="font-weight:600">${_aiEscapeHtml(f.holder_name)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-3)">${t.amount}</div><div style="font-weight:600">${formatRM(f.amount)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-3)">${t.spent}</div><div style="font-weight:600">${formatRM(spent)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-3)">${t.balance}</div><div style="font-weight:700;color:var(--primary)">${formatRM(bal)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Status</div><div>${closed?t.closed:t.open}</div></div>
+    </div>
+  </div>
+  ${!closed?`
+  <div class="card no-print" style="padding:16px;margin-bottom:16px;max-width:560px">
+    <div style="font-weight:600;margin-bottom:8px">${t.addExp}</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">${t.aiHint}</div>
+    <div class="form-group"><label class="form-label">${t.date}</label>
+      <input id="pce-date" type="date" class="form-input" value="${today}"></div>
+    <div class="form-group"><label class="form-label">${t.merchant}</label>
+      <input id="pce-merchant" class="form-input" placeholder="Lotus's / Petrol"></div>
+    <div class="form-group"><label class="form-label">${t.amount}</label>
+      <input id="pce-amount" type="number" step="0.01" min="0.01" class="form-input"></div>
+    <div class="form-group"><label class="form-label">${t.desc}</label>
+      <input id="pce-desc" class="form-input"></div>
+    <div class="form-group"><label class="form-label">${t.receipt}</label>
+      <select id="pce-receipt" class="form-select">
+        <option value="ok">${t.ok}</option>
+        <option value="damaged">${t.damaged}</option>
+        <option value="missing">${t.missing}</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">Receipt note / AI</label>
+      <input id="pce-note" class="form-input" placeholder="${isBm?'Nota resit rosak / rujukan':'Damaged note / ref'}"></div>
+    <div class="form-group"><label class="form-label">Upload (optional)</label>
+      <input id="pce-file" type="file" accept="image/*,.pdf" class="form-input"></div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="_pcAddExpense('${f.id}')">${t.save}</button>
+  </div>`:''}
+  <div class="card acc-print-body"><div style="overflow-x:auto"><table>
+    <thead><tr><th>${t.date}</th><th>${t.merchant}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.receipt}</th></tr></thead>
+    <tbody>
+    ${(exps||[]).length? (exps||[]).map(e => `<tr>
+      <td>${formatDate(e.expense_date)}</td>
+      <td>${_aiEscapeHtml(e.merchant||'-')}</td>
+      <td>${_aiEscapeHtml(e.description||'-')}</td>
+      <td style="text-align:right">${formatRM(e.amount)}</td>
+      <td>${e.receipt_status||'ok'}${e.receipt_note?(' — '+_aiEscapeHtml(e.receipt_note)):''}</td>
+    </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--text-3)">—</td></tr>`}
+    </tbody>
+  </table></div></div>`
+}
+
+async function _pcAddExpense(floatId) {
+  const amount = Number(document.getElementById('pce-amount')?.value || 0)
+  const expense_date = document.getElementById('pce-date')?.value
+  const merchant = (document.getElementById('pce-merchant')?.value || '').trim()
+  const description = (document.getElementById('pce-desc')?.value || '').trim()
+  const receipt_status = document.getElementById('pce-receipt')?.value || 'ok'
+  const receipt_note = (document.getElementById('pce-note')?.value || '').trim()
+  if(!(amount > 0)) { showToast(APP.language==='bm'?'Jumlah tidak sah':'Invalid amount', 'error'); return }
+
+  // balance check
+  const {data: f} = await sb.from('petty_cash_floats').select('amount,status').eq('id', floatId).single()
+  if(!f || f.status==='closed') { showToast('Float closed', 'error'); return }
+  const {data: exps} = await sb.from('petty_cash_expenses').select('amount').eq('float_id', floatId).is('deleted_at', null)
+  const spent = (exps||[]).reduce((s,e)=>s+Number(e.amount||0), 0)
+  if(spent + amount > Number(f.amount) + 0.001) {
+    showToast(APP.language==='bm'?'Melebihi baki float':'Exceeds float balance', 'error')
+    return
+  }
+
+  const fileEl = document.getElementById('pce-file')
+  let note = receipt_note
+  if(fileEl && fileEl.files && fileEl.files[0]) {
+    note = (note ? note+' | ' : '') + 'file:' + fileEl.files[0].name
+  }
+
+  const {data: ins, error} = await sb.from('petty_cash_expenses').insert({
+    tenant_id: APP.tenant.id,
+    float_id: floatId,
+    expense_date: expense_date || new Date().toISOString().slice(0,10),
+    merchant: merchant || null,
+    amount,
+    description: description || null,
+    receipt_status,
+    receipt_note: note || null
+  }).select('id').single()
+  if(error) {
+    showToast(error.message, 'error')
+    return
+  }
+  try {
+    await _pcPostExpenseJournal(ins.id, amount, expense_date, merchant || description || 'Petty expense')
+  } catch(e) { console.warn(e) }
+  showToast(APP.language==='bm'?'Belanja direkod':'Expense recorded', 'success')
+  openPage('accounting', {view:'petty-detail', id: floatId})
+}
+
+async function _pcPostExpenseJournal(expId, amount, date, label) {
+  const expAcc = await _getDefaultAccountId('general_expense')
+  let pettyAcc = await _getDefaultAccountId('petty_cash')
+  if(!pettyAcc) {
+    try {
+      const {data: accs} = await sb.from('chart_of_accounts').select('id').eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
+      if(accs && accs[0]) pettyAcc = accs[0].id
+    } catch(e) {}
+  }
+  if(!expAcc || !pettyAcc) return null
+  if(await _journalAlreadyPosted('petty_cash_expenses', expId)) return null
+  return _postJournalEntry({
+    description: `Petty expense — ${label}`.slice(0, 200),
+    entryDate: date || new Date().toISOString().slice(0,10),
+    entryType: 'auto',
+    lines: [
+      { account_id: expAcc, debit: amount, credit: 0 },
+      { account_id: pettyAcc, debit: 0, credit: amount }
+    ],
+    sourceTable: 'petty_cash_expenses',
+    sourceId: expId
+  })
+}
+
+async function _pcCloseFloat(floatId, suggestedReturn) {
+  const isBm = APP.language==='bm'
+  const retStr = prompt(isBm ? 'Baki cash dipulangkan (RM):' : 'Cash returned (RM):', String(Number(suggestedReturn||0).toFixed(2)))
+  if(retStr === null) return
+  const returned = Number(retStr)
+  if(isNaN(returned) || returned < 0) { showToast('Invalid', 'error'); return }
+  if(!confirm(isBm ? 'Tutup float ini?' : 'Close this float?')) return
+
+  const {error} = await sb.from('petty_cash_floats').update({
+    status: 'closed',
+    closed_at: new Date().toISOString(),
+    notes: (await (async () => {
+      const {data} = await sb.from('petty_cash_floats').select('notes').eq('id', floatId).single()
+      const prev = (data && data.notes) || ''
+      return (prev ? prev + ' | ' : '') + 'returned=' + returned
+    })())
+  }).eq('id', floatId).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast(error.message, 'error'); return }
+
+  if(returned > 0) {
+    try {
+      const cashAcc = await _getDefaultAccountId('cash')
+      let pettyAcc = await _getDefaultAccountId('petty_cash')
+      if(!pettyAcc) {
+        const {data: accs} = await sb.from('chart_of_accounts').select('id').eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
+        if(accs && accs[0]) pettyAcc = accs[0].id
+      }
+      if(cashAcc && pettyAcc && !(await _journalAlreadyPosted('petty_cash_floats_close', floatId))) {
+        await _postJournalEntry({
+          description: `Petty cash return`,
+          entryDate: new Date().toISOString().slice(0,10),
+          entryType: 'auto',
+          lines: [
+            { account_id: cashAcc, debit: returned, credit: 0 },
+            { account_id: pettyAcc, debit: 0, credit: returned }
+          ],
+          sourceTable: 'petty_cash_floats_close',
+          sourceId: floatId
+        })
+      }
+    } catch(e) { console.warn(e) }
+  }
+  showToast(isBm ? 'Float ditutup' : 'Float closed', 'success')
+  openPage('accounting', {view:'petty'})
 }
 
 
