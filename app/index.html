@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-ocrmulti">
+<meta name="nexerp-build" content="2026-08-15-ocrmob">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8570,68 +8570,124 @@ function _pcParseReceiptText(text) {
   }
 }
 
-async function _pcCanvasFromFile(file, opts={}) {
-  const bmp = await createImageBitmap(file)
-  const scale = opts.scale || (bmp.width < 1200 ? 2.5 : 1.8)
-  const w = Math.round(bmp.width * scale)
-  const h = Math.round(bmp.height * scale)
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')
-  if(opts.cropTop) {
-    const ch = Math.round(h * opts.cropTop)
-    canvas.height = ch
-    ctx.drawImage(bmp, 0, 0, bmp.width, bmp.height * opts.cropTop, 0, 0, w, ch)
-  } else {
-    ctx.drawImage(bmp, 0, 0, w, h)
-  }
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  const d = img.data
-  for(let p = 0; p < d.length; p += 4) {
-    let g = 0.299*d[p] + 0.587*d[p+1] + 0.114*d[p+2]
-    if(opts.invert) g = 255 - g
-    if(opts.threshold != null) g = g > opts.threshold ? 255 : 0
-    else {
-      g = (g - 128) * 1.4 + 128
-      g = g < 0 ? 0 : (g > 255 ? 255 : g)
+async function _pcLoadImageElement(file) {
+  // Mobile-safe: createImageBitmap often fails on some Android cameras; fallback Image+objectURL
+  try {
+    if(typeof createImageBitmap === 'function') {
+      const bmp = await createImageBitmap(file)
+      return { type: 'bitmap', img: bmp, width: bmp.width, height: bmp.height, close: () => bmp.close && bmp.close() }
     }
-    d[p] = d[p+1] = d[p+2] = g
+  } catch(e) { console.warn('createImageBitmap', e) }
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image()
+      im.onload = () => resolve(im)
+      im.onerror = reject
+      im.src = url
+    })
+    return { type: 'image', img, width: img.naturalWidth || img.width, height: img.naturalHeight || img.height, close: () => URL.revokeObjectURL(url) }
+  } catch(e) {
+    URL.revokeObjectURL(url)
+    throw e
   }
-  ctx.putImageData(img, 0, 0)
-  return await new Promise(res => canvas.toBlob(res, 'image/png'))
+}
+
+async function _pcCanvasFromFile(file, opts={}) {
+  const loaded = await _pcLoadImageElement(file)
+  try {
+    const maxW = opts.maxW || 1600
+    let scale = opts.scale || 1
+    let w = Math.round(loaded.width * scale)
+    let h = Math.round(loaded.height * scale)
+    if(w > maxW) {
+      scale = maxW / loaded.width
+      w = maxW
+      h = Math.round(loaded.height * scale)
+    }
+    const cropTop = opts.cropTop || 0
+    const srcH = cropTop ? loaded.height * cropTop : loaded.height
+    const outH = cropTop ? Math.round(h * cropTop) : h
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, w)
+    canvas.height = Math.max(1, outH)
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    ctx.drawImage(loaded.img, 0, 0, loaded.width, srcH, 0, 0, w, outH)
+    try {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const d = img.data
+      for(let p = 0; p < d.length; p += 4) {
+        let g = 0.299*d[p] + 0.587*d[p+1] + 0.114*d[p+2]
+        if(opts.invert) g = 255 - g
+        if(opts.threshold != null) g = g > opts.threshold ? 255 : 0
+        else {
+          g = (g - 128) * 1.35 + 128
+          g = g < 0 ? 0 : (g > 255 ? 255 : g)
+        }
+        d[p] = d[p+1] = d[p+2] = g
+      }
+      ctx.putImageData(img, 0, 0)
+    } catch(e) { console.warn('pixel process skip', e) }
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'))
+    return blob
+  } finally {
+    try { loaded.close() } catch(e) {}
+  }
 }
 
 async function _pcOcrOneFile(file, onProgress) {
   const T = await _pcEnsureTesseract()
   const texts = []
-  const passes = [
-    { name: 'raw', blob: file },
-    { name: 'contrast', prep: { scale: 2.2 } },
-    { name: 'threshold', prep: { scale: 2.5, threshold: 140 } },
-    { name: 'top', prep: { scale: 2.5, cropTop: 0.42, threshold: 130 } }
+  const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '')
+  // Mobile: fewer passes (memory/time). Desktop: full multipass.
+  const passes = isMobile ? [
+    { name: 'raw', blob: true },
+    { name: 'contrast', prep: { scale: 1.5, maxW: 1400 } },
+    { name: 'threshold', prep: { scale: 1.6, threshold: 145, maxW: 1400 } }
+  ] : [
+    { name: 'raw', blob: true },
+    { name: 'contrast', prep: { scale: 2.0, maxW: 1800 } },
+    { name: 'threshold', prep: { scale: 2.2, threshold: 140, maxW: 1800 } },
+    { name: 'top', prep: { scale: 2.2, cropTop: 0.42, threshold: 130, maxW: 1800 } }
   ]
   let done = 0
   for(const pass of passes) {
     try {
-      let blob = pass.blob
-      if(pass.prep) blob = await _pcCanvasFromFile(file, pass.prep)
-      if(!blob) continue
-      const result = await T.recognize(blob, 'eng', {
+      let input = file
+      if(pass.prep) {
+        const blob = await _pcCanvasFromFile(file, pass.prep)
+        if(blob) input = blob
+      }
+      const result = await T.recognize(input, 'eng', {
         logger: m => {
           if(onProgress && m.status === 'recognizing text')
             onProgress((done + (m.progress || 0)) / passes.length)
         }
       })
-      if(result?.data?.text) texts.push(result.data.text)
-    } catch(e) { console.warn('pc pass', pass.name, e) }
+      const t = (result?.data?.text || '').trim()
+      if(t.length > 5) texts.push(t)
+    } catch(e) {
+      console.warn('pc pass', pass.name, e)
+    }
     done++
     if(onProgress) onProgress(done / passes.length)
+  }
+  if(!texts.length) {
+    // last resort: raw only once more with worker path default
+    try {
+      const result = await T.recognize(file, 'eng')
+      const t = (result?.data?.text || '').trim()
+      if(t) texts.push(t)
+    } catch(e) {
+      console.error('pc ocr total fail', e)
+      return { amount: null, date: null, merchant: null, description: null, amountSrc: null, items: [], raw: '', error: String(e.message || e) }
+    }
   }
   const merged = texts.join('\n')
   console.log('[pc-ocr merged]', merged.slice(0, 800))
   const parsed = _pcParseReceiptText(merged)
   console.log('[pc-ocr parsed]', parsed)
+  if(!parsed.raw) parsed.raw = merged.slice(0, 1200)
   return parsed
 }
 
@@ -8663,10 +8719,12 @@ async function _pcOcrFilesSelected(floatId) {
         expense_date: parsed.date || new Date().toISOString().slice(0,10),
         merchant: parsed.merchant || '',
         amount: parsed.amount,
-        description: parsed.description || parsed.merchant || file.name,
+        description: parsed.description || parsed.merchant || '',
         receipt_status: damaged ? 'damaged' : 'ok',
         receipt_note: damaged
-          ? ((isBm ? 'OCR tak jumpa jumlah — isi manual. ' : 'OCR missed amount — enter manually. ') + (parsed.raw||'').slice(0,120))
+          ? ((isBm ? 'OCR tak jumpa data — isi manual. ' : 'OCR missed data — enter manually. ')
+              + (parsed.error ? ('Err: '+parsed.error+' ') : '')
+              + (parsed.raw ? parsed.raw.slice(0,80) : (isBm ? '(tiada teks dari imej)' : '(no text from image)')))
           : ('OCR:' + file.name),
         raw: parsed.raw
       })
