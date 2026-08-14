@@ -18603,7 +18603,7 @@ function _waOpenShare(phone, msg) {
   }
 }
 
-function _payslipShareWhatsApp(id) {
+async function _payslipShareWhatsApp(id) {
   const isBm = APP.language==='bm'
   const {data: rec} = await sb.from('payroll_records').select('*,employees(name,phone,email,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { showToast('Not found','error'); return }
