@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-rejoin">
+<meta name="nexerp-build" content="2026-08-14-logout">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2937,9 +2937,10 @@ async function doRegister() {
         btn.innerHTML='Create Account'; btn.disabled=false
         return
       }
-      localStorage.removeItem('nexerp_invite_token')
+      _clearInviteAuthUI()
       sucEl.textContent='✓ Joined team successfully! You can now sign in.'
       sucEl.classList.add('show')
+      try { switchAuthTab('login') } catch(e) {}
     } else {
       // Step 2: Generate tenant code from company name
       const tenantCode = company.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,6) + Math.floor(Math.random()*100)
@@ -3002,8 +3003,10 @@ async function doLogout() {
   AI_CHAT.open = false
   localStorage.removeItem('nexerp_last_page')
   localStorage.removeItem('nexerp_last_params')
+  _clearInviteAuthUI()
   _resetSessionLoadGuard()
   showAuthPage()
+  try { switchAuthTab('login') } catch(e) {}
   showToast('You have been signed out.','info')
 }
 
@@ -3038,23 +3041,31 @@ function _captureInviteFromUrl() {
     }
   } catch(e) {}
 }
-/** Invite link → open Register tab + prefill invite code (not Sign In) */
+/** Clear invite code from storage + register form (after join success / logout) */
+function _clearInviteAuthUI() {
+  try {
+    localStorage.removeItem('nexerp_invite_token')
+    const inp = document.getElementById('reg-invite')
+    if(inp) inp.value = ''
+  } catch(e) {}
+}
+
+/** Invite link → open Register tab + prefill invite code (not Sign In). Only if token still present. */
 function _applyInviteAuthUI() {
   try {
     const inv = (localStorage.getItem('nexerp_invite_token') || '').trim()
     if(!inv) return
     const fill = () => {
+      // Re-check — may have been cleared by logout/join
+      const still = (localStorage.getItem('nexerp_invite_token') || '').trim()
+      if(!still) return
       const inp = document.getElementById('reg-invite')
-      if(inp && !inp.value) inp.value = inv
+      if(inp) inp.value = still
       if(typeof switchAuthTab === 'function') switchAuthTab('register')
-      // Highlight invite field
-      if(inp) {
-        try { inp.focus() } catch(e) {}
-      }
+      if(inp) { try { inp.focus() } catch(e) {} }
     }
     if(document.getElementById('form-register')) fill()
     else document.addEventListener('DOMContentLoaded', fill)
-    // Auth page may render late — retry a few times
     setTimeout(fill, 50)
     setTimeout(fill, 300)
     setTimeout(fill, 800)
@@ -3214,6 +3225,18 @@ function _resetSessionLoadGuard() {
 function showAuthPage() {
   document.getElementById('auth-page').style.display='flex'
   document.getElementById('shell').classList.remove('active')
+  // Default Sign In; only Register if a live invite token remains
+  try {
+    const inv = (localStorage.getItem('nexerp_invite_token') || '').trim()
+    if(inv) {
+      _applyInviteAuthUI()
+    } else {
+      _clearInviteAuthUI()
+      if(typeof switchAuthTab === 'function') switchAuthTab('login')
+    }
+  } catch(e) {
+    try { switchAuthTab('login') } catch(e2) {}
+  }
 }
 
 function showShell() {
