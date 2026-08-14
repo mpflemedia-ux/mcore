@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-parity">
+<meta name="nexerp-build" content="2026-08-14-invreg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -3024,7 +3024,30 @@ function _captureInviteFromUrl() {
     }
   } catch(e) {}
 }
+/** Invite link → open Register tab + prefill invite code (not Sign In) */
+function _applyInviteAuthUI() {
+  try {
+    const inv = (localStorage.getItem('nexerp_invite_token') || '').trim()
+    if(!inv) return
+    const fill = () => {
+      const inp = document.getElementById('reg-invite')
+      if(inp && !inp.value) inp.value = inv
+      if(typeof switchAuthTab === 'function') switchAuthTab('register')
+      // Highlight invite field
+      if(inp) {
+        try { inp.focus() } catch(e) {}
+      }
+    }
+    if(document.getElementById('form-register')) fill()
+    else document.addEventListener('DOMContentLoaded', fill)
+    // Auth page may render late — retry a few times
+    setTimeout(fill, 50)
+    setTimeout(fill, 300)
+    setTimeout(fill, 800)
+  } catch(e) {}
+}
 _captureInviteFromUrl()
+_applyInviteAuthUI()
 // Public invoice deep link (no login)
 try {
   const _qs = new URLSearchParams(location.search)
