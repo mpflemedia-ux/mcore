@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-delmem">
+<meta name="nexerp-build" content="2026-08-14-delfix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5210,7 +5210,7 @@ async function renderAdminTeam() {
       <td style="font-size:12px;color:var(--text-3)">${u.last_login ? formatDate(String(u.last_login).slice(0,10)) : '—'}</td>
       <td style="white-space:nowrap">${isSelf ? '—' : `
         <button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.id}')"><i class="ti ti-check"></i> ${t.save}</button>
-        <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" title="${isBm?'Padam ahli':'Remove member'}" onclick="_adminDeleteMember('${u.id}',${JSON.stringify(u.full_name||'')},${JSON.stringify((u.role||'').toLowerCase())})"><i class="ti ti-trash"></i></button>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" title="${isBm?'Padam ahli':'Remove member'}" data-uid="${u.id}" data-name="${_aiEscapeHtml(u.full_name||'')}" data-role="${_aiEscapeHtml((u.role||'').toLowerCase())}" onclick="_adminDeleteMember(this)"><i class="ti ti-trash"></i></button>
       `}</td>
     </tr>`
   }).join('')}
@@ -5380,12 +5380,22 @@ async function _adminSaveUser(userId) {
 }
 
 /** Soft-remove team member from this tenant (all tenants). Does not delete auth.users. */
-async function _adminDeleteMember(userId, fullName, role) {
+async function _adminDeleteMember(btnOrId) {
   if(!isTenantAdmin()) {
     showToast(APP.language==='bm'?'Akses ditolak':'Access denied', 'error')
     return
   }
   const isBm = APP.language==='bm'
+  let userId, fullName, role
+  if(btnOrId && btnOrId.getAttribute) {
+    userId = btnOrId.getAttribute('data-uid')
+    fullName = btnOrId.getAttribute('data-name') || ''
+    role = btnOrId.getAttribute('data-role') || ''
+  } else {
+    userId = btnOrId
+    fullName = ''
+    role = ''
+  }
   if(!userId || userId === APP.user.id) {
     showToast(isBm?'Tidak boleh padam akaun sendiri':'Cannot remove your own account', 'error')
     return
@@ -5397,8 +5407,8 @@ async function _adminDeleteMember(userId, fullName, role) {
   }
   const name = fullName || 'this member'
   const ok = confirm(isBm
-    ? (`Padam ahli "${name}" dari syarikat ini?\n\nMereka tidak lagi boleh log masuk ke tenant ini. (Soft-delete — boleh dipulihkan di DB jika perlu.)`)
-    : (`Remove "${name}" from this company?\n\nThey will no longer access this tenant. (Soft-delete — recoverable in DB if needed.)`))
+    ? ('Padam ahli "' + name + '" dari syarikat ini?\n\nMereka tidak lagi boleh log masuk ke tenant ini.')
+    : ('Remove "' + name + '" from this company?\n\nThey will no longer access this tenant.'))
   if(!ok) return
   const now = new Date().toISOString()
   let { error } = await sb.from('user_profiles').update({
