@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-multiinv">
+<meta name="nexerp-build" content="2026-08-14-delmem">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5208,7 +5208,10 @@ async function renderAdminTeam() {
       <td>${roleCell}</td>
       <td>${statusCell}</td>
       <td style="font-size:12px;color:var(--text-3)">${u.last_login ? formatDate(String(u.last_login).slice(0,10)) : '—'}</td>
-      <td>${isSelf ? '—' : `<button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.id}')"><i class="ti ti-check"></i> ${t.save}</button>`}</td>
+      <td style="white-space:nowrap">${isSelf ? '—' : `
+        <button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.id}')"><i class="ti ti-check"></i> ${t.save}</button>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" title="${isBm?'Padam ahli':'Remove member'}" onclick="_adminDeleteMember('${u.id}',${JSON.stringify(u.full_name||'')},${JSON.stringify((u.role||'').toLowerCase())})"><i class="ti ti-trash"></i></button>
+      `}</td>
     </tr>`
   }).join('')}
   </tbody></table>
@@ -5374,6 +5377,49 @@ async function _adminSaveUser(userId) {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('update','user_profiles', userId)
   showToast(isBm?'Disimpan':'Saved', 'success')
+}
+
+/** Soft-remove team member from this tenant (all tenants). Does not delete auth.users. */
+async function _adminDeleteMember(userId, fullName, role) {
+  if(!isTenantAdmin()) {
+    showToast(APP.language==='bm'?'Akses ditolak':'Access denied', 'error')
+    return
+  }
+  const isBm = APP.language==='bm'
+  if(!userId || userId === APP.user.id) {
+    showToast(isBm?'Tidak boleh padam akaun sendiri':'Cannot remove your own account', 'error')
+    return
+  }
+  const r = String(role || '').toLowerCase()
+  if(r === 'owner') {
+    showToast(isBm?'Tidak boleh padam owner. Tukar role dulu atau hubungi sokongan.':'Cannot remove an owner. Change their role first or contact support.', 'error')
+    return
+  }
+  const name = fullName || 'this member'
+  const ok = confirm(isBm
+    ? (`Padam ahli "${name}" dari syarikat ini?\n\nMereka tidak lagi boleh log masuk ke tenant ini. (Soft-delete — boleh dipulihkan di DB jika perlu.)`)
+    : (`Remove "${name}" from this company?\n\nThey will no longer access this tenant. (Soft-delete — recoverable in DB if needed.)`))
+  if(!ok) return
+  const now = new Date().toISOString()
+  let { error } = await sb.from('user_profiles').update({
+    is_active: false,
+    deleted_at: now,
+    updated_at: now
+  }).eq('id', userId).eq('tenant_id', APP.tenant.id)
+  // Fallback if deleted_at column missing
+  if(error && /deleted_at|column/i.test(error.message || '')) {
+    ({ error } = await sb.from('user_profiles').update({
+      is_active: false,
+      updated_at: now
+    }).eq('id', userId).eq('tenant_id', APP.tenant.id))
+  }
+  if(error) {
+    showToast('Error: ' + error.message, 'error')
+    return
+  }
+  try { auditLog('delete', 'user_profiles', userId) } catch(e) {}
+  showToast(isBm ? 'Ahli dipadam dari team' : 'Member removed from team', 'success')
+  renderAdminTeam()
 }
 
 async function renderAdminClients() {
