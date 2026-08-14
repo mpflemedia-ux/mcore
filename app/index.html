@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-dashfix">
+<meta name="nexerp-build" content="2026-08-15-mypay">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18660,6 +18660,66 @@ async function _payslipShareEmail(id) {
   window.location.href = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body)
 }
 
+
+async function renderMyPayslips(params={}) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Sejarah Gaji Saya', back:'Kehadiran', period:'Tempoh', netPay:'Gaji Bersih',
+    noData:'Tiada slip gaji lagi. Hubungi HR jika anda menjangka ada rekod.',
+    open:'Buka slip', name:'Nama', noLink:'Akaun anda belum dipautkan ke rekod pekerja. Minta HR tetapkan e-mel yang sama pada profil pekerja.'
+  } : {
+    title:'My Payroll History', back:'Attendance', period:'Period', netPay:'Net Pay',
+    noData:'No payslips yet. Contact HR if you expect records.',
+    open:'Open payslip', name:'Name', noLink:'Your login is not linked to an employee record. Ask HR to set the same email on your employee profile.'
+  }
+  const selfEmp = await _hrResolveSelfEmployee()
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{view:'attendance'})">← ${t.back}</div>
+  </div></div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button type="button" class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})">${isBm?'Kehadiran':'Attendance'}</button>
+    <button type="button" class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})">${isBm?'Cuti':'Leave'}</button>
+    <button type="button" class="btn btn-primary btn-sm">${t.title}</button>
+  </div>
+  <div class="card" id="my-payslip-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+
+  const wrap = document.getElementById('my-payslip-wrap')
+  if(!selfEmp) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noLink}</p></div>`
+    return
+  }
+  const {data, error} = await sb.from('payroll_records')
+    .select('id,month,year,net_pay,basic_salary,generated_at')
+    .eq('tenant_id', APP.tenant.id)
+    .eq('employee_id', selfEmp.id)
+    .order('year', {ascending:false})
+    .order('month', {ascending:false})
+  if(error) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${error.message}</p></div>`
+    return
+  }
+  if(!data || !data.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`
+    return
+  }
+  wrap.innerHTML = `
+  <div style="padding:12px 16px;font-size:13px;color:var(--text-2);border-bottom:1px solid var(--border)">${_aiEscapeHtml(selfEmp.name||'')}</div>
+  <div style="overflow-x:auto"><table><thead><tr>
+    <th>${t.period}</th><th style="text-align:right">${t.netPay}</th><th></th>
+  </tr></thead><tbody>
+  ${data.map(r => {
+    const per = String(r.month).padStart(2,'0') + '/' + r.year
+    return `<tr>
+      <td>${per}</td>
+      <td style="text-align:right;font-weight:600">${formatRM(r.net_pay)}</td>
+      <td style="text-align:right"><button type="button" class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'payslip',id:'${r.id}'})">${t.open}</button></td>
+    </tr>`
+  }).join('')}
+  </tbody></table></div>`
+}
+
 async function renderPayslipDetail(id) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
@@ -18675,6 +18735,14 @@ async function renderPayslipDetail(id) {
   }
   const {data: rec} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no,phone,email)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!rec) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
+  // Staff may only open their own payslip
+  if(!canManageHR()) {
+    const selfEmp = await _hrResolveSelfEmployee()
+    if(!selfEmp || String(rec.employee_id) !== String(selfEmp.id)) {
+      renderAccessDenied()
+      return
+    }
+  }
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
   _pdocSetPageOrientation('portrait')
@@ -18683,7 +18751,7 @@ async function renderPayslipDetail(id) {
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
     <div class="page-title">${_aiEscapeHtml(rec.employees?.name||'-')}</div>
-    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',${canManageHR()?'{}':'{view:\'my-payslips\'}'})">← ${t.back}</div>
   </div>
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('payslip', accent)}
@@ -19505,6 +19573,7 @@ async function renderAttendance(params={}) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.title}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${APP.language==='bm'?'Cuti':'Leave'}</button>
+      ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Slip Gaji Saya':'My Payslips'}</button>`:''}
       ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
     </div>`
 
@@ -19737,6 +19806,7 @@ async function renderLeave(params={}) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${APP.language==='bm'?'Kehadiran':'Attendance'}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.title}</button>
+      ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Slip Gaji Saya':'My Payslips'}</button>`:''}
       ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
     </div>`
 
