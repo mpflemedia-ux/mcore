@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-paygate">
+<meta name="nexerp-build" content="2026-08-15-payfix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1953,7 +1953,18 @@ function openPage(page, params={}) {
   main.innerHTML = '<div class="page-loading"><div class="spinner dark"></div></div>'
   setTimeout(()=>{
     const _safeRender = (fn) => {
-      try { fn() } catch(err) {
+      try {
+        const ret = fn()
+        if(ret && typeof ret.then === 'function') {
+          ret.catch(err => {
+            console.error('openPage render async', page, err)
+            const m = document.getElementById('main')
+            if(m) m.innerHTML = `<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">Page error: ${String(err && err.message || err)}</p>
+              <button type="button" class="btn btn-outline" onclick="openPage('dashboard',{})">Dashboard</button></div>`
+            try { showToast('Page error: '+(err && err.message || err), 'error') } catch(e) {}
+          })
+        }
+      } catch(err) {
         console.error('openPage render', page, err)
         const m = document.getElementById('main')
         if(m) m.innerHTML = `<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">Page error: ${String(err && err.message || err)}</p>
@@ -18664,6 +18675,30 @@ async function _payslipShareEmail(id) {
 }
 
 
+
+/** Resolve employees row linked to logged-in user (tenant + email, then name). */
+async function _hrResolveSelfEmployee() {
+  try {
+    const email = String((APP.user && APP.user.email) || '').trim()
+    const tid = APP.tenant && APP.tenant.id
+    if(!_validTenantId(tid)) return null
+    if(email) {
+      const {data} = await sb.from('employees').select('id,name,email,position')
+        .eq('tenant_id', tid).is('deleted_at', null)
+        .ilike('email', email).limit(1)
+      if(data && data.length) return data[0]
+    }
+    const nm = String((APP.user && APP.user.name) || '').trim()
+    if(nm) {
+      const {data: byName} = await sb.from('employees').select('id,name,email,position')
+        .eq('tenant_id', tid).is('deleted_at', null)
+        .ilike('name', nm).limit(1)
+      if(byName && byName.length) return byName[0]
+    }
+  } catch(e) { console.warn('_hrResolveSelfEmployee', e) }
+  return null
+}
+
 async function renderMyPayslips(params={}) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
@@ -18675,7 +18710,7 @@ async function renderMyPayslips(params={}) {
     noData:'No payslips yet. Contact HR if you expect records.',
     open:'Open payslip', name:'Name', noLink:'Your login is not linked to an employee record. Ask HR to set the same email on your employee profile.'
   }
-  const selfEmp = await _hrResolveSelfEmployee()
+  // Paint shell first so openPage spinner never sticks if await fails
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
     <div class="page-title">${t.title}</div>
@@ -18689,18 +18724,33 @@ async function renderMyPayslips(params={}) {
   <div class="card" id="my-payslip-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
 
   const wrap = document.getElementById('my-payslip-wrap')
+  let selfEmp = null
+  try {
+    selfEmp = await _hrResolveSelfEmployee()
+  } catch(e) {
+    console.error('_hrResolveSelfEmployee', e)
+    wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">${String(e && e.message || e)}</p></div>`
+    return
+  }
   if(!selfEmp) {
     wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noLink}</p></div>`
     return
   }
-  const {data, error} = await sb.from('payroll_records')
-    .select('id,month,year,net_pay,basic_salary,generated_at')
-    .eq('tenant_id', APP.tenant.id)
-    .eq('employee_id', selfEmp.id)
-    .order('year', {ascending:false})
-    .order('month', {ascending:false})
+  let data = null, error = null
+  try {
+    const res = await sb.from('payroll_records')
+      .select('id,month,year,net_pay,basic_salary,generated_at')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('employee_id', selfEmp.id)
+      .order('year', {ascending:false})
+      .order('month', {ascending:false})
+    data = res.data
+    error = res.error
+  } catch(e) {
+    error = e
+  }
   if(error) {
-    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${error.message}</p></div>`
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${String(error.message || error)}</p></div>`
     return
   }
   if(!data || !data.length) {
