@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-pcp2">
+<meta name="nexerp-build" content="2026-08-15-ocrfix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8400,45 +8400,100 @@ async function _pcEnsureTesseract() {
 /** Parse OCR text → amount, date, merchant guesses. */
 function _pcParseReceiptText(text) {
   const raw = String(text || '')
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-  let amount = null
-  // Prefer TOTAL / AMOUNT lines
-  const totalRe = /(?:total|jumlah|amount|amt|grand\s*total|net\s*total|bayaran)\s*[:\s]*?(?:rm|myr)?\s*(\d{1,6}(?:[.,]\d{2})?)/i
-  const mTotal = raw.match(totalRe)
-  if(mTotal) amount = parseFloat(mTotal[1].replace(',', '.'))
-  if(amount == null || isNaN(amount)) {
-    const money = [...raw.matchAll(/(?:rm|myr)?\s*(\d{1,6}[.,]\d{2})\b/gi)].map(x => parseFloat(x[1].replace(',', '.')))
-    const valid = money.filter(n => n > 0 && n < 100000)
-    if(valid.length) amount = Math.max(...valid)
+  const norm = raw.replace(/\u00a0/g, ' ').replace(/[–—]/g, '-')
+  const lines = norm.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+
+  function toMoney(s) {
+    if(s == null) return null
+    let t = String(s).replace(/,/g, '').replace(/\s/g, '')
+    // OCR often reads 65.51 as 65 51 or 65,51
+    const m = t.match(/-?\d+\.?\d*/)
+    if(!m) return null
+    const n = Math.abs(parseFloat(m[0]))
+    return (isNaN(n) || n <= 0 || n >= 100000) ? null : Math.round(n * 100) / 100
   }
+
+  let amount = null
+  // 1) Strong labels (MY utility / retail) — prefer "perlu dibayar" over tunggakan
+  const preferRes = [
+    /jumlah\s*perlu\s*dibayar[^0-9\-]{0,20}(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
+    /(?:amount\s*due|total\s*due|balance\s*due)[^0-9\-]{0,20}(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
+    /(?:grand\s*total|net\s*total|jumlah\s*bil|jumlah\s*bayaran|total\s*amount|amount\s*payable)[^0-9\-]{0,20}(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
+    /(?:^|\n)\s*(?:total|jumlah)(?:\s|:)+?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/im
+  ]
+  for(const re of preferRes) {
+    const m = norm.match(re)
+    if(m) { amount = toMoney(m[1]); if(amount != null) break }
+  }
+  // 2) Line-based: line contains label + number on same line
+  if(amount == null) {
+    for(const line of lines) {
+      if(/tunggakan|deposit|caj\s*semasa|pelarasan|bacaan|meter|kadar|prorata/i.test(line) && !/perlu\s*dibayar|jumlah\s*bil|total/i.test(line)) continue
+      if(/(?:perlu\s*dibayar|jumlah\s*bil|grand\s*total|amount\s*due|total)/i.test(line)) {
+        const nums = [...line.matchAll(/-?\s*(\d{1,6}[.,]\d{2})/g)].map(x => toMoney(x[1])).filter(Boolean)
+        if(nums.length) { amount = nums[nums.length - 1]; break }
+      }
+    }
+  }
+  // 3) Fallback: do NOT use max of all numbers (wrong for bills with arrears)
+  // Prefer median-ish small totals near "RM"
+  if(amount == null) {
+    const rmPairs = [...norm.matchAll(/(?:rm|myr)\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/gi)]
+      .map(x => toMoney(x[1])).filter(Boolean)
+    if(rmPairs.length) {
+      // pick first RM after "dibayar" region if any, else last RM under 5000
+      amount = rmPairs.find(n => n < 5000) || rmPairs[0]
+    }
+  }
+
+  // Dates: prefer labelled bill date
   let dateStr = null
-  const d1 = raw.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/)
+  const dateLabel = norm.match(/(?:tarikh\s*bil|bill\s*date|tarikh|date)\s*[:\s]*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/i)
+  const d1 = dateLabel || norm.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/)
   if(d1) {
+    let dd = d1[1].padStart(2,'0')
+    let mm = d1[2].padStart(2,'0')
     let y = d1[3]
     if(y.length === 2) y = '20' + y
-    const mm = d1[2].padStart(2,'0')
-    const dd = d1[1].padStart(2,'0')
-    // assume DD/MM/YYYY (MY)
-    dateStr = `${y}-${mm}-${dd}`
-    if(Number(mm) > 12 && Number(dd) <= 12) dateStr = `${y}-${dd.padStart(2,'0')}-${mm}`
+    // MY: DD-MM-YYYY
+    if(Number(mm) > 12 && Number(dd) <= 12) { const t = dd; dd = mm; mm = t }
+    if(Number(mm) >= 1 && Number(mm) <= 12 && Number(dd) >= 1 && Number(dd) <= 31)
+      dateStr = `${y}-${mm}-${dd}`
   }
-  const skip = /total|jumlah|amount|cash|change|qty|item|tax|sst|invoice|receipt|tel|phone|gst/i
-  let merchant = lines.find(l => l.length > 2 && l.length < 40 && !skip.test(l) && !/^\d/.test(l)) || ''
-  merchant = merchant.replace(/[^\w\s&.'-]/g, '').trim().slice(0, 60)
+
+  // Merchant: known brands / header keywords
+  const known = [
+    [/sada/i, 'SADA'], [/tnb|tenaga\s*nasional/i, 'TNB'], [/air\s*selangor/i, 'Air Selangor'],
+    [/indah\s*water|iwk/i, 'Indah Water'], [/lotus|tesco/i, "Lotus's"], [/aeon/i, 'AEON'],
+    [/giant/i, 'Giant'], [/petronas|shell|petron|bhp/i, 'Petrol'], [/grab/i, 'Grab']
+  ]
+  let merchant = null
+  for(const [re, name] of known) {
+    if(re.test(norm)) { merchant = name; break }
+  }
+  if(!merchant) {
+    const skip = /total|jumlah|amount|cash|change|qty|item|tax|sst|invoice|receipt|tel|phone|gst|akaun|invois|deposit|tunggakan|caj|tarikh|amaun|bayar|bil\s*air|no\.|pm:|ru:|blok|kadar|meter|estimate|tarif/i
+    merchant = lines.find(l => l.length >= 3 && l.length <= 35 && !skip.test(l) && !/^\d/.test(l) && /[A-Za-z]{3,}/.test(l)) || ''
+    merchant = merchant.replace(/[^\w\s&.'-]/g, '').trim().slice(0, 60)
+  }
+
   return {
-    amount: (amount != null && !isNaN(amount)) ? Math.round(amount * 100) / 100 : null,
+    amount: amount,
     date: dateStr,
     merchant: merchant || null,
-    raw: raw.slice(0, 500)
+    raw: norm.slice(0, 800)
   }
 }
 
 async function _pcOcrOneFile(file, onProgress) {
   const T = await _pcEnsureTesseract()
+  // eng is most reliable in tesseract.js CDN; parser handles MY labels (Jumlah Perlu Dibayar, etc.)
   const result = await T.recognize(file, 'eng', {
     logger: m => { if(onProgress && m.status === 'recognizing text') onProgress(m.progress) }
   })
-  return _pcParseReceiptText(result?.data?.text || '')
+  const text = result?.data?.text || ''
+  console.log('[pc-ocr]', text.slice(0, 400))
+  return _pcParseReceiptText(text)
 }
 
 /** Multi-file OCR → drafts list (user must confirm before save). */
