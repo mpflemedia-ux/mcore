@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-pcdesc">
+<meta name="nexerp-build" content="2026-08-15-ocrmulti">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8400,41 +8400,78 @@ async function _pcEnsureTesseract() {
 /** Parse OCR text → amount, date, merchant guesses. */
 function _pcParseReceiptText(text) {
   const raw = String(text || '')
-  // Normalize OCR noise common on thermal / phone photos
   let norm = raw.replace(/\u00a0/g, ' ')
-    .replace(/[–—]/g, '-')
+    .replace(/[–—−–]/g, '-')
+    .replace(/§/g, '6')
     .replace(/\b1OTAL\b/gi, 'TOTAL')
     .replace(/\bTOIAL\b/gi, 'TOTAL')
     .replace(/\bTOTAI\b/gi, 'TOTAL')
-    .replace(/\bTOTAl\b/g, 'TOTAL')
-    .replace(/\bJUMIAH\b/gi, 'JUMLAH')
-    .replace(/\bJUHLAH\b/gi, 'JUMLAH')
-    .replace(/\bDIBAYAR\b/gi, 'DIBAYAR')
-    .replace(/\bDlBAYAR\b/gi, 'DIBAYAR')
+    .replace(/\bJUM[L1I]AH\b/gi, 'JUMLAH')
+    .replace(/\bJumloh\b/gi, 'Jumlah')
+    .replace(/\bDiboyer\b/gi, 'Dibayar')
+    .replace(/\bDibayor\b/gi, 'Dibayar')
+    .replace(/\bPerlu\s+Dibay/gi, 'Perlu Dibayar')
   const lines = norm.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
 
   function toMoney(s) {
     if(s == null) return null
-    let t = String(s).replace(/,/g, '').replace(/\s/g, '').replace(/[^\d.\-]/g, '')
-    const m = t.match(/-?\d+\.?\d*/)
+    let t = String(s).replace(/,/g, '.').replace(/[^\d.\-]/g, '')
+    // "65. 41" / "65 41" after OCR spacing
+    t = t.replace(/(\d)\.(\d{2})\d+/, '$1.$2')
+    const m = t.match(/-?\d+(?:\.\d{1,2})?/)
     if(!m) return null
     const n = Math.abs(parseFloat(m[0]))
     if(isNaN(n) || n < 0.01 || n >= 100000) return null
     return Math.round(n * 100) / 100
   }
-
   function moneyOnLine(line) {
-    return [...String(line).matchAll(/(\d{1,6}[.,]\d{2})/g)]
-      .map(x => toMoney(x[1])).filter(n => n != null)
+    // allow space inside decimals: 65. 51 or 29 .24
+    const fixed = String(line).replace(/(\d)[\s.]+(\d{2})\b/g, '$1.$2')
+    return [...fixed.matchAll(/(\d{1,6}\.\d{2})/g)].map(x => toMoney(x[1])).filter(n => n != null)
+  }
+
+  // --- Merchant (force known brands; ignore OCR garbage) ---
+  let merchant = null
+  const known = [
+    [/lotus/i, "Lotus's"],
+    [/\bsada\b|bil\s*air\s*sada|air\s*sada/i, 'SADA'],
+    [/tnb|tenaga\s*nasional/i, 'TNB'],
+    [/air\s*selangor/i, 'Air Selangor'],
+    [/indah\s*water|\biwk\b/i, 'Indah Water'],
+    [/aeon/i, 'AEON'], [/giant/i, 'Giant'],
+    [/99\s*speedmart|speedmart/i, '99 Speedmart'],
+    [/petronas|\bshell\b|\bbhp\b|petron/i, 'Petrol'],
+    [/grab/i, 'Grab']
+  ]
+  for(const [re, name] of known) {
+    if(re.test(norm)) { merchant = name; break }
+  }
+
+  // --- Line items (retail) ---
+  const itemSkip = /total|jumlah|debit|credit|change|founding|gst|sst|tax|subtotal|tunggakan|caj|deposit|bayaran|tarikh|amaun|kadar|blok|meter|points|visit|thank|reg\s*no|sdn|bhd|akaun|invois|estimate|tarif|prorata|pelarasan|cash|card|qty|tel|phone|\brm\b|myr/i
+  const items = []
+  const itemPrices = []
+  for(const line of lines) {
+    if(itemSkip.test(line)) continue
+    const fixed = line.replace(/(\d)[\s.]+(\d{2})\b/g, '$1.$2')
+    const m = fixed.match(/^[\(\#]?\d{6,}[\)]?\s+(.+?)\s+(\d{1,6}\.\d{2})\s*$/)
+    if(m) {
+      let name = m[1].replace(/\s+/g, ' ').trim()
+      const price = toMoney(m[2])
+      if(name.length >= 2 && name.length <= 40 && price != null) {
+        items.push(name)
+        itemPrices.push(price)
+      }
+    }
   }
 
   let amount = null
   let amountSrc = null
 
-  // --- A) Retail TOTAL line (Lotus, etc.): TOTAL ... 29.24
+  // A) TOTAL / JUMLAH line (not tunggakan / bayaran terakhir / points)
   for(const line of lines) {
-    if(!/(?:^|\b)(?:total|jumlah(?:\s+bil)?)\b/i.test(line)) continue
-    if(/points|visit|upto|balance|tunggakan|cadangan/i.test(line)) continue
+    if(/tunggakan|bayaran\s*terakhir|points|visit|cadangan|subtotal/i.test(line)) continue
+    if(!/(?:^|\b)(?:total|jumlah(?:\s+(?:bil|perlu))?)\b/i.test(line) && !/perlu\s*dibayar/i.test(line)) continue
     const nums = moneyOnLine(line)
     if(nums.length) {
       amount = nums[nums.length - 1]
@@ -8443,117 +8480,84 @@ function _pcParseReceiptText(text) {
     }
   }
 
-  // --- B) MY utility: Jumlah Perlu Dibayar / Amount Due (even with RM - 65.51)
+  // B) Label spans (Jumlah Perlu Dibayar ... 65.51) across whitespace/newlines
   if(amount == null) {
-    const prefer = [
-      /jumlah\s*perlu\s*dibayar[\s\S]{0,40}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
-      /(?:amount\s*due|total\s*due|balance\s*due)[\s\S]{0,30}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
-      /jumlah\s*bil[\s\S]{0,30}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i
-    ]
-    for(const re of prefer) {
-      const m = norm.match(re)
-      if(m) { amount = toMoney(m[1]); if(amount != null) { amountSrc = 'label'; break } }
-    }
+    const re = /(?:jumlah\s*perlu\s*dibayar|amount\s*due|total\s*due)[\s\S]{0,48}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.\s]+\d{2})?)/i
+    const m = norm.replace(/(\d)\s+(\d{2})\b/g, '$1.$2').match(re)
+    if(m) { amount = toMoney(m[1].replace(/\s/g, '')); if(amount) amountSrc = 'label' }
   }
-  // Same labels line-by-line (OCR may split)
-  if(amount == null) {
-    for(let li = 0; li < lines.length; li++) {
-      const line = lines[li]
-      if(/perlu\s*dibayar|amount\s*due|jumlah\s*bil/i.test(line)) {
-        let nums = moneyOnLine(line)
-        if(!nums.length && lines[li+1]) nums = moneyOnLine(lines[li+1])
-        if(nums.length) { amount = nums[nums.length-1]; amountSrc = 'label-line'; break }
+
+  // C) Retail: sum of line-item prices (most reliable when TOTAL OCR fails)
+  if(itemPrices.length >= 2) {
+    const sum = Math.round(itemPrices.reduce((a,b)=>a+b, 0) * 100) / 100
+    if(amount == null || Math.abs(amount - sum) > 0.05) {
+      // Prefer sum if no total, or if total looks wrong (e.g. 34.05 vs items 29.24)
+      if(amount == null || amountSrc === 'fallback' || (sum >= 1 && amount > sum * 1.15)) {
+        amount = sum
+        amountSrc = 'item-sum'
       }
     }
   }
 
-  // --- C) Debit / card charge near TOTAL (Lotus DEBIT 29.25)
-  if(amount == null) {
+  // D) Lone amount line (29.24 alone) — prefer over partial item-sum
+  if(itemPrices.length) {
+    const sum = Math.round(itemPrices.reduce((a,b)=>a+b, 0) * 100) / 100
     for(const line of lines) {
-      if(!/(?:debit|credit|card\s*payment|bayaran)/i.test(line)) continue
-      if(/card\s*no|\*{2,}|xxxx/i.test(line)) continue
-      const nums = moneyOnLine(line)
-      if(nums.length) { amount = nums[nums.length-1]; amountSrc = 'debit'; break }
+      const cleaned = line.replace(/,/g, '.').replace(/\s/g, '')
+      if(!/^\d{1,6}\.\d{2}$/.test(cleaned)) continue
+      const n = toMoney(cleaned)
+      if(n && n >= sum - 0.05 && n <= sum + 1.0) {
+        amount = n
+        amountSrc = 'lone-total'
+        break
+      }
+    }
+    if(amount == null || (amountSrc === 'item-sum' && Math.abs(amount - sum) > 0.02 && sum > 0)) {
+      // keep item-sum if no lone total
+      if(amount == null) { amount = sum; amountSrc = 'item-sum' }
     }
   }
 
-  // --- D) Last resort: largest amount that sits alone on the right of a short line (not tariff table)
-  if(amount == null) {
-    const candidates = []
-    for(const line of lines) {
-      if(/tunggakan|kadar|prorata|blok|meter|points|visit|deposit|gst\s*semasa|caj\s*semasa/i.test(line)) continue
-      const nums = moneyOnLine(line)
-      if(nums.length === 1 && nums[0] >= 1) candidates.push(nums[0])
-    }
-    if(candidates.length) {
-      // Prefer values that appear twice (TOTAL + DEBIT) else max under 500
-      const under = candidates.filter(n => n < 500)
-      amount = under.length ? under.sort((a,b)=>b-a)[0] : candidates.sort((a,b)=>b-a)[0]
-      amountSrc = 'fallback'
-    }
+  // Blacklist residual wrong picks
+  if(amount != null) {
+    // if only bayaran terakhir style and no items - clear when utility and amount is 42.40-ish without label
   }
 
-  // Date: labeled first, else first valid MY date
+  // Date
   let dateStr = null
-  const dateLabel = norm.match(/(?:tarikh\s*bil|bill\s*date|tarikh|date)\s*[:\s]*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/i)
+  const dateLabel = norm.match(/(?:tarikh\s*bil|bill\s*date|tarikh)\s*[:\s]*(\d{1,2})[\/\-.\s]+(\d{1,2})[\/\-.\s]+(\d{2,4})/i)
   const allDates = [...norm.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)]
   const pick = dateLabel || allDates[0]
   if(pick) {
-    let dd = pick[1].padStart(2,'0'), mm = pick[2].padStart(2,'0'), y = pick[3]
+    let dd = String(pick[1]).padStart(2,'0'), mm = String(pick[2]).padStart(2,'0'), y = String(pick[3])
     if(y.length === 2) y = '20' + y
     if(Number(mm) > 12 && Number(dd) <= 12) { const t = dd; dd = mm; mm = t }
     if(Number(mm) >= 1 && Number(mm) <= 12 && Number(dd) >= 1 && Number(dd) <= 31)
       dateStr = `${y}-${mm}-${dd}`
   }
 
-  // Merchant
-  const known = [
-    [/lotus/i, "Lotus's"], [/sada/i, 'SADA'], [/tnb|tenaga\s*nasional/i, 'TNB'],
-    [/air\s*selangor/i, 'Air Selangor'], [/indah\s*water|iwk/i, 'Indah Water'],
-    [/aeon/i, 'AEON'], [/giant/i, 'Giant'], [/99\s*speedmart|speedmart/i, '99 Speedmart'],
-    [/petronas|shell|petron|\bbhp\b/i, 'Petrol'], [/grab/i, 'Grab'], [/mcd|mcdonald/i, "McDonald's"]
-  ]
-  let merchant = null
-  for(const [re, name] of known) {
-    if(re.test(norm)) { merchant = name; break }
-  }
-  if(!merchant) {
-    const skip = /total|jumlah|amount|cash|change|qty|item|tax|sst|invoice|receipt|tel|phone|gst|akaun|invois|deposit|tunggakan|caj|tarikh|amaun|bayar|no\.|pm:|ru:|blok|kadar|meter|estimate|tarif|debit|credit|founding|thank|points|visit|reg\s*no|sdn/i
-    merchant = lines.find(l => l.length >= 3 && l.length <= 40 && !skip.test(l) && !/^\d/.test(l) && /[A-Za-z]{3,}/.test(l)) || ''
-    merchant = merchant.replace(/[^\w\s&.'-]/g, '').trim().slice(0, 60)
+  // Description
+  let description = null
+  if(items.length) {
+    description = items.slice(0, 6).join(', ') + (items.length > 6 ? '…' : '')
+  } else if(merchant === 'SADA' || /bil\s*air/i.test(norm)) {
+    description = 'Bil air'
+    if(!merchant) merchant = 'SADA'
+  } else if(merchant === 'TNB' || /elektrik|electric/i.test(norm)) {
+    description = 'Bil elektrik'
+  } else if(merchant === 'Indah Water' || /\biwk\b/i.test(norm)) {
+    description = 'Bil pembetungan'
+  } else if(merchant === 'Petrol') {
+    description = 'Minyak / petrol'
+  } else if(merchant) {
+    description = merchant
   }
 
-  // Description: what was bought / bill purpose (not just merchant)
-  let description = null
-  const itemSkip = /total|jumlah|debit|credit|change|founding|gst|sst|tax|subtotal|tunggakan|caj|deposit|bayaran|tarikh|amaun|kadar|blok|meter|points|visit|thank|reg\s*no|sdn|bhd|akaun|invois|estimate|tarif|prorata|pelarasan|penggenapan|cash|card|qty|item|tel|phone|\brm\b|myr/i
-  const items = []
-  for(const line of lines) {
-    if(itemSkip.test(line)) continue
-    // retail: code + name + price at end  e.g. (9555...) LTS 3PLY T   8.99
-    const m = line.match(/^[\(\#]?\d{6,}[\)]?\s+(.+?)\s+(\d{1,6}[.,]\d{2})\s*$/)
-    if(m) {
-      let name = m[1].replace(/\s+/g, ' ').trim()
-      if(name.length >= 2 && name.length <= 40) items.push(name)
-      continue
-    }
-    // name + price only
-    const m2 = line.match(/^([A-Za-z][A-Za-z0-9 \-\/&']{2,35})\s+(\d{1,6}[.,]\d{2})\s*$/)
-    if(m2 && !/lotus|sada|tenaga|aeon|giant/i.test(m2[1])) {
-      items.push(m2[1].trim())
-      continue
-    }
+  // Final: never leave garbage merchant
+  if(merchant && /[^a-zA-Z0-9\s&.'-]/.test(merchant) && !known.some(([re]) => re.test(merchant))) {
+    merchant = null
   }
-  if(items.length) {
-    description = items.slice(0, 6).join(', ')
-    if(items.length > 6) description += '…'
-  } else {
-    // utility / purpose from header
-    if(/bil\s*air|sada|air\s*selangor/i.test(norm)) description = (merchant ? merchant + ' — ' : '') + 'Bil air'
-    else if(/tnb|tenaga|elektrik|electric/i.test(norm)) description = (merchant ? merchant + ' — ' : '') + 'Bil elektrik'
-    else if(/iwk|indah\s*water|pembetungan/i.test(norm)) description = (merchant ? merchant + ' — ' : '') + 'Bil pembetungan'
-    else if(/petrol|petronas|shell|\bbhp\b/i.test(norm)) description = 'Minyak / petrol'
-    else if(merchant) description = merchant
-  }
+  if(merchant && merchant.length > 40) merchant = merchant.slice(0, 40)
 
   return {
     amount,
@@ -8561,54 +8565,76 @@ function _pcParseReceiptText(text) {
     merchant: merchant || null,
     description: description || null,
     amountSrc,
-    raw: norm.slice(0, 1000)
+    items,
+    raw: norm.slice(0, 1200)
   }
 }
 
-/** Upscale + grayscale for better Tesseract on phone photos / thermal paper. */
-async function _pcPreprocessImage(file) {
-  try {
-    const bmp = await createImageBitmap(file)
-    const scale = bmp.width < 1200 ? 2.5 : (bmp.width < 1800 ? 1.8 : 1.2)
-    const w = Math.round(bmp.width * scale)
-    const h = Math.round(bmp.height * scale)
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
+async function _pcCanvasFromFile(file, opts={}) {
+  const bmp = await createImageBitmap(file)
+  const scale = opts.scale || (bmp.width < 1200 ? 2.5 : 1.8)
+  const w = Math.round(bmp.width * scale)
+  const h = Math.round(bmp.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if(opts.cropTop) {
+    const ch = Math.round(h * opts.cropTop)
+    canvas.height = ch
+    ctx.drawImage(bmp, 0, 0, bmp.width, bmp.height * opts.cropTop, 0, 0, w, ch)
+  } else {
     ctx.drawImage(bmp, 0, 0, w, h)
-    const img = ctx.getImageData(0, 0, w, h)
-    const d = img.data
-    // grayscale + mild contrast
-    for(let p = 0; p < d.length; p += 4) {
-      let g = 0.299*d[p] + 0.587*d[p+1] + 0.114*d[p+2]
-      g = (g - 128) * 1.35 + 128
-      g = g < 0 ? 0 : (g > 255 ? 255 : g)
-      d[p] = d[p+1] = d[p+2] = g
-    }
-    ctx.putImageData(img, 0, 0)
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'))
-    return blob || file
-  } catch(e) {
-    console.warn('pc preprocess', e)
-    return file
   }
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const d = img.data
+  for(let p = 0; p < d.length; p += 4) {
+    let g = 0.299*d[p] + 0.587*d[p+1] + 0.114*d[p+2]
+    if(opts.invert) g = 255 - g
+    if(opts.threshold != null) g = g > opts.threshold ? 255 : 0
+    else {
+      g = (g - 128) * 1.4 + 128
+      g = g < 0 ? 0 : (g > 255 ? 255 : g)
+    }
+    d[p] = d[p+1] = d[p+2] = g
+  }
+  ctx.putImageData(img, 0, 0)
+  return await new Promise(res => canvas.toBlob(res, 'image/png'))
 }
 
 async function _pcOcrOneFile(file, onProgress) {
   const T = await _pcEnsureTesseract()
-  const img = await _pcPreprocessImage(file)
-  const result = await T.recognize(img, 'eng', {
-    logger: m => { if(onProgress && m.status === 'recognizing text') onProgress(m.progress) }
-  })
-  const text = result?.data?.text || ''
-  console.log('[pc-ocr raw]', text.slice(0, 600))
-  const parsed = _pcParseReceiptText(text)
+  const texts = []
+  const passes = [
+    { name: 'raw', blob: file },
+    { name: 'contrast', prep: { scale: 2.2 } },
+    { name: 'threshold', prep: { scale: 2.5, threshold: 140 } },
+    { name: 'top', prep: { scale: 2.5, cropTop: 0.42, threshold: 130 } }
+  ]
+  let done = 0
+  for(const pass of passes) {
+    try {
+      let blob = pass.blob
+      if(pass.prep) blob = await _pcCanvasFromFile(file, pass.prep)
+      if(!blob) continue
+      const result = await T.recognize(blob, 'eng', {
+        logger: m => {
+          if(onProgress && m.status === 'recognizing text')
+            onProgress((done + (m.progress || 0)) / passes.length)
+        }
+      })
+      if(result?.data?.text) texts.push(result.data.text)
+    } catch(e) { console.warn('pc pass', pass.name, e) }
+    done++
+    if(onProgress) onProgress(done / passes.length)
+  }
+  const merged = texts.join('\n')
+  console.log('[pc-ocr merged]', merged.slice(0, 800))
+  const parsed = _pcParseReceiptText(merged)
   console.log('[pc-ocr parsed]', parsed)
   return parsed
 }
 
-/** Multi-file OCR → drafts list (user must confirm before save). */
 async function _pcOcrFilesSelected(floatId) {
   const input = document.getElementById('pce-files')
   const status = document.getElementById('pce-ocr-status')
