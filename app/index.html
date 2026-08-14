@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-payfix">
+<meta name="nexerp-build" content="2026-08-15-gl2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5711,9 +5711,12 @@ async function renderSettings(params={}) {
     const {data: mapData} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
     ;(mapData||[]).forEach(m => { acctMappings[m.mapping_key] = m.account_id })
     glCheck.coa = coaAccounts.length
+    // Minimum for sales journals: cash + sales_revenue. Full list for go-live health.
     const need = ['cash','sales_revenue','accounts_payable','general_expense','salary_expense','epf_payable','socso_payable','eis_payable','pcb_payable']
     glCheck.mapsNeed = need.length
     glCheck.maps = need.filter(k => !!acctMappings[k]).length
+    glCheck.mapsMissing = need.filter(k => !acctMappings[k])
+    glCheck.salesReady = !!(acctMappings['cash'] && acctMappings['sales_revenue'])
     try {
       const [{count:ec},{count:cc},{count:pc}] = await Promise.all([
         sb.from('employees').select('id',{count:'exact',head:true}).eq('tenant_id',APP.tenant.id).is('deleted_at',null),
@@ -5926,9 +5929,13 @@ async function renderSettings(params={}) {
           </div>`
         }
         const mapsOk = glCheck.maps >= glCheck.mapsNeed
+        const miss = (glCheck.mapsMissing && glCheck.mapsMissing.length) ? glCheck.mapsMissing.join(', ') : ''
+        let mapsDetail = (isBm ? (glCheck.maps + '/' + glCheck.mapsNeed + ' lengkap') : (glCheck.maps + '/' + glCheck.mapsNeed + ' complete'))
+        if(miss) mapsDetail += (isBm ? ' — kurang: ' : ' — missing: ') + miss
+        if(!glCheck.salesReady) mapsDetail += (isBm ? ' · jualan belum sedia' : ' · sales not ready')
         return [
           row(glCheck.coa>0, isBm?'Carta Akaun':'Chart of Accounts', isBm?(glCheck.coa+' akaun'):(glCheck.coa+' accounts'), "openPage('accounting',{})"),
-          row(mapsOk, isBm?'Akaun Lalai (wajib)':'Default Accounts (required)', isBm?(glCheck.maps+'/'+glCheck.mapsNeed+' lengkap'):(glCheck.maps+'/'+glCheck.mapsNeed+' complete'), "document.getElementById('dam-cash')?.scrollIntoView({behavior:'smooth',block:'center'})"),
+          row(mapsOk, isBm?'Akaun Lalai (wajib)':'Default Accounts (required)', mapsDetail, "document.getElementById('stg-default-accounts')?.scrollIntoView({behavior:'smooth',block:'center'})"),
           row(glCheck.opening, isBm?'Baki Pembukaan / Modal':'Opening Balance / Capital', isBm?'Debit tunai, kredit modal':'Debit cash, credit capital', "openPage('accounting',{view:'opening-balance'})"),
           row(glCheck.employees>0, isBm?'Pekerja':'Employees', isBm?(glCheck.employees+' rekod'):(glCheck.employees+' records'), "openPage('hr',{})"),
           row(glCheck.customers>0, isBm?'Pelanggan (jualan)':'Customers (sales)', isBm?(glCheck.customers+' rekod'):(glCheck.customers+' records'), "openPage('crm',{})"),
@@ -6883,6 +6890,10 @@ async function _damSave() {
   const {error} = await sb.from('default_account_mappings').upsert(rows, { onConflict: 'tenant_id,mapping_key' })
   if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
 
+  _damClearCache()
+  try {
+    Object.keys(sessionStorage).forEach(k => { if(k.startsWith('nexerp_dam_toast_')) sessionStorage.removeItem(k) })
+  } catch(e) {}
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')
@@ -7000,6 +7011,26 @@ async function _getDefaultAccountId(mappingKey) {
 }
 function _damClearCache() { _damCache = null }
 
+/** Missing default GL keys → user-visible toast (throttled). Soft-fail: ops continue. */
+function _damToastMissing(keys, context) {
+  const missing = (keys || []).filter(Boolean)
+  if(!missing.length) return
+  try {
+    const k = 'nexerp_dam_toast_' + (APP.tenant && APP.tenant.id || '') + '_' + missing.join('|')
+    if(sessionStorage.getItem(k) === '1') return
+    sessionStorage.setItem(k, '1')
+  } catch(e) {}
+  const isBm = APP.language === 'bm'
+  const msg = isBm
+    ? ('Akaun default belum lengkap (' + missing.join(', ') + '). Journal tak dijana' + (context ? ' — ' + context : '') + '. Settings → Akaun Default.')
+    : ('Default accounts incomplete (' + missing.join(', ') + '). Journal not posted' + (context ? ' — ' + context : '') + '. Settings → Default Accounts.')
+  try { showToast(msg, 'warning') } catch(e) { console.warn(msg) }
+}
+
+/** Required mapping keys for sales cash path (all tenants). */
+function _damSalesRequiredKeys() { return ['cash', 'sales_revenue'] }
+
+
 // Resolves the GL account an expense claim should post to: the claim's own
 // category_id (chosen on the expense claim form, referencing an
 // account_type='expense' row in chart_of_accounts) if set, otherwise the
@@ -7032,6 +7063,10 @@ async function _postSaleJournal({ description, entryDate, amount, cogsAmount, so
   const cashAcc = await _getDefaultAccountId('cash')
   const revenueAcc = await _getDefaultAccountId('sales_revenue')
   if(!cashAcc || !revenueAcc) {
+    const miss = []
+    if(!cashAcc) miss.push('cash')
+    if(!revenueAcc) miss.push('sales_revenue')
+    _damToastMissing(miss, description || 'sale')
     console.warn('Journal auto-post skipped (Cash/Sales Revenue default account not configured):', description)
     return null
   }
@@ -14619,13 +14654,19 @@ async function _paySave(invoiceId, balance) {
 
   try {
     const cogs = (newStatus==='paid' && inv.status!=='paid') ? await _calcCOGS('invoice_items','invoice_id',invoiceId) : 0
-    await _postSaleJournal({
+    const posted = await _postSaleJournal({
       description: `Invoice Payment ${inv.ref_no}`,
       entryDate: document.getElementById('pay-date').value,
       amount, cogsAmount: cogs,
       sourceTable: 'invoices', sourceId: invoiceId,
     })
-  } catch(e) { console.error('Invoice payment journal post failed:', e) }
+    if(posted === null) {
+      /* toast already from _damToastMissing if defaults missing */
+    }
+  } catch(e) {
+    console.error('Invoice payment journal post failed:', e)
+    try { showToast((APP.language==='bm'?'Jurnal bayaran invois gagal: ':'Invoice payment journal failed: ')+(e.message||e), 'error') } catch(x) {}
+  }
 
   showToast(APP.language==='bm'?'Bayaran direkod!':'Payment recorded!', 'success')
   renderInvDetail(invoiceId)
@@ -21507,7 +21548,10 @@ async function _posCheckout() {
       amount: total, cogsAmount: cogs,
       sourceTable: 'pos_transactions', sourceId: trans.id,
     })
-  } catch(e) { console.error('POS sale journal post failed:', e) }
+  } catch(e) {
+    console.error('POS sale journal post failed:', e)
+    try { showToast((APP.language==='bm'?'Jurnal jualan POS gagal: ':'POS sale journal failed: ')+(e.message||e), 'error') } catch(x) {}
+  }
   const isBm2 = APP.language==='bm'
   const methodLabel = {cash:isBm2?'Tunai':'Cash', card:isBm2?'Kad':'Card', online_banking:'QR / Online'}[method] || method
   const tender = Number(document.getElementById('pos-tender')?.value||0)
