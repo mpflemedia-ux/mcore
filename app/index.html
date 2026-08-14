@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-petty">
+<meta name="nexerp-build" content="2026-08-15-pcstaff">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8153,19 +8153,33 @@ async function renderPettyCash(params={}) {
   await _pcLoadList(t, isBm)
 }
 
-function _pcShowIssue() {
+async function _pcShowIssue() {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { issue:'Issue Float', holder:'Nama staff', amount:'Jumlah (RM)', date:'Tarikh', notes:'Nota', save:'Simpan', cancel:'Batal' }
-    : { issue:'Issue Float', holder:'Staff name', amount:'Amount (RM)', date:'Date', notes:'Notes', save:'Save', cancel:'Cancel' }
+    ? { issue:'Issue Float', holder:'Staff', amount:'Jumlah (RM)', date:'Tarikh', notes:'Nota', save:'Simpan', cancel:'Batal', select:'-- Pilih staff --', noStaff:'Tiada staff dalam HR. Tambah pekerja dulu.' }
+    : { issue:'Issue Float', holder:'Staff', amount:'Amount (RM)', date:'Date', notes:'Notes', save:'Save', cancel:'Cancel', select:'-- Select staff --', noStaff:'No staff in HR. Add employees first.' }
   const today = new Date().toISOString().slice(0,10)
   const el = document.getElementById('pc-issue-wrap')
   if(!el) return
+  el.innerHTML = `<div class="card" style="padding:16px;margin-bottom:16px;max-width:520px"><div class="spinner"></div></div>`
+
+  let opts = `<option value="">${t.select}</option>`
+  try {
+    const {data: emps} = await sb.from('employees').select('id,name')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .order('name', {ascending:true})
+    if(emps && emps.length) {
+      opts += emps.map(e => `<option value="${e.id}" data-name="${_aiEscapeHtml(e.name||'')}">${_aiEscapeHtml(e.name||'-')}</option>`).join('')
+    }
+  } catch(err) { console.warn('_pcShowIssue employees', err) }
+
   el.innerHTML = `
   <div class="card" style="padding:16px;margin-bottom:16px;max-width:520px">
     <div style="font-weight:600;margin-bottom:12px">${t.issue}</div>
     <div class="form-group"><label class="form-label">${t.holder}</label>
-      <input id="pc-holder" class="form-input" placeholder="e.g. Mike Paul"></div>
+      <select id="pc-holder" class="form-select">${opts}</select>
+      <div style="font-size:11px;color:var(--text-3);margin-top:4px">${t.noStaff}</div>
+    </div>
     <div class="form-group"><label class="form-label">${t.amount}</label>
       <input id="pc-amount" type="number" step="0.01" min="0.01" class="form-input" value="1000"></div>
     <div class="form-group"><label class="form-label">${t.date}</label>
@@ -8180,17 +8194,22 @@ function _pcShowIssue() {
 }
 
 async function _pcIssueSave() {
-  const holder = (document.getElementById('pc-holder')?.value || '').trim()
+  const sel = document.getElementById('pc-holder')
+  const empId = (sel?.value || '').trim()
+  const holder = (sel?.selectedOptions && sel.selectedOptions[0]
+    ? (sel.selectedOptions[0].getAttribute('data-name') || sel.selectedOptions[0].textContent || '')
+    : '').trim()
   const amount = Number(document.getElementById('pc-amount')?.value || 0)
   const issued_date = document.getElementById('pc-date')?.value || new Date().toISOString().slice(0,10)
   const notes = (document.getElementById('pc-notes')?.value || '').trim()
-  if(!holder) { showToast(APP.language==='bm'?'Isi nama staff':'Enter staff name', 'error'); return }
+  if(!empId || !holder) { showToast(APP.language==='bm'?'Pilih staff dari senarai':'Select staff from the list', 'error'); return }
   if(!(amount > 0)) { showToast(APP.language==='bm'?'Jumlah tidak sah':'Invalid amount', 'error'); return }
   if(!_validTenantId(APP.tenant.id)) { showToast('No tenant', 'error'); return }
 
   const row = {
     tenant_id: APP.tenant.id,
     holder_name: holder,
+    holder_employee_id: empId,
     issued_date,
     amount,
     status: 'open',
