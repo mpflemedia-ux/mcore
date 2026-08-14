@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-mypay">
+<meta name="nexerp-build" content="2026-08-15-paygate">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17660,11 +17660,13 @@ function renderHR(params={}) {
   }
 
   const hrAdmin = canManageHR()
-  // Staff with HR module: attendance + leave only
+  // Staff with HR module: attendance + leave + own payslips (self only)
   if(!hrAdmin) {
     const v = params.view || 'attendance'
     if(v === 'leave') { renderLeave(params); return }
     if(v === 'attendance' || !v) { renderAttendance(params); return }
+    if(v === 'my-payslips' || v === 'payroll-history') { renderMyPayslips(params); return }
+    if(v === 'payslip' && params.id) { renderPayslipDetail(params.id); return }
     renderAccessDenied(); return
   }
   if(params.view==='employee-form') { renderEmployeeForm(params.id, params.fromApplicantId); return }
@@ -17672,6 +17674,7 @@ function renderHR(params={}) {
   if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year); return }
   if(params.view==='payslips-print' && params.month && params.year) { renderPayslipsPrint(params.month, params.year); return }
   if(params.view==='payslip' && params.id) { renderPayslipDetail(params.id); return }
+  if(params.view==='my-payslips' || params.view==='payroll-history') { renderMyPayslips(params); return }
   if(params.view==='attendance') { renderAttendance(params); return }
   if(params.view==='leave') { renderLeave(params); return }
   renderEmployeeList()
