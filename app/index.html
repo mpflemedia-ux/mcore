@@ -2,7 +2,9 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-invreg">
+<meta name="nexerp-build" content="2026-08-14-swv4">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 /* Sync intro skip — phone-friendly, no console needed */
@@ -22883,12 +22885,21 @@ init()
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js?v=3').then(reg=>{
+    // When a new SW takes control, reload once so invite/register fixes apply without Incognito
+    let refreshing = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if(refreshing) return
+      refreshing = true
+      try { location.reload() } catch(e) {}
+    })
+    navigator.serviceWorker.register('./sw.js?v=4').then(reg=>{
       try { reg.update() } catch(e) {}
-      // Drop ancient caches that can pin a broken shell
-      if(navigator.serviceWorker.controller) {
-        caches.keys().then(keys => keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v3').forEach(k => caches.delete(k)))
-      }
+      caches.keys().then(keys =>
+        keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
+            .forEach(k => caches.delete(k))
+      ).catch(()=>{})
+      // Force check for updates periodically while tab open
+      try { setInterval(() => { try { reg.update() } catch(e) {} }, 60 * 1000) } catch(e) {}
     }).catch(err=>console.warn('SW register failed',err))
   })
 }
