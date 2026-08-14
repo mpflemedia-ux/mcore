@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-swv4">
+<meta name="nexerp-build" content="2026-08-14-multiinv">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5235,17 +5235,27 @@ async function _adminLoadInvites() {
     panel.style.display = 'block'
     return
   }
-  if(!data || !data.length) {
+  // Multi-use: keep invites until expiry (or max_uses reached)
+  const active = (data || []).filter(inv => {
+    if(inv.max_uses != null && Number(inv.use_count || 0) >= Number(inv.max_uses)) return false
+    return true
+  })
+  if(!active.length) {
     panel.innerHTML = `<div style="font-size:13px;color:var(--text-3)">${isBm?'Tiada jemputan aktif. Klik "Jemput ahli" untuk jana link.':'No active invites. Click "Invite member" to generate a link.'}</div>`
     panel.style.display = 'block'
     return
   }
   const base = location.origin + location.pathname.replace(/\/$/,'')
-  panel.innerHTML = `<div style="font-weight:600;margin-bottom:10px;font-size:13px">${isBm?'Jemputan aktif':'Active invites'}</div>
-    ${data.map(inv => {
+  panel.innerHTML = `<div style="font-weight:600;margin-bottom:10px;font-size:13px">${isBm?'Jemputan aktif (satu link, ramai staf)':'Active invites (one link, many staff)'}</div>
+    ${active.map(inv => {
       const link = `${base}?invite=${encodeURIComponent(inv.token)}`
+      const uses = Number(inv.use_count || 0)
+      const useLabel = inv.max_uses != null
+        ? (isBm ? `${uses}/${inv.max_uses} guna` : `${uses}/${inv.max_uses} used`)
+        : (isBm ? `${uses} guna · tanpa had` : `${uses} used · unlimited`)
       return `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:12px;text-transform:capitalize;font-weight:600">${_aiEscapeHtml(inv.role)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${useLabel}</span>
         <code style="font-size:11px;background:var(--bg);padding:4px 8px;border-radius:6px;word-break:break-all">${_aiEscapeHtml(inv.token)}</code>
         <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('${link.replace(/'/g,"\\'")}');showToast('${isBm?'Link disalin':'Link copied'}','success')"><i class="ti ti-copy"></i> Copy link</button>
         <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_adminRevokeInvite('${inv.id}')"><i class="ti ti-x"></i></button>
@@ -5330,7 +5340,9 @@ async function _adminCreateInvite(role, moduleOverride) {
     role,
     module_override: (moduleOverride && Array.isArray(moduleOverride)) ? moduleOverride : null,
     created_by: APP.user.id,
-    expires_at: expires
+    expires_at: expires,
+    max_uses: null,
+    use_count: 0
   })
   if(error) {
     showToast('Error: '+error.message + (isBm?' — pastikan migration SQL sudah dijalankan di Supabase.':' — ensure SQL migration is applied in Supabase.'), 'error')
