@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-accprt">
+<meta name="nexerp-build" content="2026-08-15-accall">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -588,10 +588,14 @@ html[data-skip-intro="1"] #intro-skip {
     background: rgba(0,0,0,.4); z-index: 150;
   }
 }
-.print-only { display:none; }
+.print-only, .acc-print-title { display:none; }
 
 @media print {
-  #sidebar, #header, .no-print { display:none !important; }
+  #sidebar, #header, .no-print, .page-header, .acc-tabs, #acc-tabs { display:none !important; }
+  .acc-print-body { display:block !important; }
+  .acc-print-title { display:block !important; font-size:16px; font-weight:700; margin:0 0 12px 0; color:#000 !important; }
+  #main > * { break-inside: avoid; }
+  #main .card { break-inside: auto; page-break-inside: auto; }
   /* Form signature inputs — never print (print uses sd-sig-row only) */
   .pdoc-sig-grid,
   .pdoc-sd-sig,
@@ -8115,9 +8119,12 @@ async function renderOpeningBalance() {
     select:'-- Select account --'
   }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
-  ${_accTabs('ob')}
-  <div class="card" style="max-width:560px">
+  <div class="page-header no-print"><div><div class="page-title">${t.title}</div></div>
+    ${_repPrintToolbar('OpeningBalance')}
+  </div>
+  <div class="no-print">${_accTabs('ob')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
+  <div class="card acc-print-body" style="max-width:560px">
     <div style="padding:16px;font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:8px">${t.note}</div>
     <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
       <div class="form-group"><label class="form-label">${t.date}</label><input type="date" class="form-input" id="ob-date" value="${new Date().toISOString().slice(0,10)}"></div>
@@ -8206,14 +8213,16 @@ async function renderFixedAssets() {
   }
   if(!window._faDateFilter) window._faDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
-  <div class="page-header">
+  <div class="page-header no-print">
     <div><div class="page-title">${t.title}</div></div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${_repPrintToolbar('FixedAssets')}
       <button class="btn btn-outline btn-sm" onclick="_faOpenRunModal()"><i class="ti ti-calculator"></i> ${t.runDep}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'fa-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
     </div>
   </div>
-  ${_accTabs('fa')}
+  <div class="no-print">${_accTabs('fa')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
   <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
       <input type="date" id="fa-from" class="form-input" value="${window._faDateFilter.from||''}" style="width:150px"></div>
@@ -8810,14 +8819,15 @@ async function renderJournalList() {
   for (let y = yNow + 1; y >= yNow - 8; y--) jnlYearOptions += `<option value="${y}">${y}</option>`
 
   document.getElementById('main').innerHTML = `
-  <div class="page-header">
+  <div class="page-header no-print">
     <div><div class="page-title">${t.title}</div></div>
-    <div class="no-print" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       ${_repPrintToolbar('JournalEntries',{fromId:'jnl-from',toId:'jnl-to'})}
       <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'journal-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
     </div>
   </div>
   <div class="no-print">${_accTabs('journal')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
   <div class="card no-print" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
       <input type="date" id="jnl-from" class="form-input" value="${window._jnlFilter.from||''}" style="width:150px"></div>
@@ -9247,9 +9257,13 @@ async function renderFiscalYears() {
   }
   if(!window._fyDateFilter) window._fyDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-primary btn-sm" onclick="_fyShowForm()"><i class="ti ti-plus"></i> ${t.add}</button></div>
-  ${_accTabs('fiscal')}
+  <div class="page-header no-print"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      ${_repPrintToolbar('FiscalYears')}
+      <button class="btn btn-primary btn-sm" onclick="_fyShowForm()"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div></div>
+  <div class="no-print">${_accTabs('fiscal')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
   <div id="fy-form-wrap"></div>
   <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
@@ -9421,10 +9435,14 @@ async function renderExpenseClaims(params={}) {
   }
   if(!window._expDateFilter) window._expDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'exp-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
-  ${_accTabs('expense')}
-  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+  <div class="page-header no-print"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${_repPrintToolbar('ExpenseClaims',{fromId:'exp-from',toId:'exp-to'})}
+      <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'exp-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div></div>
+  <div class="no-print">${_accTabs('expense')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
+  <div class="card no-print" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
       <input type="date" id="exp-from" class="form-input" value="${window._expDateFilter.from||''}" style="width:150px"></div>
     <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
@@ -9433,8 +9451,8 @@ async function renderExpenseClaims(params={}) {
     <button class="btn btn-outline btn-sm" onclick="window._expDateFilter={from:'',to:''};renderExpenseClaims()">${t.clear}</button>
     <div style="margin-left:auto">${_periodQuickBar('exp','_expPickRange')}</div>
   </div>
-  <div id="exp-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
-  <div class="card"><div id="exp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div id="exp-status-filters" class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+  <div class="card acc-print-body"><div id="exp-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('exp-table-wrap')
   let expq = sb.from('expense_claims').select('id,claimed_by,claim_date,description,total_amount,status,ref_no')
@@ -10237,9 +10255,12 @@ async function renderReconcile() {
     clear: 'Clear session'
   }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
-  ${_accTabs('reconcile')}
-  <div class="card" style="padding:16px;margin-bottom:16px">
+  <div class="page-header no-print"><div><div class="page-title">${t.title}</div></div>
+    ${_repPrintToolbar('BankReconciliation')}
+  </div>
+  <div class="no-print">${_accTabs('reconcile')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
+  <div class="card no-print" style="padding:16px;margin-bottom:16px">
     <p style="font-size:13px;color:var(--text-3);margin-bottom:10px">${t.instructions}</p>
     <input type="file" accept=".csv,text/csv,text/plain" id="reco-file-input" onchange="_recoFileUpload(event)" style="margin-bottom:10px;display:block">
     <div style="margin-bottom:10px;padding:10px;border:1px dashed var(--border);border-radius:var(--radius-sm)">
@@ -16524,16 +16545,18 @@ async function renderPVList() {
     : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void', all:'All', del:'Delete', from:'From', to:'To', apply:'Filter', clear:'Clear' }
   if(!window._pvDateFilter) window._pvDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div>
+  <div class="page-header no-print"><div><div class="page-title">${t.title}</div>
     <div style="font-size:12px;color:var(--text-3);margin-top:4px">${isBm?'Single PV (portrait) · Disbursement = multi bayaran (landscape)':'Single PV (portrait) · Disbursement = multi-payee batch (landscape)'}</div>
   </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-outline" onclick="openPage('vouchers',{view:'disbursements'})"><i class="ti ti-layout-list"></i> ${isBm?'Disbursement':'Disbursement'}</button>
-      <button class="btn btn-primary" onclick="openPage('vouchers',{view:'pv-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${_repPrintToolbar('PaymentVouchers',{fromId:'pv-from',toId:'pv-to'})}
+      <button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'disbursements'})"><i class="ti ti-layout-list"></i> ${isBm?'Disbursement':'Disbursement'}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('vouchers',{view:'pv-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
     </div>
   </div>
-  ${_accTabs('pv')}
-  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+  <div class="no-print">${_accTabs('pv')}</div>
+  <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
+  <div class="card no-print" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
       <input type="date" id="pv-from" class="form-input" value="${window._pvDateFilter.from||''}" style="width:150px"></div>
     <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
@@ -16542,7 +16565,7 @@ async function renderPVList() {
     <button class="btn btn-outline btn-sm" onclick="window._pvDateFilter={from:'',to:''};renderPVList()">${t.clear}</button>
     <div style="margin-left:auto">${_periodQuickBar('pv','_pvPickRange')}</div>
   </div>
-  <div id="pv-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+  <div id="pv-status-filters" class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="pv-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('pv-list-wrap')
   let pvq = sb.from('payment_vouchers').select('*').eq('tenant_id',APP.tenant.id).is('deleted_at',null)
@@ -21684,10 +21707,7 @@ function _repPrintToolbar(reportCode, dateOpts) {
   const isBm = APP.language === 'bm'
   const label = isBm ? 'Cetak' : 'Print'
   const code = String(reportCode || 'Report').replace(/[^a-zA-Z0-9]+/g, '').slice(0, 32)
-  const optStr = JSON.stringify(dateOpts || {}).replace(/'/g, "\'")
-  return `<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
-    <button type="button" class="btn btn-outline" onclick='_repPrint(${JSON.stringify(code)}, ${JSON.stringify(dateOpts||{})})'><i class="ti ti-printer"></i> ${label}</button>
-  </div>`
+  return `<button type="button" class="btn btn-outline btn-sm no-print" onclick='_repPrint(${JSON.stringify(code)}, ${JSON.stringify(dateOpts||{})})'><i class="ti ti-printer"></i> ${label}</button>`
 }
 function _repPrint(reportCode, dateOpts) {
   try {
