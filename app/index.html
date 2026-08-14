@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-delfix">
+<meta name="nexerp-build" content="2026-08-14-rejoin">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2920,7 +2920,19 @@ async function doRegister() {
       })
       if(joinErr) {
         console.error('join_tenant_by_invite', joinErr)
-        errEl.textContent = 'Invite failed: ' + joinErr.message + ' (If migration not applied, ask admin to run team_invites SQL.)'
+        const msg = (joinErr.message || '')
+        const isBm = (localStorage.getItem('nexerp_lang') === 'bm') || (typeof APP !== 'undefined' && APP.language === 'bm')
+        if(/already belongs to a tenant/i.test(msg)) {
+          errEl.textContent = isBm
+            ? 'Emel ni sudah ada dalam sistem. Cuba Sign In. Kalau admin dah padam anda dari team, minta admin run SQL revive invite atau soft-delete profile dulu.'
+            : 'This email is already registered. Try Sign In. If admin removed you from the team, ask them to re-invite after profile cleanup — or run the join_invite revive SQL.'
+        } else if(/invalid|expired|fully used/i.test(msg)) {
+          errEl.textContent = isBm
+            ? 'Kod jemputan tidak sah atau sudah luput. Minta admin jana link baru.'
+            : 'Invite code is invalid or expired. Ask admin for a new link.'
+        } else {
+          errEl.textContent = (isBm ? 'Jemputan gagal: ' : 'Invite failed: ') + msg
+        }
         errEl.classList.add('show')
         btn.innerHTML='Create Account'; btn.disabled=false
         return
