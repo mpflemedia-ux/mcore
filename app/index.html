@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-ocrfix">
+<meta name="nexerp-build" content="2026-08-15-ocrv2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8400,100 +8400,179 @@ async function _pcEnsureTesseract() {
 /** Parse OCR text → amount, date, merchant guesses. */
 function _pcParseReceiptText(text) {
   const raw = String(text || '')
-  const norm = raw.replace(/\u00a0/g, ' ').replace(/[–—]/g, '-')
+  // Normalize OCR noise common on thermal / phone photos
+  let norm = raw.replace(/\u00a0/g, ' ')
+    .replace(/[–—]/g, '-')
+    .replace(/\b1OTAL\b/gi, 'TOTAL')
+    .replace(/\bTOIAL\b/gi, 'TOTAL')
+    .replace(/\bTOTAI\b/gi, 'TOTAL')
+    .replace(/\bTOTAl\b/g, 'TOTAL')
+    .replace(/\bJUMIAH\b/gi, 'JUMLAH')
+    .replace(/\bJUHLAH\b/gi, 'JUMLAH')
+    .replace(/\bDIBAYAR\b/gi, 'DIBAYAR')
+    .replace(/\bDlBAYAR\b/gi, 'DIBAYAR')
   const lines = norm.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
 
   function toMoney(s) {
     if(s == null) return null
-    let t = String(s).replace(/,/g, '').replace(/\s/g, '')
-    // OCR often reads 65.51 as 65 51 or 65,51
+    let t = String(s).replace(/,/g, '').replace(/\s/g, '').replace(/[^\d.\-]/g, '')
     const m = t.match(/-?\d+\.?\d*/)
     if(!m) return null
     const n = Math.abs(parseFloat(m[0]))
-    return (isNaN(n) || n <= 0 || n >= 100000) ? null : Math.round(n * 100) / 100
+    if(isNaN(n) || n < 0.01 || n >= 100000) return null
+    return Math.round(n * 100) / 100
+  }
+
+  function moneyOnLine(line) {
+    return [...String(line).matchAll(/(\d{1,6}[.,]\d{2})/g)]
+      .map(x => toMoney(x[1])).filter(n => n != null)
   }
 
   let amount = null
-  // 1) Strong labels (MY utility / retail) — prefer "perlu dibayar" over tunggakan
-  const preferRes = [
-    /jumlah\s*perlu\s*dibayar[^0-9\-]{0,20}(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
-    /(?:amount\s*due|total\s*due|balance\s*due)[^0-9\-]{0,20}(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
-    /(?:grand\s*total|net\s*total|jumlah\s*bil|jumlah\s*bayaran|total\s*amount|amount\s*payable)[^0-9\-]{0,20}(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
-    /(?:^|\n)\s*(?:total|jumlah)(?:\s|:)+?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/im
-  ]
-  for(const re of preferRes) {
-    const m = norm.match(re)
-    if(m) { amount = toMoney(m[1]); if(amount != null) break }
-  }
-  // 2) Line-based: line contains label + number on same line
-  if(amount == null) {
-    for(const line of lines) {
-      if(/tunggakan|deposit|caj\s*semasa|pelarasan|bacaan|meter|kadar|prorata/i.test(line) && !/perlu\s*dibayar|jumlah\s*bil|total/i.test(line)) continue
-      if(/(?:perlu\s*dibayar|jumlah\s*bil|grand\s*total|amount\s*due|total)/i.test(line)) {
-        const nums = [...line.matchAll(/-?\s*(\d{1,6}[.,]\d{2})/g)].map(x => toMoney(x[1])).filter(Boolean)
-        if(nums.length) { amount = nums[nums.length - 1]; break }
-      }
-    }
-  }
-  // 3) Fallback: do NOT use max of all numbers (wrong for bills with arrears)
-  // Prefer median-ish small totals near "RM"
-  if(amount == null) {
-    const rmPairs = [...norm.matchAll(/(?:rm|myr)\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/gi)]
-      .map(x => toMoney(x[1])).filter(Boolean)
-    if(rmPairs.length) {
-      // pick first RM after "dibayar" region if any, else last RM under 5000
-      amount = rmPairs.find(n => n < 5000) || rmPairs[0]
+  let amountSrc = null
+
+  // --- A) Retail TOTAL line (Lotus, etc.): TOTAL ... 29.24
+  for(const line of lines) {
+    if(!/(?:^|\b)(?:total|jumlah(?:\s+bil)?)\b/i.test(line)) continue
+    if(/points|visit|upto|balance|tunggakan|cadangan/i.test(line)) continue
+    const nums = moneyOnLine(line)
+    if(nums.length) {
+      amount = nums[nums.length - 1]
+      amountSrc = 'total-line'
+      break
     }
   }
 
-  // Dates: prefer labelled bill date
+  // --- B) MY utility: Jumlah Perlu Dibayar / Amount Due (even with RM - 65.51)
+  if(amount == null) {
+    const prefer = [
+      /jumlah\s*perlu\s*dibayar[\s\S]{0,40}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
+      /(?:amount\s*due|total\s*due|balance\s*due)[\s\S]{0,30}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i,
+      /jumlah\s*bil[\s\S]{0,30}?(?:rm|myr)?\s*-?\s*(\d{1,6}(?:[.,]\d{2})?)/i
+    ]
+    for(const re of prefer) {
+      const m = norm.match(re)
+      if(m) { amount = toMoney(m[1]); if(amount != null) { amountSrc = 'label'; break } }
+    }
+  }
+  // Same labels line-by-line (OCR may split)
+  if(amount == null) {
+    for(let li = 0; li < lines.length; li++) {
+      const line = lines[li]
+      if(/perlu\s*dibayar|amount\s*due|jumlah\s*bil/i.test(line)) {
+        let nums = moneyOnLine(line)
+        if(!nums.length && lines[li+1]) nums = moneyOnLine(lines[li+1])
+        if(nums.length) { amount = nums[nums.length-1]; amountSrc = 'label-line'; break }
+      }
+    }
+  }
+
+  // --- C) Debit / card charge near TOTAL (Lotus DEBIT 29.25)
+  if(amount == null) {
+    for(const line of lines) {
+      if(!/(?:debit|credit|card\s*payment|bayaran)/i.test(line)) continue
+      if(/card\s*no|\*{2,}|xxxx/i.test(line)) continue
+      const nums = moneyOnLine(line)
+      if(nums.length) { amount = nums[nums.length-1]; amountSrc = 'debit'; break }
+    }
+  }
+
+  // --- D) Last resort: largest amount that sits alone on the right of a short line (not tariff table)
+  if(amount == null) {
+    const candidates = []
+    for(const line of lines) {
+      if(/tunggakan|kadar|prorata|blok|meter|points|visit|deposit|gst\s*semasa|caj\s*semasa/i.test(line)) continue
+      const nums = moneyOnLine(line)
+      if(nums.length === 1 && nums[0] >= 1) candidates.push(nums[0])
+    }
+    if(candidates.length) {
+      // Prefer values that appear twice (TOTAL + DEBIT) else max under 500
+      const under = candidates.filter(n => n < 500)
+      amount = under.length ? under.sort((a,b)=>b-a)[0] : candidates.sort((a,b)=>b-a)[0]
+      amountSrc = 'fallback'
+    }
+  }
+
+  // Date: labeled first, else first valid MY date
   let dateStr = null
   const dateLabel = norm.match(/(?:tarikh\s*bil|bill\s*date|tarikh|date)\s*[:\s]*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/i)
-  const d1 = dateLabel || norm.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/)
-  if(d1) {
-    let dd = d1[1].padStart(2,'0')
-    let mm = d1[2].padStart(2,'0')
-    let y = d1[3]
+  const allDates = [...norm.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)]
+  const pick = dateLabel || allDates[0]
+  if(pick) {
+    let dd = pick[1].padStart(2,'0'), mm = pick[2].padStart(2,'0'), y = pick[3]
     if(y.length === 2) y = '20' + y
-    // MY: DD-MM-YYYY
     if(Number(mm) > 12 && Number(dd) <= 12) { const t = dd; dd = mm; mm = t }
     if(Number(mm) >= 1 && Number(mm) <= 12 && Number(dd) >= 1 && Number(dd) <= 31)
       dateStr = `${y}-${mm}-${dd}`
   }
 
-  // Merchant: known brands / header keywords
+  // Merchant
   const known = [
-    [/sada/i, 'SADA'], [/tnb|tenaga\s*nasional/i, 'TNB'], [/air\s*selangor/i, 'Air Selangor'],
-    [/indah\s*water|iwk/i, 'Indah Water'], [/lotus|tesco/i, "Lotus's"], [/aeon/i, 'AEON'],
-    [/giant/i, 'Giant'], [/petronas|shell|petron|bhp/i, 'Petrol'], [/grab/i, 'Grab']
+    [/lotus/i, "Lotus's"], [/sada/i, 'SADA'], [/tnb|tenaga\s*nasional/i, 'TNB'],
+    [/air\s*selangor/i, 'Air Selangor'], [/indah\s*water|iwk/i, 'Indah Water'],
+    [/aeon/i, 'AEON'], [/giant/i, 'Giant'], [/99\s*speedmart|speedmart/i, '99 Speedmart'],
+    [/petronas|shell|petron|\bbhp\b/i, 'Petrol'], [/grab/i, 'Grab'], [/mcd|mcdonald/i, "McDonald's"]
   ]
   let merchant = null
   for(const [re, name] of known) {
     if(re.test(norm)) { merchant = name; break }
   }
   if(!merchant) {
-    const skip = /total|jumlah|amount|cash|change|qty|item|tax|sst|invoice|receipt|tel|phone|gst|akaun|invois|deposit|tunggakan|caj|tarikh|amaun|bayar|bil\s*air|no\.|pm:|ru:|blok|kadar|meter|estimate|tarif/i
-    merchant = lines.find(l => l.length >= 3 && l.length <= 35 && !skip.test(l) && !/^\d/.test(l) && /[A-Za-z]{3,}/.test(l)) || ''
+    const skip = /total|jumlah|amount|cash|change|qty|item|tax|sst|invoice|receipt|tel|phone|gst|akaun|invois|deposit|tunggakan|caj|tarikh|amaun|bayar|no\.|pm:|ru:|blok|kadar|meter|estimate|tarif|debit|credit|founding|thank|points|visit|reg\s*no|sdn/i
+    merchant = lines.find(l => l.length >= 3 && l.length <= 40 && !skip.test(l) && !/^\d/.test(l) && /[A-Za-z]{3,}/.test(l)) || ''
     merchant = merchant.replace(/[^\w\s&.'-]/g, '').trim().slice(0, 60)
   }
 
   return {
-    amount: amount,
+    amount,
     date: dateStr,
     merchant: merchant || null,
-    raw: norm.slice(0, 800)
+    amountSrc,
+    raw: norm.slice(0, 1000)
+  }
+}
+
+/** Upscale + grayscale for better Tesseract on phone photos / thermal paper. */
+async function _pcPreprocessImage(file) {
+  try {
+    const bmp = await createImageBitmap(file)
+    const scale = bmp.width < 1200 ? 2.5 : (bmp.width < 1800 ? 1.8 : 1.2)
+    const w = Math.round(bmp.width * scale)
+    const h = Math.round(bmp.height * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bmp, 0, 0, w, h)
+    const img = ctx.getImageData(0, 0, w, h)
+    const d = img.data
+    // grayscale + mild contrast
+    for(let p = 0; p < d.length; p += 4) {
+      let g = 0.299*d[p] + 0.587*d[p+1] + 0.114*d[p+2]
+      g = (g - 128) * 1.35 + 128
+      g = g < 0 ? 0 : (g > 255 ? 255 : g)
+      d[p] = d[p+1] = d[p+2] = g
+    }
+    ctx.putImageData(img, 0, 0)
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'))
+    return blob || file
+  } catch(e) {
+    console.warn('pc preprocess', e)
+    return file
   }
 }
 
 async function _pcOcrOneFile(file, onProgress) {
   const T = await _pcEnsureTesseract()
-  // eng is most reliable in tesseract.js CDN; parser handles MY labels (Jumlah Perlu Dibayar, etc.)
-  const result = await T.recognize(file, 'eng', {
+  const img = await _pcPreprocessImage(file)
+  const result = await T.recognize(img, 'eng', {
     logger: m => { if(onProgress && m.status === 'recognizing text') onProgress(m.progress) }
   })
   const text = result?.data?.text || ''
-  console.log('[pc-ocr]', text.slice(0, 400))
-  return _pcParseReceiptText(text)
+  console.log('[pc-ocr raw]', text.slice(0, 600))
+  const parsed = _pcParseReceiptText(text)
+  console.log('[pc-ocr parsed]', parsed)
+  return parsed
 }
 
 /** Multi-file OCR → drafts list (user must confirm before save). */
