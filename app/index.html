@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-repprint">
+<meta name="nexerp-build" content="2026-08-15-fn">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21654,21 +21654,45 @@ async function _repAiSummary(reportType) {
   if(btn) btn.disabled = false
 }
 
-/** Shared print toolbar for Accounting reports (all tenants). */
-function _repPrintToolbar(docTitle) {
+/** Standard print filename: Company_ReportType_YYYYMMDD or _from_to (all tenants). */
+function _repBuildFilename(reportCode, dateOpts) {
+  const co = _pdocSlug((APP.tenant && APP.tenant.name) || 'Company')
+  const code = String(reportCode || 'Report').replace(/[^a-zA-Z0-9]+/g, '').slice(0, 32) || 'Report'
+  let stamp = ''
+  try {
+    if(dateOpts && dateOpts.fromId && dateOpts.toId) {
+      const f = (document.getElementById(dateOpts.fromId)?.value || '').replace(/-/g, '')
+      const t = (document.getElementById(dateOpts.toId)?.value || '').replace(/-/g, '')
+      if(f && t) stamp = '_' + f + '_' + t
+      else stamp = '_' + _pdocDateStamp()
+    } else if(dateOpts && dateOpts.asOfId) {
+      const a = (document.getElementById(dateOpts.asOfId)?.value || '').replace(/-/g, '')
+      stamp = '_' + (a || _pdocDateStamp())
+    } else {
+      stamp = '_' + _pdocDateStamp()
+    }
+  } catch(e) {
+    stamp = '_' + _pdocDateStamp()
+  }
+  return (co + '_' + code + stamp).slice(0, 120)
+}
+/** Shared print toolbar for Accounting reports. reportCode e.g. IncomeStatement, TrialBalance. */
+function _repPrintToolbar(reportCode, dateOpts) {
   const isBm = APP.language === 'bm'
   const label = isBm ? 'Cetak' : 'Print'
-  const safe = String(docTitle || 'NexERP-Report').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60)
+  const code = String(reportCode || 'Report').replace(/[^a-zA-Z0-9]+/g, '').slice(0, 32)
+  const optStr = JSON.stringify(dateOpts || {}).replace(/'/g, "\'")
   return `<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
-    <button type="button" class="btn btn-outline" onclick="_repPrint('${safe}')"><i class="ti ti-printer"></i> ${label}</button>
+    <button type="button" class="btn btn-outline" onclick='_repPrint(${JSON.stringify(code)}, ${JSON.stringify(dateOpts||{})})'><i class="ti ti-printer"></i> ${label}</button>
   </div>`
 }
-function _repPrint(docTitle) {
+function _repPrint(reportCode, dateOpts) {
   try {
     const prev = document.title
-    document.title = docTitle || 'NexERP Report'
+    const name = _repBuildFilename(reportCode, dateOpts)
+    document.title = name
     window.print()
-    setTimeout(() => { try { document.title = prev } catch(e) {} }, 500)
+    setTimeout(() => { try { document.title = prev } catch(e) {} }, 800)
   } catch(e) {
     try { window.print() } catch(e2) {}
   }
@@ -21737,7 +21761,7 @@ async function renderTrialBalance() {
   const today = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    ${_repPrintToolbar(isBm?'Imbangan-Duga':'Trial-Balance')}
+    ${_repPrintToolbar('TrialBalance',{asOfId:'tb-asof'})}
   </div>
   ${_repTabs('tb')}
   <div class="card no-print" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
@@ -21847,10 +21871,9 @@ async function renderPnL() {
     title:'Accounting / Reports', revenue:'Revenue', expense:'Expenses', netProfit:'Net Profit/(Loss)',
     account:'Account', amount:'Amount', noData:'No data for this period'
   }
-  const pnlPrintTitle = APP.language==='bm' ? 'Penyata-Pendapatan' : 'Income-Statement'
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    ${_repPrintToolbar(pnlPrintTitle)}
+    ${_repPrintToolbar('IncomeStatement',{fromId:'pnl-from',toId:'pnl-to'})}
   </div>
   ${_repTabs('pnl')}
   <div class="no-print">${_repDateRangeBar('pnl-from','pnl-to','_pnlLoad()')}</div>
@@ -21915,7 +21938,7 @@ async function renderBalanceSheet() {
   const today = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    ${_repPrintToolbar(APP.language==='bm'?'Kunci-Kira-kira':'Balance-Sheet')}
+    ${_repPrintToolbar('BalanceSheet',{asOfId:'bs-asof'})}
   </div>
   ${_repTabs('bs')}
   <div class="card no-print" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
@@ -22203,7 +22226,7 @@ async function renderSalesReport() {
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
-    ${_repPrintToolbar(APP.language==='bm'?'Laporan-Jualan':'Sales-Report')}
+    ${_repPrintToolbar('SalesReport',{fromId:'sales-from',toId:'sales-to'})}
   </div>
   ${_repTabs('sales')}
   <div class="no-print">${_repDateRangeBar('sales-from','sales-to','_salesRepLoad()')}</div>
