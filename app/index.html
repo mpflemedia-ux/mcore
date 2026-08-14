@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-gl2">
+<meta name="nexerp-build" content="2026-08-15-repprint">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21654,6 +21654,27 @@ async function _repAiSummary(reportType) {
   if(btn) btn.disabled = false
 }
 
+/** Shared print toolbar for Accounting reports (all tenants). */
+function _repPrintToolbar(docTitle) {
+  const isBm = APP.language === 'bm'
+  const label = isBm ? 'Cetak' : 'Print'
+  const safe = String(docTitle || 'NexERP-Report').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60)
+  return `<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+    <button type="button" class="btn btn-outline" onclick="_repPrint('${safe}')"><i class="ti ti-printer"></i> ${label}</button>
+  </div>`
+}
+function _repPrint(docTitle) {
+  try {
+    const prev = document.title
+    document.title = docTitle || 'NexERP Report'
+    window.print()
+    setTimeout(() => { try { document.title = prev } catch(e) {} }, 500)
+  } catch(e) {
+    try { window.print() } catch(e2) {}
+  }
+}
+
+
 function _repAiSummaryBlock(btnId, outId) {
   const t = APP.language==='bm' ? { label:'Ringkasan AI' } : { label:'AI Summary' }
   const reportType = btnId==='pnl-ai-btn' ? 'pnl' : 'bs'
@@ -21715,14 +21736,16 @@ async function renderTrialBalance() {
   }
   const today = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    ${_repPrintToolbar(isBm?'Imbangan-Duga':'Trial-Balance')}
+  </div>
   ${_repTabs('tb')}
-  <div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+  <div class="card no-print" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
     <div class="form-group"><label class="form-label">${t.asOf}</label><input id="tb-asof" type="date" class="form-input" value="${today}"></div>
     <button class="btn btn-primary btn-sm" onclick="_tbLoad()">${t.apply}</button>
     <div style="margin-left:auto">${_periodQuickBar('tb', "_repPickAsOf.bind(null,'tb-asof',_tbLoad)")}</div>
   </div>
-  <div id="tb-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  <div id="tb-result" class="rep-print-area"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _tbLoad()
 }
 
@@ -21824,11 +21847,14 @@ async function renderPnL() {
     title:'Accounting / Reports', revenue:'Revenue', expense:'Expenses', netProfit:'Net Profit/(Loss)',
     account:'Account', amount:'Amount', noData:'No data for this period'
   }
+  const pnlPrintTitle = APP.language==='bm' ? 'Penyata-Pendapatan' : 'Income-Statement'
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    ${_repPrintToolbar(pnlPrintTitle)}
+  </div>
   ${_repTabs('pnl')}
-  ${_repDateRangeBar('pnl-from','pnl-to','_pnlLoad()')}
-  <div id="pnl-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  <div class="no-print">${_repDateRangeBar('pnl-from','pnl-to','_pnlLoad()')}</div>
+  <div id="pnl-result" class="rep-print-area"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _pnlLoad()
 }
 
@@ -21856,7 +21882,10 @@ async function _pnlLoad() {
   const expRows = expAccounts.map(a=>{ const b=byAccount[a.id]||{debit:0,credit:0}; const amt=b.debit-b.credit; totalExp+=amt; return {a,amt} }).filter(r=>r.amt!==0)
 
   const periodLabel = (APP.language==='bm' ? 'Tempoh' : 'Period') + ': ' + formatDate(from) + ' — ' + formatDate(to)
-  result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
+  const coName = (APP.tenant && APP.tenant.name) || 'Company'
+  result.innerHTML = `<div class="card rep-print-card" style="max-width:700px;padding:20px">
+    <div class="print-only" style="display:none;font-weight:700;font-size:16px;margin-bottom:4px">${_aiEscapeHtml(coName)}</div>
+    <div class="print-only" style="display:none;font-size:14px;margin-bottom:8px">${APP.language==='bm'?'Penyata Pendapatan':'Income Statement'}</div>
     <div style="font-size:13px;color:var(--text-3);margin-bottom:14px">${periodLabel}</div>
     <div style="font-weight:700;margin-bottom:8px">${t.revenue}</div>
     <table><tbody>${revRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
@@ -21885,14 +21914,16 @@ async function renderBalanceSheet() {
   }
   const today = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    ${_repPrintToolbar(APP.language==='bm'?'Kunci-Kira-kira':'Balance-Sheet')}
+  </div>
   ${_repTabs('bs')}
-  <div class="card" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+  <div class="card no-print" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
     <div class="form-group"><label class="form-label">${t.asOf}</label><input id="bs-asof" type="date" class="form-input" value="${today}"></div>
     <button class="btn btn-primary btn-sm" onclick="_bsLoad()">${t.apply}</button>
     <div style="margin-left:auto">${_periodQuickBar('bs', "_repPickAsOf.bind(null,'bs-asof',_bsLoad)")}</div>
   </div>
-  <div id="bs-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  <div id="bs-result" class="rep-print-area"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _bsLoad()
 }
 
@@ -22171,10 +22202,12 @@ async function renderSalesReport() {
     title:'Sales Report', invoiced:'Total Invoiced', collected:'Total Collected', outstanding:'Outstanding', count:'Invoice Count'
   }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    ${_repPrintToolbar(APP.language==='bm'?'Laporan-Jualan':'Sales-Report')}
+  </div>
   ${_repTabs('sales')}
-  ${_repDateRangeBar('sales-from','sales-to','_salesRepLoad()')}
-  <div id="sales-rep-result"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+  <div class="no-print">${_repDateRangeBar('sales-from','sales-to','_salesRepLoad()')}</div>
+  <div id="sales-rep-result" class="rep-print-area"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
   await _salesRepLoad()
 }
 
