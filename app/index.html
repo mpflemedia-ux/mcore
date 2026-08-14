@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-14-pinall">
+<meta name="nexerp-build" content="2026-08-14-ppldel">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4163,8 +4163,19 @@ async function _dbLoadPeople() {
     const empIds = [...new Set(list.map(a => a.employee_id).filter(Boolean))]
     let empMap = {}
     if(empIds.length) {
-      const {data: emps} = await sb.from('employees').select('id, name, position').in('id', empIds)
+      // Only active (non-deleted) employees — soft-deleted must not appear on People card
+      const {data: emps} = await sb.from('employees')
+        .select('id, name, position')
+        .in('id', empIds)
+        .eq('tenant_id', APP.tenant.id)
+        .is('deleted_at', null)
       ;(emps||[]).forEach(e => { empMap[e.id] = e })
+    }
+    // Drop attendance rows for deleted / unknown employees
+    list = list.filter(a => a.employee_id && empMap[a.employee_id])
+    if(!list.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada rekod kehadiran hari ini':'No attendance logged today'}</div>`
+      return
     }
     const badge = _dbAttStatusBadge(isBm)
     el.innerHTML = list.map(a => {
