@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-wa">
+<meta name="nexerp-build" content="2026-08-15-dashfix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1952,18 +1952,27 @@ function openPage(page, params={}) {
   const main = document.getElementById('main')
   main.innerHTML = '<div class="page-loading"><div class="spinner dark"></div></div>'
   setTimeout(()=>{
+    const _safeRender = (fn) => {
+      try { fn() } catch(err) {
+        console.error('openPage render', page, err)
+        const m = document.getElementById('main')
+        if(m) m.innerHTML = `<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">Page error: ${String(err && err.message || err)}</p>
+          <button type="button" class="btn btn-outline" onclick="openPage('dashboard',{})">Dashboard</button></div>`
+        try { showToast('Page error: '+(err && err.message || err), 'error') } catch(e) {}
+      }
+    }
     switch(page){
-      case 'dashboard':  renderDashboard(); break
-      case 'crm':        renderCRM(params); break
-      case 'sales':      renderSales(params); break
-      case 'pos':        renderPOS(params); break
-      case 'inventory':  renderInventory(params); break
-      case 'logistics':  renderLogistics(params); break
-      case 'purchasing': renderPurchasing(params); break
-      case 'production': renderProduction(params); break
-      case 'hr':         renderHR(params); break
-      case 'applicants': renderJobApplicants(params); break
-      case 'accounting': renderAccounting(params); break
+      case 'dashboard':  _safeRender(() => renderDashboard()); break
+      case 'crm':        _safeRender(() => renderCRM(params)); break
+      case 'sales':      _safeRender(() => renderSales(params)); break
+      case 'pos':        _safeRender(() => renderPOS(params)); break
+      case 'inventory':  _safeRender(() => renderInventory(params)); break
+      case 'logistics':  _safeRender(() => renderLogistics(params)); break
+      case 'purchasing': _safeRender(() => renderPurchasing(params)); break
+      case 'production': _safeRender(() => renderProduction(params)); break
+      case 'hr':         _safeRender(() => renderHR(params)); break
+      case 'applicants': _safeRender(() => renderJobApplicants(params)); break
+      case 'accounting': _safeRender(() => renderAccounting(params)); break
       case 'vouchers':   renderPaymentVouchers(params); break
       case 'reports':    renderReports(params); break
       case 'admin':      renderAdmin(params); break
@@ -3675,6 +3684,10 @@ async function _dbMonthPnL(fromDate, toDateInclusive) {
 
 async function loadDashboardData() {
   try {
+    if(!APP.tenant || !APP.tenant.id) {
+      console.warn('loadDashboardData: no tenant')
+      return
+    }
     if(localStorage.getItem('nexerp_show_golive_banner')==='1' && isTenantAdmin()) {
       setTimeout(() => {
         const host = document.getElementById('page-content') || document.querySelector('main')
@@ -18567,8 +18580,6 @@ async function _payrollRunExecute() {
   showToast(isBm?'Payroll selesai dijalankan':'Payroll run complete', 'success')
 }
 
-
-async 
 /** Normalize MY mobile to WhatsApp international (60…). Empty → ''. */
 function _waNormalizeMyPhone(raw) {
   let p = String(raw || '').replace(/\D/g, '')
