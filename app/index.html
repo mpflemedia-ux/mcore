@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-ocrv2">
+<meta name="nexerp-build" content="2026-08-15-pcdesc">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8523,10 +8523,43 @@ function _pcParseReceiptText(text) {
     merchant = merchant.replace(/[^\w\s&.'-]/g, '').trim().slice(0, 60)
   }
 
+  // Description: what was bought / bill purpose (not just merchant)
+  let description = null
+  const itemSkip = /total|jumlah|debit|credit|change|founding|gst|sst|tax|subtotal|tunggakan|caj|deposit|bayaran|tarikh|amaun|kadar|blok|meter|points|visit|thank|reg\s*no|sdn|bhd|akaun|invois|estimate|tarif|prorata|pelarasan|penggenapan|cash|card|qty|item|tel|phone|\brm\b|myr/i
+  const items = []
+  for(const line of lines) {
+    if(itemSkip.test(line)) continue
+    // retail: code + name + price at end  e.g. (9555...) LTS 3PLY T   8.99
+    const m = line.match(/^[\(\#]?\d{6,}[\)]?\s+(.+?)\s+(\d{1,6}[.,]\d{2})\s*$/)
+    if(m) {
+      let name = m[1].replace(/\s+/g, ' ').trim()
+      if(name.length >= 2 && name.length <= 40) items.push(name)
+      continue
+    }
+    // name + price only
+    const m2 = line.match(/^([A-Za-z][A-Za-z0-9 \-\/&']{2,35})\s+(\d{1,6}[.,]\d{2})\s*$/)
+    if(m2 && !/lotus|sada|tenaga|aeon|giant/i.test(m2[1])) {
+      items.push(m2[1].trim())
+      continue
+    }
+  }
+  if(items.length) {
+    description = items.slice(0, 6).join(', ')
+    if(items.length > 6) description += '…'
+  } else {
+    // utility / purpose from header
+    if(/bil\s*air|sada|air\s*selangor/i.test(norm)) description = (merchant ? merchant + ' — ' : '') + 'Bil air'
+    else if(/tnb|tenaga|elektrik|electric/i.test(norm)) description = (merchant ? merchant + ' — ' : '') + 'Bil elektrik'
+    else if(/iwk|indah\s*water|pembetungan/i.test(norm)) description = (merchant ? merchant + ' — ' : '') + 'Bil pembetungan'
+    else if(/petrol|petronas|shell|\bbhp\b/i.test(norm)) description = 'Minyak / petrol'
+    else if(merchant) description = merchant
+  }
+
   return {
     amount,
     date: dateStr,
     merchant: merchant || null,
+    description: description || null,
     amountSrc,
     raw: norm.slice(0, 1000)
   }
@@ -8604,7 +8637,7 @@ async function _pcOcrFilesSelected(floatId) {
         expense_date: parsed.date || new Date().toISOString().slice(0,10),
         merchant: parsed.merchant || '',
         amount: parsed.amount,
-        description: parsed.merchant || file.name,
+        description: parsed.description || parsed.merchant || file.name,
         receipt_status: damaged ? 'damaged' : 'ok',
         receipt_note: damaged
           ? ((isBm ? 'OCR tak jumpa jumlah — isi manual. ' : 'OCR missed amount — enter manually. ') + (parsed.raw||'').slice(0,120))
