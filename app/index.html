@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-fn">
+<meta name="nexerp-build" content="2026-08-15-accprt">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8812,10 +8812,13 @@ async function renderJournalList() {
   document.getElementById('main').innerHTML = `
   <div class="page-header">
     <div><div class="page-title">${t.title}</div></div>
-    <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'journal-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    <div class="no-print" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${_repPrintToolbar('JournalEntries',{fromId:'jnl-from',toId:'jnl-to'})}
+      <button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'journal-form'})"><i class="ti ti-plus"></i> ${t.add}</button>
+    </div>
   </div>
-  ${_accTabs('journal')}
-  <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+  <div class="no-print">${_accTabs('journal')}</div>
+  <div class="card no-print" style="padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0"><label class="form-label">${t.from}</label>
       <input type="date" id="jnl-from" class="form-input" value="${window._jnlFilter.from||''}" style="width:150px"></div>
     <div class="form-group" style="margin:0"><label class="form-label">${t.to}</label>
