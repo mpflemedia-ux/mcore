@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-sdauto2">
+<meta name="nexerp-build" content="2026-08-15-zindep">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18934,6 +18934,7 @@ async function renderSalaryDisbursement(month, year) {
           <div class="pdoc-sd-line"><label>SOCSO</label><span class="print-only pdoc-sd-print-line" id="sd-print-socso-${r.id}">${_sdPrintAmt(r.socso_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-${r.id}" value="${r.socso_employee||0}" oninput="_sdRecalc()"></div>
           <div class="pdoc-sd-line"><label>EIS</label><span class="print-only pdoc-sd-print-line" id="sd-print-eis-${r.id}">${_sdPrintAmt(r.eis_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" value="${r.eis_employee||0}" oninput="_sdRecalc()"></div>
           <div class="pdoc-sd-line"><label>PCB</label><span class="print-only pdoc-sd-print-line" id="sd-print-pcb-${r.id}">${_sdPrintAmt(r.pcb)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" value="${r.pcb||0}" oninput="_sdRecalc()"></div>
+          <div class="pdoc-sd-line"><label>Zakat</label><span class="print-only pdoc-sd-print-line" id="sd-print-zakat-${r.id}">${_sdPrintAmt(r.zakat)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-zakat-${r.id}" value="${r.zakat||0}" oninput="_sdRecalc()"></div>
           <div class="pdoc-sd-employer-note">${isBm?'Majikan':'Er'}: EPF ${_sdPrintAmt(r.epf_employer)} · SOCSO ${_sdPrintAmt(r.socso_employer)} · EIS ${_sdPrintAmt(r.eis_employer)}</div>
         </div>
       </td>
@@ -19142,12 +19143,20 @@ function _sdBindSigPersist() {
   })
 }
 
+function _sdInputNum(id, fallback) {
+  const el = document.getElementById(id)
+  if(!el) return Math.max(0, Number(fallback) || 0) // field not in DOM — keep record value
+  if(el.value === '' || el.value == null) return 0 // user cleared
+  const n = Number(el.value)
+  return Number.isFinite(n) ? Math.max(0, n) : 0
+}
 function _sdRowValues(r) {
-  const epf_employee = Number(document.getElementById(`sd-epf-${r.id}`)?.value) || 0
-  const socso_employee = Number(document.getElementById(`sd-socso-${r.id}`)?.value) || 0
-  const eis_employee = Number(document.getElementById(`sd-eis-${r.id}`)?.value) || 0
-  const pcb = Number(document.getElementById(`sd-pcb-${r.id}`)?.value) || 0
-  const zakat = Number(document.getElementById(`sd-zakat-${r.id}`)?.value) || 0
+  // Each statutory field is independent — clearing PCB must never wipe Zakat
+  const epf_employee = _sdInputNum(`sd-epf-${r.id}`, r.epf_employee)
+  const socso_employee = _sdInputNum(`sd-socso-${r.id}`, r.socso_employee)
+  const eis_employee = _sdInputNum(`sd-eis-${r.id}`, r.eis_employee)
+  const pcb = _sdInputNum(`sd-pcb-${r.id}`, r.pcb)
+  const zakat = _sdInputNum(`sd-zakat-${r.id}`, r.zakat)
   const allowance_type_1 = document.getElementById(`sd-atype1-${r.id}`)?.value || null
   const allowance_1 = Number(document.getElementById(`sd-a1-${r.id}`)?.value) || 0
   const allowance_type_2 = document.getElementById(`sd-atype2-${r.id}`)?.value || null
@@ -19200,6 +19209,10 @@ function _sdRecalc() {
     sumZakat += Number(v.zakat||0)
     const cell = document.getElementById(`sd-net-${r.id}`)
     if(cell) cell.textContent = formatRM(v.net_pay)
+    const zPrint = document.getElementById(`sd-print-zakat-${r.id}`)
+    if(zPrint) zPrint.innerHTML = _sdPrintAmt(v.zakat)
+    const pPrint = document.getElementById(`sd-print-pcb-${r.id}`)
+    if(pPrint) pPrint.innerHTML = _sdPrintAmt(v.pcb)
     _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
     _sdMarkAmended(`sd-socso-${r.id}`, r.socso_employee)
     _sdMarkAmended(`sd-eis-${r.id}`, r.eis_employee)
