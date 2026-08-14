@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-pzb">
+<meta name="nexerp-build" content="2026-08-15-sdauto2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18797,16 +18797,42 @@ async function renderSalaryDisbursement(month, year) {
 
   const wrap = document.getElementById('sd-content')
   const {data, error} = await sb.from('payroll_records')
-    .select(`id,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,net_pay,
+    .select(`id,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,zakat,net_pay,
       allowance_type_1,allowance_1,allowance_type_2,allowance_2,allowance_type_3,allowance_3,
-      advance,deduction_type_1,deduction_1,deduction_type_2,deduction_2,
-      employees(name,bank_name,bank_account_no)`)
+      advance,deduction_type_1,deduction_1,deduction_type_2,deduction_2,employee_id,
+      employees(name,bank_name,bank_account_no,ic_no,basic_salary,zakat_enabled,zakat_amount)`)
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p><p style="font-size:12px;color:#64748B">${t.runPayrollFirst}</p></div>`
     return
   }
+  // Auto-fill statutory from current employee calc when record is empty/stale
+  // (user can still edit; Save persists). Keeps SD in sync with Run Payroll rules.
+  ;(data||[]).forEach(r => {
+    const emp = r.employees || {}
+    const calc = _calcPayroll({
+      basic_salary: r.basic_salary != null ? r.basic_salary : emp.basic_salary,
+      ic_no: emp.ic_no,
+      zakat_enabled: emp.zakat_enabled,
+      zakat_amount: emp.zakat_amount
+    })
+    const keys = ['epf_employee','epf_employer','socso_employee','socso_employer','eis_employee','eis_employer','pcb','zakat']
+    const recStat = keys.reduce((s,k)=>s+Number(r[k]||0),0)
+    const calcStat = keys.reduce((s,k)=>s+Number(calc[k]||0),0)
+    // Fill nulls always; if entire statutory block is 0 but calc has values → refresh
+    keys.forEach(k => {
+      if(r[k] == null || r[k] === '') r[k] = calc[k]
+    })
+    if(recStat === 0 && calcStat > 0) {
+      keys.forEach(k => { r[k] = calc[k] })
+      r.net_pay = calc.net_pay
+    }
+    // Zakat: prefer employee master if enabled
+    if(emp.zakat_enabled && Number(emp.zakat_amount)>0 && !(Number(r.zakat)>0)) {
+      r.zakat = calc.zakat
+    }
+  })
   _sdRecords = data
 
   const sumSalary = data.reduce((s,r)=>s+Number(r.basic_salary||0),0)
@@ -19121,6 +19147,7 @@ function _sdRowValues(r) {
   const socso_employee = Number(document.getElementById(`sd-socso-${r.id}`)?.value) || 0
   const eis_employee = Number(document.getElementById(`sd-eis-${r.id}`)?.value) || 0
   const pcb = Number(document.getElementById(`sd-pcb-${r.id}`)?.value) || 0
+  const zakat = Number(document.getElementById(`sd-zakat-${r.id}`)?.value) || 0
   const allowance_type_1 = document.getElementById(`sd-atype1-${r.id}`)?.value || null
   const allowance_1 = Number(document.getElementById(`sd-a1-${r.id}`)?.value) || 0
   const allowance_type_2 = document.getElementById(`sd-atype2-${r.id}`)?.value || null
@@ -19134,8 +19161,8 @@ function _sdRowValues(r) {
   const deduction_2 = Number(document.getElementById(`sd-d2-${r.id}`)?.value) || 0
   const totalAllowance = allowance_1 + allowance_2 + allowance_3
   const totalDeduction = advance + deduction_1 + deduction_2
-  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance - epf_employee - socso_employee - eis_employee - pcb - totalDeduction) * 100) / 100
-  return { epf_employee, socso_employee, eis_employee, pcb, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, net_pay }
+  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance - epf_employee - socso_employee - eis_employee - pcb - zakat - totalDeduction) * 100) / 100
+  return { epf_employee, socso_employee, eis_employee, pcb, zakat, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, net_pay }
 }
 
 function _sdMarkAmended(inputId, originalValue) {
@@ -19148,7 +19175,7 @@ function _sdMarkAmended(inputId, originalValue) {
 
 function _sdRecalc() {
   let grand = 0, sumAllow = 0, sumStat = 0, sumOther = 0, sumSalary = 0, sumEmployer = 0
-  let sumEPF = 0, sumSOCSO = 0, sumEIS = 0, sumPCB = 0
+  let sumEPF = 0, sumSOCSO = 0, sumEIS = 0, sumPCB = 0, sumZakat = 0
   _sdRecords.forEach(r => {
     const v = _sdRowValues(r)
     grand += v.net_pay
@@ -19157,7 +19184,7 @@ function _sdRecalc() {
     // sumStat IS the "Total Employee Contrib. (EPF+SOCSO+EIS+PCB)" figure —
     // one definition, reused everywhere (footer line, summary bar, and the
     // Budget Approval Summary), so it can never drift between the three.
-    sumStat += Number(v.epf_employee||0)+Number(v.socso_employee||0)+Number(v.eis_employee||0)+Number(v.pcb||0)
+    sumStat += Number(v.epf_employee||0)+Number(v.socso_employee||0)+Number(v.eis_employee||0)+Number(v.pcb||0)+Number(v.zakat||0)
     sumOther += Number(v.advance||0)+Number(v.deduction_1||0)+Number(v.deduction_2||0)
     // Employer-side isn't editable on this screen, but recompute from the
     // live record set anyway (not just the initial page-load value) so it
@@ -19170,16 +19197,18 @@ function _sdRecalc() {
     sumSOCSO += Number(v.socso_employee||0)+Number(r.socso_employer||0)
     sumEIS += Number(v.eis_employee||0)+Number(r.eis_employer||0)
     sumPCB += Number(v.pcb||0)
+    sumZakat += Number(v.zakat||0)
     const cell = document.getElementById(`sd-net-${r.id}`)
     if(cell) cell.textContent = formatRM(v.net_pay)
     _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
     _sdMarkAmended(`sd-socso-${r.id}`, r.socso_employee)
     _sdMarkAmended(`sd-eis-${r.id}`, r.eis_employee)
     _sdMarkAmended(`sd-pcb-${r.id}`, r.pcb)
+    _sdMarkAmended(`sd-zakat-${r.id}`, r.zakat)
   })
   const companyCost = sumSalary + sumAllow + sumEmployer
   // Same as render: Net + EPF + SOCSO + EIS + PCB (all portions)
-  const budgetRequired = grand + sumEPF + sumSOCSO + sumEIS + sumPCB
+  const budgetRequired = grand + sumEPF + sumSOCSO + sumEIS + sumPCB + sumZakat
   const setTxt = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt }
   setTxt('sd-grand-total', formatRM(grand))
   setTxt('sd-summary-total', formatRM(grand))
@@ -19191,6 +19220,8 @@ function _sdRecalc() {
   setTxt('sd-summary-socso', formatRM(sumSOCSO))
   setTxt('sd-summary-eis', formatRM(sumEIS))
   setTxt('sd-summary-pcb', formatRM(sumPCB))
+  setTxt('sd-summary-zakat', formatRM(sumZakat))
+  setTxt('sd-grand-zakat', formatRM(sumZakat))
   setTxt('sd-summary-budget', formatRM(budgetRequired))
   setTxt('sd-grand-epf', formatRM(sumEPF))
   setTxt('sd-grand-socso', formatRM(sumSOCSO))
