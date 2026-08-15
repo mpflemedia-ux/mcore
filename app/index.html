@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-jnlsort">
+<meta name="nexerp-build" content="2026-08-16-pcjnl">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9374,6 +9374,10 @@ async function _pcRenderDetail(floatId, t, isBm) {
       <button class="btn btn-outline btn-sm" onclick="openPage('accounting',{view:'petty'})">${t.back}</button></div>`
     return
   }
+  // Soft backfill issue journal if skipped earlier (idempotent via source_table+source_id)
+  try {
+    await _pcPostIssueJournal(f.id, f.holder_name || 'Staff', Number(f.amount||0), f.issued_date || new Date().toISOString().slice(0,10))
+  } catch(e) { console.warn('pc journal backfill', e) }
   const {data: exps} = await sb.from('petty_cash_expenses').select('*')
     .eq('float_id', floatId).eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .order('expense_date', {ascending:false})
