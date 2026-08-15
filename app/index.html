@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-obtside">
+<meta name="nexerp-build" content="2026-08-16-attpol">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21483,7 +21483,7 @@ async function renderAttendance(params={}) {
     </div>
   </div>
   <div class="card">
-  <div class="card" style="padding:14px;margin-bottom:14px" id="att-controls-panel">
+  ${canManageHR() ? `<div class="card" style="padding:14px;margin-bottom:14px" id="att-controls-panel">
     <div style="font-weight:600;margin-bottom:8px"><i class="ti ti-shield-check"></i> ${isBm?'Kawalan kehadiran':'Attendance controls'}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Mula kerja':'Work start'}</label><input type="time" id="att-set-start" class="form-input" value="09:00"></div>
@@ -21492,8 +21492,9 @@ async function renderAttendance(params={}) {
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Kod pejabat hari ini':'Office code today'}</label><input type="text" id="att-set-code" class="form-input" placeholder="e.g. 4821"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="att-set-code-on"> ${isBm?'Wajib kod pejabat (mod Office)':'Require office code (Office mode)'}</label>
-    <button class="btn btn-outline btn-sm" type="button" onclick="_attSavePolicy()" ${'${canManageHR() ? "" : "disabled"}'}><i class="ti ti-device-floppy"></i> ${isBm?'Simpan polisi':'Save policy'}</button>
-    <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+    <button class="btn btn-outline btn-sm" type="button" onclick="_attSavePolicy()"><i class="ti ti-device-floppy"></i> ${isBm?'Simpan polisi':'Save policy'}</button>
+  </div>` : ''}
+  <div class="card" style="padding:14px;margin-bottom:14px" id="att-outstation-panel">
     <div style="font-weight:600;margin-bottom:6px">${isBm?'Permohonan outstation':'Outstation request'}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <input type="date" id="os-from" class="form-input">
