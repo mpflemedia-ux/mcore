@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-attpol">
+<meta name="nexerp-build" content="2026-08-16-stgbox">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6646,8 +6646,17 @@ async function renderSettings(params={}) {
         {id:'stg-replay-tour', en:'Welcome Tour', bm:'Tur Panduan'}
       )
     }
-    return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:16px">
-      ${items.map(it=>`<button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;flex:none" onclick="document.getElementById('${it.id}')?.scrollIntoView({behavior:'smooth',block:'start'})">${isBm?it.bm:it.en}</button>`).join('')}
+    const icons = {
+      'stg-golive':'ti-rocket', 'stg-default-accounts':'ti-link', 'stg-backfill':'ti-database-import',
+      'stg-compliance':'ti-certificate', 'stg-tax':'ti-receipt-tax', 'stg-docgen':'ti-file-text',
+      'stg-periodlock':'ti-lock', 'stg-pin':'ti-password', 'stg-replay-tour':'ti-map',
+      'stg-backup':'ti-cloud-download', 'stg-fraud':'ti-shield-search', 'stg-audit':'ti-list-details',
+      'stg-roles':'ti-user-shield'
+    }
+    return `<div class="card" style="padding:8px;margin-bottom:16px">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm,8px);padding:4px">
+        ${items.map(it=>`<button type="button" class="btn btn-sm btn-outline" style="border:none;white-space:nowrap" onclick="document.getElementById('${it.id}')?.scrollIntoView({behavior:'smooth',block:'start'})"><i class="ti ${icons[it.id]||'ti-point'}"></i> ${isBm?it.bm:it.en}</button>`).join('')}
+      </div>
     </div>`
   })()}
   <div class="card" style="max-width:500px" id="stg-account">
