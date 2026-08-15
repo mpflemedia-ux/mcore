@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-dbsame">
+<meta name="nexerp-build" content="2026-08-15-dbrevert">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -507,19 +507,10 @@ html[data-skip-intro="1"] #intro-skip {
 .db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:12px;padding:12px 12px 10px 14px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s}
 .db-hero-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 @media (max-width:900px){.db-hero-row{grid-template-columns:1fr}}
-.db-ops-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:stretch}
-.db-ops-row > .db-card{
-  height:200px;min-height:200px;max-height:200px;
-  display:flex;flex-direction:column;padding:10px 12px;overflow:hidden;box-sizing:border-box
-}
-.db-ops-row .db-card-title{margin-bottom:6px!important;flex-shrink:0;font-size:13px}
-.db-ops-row .db-chart-slot{position:relative;flex:1 1 auto;min-height:0;height:120px;max-height:120px;width:100%}
-.db-ops-row .db-card-foot{font-size:10px;color:var(--db-text3);margin-top:4px;line-height:1.25;opacity:.95;flex-shrink:0}
-.db-ops-row .db-donut-wrap{width:100px;height:100px;margin:0 auto;position:relative;flex-shrink:0}
-.db-ops-row .db-donut-center{font-size:11px}
-.db-ops-row .db-donut-center > div:first-child{font-size:16px!important}
-.db-ops-row #db-status-legend{font-size:11px;line-height:1.35;margin-top:4px;overflow:hidden;max-height:48px}
-.db-ops-row .db-toggle-group{flex-shrink:0}
+.db-ops-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
+.db-ops-row > .db-card{display:flex;flex-direction:column;min-height:0}
+.db-ops-row .db-chart-slot{position:relative;flex:1;min-height:220px;width:100%}
+.db-ops-row .db-card-foot{font-size:11px;color:var(--db-text4);margin-top:6px;line-height:1.35}
 @media (max-width:900px){.db-ops-row{grid-template-columns:1fr}}
 .db-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .db-mini-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -569,7 +560,7 @@ html[data-skip-intro="1"] #intro-skip {
 .db-legend-item{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--db-text2);padding:4px 0}
 .db-legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .db-donut-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
-.db-donut-wrap{position:relative;display:flex;justify-content:center;margin-bottom:0}
+.db-donut-wrap{position:relative;display:flex;justify-content:center;margin-bottom:12px}
 @media (max-width:900px){.db-row,.db-bottom-row{grid-template-columns:1fr}}
 .db-people-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
 @media (max-width:900px){.db-people-row{grid-template-columns:1fr}}
@@ -3512,8 +3503,8 @@ function renderDashboard() {
     <!-- Hero charts: Sales trend (wide) + Invoice mix -->
     <div class="db-hero-row">
       <div class="db-card db-card-glow">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;flex-shrink:0">
-          <div class="db-card-title" style="margin-bottom:0"><i class="ti ti-chart-area-line"></i> ${isBm?'Trend Jualan & Kutipan':'Sales & Collections Trend'}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="db-card-title"><i class="ti ti-chart-area-line"></i> ${isBm?'Trend Jualan & Kutipan':'Sales & Collections Trend'}</div>
           <div class="db-toggle-group" id="db-period-toggle">
             <div class="db-toggle" data-p="daily" onclick="_dbSetPeriod('daily')">${isBm?'Harian':'Daily'}</div>
             <div class="db-toggle active" data-p="weekly" onclick="_dbSetPeriod('weekly')">${isBm?'Mingguan':'Weekly'}</div>
@@ -3526,13 +3517,11 @@ function renderDashboard() {
         <div class="db-card-foot">${isBm?'Jualan diiktiraf = paid_amt (Paid/Partial) + POS':'Recognised sales = paid_amt (Paid/Partial) + POS'}</div>
       </div>
       <div class="db-card">
-        <div class="db-card-title"><i class="ti ti-chart-donut-3"></i> ${isBm?'Mix Status Invois':'Invoice Status Mix'}</div>
-        <div class="db-chart-slot" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;max-height:120px">
-          <div class="db-donut-wrap"><canvas id="db-status-donut" width="100" height="100"></canvas>
-            <div class="db-donut-center"><div style="font-size:16px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:10px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
-          </div>
-          <div id="db-status-legend"></div>
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut-3"></i> ${isBm?'Mix Status Invois':'Invoice Status Mix'}</div>
+        <div class="db-donut-wrap"><canvas id="db-status-donut" width="170" height="170"></canvas>
+          <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
         </div>
+        <div id="db-status-legend"></div>
       </div>
     </div>
 
