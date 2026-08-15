@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-dbrevert">
+<meta name="nexerp-build" content="2026-08-15-lowstock">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4127,7 +4127,7 @@ async function loadDashboardData() {
   try { _dbRenderStatusDonut(thisMonthAll) } catch(e) { console.warn('chart status', e) }
   try { _dbRenderPnLChart() } catch(e) { console.warn('chart pnl', e) }
   try { _dbRenderTopCustomers(thisMonth) } catch(e) { console.warn('top cust', e) }
-  try { _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
+  try { await _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
   try { _dbLoadPeople() } catch(e) { console.warn('people', e) }
   try { _dbLoadRecentActivity() } catch(e) { console.warn('activity', e) }
   try { _dbLoadAttTracker() } catch(e) { console.warn('att tracker', e) }
@@ -5140,6 +5140,54 @@ function _dbRenderStatusDonut(thisMonthAll) {
   const legend = document.getElementById('db-status-legend')
   if(legend) {
     legend.innerHTML = labels.map((l,i)=>`<div class="db-legend-item"><span class="db-legend-dot" style="background:${colors[i]}"></span>${l} <span style="margin-left:auto;font-weight:600;color:var(--db-text)">${values[i]}</span></div>`).join('')
+  }
+}
+
+async function _dbRenderLowStock() {
+  const isBm = APP.language === 'bm'
+  const el = document.getElementById('db-low-stock')
+  if(!el) return
+  try {
+    if(!APP.tenant?.id) {
+      el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:16px 0;text-align:center">${isBm?'Tiada tenant':'No tenant'}</div>`
+      return
+    }
+    const { data: products, error } = await sb.from('products')
+      .select('id,name_en,name_bm,stock_qty,reorder_point,unit')
+      .eq('tenant_id', APP.tenant.id)
+      .is('deleted_at', null)
+      .limit(400)
+    if(error) throw error
+    const low = (products || [])
+      .filter(p => Number(p.stock_qty) <= Number(p.reorder_point != null ? p.reorder_point : 5))
+      .sort((a, b) => Number(a.stock_qty) - Number(b.stock_qty))
+      .slice(0, 8)
+    if(!low.length) {
+      el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:20px 0;text-align:center">${isBm?'Tiada produk stok rendah':'No low-stock products'}</div>`
+      return
+    }
+    const rows = low.map(p => {
+      const name = (isBm ? (p.name_bm || p.name_en) : (p.name_en || p.name_bm)) || '—'
+      const qty = Number(p.stock_qty || 0)
+      const rp = Number(p.reorder_point != null ? p.reorder_point : 5)
+      const unit = p.unit || ''
+      return `<tr>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));color:var(--db-text)">${name.replace(/</g,'&lt;')}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));text-align:right;color:${qty<=0?'#EF4444':'#F59E0B'};font-weight:600">${qty}${unit?' '+unit:''}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));text-align:right;color:var(--db-text4)">${rp}</td>
+      </tr>`
+    }).join('')
+    el.innerHTML = `<div class="db-table-scroll"><table class="db-mini-table" style="width:100%">
+      <thead><tr>
+        <th style="text-align:left;padding:6px;color:var(--db-text4)">${isBm?'Produk':'Product'}</th>
+        <th style="text-align:right;padding:6px;color:var(--db-text4)">${isBm?'Stok':'Stock'}</th>
+        <th style="text-align:right;padding:6px;color:var(--db-text4)">${isBm?'Min':'Reorder'}</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`
+  } catch(e) {
+    console.warn('_dbRenderLowStock', e)
+    el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:16px 0;text-align:center">${isBm?'Gagal muat stok':'Failed to load stock'}</div>`
   }
 }
 
