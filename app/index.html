@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-dbscroll">
+<meta name="nexerp-build" content="2026-08-16-anda">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5271,7 +5271,7 @@ function _dbInsightActiveSlot(now) {
   return active // null = before Zohor
 }
 function _dbInsightStoreKey() {
-  return 'nexerp_db_insights_' + (APP.tenant?.id || 'none')
+  return 'nexerp_db_insights_v2_' + (APP.tenant?.id || 'none')
 }
 function _dbInsightNotifKey() {
   return 'nexerp_db_insight_notifs_' + (APP.tenant?.id || 'none')
@@ -5377,6 +5377,21 @@ function _dbInsightFmtRM(n) {
 }
 function _dbInsightPct(n) {
   return (Math.round(Number(n||0) * 10) / 10).toFixed(1)
+}
+
+/** Address the tenant owner as "anda" / "you" — never kita/kami/we. */
+function _dbInsightToSecondPerson(text, isBm) {
+  if(text == null || text === '') return text
+  let t = String(text)
+  if(isBm) {
+    t = t.replace(/\bKami\b/g, 'Anda').replace(/\bkami\b/g, 'anda')
+    t = t.replace(/\bKita\b/g, 'Anda').replace(/\bkita\b/g, 'anda')
+  } else {
+    t = t.replace(/\bWe\b/g, 'You').replace(/\bwe\b/g, 'you')
+    t = t.replace(/\bOur\b/g, 'Your').replace(/\bour\b/g, 'your')
+    t = t.replace(/\bUs\b/g, 'You').replace(/\bus\b/g, 'you')
+  }
+  return t
 }
 
 /** Deterministic fallback (same rules / numbers) if AI API fails. */
@@ -5492,9 +5507,13 @@ function _dbInsightFacts(card, ctx) {
 async function _dbInsightAI(card, ctx, isBm) {
   const facts = _dbInsightFacts(card, ctx)
   const lang = isBm ? 'Bahasa Melayu Malaysia, casual Gen Z (bukan formal DBP rigid)' : 'English, casual Gen Z'
+  const voice = isBm
+    ? 'Address the business owner as "anda" only. NEVER use "kita" or "kami".'
+    : 'Address the business owner as "you/your" only. NEVER use "we/our/us".'
   const message =
     `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
     `Language: ${lang}.\n` +
+    `Voice: ${voice}\n` +
     `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
     `Facts JSON: ${JSON.stringify(facts)}`
   const { data, error } = await sb.functions.invoke('ai-proxy', {
@@ -5509,6 +5528,7 @@ async function _dbInsightAI(card, ctx, isBm) {
   let reply = (data.data && (data.data.reply || data.data.text || data.data.message)) || ''
   reply = String(reply).trim().replace(/^["']|["']$/g, '')
   if(!reply || reply.length < 12) throw new Error('empty AI reply')
+  reply = _dbInsightToSecondPerson(reply, isBm)
   // hard cap length for UI
   if(reply.length > 420) reply = reply.slice(0, 417) + '…'
   return reply
@@ -5534,6 +5554,7 @@ async function _dbFillCardInsights(ctx) {
       const el = document.getElementById(c.id)
       if(!el) return
       let body = (bodies && bodies[c.key]) || _dbInsightFallbackBody(c.key, ctx, isBm)
+      body = _dbInsightToSecondPerson(body, isBm)
       let tIdx = c.titleIdx
       if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
       el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + String(body).replace(/</g, '&lt;') + '</div>'
