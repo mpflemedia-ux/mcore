@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-dbhealth">
+<meta name="nexerp-build" content="2026-08-15-dblayout">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -507,7 +507,10 @@ html[data-skip-intro="1"] #intro-skip {
 .db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:12px;padding:12px 12px 10px 14px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s}
 .db-hero-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 @media (max-width:900px){.db-hero-row{grid-template-columns:1fr}}
-.db-ops-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.db-ops-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
+.db-ops-row > .db-card{min-height:340px;display:flex;flex-direction:column}
+.db-ops-row .db-chart-slot{position:relative;flex:1;min-height:230px;width:100%}
+.db-ops-row .db-card-foot{font-size:11px;color:var(--db-text3);margin-top:8px;line-height:1.35;opacity:.95}
 @media (max-width:900px){.db-ops-row{grid-template-columns:1fr}}
 .db-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .db-mini-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -3508,10 +3511,10 @@ function renderDashboard() {
             <div class="db-toggle" data-p="monthly" onclick="_dbSetPeriod('monthly')">${isBm?'Bulanan':'Monthly'}</div>
           </div>
         </div>
-        <div style="position:relative;min-height:220px">
-          <canvas id="db-growth-chart" height="110"></canvas>
+        <div class="db-chart-slot">
+          <canvas id="db-growth-chart"></canvas>
         </div>
-        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Jualan diiktiraf = paid_amt (Paid/Partial) + POS':'Recognised sales = paid_amt (Paid/Partial) + POS'}</div>
+        <div class="db-card-foot">${isBm?'Jualan diiktiraf = paid_amt (Paid/Partial) + POS':'Recognised sales = paid_amt (Paid/Partial) + POS'}</div>
       </div>
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut-3"></i> ${isBm?'Mix Status Invois':'Invoice Status Mix'}</div>
@@ -3522,36 +3525,40 @@ function renderDashboard() {
       </div>
     </div>
 
-    <!-- P&L bars + Top customers -->
-    <div class="db-ops-row">
-      <div class="db-card db-card-glow">
-        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Hasil vs Perbelanjaan (6 bulan)':'Revenue vs Expenses (6 mo)'}</div>
-        <div style="position:relative;min-height:200px">
-          <canvas id="db-pnl-chart" height="100"></canvas>
-        </div>
-        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Dari entri jurnal (akaun hasil & belanja)':'From journal entries (revenue & expense accounts)'}</div>
-      </div>
-      <div class="db-card">
-        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
-        <div id="db-top-customers"><div style="color:var(--db-text4);font-size:13px;padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
-      </div>
-    </div>
-
     <!-- Zone Power (combo) + Business Health (radar) -->
     <div class="db-ops-row">
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Kuasa Zon (Skor 0–100)':'Zone Power (Score 0–100)'}</div>
-        <div style="position:relative;min-height:220px">
-          <canvas id="db-zone-power-chart" height="110"></canvas>
+        <div class="db-chart-slot">
+          <canvas id="db-zone-power-chart"></canvas>
         </div>
-        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Bar = skor modul · Line = purata keseluruhan (tempoh semasa)':'Bars = module scores · Line = overall average (current period)'}</div>
+        <div class="db-card-foot">${isBm?'Bar = skor modul · Line = purata keseluruhan (tempoh semasa)':'Bars = module scores · Line = overall average (current period)'}</div>
       </div>
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-radar"></i> ${isBm?'Kesihatan Bisnes':'Business Health'}</div>
-        <div style="position:relative;min-height:220px;max-width:340px;margin:0 auto">
-          <canvas id="db-health-radar" height="110"></canvas>
+        <div class="db-chart-slot" style="max-width:360px;margin:0 auto">
+          <canvas id="db-health-radar"></canvas>
         </div>
-        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'6 paksi dari data tenant semasa (bukan target manual)':'6 axes from current tenant data (no manual targets)'}</div>
+        <div class="db-card-foot">${isBm?'6 paksi dari data tenant semasa (bukan target manual)':'6 axes from current tenant data (no manual targets)'}</div>
+      </div>
+    </div>
+
+    <!-- P&L bars + Top customers -->
+    <div class="db-ops-row">
+      <div class="db-card db-card-glow">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Hasil vs Perbelanjaan (6 bulan)':'Revenue vs Expenses (6 mo)'}</div>
+        <div class="db-chart-slot">
+          <canvas id="db-pnl-chart"></canvas>
+        </div>
+        <div class="db-card-foot">${isBm?'Dari entri jurnal (akaun hasil & belanja)':'From journal entries (revenue & expense accounts)'}</div>
+      </div>
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
+        <div class="db-chart-slot">
+          <canvas id="db-top-customers-chart"></canvas>
+        </div>
+        <div id="db-top-customers" class="db-card-foot" style="display:none"></div>
+        <div class="db-card-foot">${isBm?'Top 5 mengikut paid_amt tempoh semasa':'Top 5 by paid_amt this period'}</div>
       </div>
     </div>
 
@@ -4854,6 +4861,19 @@ function _dbSetPeriod(p) {
   _dbRenderGrowthChart(_dbInvCache)
 }
 
+function _dbChartTickColor() {
+  // Readable on dark + light dashboard themes
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+    || document.body.classList.contains('dark')
+    || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    || (getComputedStyle(document.documentElement).getPropertyValue('--db-bg') || '').includes('0')
+  // Prefer explicit contrast (Chart.js ignores CSS variables in canvas)
+  try {
+    const t = getComputedStyle(document.documentElement).getPropertyValue('--db-text3').trim()
+    if(t && t.startsWith('#')) return t
+  } catch(e) {}
+  return '#94A3B8'
+}
 function _dbClampScore(n) {
   const x = Number(n)
   if(!isFinite(x)) return 0
@@ -4941,12 +4961,12 @@ function _dbRenderZonePowerChart(scores) {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: 'var(--db-text3)', boxWidth: 10, font: { size: 11 } } },
+        legend: { labels: { color: _dbChartTickColor(), boxWidth: 10, font: { size: 11 } } },
         tooltip: { callbacks: { label: (x) => x.dataset.label + ': ' + x.raw } }
       },
       scales: {
-        x: { ticks: { color: 'var(--db-text4)', font: { size: 11 } }, grid: { display: false } },
-        y: { min: 0, max: 100, ticks: { color: 'var(--db-text4)', callback: v => v + '' }, grid: { color: 'rgba(128,128,128,.12)' } }
+        x: { ticks: { color: _dbChartTickColor(), font: { size: 11 } }, grid: { display: false } },
+        y: { min: 0, max: 100, ticks: { color: _dbChartTickColor(), callback: v => v + '' }, grid: { color: 'rgba(148,163,184,.12)' } }
       }
     }
   })
@@ -4987,7 +5007,7 @@ function _dbRenderHealthRadar(scores) {
           ticks: { display: false, backdropColor: 'transparent' },
           grid: { color: 'rgba(128,128,128,.15)' },
           angleLines: { color: 'rgba(128,128,128,.12)' },
-          pointLabels: { color: 'var(--db-text3)', font: { size: 11 } }
+          pointLabels: { color: _dbChartTickColor(), font: { size: 12, weight: '600' } }
         }
       }
     }
@@ -5124,71 +5144,79 @@ function _dbRenderStatusDonut(thisMonthAll) {
 }
 
 function _dbRenderTopCustomers(eligibleMonth) {
-  // Top 5 by collected (paid_amt) this period — same formula as Net Collected KPI.
-  const isBm = APP.language==='bm'
-  const el = document.getElementById('db-top-customers')
-  if(!el) return
-  const by = {}
-  ;(eligibleMonth||[]).forEach(i => {
-    const name = i.customer_name || (isBm?'Tanpa Nama':'Unnamed')
-    by[name] = (by[name]||0) + _dbPaidAmt(i)
-  })
-  const top = Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,5)
-  const max = top.length ? top[0][1] : 0
-  if(!top.length) {
-    el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:20px 0;text-align:center">${isBm?'Tiada kutipan bulan ini':'No collections this period'}</div>`
+  // Top 5 by collected (paid_amt) — horizontal bar chart (same formula as Net Collected).
+  const isBm = APP.language === 'bm'
+  const ctx = document.getElementById('db-top-customers-chart')
+  const fallback = document.getElementById('db-top-customers')
+  if(!ctx || typeof Chart === 'undefined') {
+    if(fallback) fallback.style.display = 'block'
     return
   }
-  el.innerHTML = top.map(([name, amt]) => {
-    const pct = max > 0 ? Math.round(amt/max*100) : 0
-    return `<div style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-        <span style="color:var(--db-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${_aiEscapeHtml(name)}</span>
-        <span style="color:var(--db-text2);font-weight:600">${formatRM(amt)}</span>
-      </div>
-      <div style="height:6px;background:var(--db-bg);border-radius:99px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:#0E7490;border-radius:99px"></div>
-      </div>
-    </div>`
-  }).join('')
-}
-
-
-async function _dbRenderLowStock() {
-  const isBm = APP.language==='bm'
-  const el = document.getElementById('db-low-stock')
-  if(!el) return
-  try {
-    const {data: products} = await sb.from('products').select('id,name_en,name_bm,stock_qty,reorder_point,unit')
-      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(300)
-    const low = (products||[])
-      .filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
-      .sort((a,b) => Number(a.stock_qty) - Number(b.stock_qty))
-      .slice(0, 5)
-    if(!low.length) {
-      el.innerHTML = `<div style="color:var(--db-text4);font-size:13px;padding:20px 0;text-align:center">${isBm?'Tiada produk stok rendah':'No low-stock products'}</div>`
-      return
+  const by = {}
+  ;(eligibleMonth || []).forEach(i => {
+    const name = i.customer_name || (isBm ? 'Tanpa Nama' : 'Unnamed')
+    by[name] = (by[name] || 0) + _dbPaidAmt(i)
+  })
+  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  _dbDestroy('topCust', ctx)
+  if(!top.length) {
+    if(fallback) {
+      fallback.style.display = 'block'
+      fallback.textContent = isBm ? 'Tiada kutipan tempoh ini' : 'No collections this period'
     }
-    el.innerHTML = `<div class="db-table-scroll"><table class="db-mini-table">
-      <thead><tr>
-        <th>${isBm?'Produk':'Product'}</th>
-        <th style="text-align:right">${isBm?'Stok':'Stock'}</th>
-        <th style="text-align:right">${isBm?'Pesan semula':'Reorder'}</th>
-      </tr></thead>
-      <tbody>${low.map(p => {
-        const name = (typeof prodName==='function') ? prodName(p) : (p.name_en||p.name_bm||'-')
-        return `<tr data-href="1" onclick="openPage('inventory',{view:'product-form',id:'${p.id}'})">
-          <td style="font-weight:600;color:var(--db-text)">${_aiEscapeHtml(name)}</td>
-          <td style="text-align:right;color:#EF4444;font-weight:600">${Number(p.stock_qty||0)} ${p.unit||''}</td>
-          <td style="text-align:right;color:var(--db-text3)">${p.reorder_point ?? 5}</td>
-        </tr>`
-      }).join('')}</tbody>
-    </table></div>`
-  } catch(e) {
-    console.warn('db low stock', e)
-    el.innerHTML = `<div style="color:var(--db-text4);font-size:13px">${isBm?'Gagal muat stok':'Failed to load stock'}</div>`
+    return
   }
+  if(fallback) { fallback.style.display = 'none'; fallback.textContent = '' }
+  const labels = top.map(([n]) => (n.length > 18 ? n.slice(0, 16) + '…' : n)).reverse()
+  const data = top.map(([, v]) => Math.round(Number(v) * 100) / 100).reverse()
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  const tick = _dbChartTickColor()
+  window._dbCharts = window._dbCharts || {}
+  window._dbCharts.topCust = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: isBm ? 'Kutipan' : 'Collected',
+        data,
+        backgroundColor: primary,
+        borderRadius: 6,
+        maxBarThickness: 22
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (x) => {
+              const v = Number(x.raw || 0)
+              return (isBm ? 'Kutipan: ' : 'Collected: ') + (typeof formatRM === 'function' ? formatRM(v) : ('RM ' + v.toFixed(2)))
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: tick,
+            font: { size: 10 },
+            callback: (v) => (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v)
+          },
+          grid: { color: 'rgba(148,163,184,.12)' }
+        },
+        y: {
+          ticks: { color: tick, font: { size: 11, weight: '600' } },
+          grid: { display: false }
+        }
+      }
+    }
+  })
 }
+
 
 function _dbRenderOverdueTable(list) {
   const isBm = APP.language==='bm'
