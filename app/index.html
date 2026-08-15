@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-atthelpers">
+<meta name="nexerp-build" content="2026-08-16-peopleall">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4472,76 +4472,85 @@ async function _dbLoadPeople() {
   const isBm = APP.language === 'bm'
   const today = _nowDateLocal()
   try {
+    // 1) All active employees (People = whole team, not only those who clocked)
+    const { data: allEmps, error: empErr } = await sb.from('employees')
+      .select('id, name, position')
+      .eq('tenant_id', APP.tenant.id)
+      .is('deleted_at', null)
+      .order('name', { ascending: true })
+      .limit(200)
+    if(empErr) throw empErr
+    const empMap = {}
+    ;(allEmps || []).forEach(e => { empMap[e.id] = e })
+    if(!Object.keys(empMap).length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada staf dalam HR':'No employees in HR'}</div>`
+      return
+    }
+
+    // 2) Today's attendance (one row per employee — latest)
     let res = await sb.from('attendance')
       .select('id, status, clock_in, clock_out, employee_id, date, created_at')
       .eq('tenant_id', APP.tenant.id)
       .eq('date', today)
-      .limit(100)
+      .limit(200)
     if(res.error) {
-      console.warn('_dbLoadPeople', res.error)
+      console.warn('_dbLoadPeople att', res.error)
       res = await sb.from('attendance')
         .select('id, status, clock_in, clock_out, employee_id, date, created_at')
         .eq('tenant_id', APP.tenant.id)
         .gte('date', today).lte('date', today)
-        .limit(100)
+        .limit(200)
     }
-    if(res.error) throw res.error
-    let list = (res.data || []).filter(a => !a.deleted_at)
-    // One row per employee — latest by created_at / clock_in
     const byEmp = {}
-    list.forEach(a => {
-      const k = String(a.employee_id||'')
-      if(!k) return
+    ;(res.data || []).forEach(a => {
+      const k = String(a.employee_id || '')
+      if(!k || !empMap[k]) return
       const prev = byEmp[k]
       if(!prev) { byEmp[k] = a; return }
-      const tNew = String(a.created_at||a.clock_in||'')
-      const tOld = String(prev.created_at||prev.clock_in||'')
+      const tNew = String(a.created_at || a.clock_in || '')
+      const tOld = String(prev.created_at || prev.clock_in || '')
       if(tNew >= tOld) byEmp[k] = a
     })
-    list = Object.values(byEmp)
-    list.sort((a,b) => String(a.clock_in||'').localeCompare(String(b.clock_in||'')))
-    if(!list.length) {
-      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada rekod kehadiran hari ini':'No attendance logged today'}</div>`
-      return
-    }
-    const empIds = [...new Set(list.map(a => a.employee_id).filter(Boolean))]
-    let empMap = {}
-    if(empIds.length) {
-      // Only active (non-deleted) employees — soft-deleted must not appear on People card
-      const {data: emps} = await sb.from('employees')
-        .select('id, name, position')
-        .in('id', empIds)
-        .eq('tenant_id', APP.tenant.id)
-        .is('deleted_at', null)
-      ;(emps||[]).forEach(e => { empMap[e.id] = e })
-    }
-    // Drop attendance rows for deleted / unknown employees
-    list = list.filter(a => a.employee_id && empMap[a.employee_id])
-    // Approved outstation covering today — show even without attendance row
+
+    // 3) Approved outstation today
     const osToday = await _attApprovedOutstationRange(today, today)
-    const osEmpIds = Object.keys(osToday)
-    if(osEmpIds.length) {
-      const missing = osEmpIds.filter(id => !empMap[id])
-      if(missing.length) {
-        const { data: more } = await sb.from('employees').select('id, name, position')
-          .in('id', missing).eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-        ;(more||[]).forEach(e => { empMap[e.id] = e })
+
+    // 4) Merge: every active employee appears
+    let list = Object.keys(empMap).map(id => {
+      const att = byEmp[id]
+      const os = osToday[id]
+      if(att) {
+        return { ...att, employee_id: id, _os: os || null }
       }
-      const have = new Set(list.map(a => String(a.employee_id)))
-      osEmpIds.forEach(id => {
-        if(!empMap[id]) return
-        if(!have.has(String(id))) {
-          list.push({ employee_id: id, status: 'outstation', clock_in: null, clock_out: null })
-          have.add(String(id))
-        }
-      })
+      if(os) {
+        return { employee_id: id, status: 'outstation', clock_in: null, clock_out: null, _os: os }
+      }
+      return { employee_id: id, status: 'none', clock_in: null, clock_out: null, _os: null }
+    })
+
+    // Sort: has activity first (present/late/outstation/...), none last; then name
+    const rank = s => {
+      const x = String(s || '').toLowerCase()
+      if(x === 'present') return 0
+      if(x === 'late') return 1
+      if(x === 'half_day') return 2
+      if(x === 'outstation') return 3
+      if(x === 'on_leave') return 4
+      if(x === 'absent') return 5
+      return 9
     }
-    if(!list.length) {
-      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada rekod kehadiran hari ini':'No attendance logged today'}</div>`
-      return
-    }
+    list.sort((a, b) => {
+      const d = rank(a.status) - rank(b.status)
+      if(d) return d
+      const na = (empMap[a.employee_id] && empMap[a.employee_id].name) || ''
+      const nb = (empMap[b.employee_id] && empMap[b.employee_id].name) || ''
+      return na.localeCompare(nb)
+    })
+
     const badge = _dbAttStatusBadge(isBm)
     const osBadge = _dbOutstationBadge(isBm)
+    el.style.maxHeight = '320px'
+    el.style.overflowY = 'auto'
     el.innerHTML = list.map(a => {
       const emp = empMap[a.employee_id] || {}
       const name = emp.name || 'Staff'
@@ -4549,72 +4558,51 @@ async function _dbLoadPeople() {
       const initials = _dbInitials(name)
       const cin = a.clock_in ? _fmtTime12(a.clock_in) : null
       const cout = a.clock_out ? _fmtTime12(a.clock_out) : null
-      const osInfo = osToday[a.employee_id]
+      const osInfo = a._os || osToday[a.employee_id]
       let timeLine = ''
-      if(osInfo) {
+      if(osInfo && (a.status === 'outstation' || osInfo)) {
         const dayOs = osInfo.byDate?.[today] || {}
         const loc = (dayOs.location || osInfo.location || '').trim()
         const dep = dayOs.depart_time || osInfo.depart_time
         const ret = dayOs.return_time || osInfo.return_time
         const tspan = (dep || ret) ? (_fmtTime12(dep||'') + ' – ' + _fmtTime12(ret||'')) : ''
-        timeLine = isBm ? 'Outstation' : 'Outstation'
-        if(tspan) timeLine += ' · ' + tspan
-        if(loc) timeLine += ' · ' + loc
-        if(cin) timeLine += ' · '+(isBm?'Masuk ':'In ')+cin
+        if(a.status === 'outstation' || !cin) {
+          timeLine = isBm ? 'Outstation' : 'Outstation'
+          if(tspan) timeLine += ' · ' + tspan
+          if(loc) timeLine += ' · ' + loc
+        } else {
+          timeLine = (isBm?'Masuk ':'In ') + cin
+          if(cout) timeLine += ' · ' + (isBm?'Keluar ':'Out ') + cout
+          if(tspan) timeLine += ' · OS ' + tspan
+        }
       } else if(cin && cout) timeLine = (isBm?'Masuk ':'In ')+cin+' · '+(isBm?'Keluar ':'Out ')+cout
       else if(cin) timeLine = (isBm?'Masuk ':'In ')+cin
       else if(cout) timeLine = (isBm?'Keluar ':'Out ')+cout
-      const b = osInfo ? osBadge : badge(a.status)
-      return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--db-border,rgba(0,0,0,.06));cursor:pointer" onclick="if(canAccess('hr')) openPage('hr')">
-        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#0E7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials}</div>
+      else if(a.status === 'none') timeLine = isBm ? 'Belum ada rekod hari ini' : 'No record today'
+      else timeLine = isBm ? 'Tiada clock in/out' : 'No clock times'
+
+      let badgeHtml = badge(a.status)
+      if(osInfo && a.status === 'outstation') badgeHtml = osBadge
+      if(a.status === 'none') {
+        badgeHtml = `<span style="font-size:11px;padding:3px 8px;border-radius:20px;background:var(--bg-2);color:var(--text-3);font-weight:600">${isBm?'Tiada rekod':'No record'}</span>`
+      }
+
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${initials}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(name)}</div>
-          <div style="font-size:11px;color:var(--db-text3)">${_aiEscapeHtml(position)}${position && timeLine ? ' · ' : ''}${timeLine}</div>
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(name)}</div>
+          <div style="font-size:11px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_aiEscapeHtml(timeLine)}${position ? ' · ' + _aiEscapeHtml(position) : ''}</div>
         </div>
-        <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${b.bg};color:${b.color};font-weight:500;white-space:nowrap;flex-shrink:0">${b.label}</span>
+        <div style="flex-shrink:0">${badgeHtml}</div>
       </div>`
     }).join('')
-  } catch(err) {
-    console.error('_dbLoadPeople', err)
-    el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada data kehadiran':'No attendance data'}</div>`
+  } catch(e) {
+    console.warn('_dbLoadPeople', e)
+    el.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:12px 0">${isBm?'Gagal muat People':'Failed to load People'}</div>`
   }
 }
 
-// Shared status → {label, color, bg} for attendance status chips/cells —
-// used by the Dashboard People card and the Staff Attendance Tracker
-// heatmap so both agree on the same 4-status legend (Design System colors
-// per CLAUDE.md: success/warning/danger + secondary purple for On Leave).
-function _dbAttStatusBadge(isBm) {
-  const map = {
-    present:  { label: isBm?'Hadir':'Present',        color:'#16A34A', bg:'rgba(22,163,74,.14)' },
-    absent:   { label: isBm?'Tidak Hadir':'Absent',    color:'#DC2626', bg:'rgba(220,38,38,.14)' },
-    late:     { label: isBm?'Lewat':'Late',            color:'#D97706', bg:'rgba(217,119,6,.14)' },
-    half_day: { label: isBm?'Setengah Hari':'Half Day',color:'#D97706', bg:'rgba(217,119,6,.14)' },
-    on_leave: { label: isBm?'Bercuti':'On Leave',      color:'#7C3AED', bg:'rgba(124,58,237,.14)' },
-    outstation:{ label: isBm?'Outstation':'Outstation', color:'#0E7490', bg:'rgba(14,116,144,.16)' },
-  }
-  return s => map[s] || { label: isBm?'Bercuti':'On Leave', color:'#7C3AED', bg:'rgba(124,58,237,.14)' }
-}
 
-// Shared leave_type → {label, color, bg} — used by the Staff Attendance
-// Tracker to colour cells plotted from approved leave_requests (rather
-// than an actual attendance row) by which kind of leave it is.
-function _dbLeaveTypeBadge(isBm) {
-  const map = {
-    annual:    { label: isBm?'Cuti Tahunan':'Annual Leave',      color:'#7C3AED', bg:'rgba(124,58,237,.14)' },
-    medical:   { label: isBm?'Cuti Sakit':'Medical Leave',       color:'#0EA5E9', bg:'rgba(14,165,233,.14)' },
-    emergency: { label: isBm?'Cuti Kecemasan':'Emergency Leave', color:'#DB2777', bg:'rgba(219,39,119,.14)' },
-    unpaid:    { label: isBm?'Cuti Tanpa Gaji':'Unpaid Leave',   color:'#64748B', bg:'rgba(100,116,139,.14)' },
-  }
-  return ty => map[ty] || { label: isBm?'Bercuti':'On Leave', color:'#7C3AED', bg:'rgba(124,58,237,.14)' }
-}
-
-function _dbOutstationBadge(isBm) {
-  return { label: isBm?'Outstation':'Outstation', color:'#0E7490', bg:'rgba(14,116,144,.16)' }
-}
-
-/** Approved outstation covering [from,to] (YYYY-MM-DD). Returns { empId: { byDate: { date: {location,start_date,end_date} } } }
- * Soft-fails to {} if table/RLS missing — never breaks dashboard. */
 async function _attApprovedOutstationRange(from, to) {
   const out = {}
   if(!APP.tenant?.id || !from || !to) return out
