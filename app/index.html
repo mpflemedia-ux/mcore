@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-fixmeta">
+<meta name="nexerp-build" content="2026-08-16-dbsc">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3607,6 +3607,38 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&document.getElementById('form-login').style.display!=='none')doLogin() })
 
 // PAGES — DASHBOARD (dark analytics theme, inspired by trading dashboard reference)
+
+function _dbShortcutsHtml(isBm) {
+  // Accounting-style quick nav — only modules the role canAccess
+  const items = [
+    { page:'sales', params:{view:'invoices'}, module:'sales', icon:'ti-file-invoice', en:'Invoices', bm:'Invois' },
+    { page:'sales', params:{view:'invoices', filter:'overdue'}, module:'sales', icon:'ti-alert-triangle', en:'Overdue', bm:'Tertunggak' },
+    { page:'pos', params:{}, module:'pos', icon:'ti-device-desktop', en:'POS', bm:'POS' },
+    { page:'crm', params:{}, module:'crm', icon:'ti-users', en:'Customers', bm:'Pelanggan' },
+    { page:'accounting', params:{}, module:'accounting', icon:'ti-calculator', en:'Accounting', bm:'Perakaunan' },
+    { page:'accounting', params:{view:'expense'}, module:'accounting', icon:'ti-receipt', en:'Expenses', bm:'Belanja' },
+    { page:'accounting', params:{view:'petty'}, module:'accounting', icon:'ti-wallet', en:'Petty Cash', bm:'Petty Cash' },
+    { page:'reports', params:{}, module:'reports', icon:'ti-chart-bar', en:'Reports', bm:'Laporan' },
+    { page:'hr', params:{view:'attendance'}, module:'hr', icon:'ti-clock', en:'Attendance', bm:'Kehadiran' },
+    { page:'inventory', params:{}, module:'inventory', icon:'ti-box', en:'Inventory', bm:'Inventori' },
+    { page:'purchasing', params:{}, module:'purchasing', icon:'ti-shopping-cart', en:'Purchasing', bm:'Perolehan' },
+    { page:'vouchers', params:{}, module:'vouchers', icon:'ti-file-description', en:'Vouchers', bm:'Baucar' },
+  ]
+  const allowed = items.filter(it => {
+    try { return typeof canAccess === 'function' ? canAccess(it.module) : true } catch(e) { return false }
+  })
+  if(!allowed.length) return ''
+  return `<div class="card" style="padding:8px;margin-bottom:14px" id="db-shortcuts">
+    <div style="font-size:11px;font-weight:600;color:var(--text-3);margin:0 4px 6px;letter-spacing:.3px">${isBm?'PINTASAN':'SHORTCUTS'}</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm,8px);padding:4px">
+      ${allowed.map(it => {
+        const p = JSON.stringify(it.params||{}).replace(/"/g, '&quot;')
+        return `<button type="button" class="btn btn-sm btn-outline" style="border:none;white-space:nowrap" onclick='openPage("${it.page}", ${JSON.stringify(it.params||{})})'><i class="ti ${it.icon}"></i> ${isBm?it.bm:it.en}</button>`
+      }).join('')}
+    </div>
+  </div>`
+}
+
 function renderDashboard() {
   const t = LANG[APP.language].dashboard
   const isBm = APP.language==='bm'
@@ -3646,6 +3678,8 @@ function renderDashboard() {
 
     <!-- Getting Started checklist — populated by _obcRenderChecklist(), hides itself once dismissed -->
     <div id="db-onboarding-checklist"></div>
+
+    ${_dbShortcutsHtml(isBm)}
 
     <!-- Focus KPI: Revenue / Sales / GP / Net P&L -->
     <div class="db-kpi-grid db-kpi-focus" id="db-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">
