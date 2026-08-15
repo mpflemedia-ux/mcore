@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-oslist">
+<meta name="nexerp-build" content="2026-08-16-sbclose">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2002,7 +2002,7 @@ function _clearUiOverlays() {
 
 function openPage(page, params={}) {
   _clearUiOverlays()
-
+  try{ _closeMobileSidebar() }catch(e){}
   try{closeUserDropdown()}catch(e){}
   const item = NAV_ITEMS.find(n=>n.id===page)
   if(item && !canAccess(item.module)) { renderAccessDenied(); return }
@@ -3531,12 +3531,28 @@ function updateUserUI() {
 
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar')
+  if(!sidebar) return
   sidebar.classList.toggle('collapsed')
   if(window.innerWidth <= 768) {
     const backdrop = document.getElementById('sidebar-backdrop')
     const isOpen = !sidebar.classList.contains('collapsed')
     if(backdrop) backdrop.style.display = isOpen ? 'block' : 'none'
   }
+}
+/** Close drawer after nav on phone/tablet — openPage must call this */
+function _closeMobileSidebar() {
+  try {
+    if(window.innerWidth > 768) return
+    const sidebar = document.getElementById('sidebar')
+    if(!sidebar) return
+    if(!sidebar.classList.contains('collapsed')) {
+      sidebar.classList.add('collapsed')
+      const backdrop = document.getElementById('sidebar-backdrop')
+      if(backdrop) backdrop.style.display = 'none'
+    }
+    // clear any tour z-index leftovers
+    if(typeof _obtResetSidebarTourStyles === 'function') _obtResetSidebarTourStyles()
+  } catch(e) {}
 }
 function toggleTheme() { applyTheme(APP.theme==='light'?'dark':'light') }
 function applyTheme(t) {
