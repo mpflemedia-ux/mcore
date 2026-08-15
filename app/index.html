@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-pplbadge2">
+<meta name="nexerp-build" content="2026-08-16-pplactive">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4580,7 +4580,14 @@ async function _dbLoadPeople() {
       return { employee_id: id, status: 'none', clock_in: null, clock_out: null, _os: null }
     })
 
-    // Sort: has activity first (present/late/outstation/...), none last; then name
+    // Only staff with activity today — hide pure "No record"
+    const ACTIVE = new Set(['present','absent','late','half_day','on_leave','outstation'])
+    list = list.filter(a => ACTIVE.has(String(a.status||'').toLowerCase()))
+    if(!list.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--db-text3);padding:16px 0;text-align:center">${isBm?'Tiada rekod kehadiran hari ini':'No attendance logged today'}</div>`
+      return
+    }
+    // Sort by status priority then name
     const rank = s => {
       const x = String(s || '').toLowerCase()
       if(x === 'present') return 0
