@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-dbai">
+<meta name="nexerp-build" content="2026-08-16-genz">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4899,30 +4899,34 @@ function _dbChartTickColor() {
 
 function _dbFillCardInsights(ctx) {
   const isBm = APP.language === 'bm'
-  const tag = '<span class="db-ai-tag">AI · 4W1H</span>'
   ctx = Object.assign({}, window._dbInsightCtx || {}, ctx || {})
   const fmt = (n) => (typeof formatRM === 'function' ? formatRM(n) : ('RM ' + Number(n||0).toFixed(2)))
-  const period = ctx.periodLabel || (isBm ? 'tempoh semasa' : 'current period')
+  const pct = (n) => (Math.round(Number(n||0) * 10) / 10).toFixed(1)
   const hs = ctx.health || window._dbHealthScores
+  const titles = isBm
+    ? ['Vibe check', 'Real talk', 'Plot twist', 'Pulse check', 'No cap', 'Tea', 'Main character energy']
+    : ['Vibe check', 'Real talk', 'Plot twist', 'Pulse check', 'No cap', 'Tea', 'Main character energy']
+  const pickTitle = (i) => titles[i % titles.length]
+  const tag = (i) => '<span class="db-ai-tag">' + pickTitle(i) + '</span>'
 
   const gEl = document.getElementById('db-ai-growth')
   if(gEl) {
     const sales = Number(ctx.curSales||0), prev = Number(ctx.prevSales||0), rate = Number(ctx.curRate||0)
-    let what, why, how
+    let body
     if(sales <= 0 && prev <= 0) {
-      what = isBm ? 'Belum ada jualan diiktiraf.' : 'No recognised sales yet.'
-      why = isBm ? 'Tiada invois Paid/Partial atau POS dalam julat.' : 'No Paid/Partial invoices or POS in range.'
-      how = isBm ? 'Rekod jualan POS atau terima bayaran invois.' : 'Record POS sales or collect invoice payments.'
+      body = isBm
+        ? 'Belum ada jualan diiktiraf dalam julat ni — zero Paid/Partial/POS. Rekod satu sale atau clear bayaran invois supaya carta tak tinggal empty vibes.'
+        : 'No recognised sales in this range yet — zero Paid/Partial/POS. Log a sale or clear an invoice payment so the chart isn\'t just empty vibes.'
     } else if(sales >= prev) {
-      what = isBm ? `Jualan diiktiraf ${fmt(sales)} (naik vs tempoh lepas).` : `Recognised sales ${fmt(sales)} (up vs prior period).`
-      why = isBm ? `Kadar kutipan ${rate.toFixed(1)}%.` : `Collection rate ${rate.toFixed(1)}%.`
-      how = isBm ? 'Kekalkan momentum; pantau minggu puncak pada carta.' : 'Keep momentum; watch peak weeks on the chart.'
+      body = isBm
+        ? `Jualan diiktiraf ${fmt(sales)} period ni lowkey serving (naik vs lepas ${fmt(prev)}), kadar kutipan ~${pct(rate)}%. Paid + POS yang bawa beg — jangan ghost minggu puncak kat carta, takut glow-up layu tengah jalan.`
+        : `Recognised sales ${fmt(sales)} this period is lowkey serving (up vs last ${fmt(prev)}), collection rate ~${pct(rate)}%. Paid + POS carried the bag — don\'t ghost the peak weeks on the chart or that glow-up fades mid-run.`
     } else {
-      what = isBm ? `Jualan diiktiraf ${fmt(sales)} (turun vs ${fmt(prev)}).` : `Recognised sales ${fmt(sales)} (down vs ${fmt(prev)}).`
-      why = isBm ? 'Volume bayaran/POS lebih rendah dalam julat ini.' : 'Lower paid/POS volume in this range.'
-      how = isBm ? 'Semak invois tertunggak & aktiviti POS.' : 'Review overdue invoices and POS activity.'
+      body = isBm
+        ? `Real talk: jualan diiktiraf ${fmt(sales)} je, turun dari ~${fmt(prev)}. Kutipan ~${pct(rate)}% — chase overdue terbesar dulu, lepas tu satu hari POS focused supaya slide ni tak jadi whole plot.`
+        : `Not gonna sugarcoat it — recognised sales only ${fmt(sales)} vs ~${fmt(prev)} last period. Collection ~${pct(rate)}%; chase the fattest overdue first, then one focused POS day so this dip doesn\'t become the whole plot.`
     }
-    gEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${what} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Siapa':'Who'}:</strong> ${isBm?'pasukan jualan & kutipan tenant ini':'this tenant sales & collections'}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${how}</div>`
+    gEl.innerHTML = tag(0) + '<div>' + body + '</div>'
   }
 
   const sEl = document.getElementById('db-ai-status')
@@ -4930,59 +4934,79 @@ function _dbFillCardInsights(ctx) {
     const st = ctx.status || {}
     const paid = st.paid||0, partial = st.partial||0, unpaid = st.unpaid||0, cancelled = st.cancelled||0
     const total = paid + partial + unpaid + cancelled
-    let what, why, how
+    let body
     if(total === 0) {
-      what = isBm ? 'Tiada invois dalam tempoh ini.' : 'No invoices in this period.'
-      why = isBm ? 'Belum ada dokumen jualan dalam julat.' : 'No sales documents in range.'
-      how = isBm ? 'Cipta invois atau luaskan penapis tempoh.' : 'Create invoices or widen period filter.'
+      body = isBm
+        ? 'Tiada invois dalam tempoh ni. Cipta invois atau luaskan penapis — pipeline kosong, bukan bug carta.'
+        : 'No invoices in this period. Create one or widen the filter — empty pipeline, not a chart bug.'
     } else if(unpaid + partial > paid) {
-      what = isBm ? `Majoriti belum penuh bayar (Unpaid ${unpaid}, Partial ${partial}, Paid ${paid}).` : `Most not fully paid (Unpaid ${unpaid}, Partial ${partial}, Paid ${paid}).`
-      why = isBm ? 'Tekanan kutipan pada pipeline.' : 'Collection pressure on the pipeline.'
-      how = isBm ? 'Utamakan follow-up Unpaid/Partial & SOA.' : 'Prioritise Unpaid/Partial follow-up and SOA.'
+      body = isBm
+        ? `Dari ${total} invois: Paid ${paid}, Partial ${partial}, Unpaid ${unpaid}. Book still mid af — cash on read, not delivered. Nudge top unpaid by amount hari ni, lepas tu clean partials.`
+        : `Out of ${total} invoices: Paid ${paid}, Partial ${partial}, Unpaid ${unpaid}. Book is still mid af — cash on read, not delivered. Nudge the top unpaid by amount today, then clean partials.`
     } else {
-      what = isBm ? `Paid ${paid} / ${total} invois; Unpaid ${unpaid}; Cancelled ${cancelled}.` : `Paid ${paid} / ${total} invoices; Unpaid ${unpaid}; Cancelled ${cancelled}.`
-      why = isBm ? 'Mix status = kualiti kutipan.' : 'Status mix reflects collection quality.'
-      how = isBm ? 'Kekalkan disiplin bayaran.' : 'Keep payment discipline.'
+      body = isBm
+        ? `Paid ${paid}/${total} invois, Unpaid ${unpaid}, Cancelled ${cancelled}. Mix ni nampak collection quality okay — kekalkan disiplin bayaran jangan ratio sendiri.`
+        : `Paid ${paid}/${total} invoices, Unpaid ${unpaid}, Cancelled ${cancelled}. Mix is giving decent collection quality — keep payment discipline so you don\'t ratio yourself.`
     }
-    sEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${what} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${how}</div>`
+    sEl.innerHTML = tag(2) + '<div>' + body + '</div>'
   }
 
   const zEl = document.getElementById('db-ai-zone')
   if(zEl && hs && hs.detail) {
     const d = hs.detail
-    const entries = [[isBm?'Jualan':'Sales',d.sales],[isBm?'Kutipan':'Collection',d.collection],[isBm?'Gaji':'Payroll',d.payroll],[isBm?'Belanja':'Expenses',d.expenses],[isBm?'Stok':'Stock',d.stock]]
+    const entries = [
+      [isBm?'Jualan':'Sales', d.sales],
+      [isBm?'Kutipan':'Collection', d.collection],
+      [isBm?'Gaji':'Payroll', d.payroll],
+      [isBm?'Belanja':'Expenses', d.expenses],
+      [isBm?'Stok':'Stock', d.stock]
+    ]
     entries.sort((a,b)=>a[1]-b[1])
     const weak = entries[0], strong = entries[entries.length-1]
-    zEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${isBm?`Purata skor ${hs.zoneAvg}/100. Terkuat: ${strong[0]} (${strong[1]}). Terlemah: ${weak[0]} (${weak[1]}).`:`Average ${hs.zoneAvg}/100. Strongest: ${strong[0]} (${strong[1]}). Weakest: ${weak[0]} (${weak[1]}).`} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${isBm?'Skor dari data tenant semasa.':'Scores from current tenant data.'} <strong>${isBm?'Bagaimana':'How'}:</strong> ${isBm?`Fokus perbaiki zon ${weak[0]}.`:`Focus on improving ${weak[0]}.`}</div>`
-  } else if(zEl) zEl.innerHTML = `${tag}<div>${isBm?'Menunggu skor zon…':'Waiting for zone scores…'}</div>`
+    const body = isBm
+      ? `Purata zon ~${hs.zoneAvg}/100 — ${strong[0]} in its bag (${strong[1]}), ${weak[0]} the flop (${weak[1]}). Fokus lift ${weak[0]} minggu ni supaya whole board tak dig.`
+      : `Zone avg ~${hs.zoneAvg}/100 — ${strong[0]} is in its bag (${strong[1]}), ${weak[0]} is the flop (${weak[1]}). Focus lifting ${weak[0]} this week so the whole board doesn\'t get dug.`
+    zEl.innerHTML = tag(3) + '<div>' + body + '</div>'
+  } else if(zEl) {
+    zEl.innerHTML = tag(3) + '<div>' + (isBm ? 'Tunggu skor zon load…' : 'Waiting on zone scores…') + '</div>'
+  }
 
   const hEl = document.getElementById('db-ai-health')
   if(hEl && hs && hs.detail) {
     const d = hs.detail
-    const why = d.overdue < 50 ? (isBm?'Risiko hutang menekan radar.':'Debt risk is pulling the radar.') : (isBm?'Bentuk radar = imbangan operasi.':'Radar shape = operating balance.')
-    hEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${isBm?`Overdue ${d.overdue}, Kutipan ${d.collection}, Stok ${d.stock}.`:`Overdue ${d.overdue}, Collection ${d.collection}, Stock ${d.stock}.`} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${isBm?'Seimbangkan kutipan, gaji/belanja & stok.':'Balance collections, payroll/expenses and stock.'}</div>`
-  } else if(hEl) hEl.innerHTML = `${tag}<div>${isBm?'Menunggu data kesihatan…':'Waiting for health data…'}</div>`
+    const body = d.overdue < 50
+      ? (isBm
+        ? `Radar unhinged sikit: Overdue ~${d.overdue}/100 while Kutipan ~${d.collection}, Stok ~${d.stock}. Debt risk the villain arc — satu collect week on big balances > vibes-only busywork.`
+        : `Radar\'s looking unhinged: Overdue ~${d.overdue}/100 while Collection ~${d.collection}, Stock ~${d.stock}. Debt risk is the villain arc — one collect week on big balances > vibes-only busywork.`)
+      : (isBm
+        ? `Health spider lagi balanced: Overdue ~${d.overdue}, Kutipan ~${d.collection}, Stok ~${d.stock}. Stay locked — jangan biar satu paksi crash out.`
+        : `Health spider is more balanced: Overdue ~${d.overdue}, Collection ~${d.collection}, Stock ~${d.stock}. Stay locked — don\'t let one axis crash out.`)
+    hEl.innerHTML = tag(4) + '<div>' + body + '</div>'
+  } else if(hEl) {
+    hEl.innerHTML = tag(4) + '<div>' + (isBm ? 'Tunggu health data…' : 'Waiting on health data…') + '</div>'
+  }
 
   const pEl = document.getElementById('db-ai-pnl')
   if(pEl) {
     const rev = Number(ctx.revenue||0), exp = Number(ctx.expense||0), net = Number(ctx.netPL||0)
-    let what, why, how
+    let body
     if(rev === 0 && exp === 0) {
-      what = isBm ? 'Tiada hasil/belanja jurnal ketara (atau mapping akaun kosong).' : 'No material journal revenue/expense (or empty account mapping).'
-      why = isBm ? 'P&L bergantung jurnal + jenis akaun.' : 'P&L depends on journals and account types.'
-      how = isBm ? 'Semak Default Accounts & post ke jurnal.' : 'Check Default Accounts and post to journals.'
+      body = isBm
+        ? 'P&L flat — tiada hasil/belanja jurnal ketara (atau mapping akaun kosong). Semak Default Accounts & pastikan sales hit journal, bukan invoice list je fr.'
+        : 'P&L is flat — no material journal revenue/expense (or empty account mapping). Check Default Accounts and make sure sales hit the journal, not just the invoice list fr.'
     } else if(net >= 0) {
-      what = isBm ? `Hasil ${fmt(rev)}, belanja ${fmt(exp)}, untung ${fmt(net)}.` : `Revenue ${fmt(rev)}, expenses ${fmt(exp)}, profit ${fmt(net)}.`
-      why = isBm ? 'Hasil menandingi/melebihi belanja pada buku.' : 'Revenue meets or exceeds expenses on the books.'
-      how = isBm ? 'Kekalkan kawalan kos.' : 'Keep cost control.'
+      body = isBm
+        ? `Hasil ${fmt(rev)} cleared belanja ${fmt(exp)} — net ${fmt(net)}, straight W on the strip. Hold cost discipline supaya next month tak ratio this win.`
+        : `Revenue ${fmt(rev)} cleared expenses ${fmt(exp)} — net ${fmt(net)}, straight W on the strip. Hold cost discipline so next month doesn\'t ratio this win.`
     } else {
-      what = isBm ? `Hasil ${fmt(rev)}, belanja ${fmt(exp)}, rugi ${fmt(net)}.` : `Revenue ${fmt(rev)}, expenses ${fmt(exp)}, loss ${fmt(net)}.`
-      why = isBm ? 'Belanja jurnal melebihi hasil.' : 'Journaled expenses exceed revenue.'
-      how = isBm ? 'Semak akaun belanja & margin.' : 'Review expense accounts and margin.'
+      body = isBm
+        ? `Books: hasil ${fmt(rev)}, belanja ${fmt(exp)}, net ${fmt(net)} — expenses ate and left no crumbs. Review chunky expense lines & confirm sales post to journal.`
+        : `Books: revenue ${fmt(rev)}, expenses ${fmt(exp)}, net ${fmt(net)} — expenses ate and left no crumbs. Review chunky expense lines and confirm sales post to the journal.`
     }
-    pEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${what} <strong>${isBm?'Bila':'When'}:</strong> ${isBm?'KPI + trend 6 bulan.':'KPI period + 6-mo trend.'} <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${how}</div>`
+    pEl.innerHTML = tag(net >= 0 ? 6 : 5) + '<div>' + body + '</div>'
   }
 }
+
 
 function _dbClampScore(n) {
   const x = Number(n)
