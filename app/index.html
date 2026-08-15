@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-stgbox">
+<meta name="nexerp-build" content="2026-08-16-osnotif">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1775,6 +1775,29 @@ async function loadNotifications() {
         go: () => openPage('hr',{view:'leave'})
       })
     })
+    // Outstation pending — owner/HR only
+    if(typeof canManageHR === 'function' && canManageHR()) {
+      try {
+        const { data: osPend } = await sb.from('outstation_requests')
+          .select('id,start_date,end_date,location,purpose,employee_id,status')
+          .eq('tenant_id', APP.tenant.id).eq('status','pending').is('deleted_at', null).limit(15)
+        let empMap = {}
+        const ids = [...new Set((osPend||[]).map(r => r.employee_id).filter(Boolean))]
+        if(ids.length) {
+          const { data: emps } = await sb.from('employees').select('id,name').in('id', ids).eq('tenant_id', APP.tenant.id)
+          ;(emps||[]).forEach(e => { empMap[e.id] = e.name })
+        }
+        ;(osPend||[]).forEach(r => {
+          items.push({
+            icon: 'ti-map-pin',
+            color: 'var(--warning)',
+            text: isBm ? `Outstation menunggu: ${empMap[r.employee_id]||'—'}` : `Outstation pending: ${empMap[r.employee_id]||'—'}`,
+            meta: `${r.start_date} → ${r.end_date} · ${r.location||''}`,
+            go: () => openPage('hr',{view:'attendance'})
+          })
+        })
+      } catch(e) { console.warn('outstation notifs', e) }
+    }
     // Dashboard AI insight slot notifications (local, per tenant)
     try {
       const insightNotifs = _dbInsightReadNotifs()
@@ -21740,31 +21763,57 @@ async function _attSubmitOutstation() {
     location, purpose, status: 'pending'
   })
   if(error) { showToast('Error: '+error.message+' — '+ (isBm?'pastikan SQL migration dijalankan':'run SQL migration'), 'error'); return }
-  showToast(isBm?'Permohonan dihantar':'Request submitted', 'success')
+  showToast(isBm?'Permohonan dihantar — menunggu kelulusan HR/owner':'Request submitted — pending HR/owner approval', 'success')
   _attLoadOutstationList()
+  try { if(typeof loadNotifications === 'function') loadNotifications() } catch(e) {}
 }
 
 async function _attLoadOutstationList() {
   const el = document.getElementById('os-list')
   if(!el || !APP.tenant?.id) return
   try {
-    const { data } = await sb.from('outstation_requests').select('id,start_date,end_date,location,status,purpose,employee_id')
-      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(15)
-    if(!data?.length) { el.innerHTML = ''; return }
+    let q = sb.from('outstation_requests').select('id,start_date,end_date,location,status,purpose,employee_id')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(20)
+    const { data, error } = await q
+    if(error) {
+      el.innerHTML = `<div style="font-size:12px;color:var(--text-3)">${APP.language==='bm'?'Jadual outstation belum siap (jalankan SQL).':'Outstation table missing (run SQL).'}</div>`
+      return
+    }
+    if(!data?.length) { el.innerHTML = `<div style="font-size:12px;color:var(--text-3)">${APP.language==='bm'?'Tiada permohonan lagi.':'No requests yet.'}</div>`; return }
     const isBm = APP.language==='bm'
+    const empIds = [...new Set(data.map(r => r.employee_id).filter(Boolean))]
+    let empMap = {}
+    if(empIds.length) {
+      const { data: emps } = await sb.from('employees').select('id,name').in('id', empIds).eq('tenant_id', APP.tenant.id)
+      ;(emps||[]).forEach(e => { empMap[e.id] = e.name })
+    }
+    const mgr = typeof canManageHR === 'function' && canManageHR()
     el.innerHTML = data.map(r => {
-      const approve = canManageHR() && r.status==='pending' ? `<button class="btn btn-outline btn-sm" onclick="_attReviewOutstation('${r.id}','approved')">OK</button> <button class="btn btn-outline btn-sm" onclick="_attReviewOutstation('${r.id}','rejected')">X</button>` : ''
-      return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">${r.start_date}→${r.end_date} · ${r.status} · ${(r.location||'')}<br>${(r.purpose||'')} ${approve}</div>`
+      const name = empMap[r.employee_id] || '—'
+      const stColor = r.status==='approved' ? 'var(--success)' : r.status==='rejected' ? 'var(--danger)' : 'var(--warning)'
+      const approve = mgr && r.status==='pending' ? `
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="btn btn-primary btn-sm" onclick="_attReviewOutstation('${r.id}','approved')"><i class="ti ti-check"></i> ${isBm?'Lulus':'Approve'}</button>
+          <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_attReviewOutstation('${r.id}','rejected')"><i class="ti ti-x"></i> ${isBm?'Tolak':'Reject'}</button>
+        </div>` : ''
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;font-size:13px">${_aiEscapeHtml(name)} <span style="color:${stColor};font-weight:600;font-size:12px">· ${r.status}</span></div>
+        <div style="font-size:12px;color:var(--text-2)">${r.start_date} → ${r.end_date}</div>
+        <div style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(r.location||'')} · ${_aiEscapeHtml(r.purpose||'')}</div>
+        ${approve}
+      </div>`
     }).join('')
-  } catch(e) { el.innerHTML = '' }
+  } catch(e) { el.innerHTML = ''; console.warn('os list', e) }
 }
 
 async function _attReviewOutstation(id, status) {
   if(!canManageHR()) return
+  const isBm = APP.language==='bm'
   const { error } = await sb.from('outstation_requests').update({ status, reviewed_by: APP.user?.id || null, updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
   if(error) { showToast(error.message, 'error'); return }
-  showToast('Updated', 'success')
+  showToast(status==='approved' ? (isBm?'Outstation diluluskan':'Outstation approved') : (isBm?'Outstation ditolak':'Outstation rejected'), 'success')
   _attLoadOutstationList()
+  try { if(typeof loadNotifications === 'function') loadNotifications() } catch(e) {}
 }
 
 async function _attendanceSave() {
