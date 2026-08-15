@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-fp">
+<meta name="nexerp-build" content="2026-08-16-lang">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4957,16 +4957,18 @@ function _dbInsightNotifKey() {
 function _dbInsightLoadStore() {
   try {
     const raw = localStorage.getItem(_dbInsightStoreKey())
-    if(!raw) return { day: null, slots: {}, fingerprint: null, cards: null }
+    if(!raw) return { day: null, slots: {}, fingerprint: null, cards: null, cardsByLang: {} }
     const p = JSON.parse(raw)
     return {
       day: p.day || null,
       slots: p.slots || {},
       fingerprint: p.fingerprint || null,
-      cards: p.cards || null
+      cards: p.cards || null,
+      cardsByLang: p.cardsByLang || {}
     }
-  } catch(e) { return { day: null, slots: {}, fingerprint: null, cards: null } }
+  } catch(e) { return { day: null, slots: {}, fingerprint: null, cards: null, cardsByLang: {} } }
 }
+/** Metrics only (language handled separately so EN/BM can cache both). */
 function _dbInsightFingerprint(ctx) {
   const hs = (ctx && ctx.health) || window._dbHealthScores || {}
   const d = hs.detail || {}
@@ -4984,6 +4986,9 @@ function _dbInsightFingerprint(ctx) {
   ]
   return parts.join('|')
 }
+function _dbInsightLangKey() {
+  return (APP.language === 'bm') ? 'bm' : 'en'
+}
 function _dbInsightSaveStore(store) {
   try { localStorage.setItem(_dbInsightStoreKey(), JSON.stringify(store)) } catch(e) {}
 }
@@ -4997,7 +5002,8 @@ function _dbInsightPushNotif(slotId, isBm, reason) {
       zohor: isBm ? 'Zohor' : 'Dhuhr',
       asar: isBm ? 'Asar' : 'Asr',
       isyak: isBm ? 'Isyak' : 'Isha',
-      data: isBm ? 'data baharu' : 'data change'
+      data: isBm ? 'data baharu' : 'data change',
+      lang: isBm ? 'bahasa' : 'language'
     }
     const lab = labels[slotId] || labels[reason] || slotId || (isBm ? 'kemas kini' : 'update')
     const why = reason === 'data'
@@ -5188,6 +5194,7 @@ async function _dbInsightAI(card, ctx, isBm) {
 
 async function _dbFillCardInsights(ctx) {
   const isBm = APP.language === 'bm'
+  const lang = _dbInsightLangKey()
   ctx = Object.assign({}, window._dbInsightCtx || {}, ctx || {})
   const gen = (window._dbInsightGen = (window._dbInsightGen || 0) + 1)
 
@@ -5215,28 +5222,37 @@ async function _dbFillCardInsights(ctx) {
   const slot = _dbInsightActiveSlot(now)
   let store = _dbInsightLoadStore()
   if(store.day !== now.day) {
-    store = { day: now.day, slots: {}, fingerprint: null, cards: null }
+    store = { day: now.day, slots: {}, fingerprint: null, cards: null, cardsByLang: {} }
     _dbInsightSaveStore(store)
   }
+  if(!store.cardsByLang) store.cardsByLang = {}
 
   const fp = _dbInsightFingerprint(ctx)
-  const dataChanged = !!(store.fingerprint && store.fingerprint !== fp)
-  const firstLoadNoCache = !store.cards
-  const needSlot = !!(slot && !(store.slots[slot] && store.slots[slot].cards))
-  // Refresh AI when: metrics changed, scheduled slot not done, or no cache yet
-  const needAI = dataChanged || needSlot || firstLoadNoCache
+  const metricsChanged = !!(store.fingerprint && store.fingerprint !== fp)
+  if(metricsChanged) {
+    // Invalidate all language caches when numbers move
+    store.cardsByLang = {}
+    store.cards = null
+    store.slots = {}
+  }
 
-  if(!needAI && store.cards) {
-    paint(store.cards)
+  const langCache = store.cardsByLang[lang]
+  const needSlot = !!(slot && !(store.slots[slot] && store.slots[slot].langs && store.slots[slot].langs[lang]))
+  const needLang = !langCache
+  const needAI = metricsChanged || needSlot || needLang
+
+  if(!needAI && langCache) {
+    paint(langCache)
     return
   }
 
   cards.forEach(c => {
     const el = document.getElementById(c.id)
     if(!el) return
-    const msg = dataChanged
-      ? (isBm ? 'Data berubah — AI update…' : 'Data changed — AI update…')
-      : (isBm ? `AI update${slot ? ' · ' + slot : ''}…` : `AI refresh${slot ? ' · ' + slot : ''}…`)
+    let msg
+    if(metricsChanged) msg = isBm ? 'Data berubah — AI update…' : 'Data changed — AI update…'
+    else if(needLang) msg = isBm ? 'Tukar bahasa — AI tulis semula…' : 'Language switch — AI rewriting…'
+    else msg = isBm ? `AI update${slot ? ' · ' + slot : ''}…` : `AI refresh${slot ? ' · ' + slot : ''}…`
     el.innerHTML = _dbInsightTag(c.titleIdx, isBm) + '<div style="opacity:.75">' + msg + '</div>'
   })
 
@@ -5251,13 +5267,19 @@ async function _dbFillCardInsights(ctx) {
   }))
   if(gen !== window._dbInsightGen) return
 
+  store.cardsByLang[lang] = bodies
   store.cards = bodies
   store.fingerprint = fp
-  if(slot) store.slots[slot] = { at: new Date().toISOString(), cards: bodies }
+  if(slot) {
+    if(!store.slots[slot]) store.slots[slot] = { at: new Date().toISOString(), langs: {} }
+    if(!store.slots[slot].langs) store.slots[slot].langs = {}
+    store.slots[slot].langs[lang] = true
+    store.slots[slot].cards = bodies
+  }
   _dbInsightSaveStore(store)
 
-  const reason = dataChanged ? 'data' : (slot || 'data')
-  _dbInsightPushNotif(dataChanged ? 'data' : slot, isBm, dataChanged ? 'data' : 'slot')
+  const reason = metricsChanged ? 'data' : (needLang ? 'lang' : (slot || 'data'))
+  _dbInsightPushNotif(reason === 'lang' ? 'data' : (metricsChanged ? 'data' : slot), isBm, reason === 'lang' ? 'data' : (metricsChanged ? 'data' : 'slot'))
   paint(bodies)
 }
 
