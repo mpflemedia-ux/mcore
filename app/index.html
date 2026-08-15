@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-lang">
+<meta name="nexerp-build" content="2026-08-16-mobilepanels">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -134,8 +134,35 @@ input,select,textarea{font-family:inherit}
 .notif-wrap{position:relative;flex-shrink:0}
 .notif-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1}
 .notif-badge.show{display:flex}
-.notif-menu{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,92vw);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.2));display:none;z-index:200;max-height:70vh;overflow:hidden;flex-direction:column}
+.notif-menu{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,calc(100vw - 24px));max-width:calc(100vw - 24px);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.2));display:none;z-index:300;max-height:70vh;overflow:hidden;flex-direction:column;box-sizing:border-box}
+@media (max-width:640px){
+  .notif-menu{
+    position:fixed;left:12px;right:12px;width:auto;max-width:none;
+    top:56px;right:12px;left:12px;
+    max-height:min(70vh,calc(100dvh - 72px));
+  }
+  .header-bar,.topbar,.app-header{overflow:visible}
+}
 .notif-menu.open{display:flex}
+.db-custom-range-panel{
+  position:absolute;left:0;right:auto;top:calc(100% + 8px);z-index:80;
+  background:var(--db-card,#121A2B);border:1px solid var(--db-border2,rgba(255,255,255,.12));
+  border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);
+  min-width:min(280px,calc(100vw - 24px));max-width:calc(100vw - 24px);box-sizing:border-box
+}
+.db-custom-range-fields{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+@media (max-width:640px){
+  .db-custom-range-panel{
+    position:fixed;left:12px;right:12px;top:auto;bottom:auto;
+    width:auto;max-width:none;min-width:0;
+    /* JS can set top; fallback center-ish below header */
+    top:120px
+  }
+  .db-custom-range-fields{flex-direction:column}
+  .db-range-wrap,.db-range-bar,#db-range-picker-slot{overflow:visible;max-width:100%}
+  .page-content,main,#page-content{overflow-x:hidden}
+}
+
 .notif-menu-h{padding:12px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border)}
 .notif-list{overflow-y:auto;max-height:320px}
 .notif-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
@@ -3454,11 +3481,11 @@ function renderDashboard() {
         <span id="db-range-picker-slot"></span>
         <span style="position:relative;display:inline-block">
           <span class="db-btn" style="font-size:12px" id="db-range-label" onclick="_dbToggleCustomPanel()"><i class="ti ti-calendar"></i> ${monthLabel}</span>
-          <div id="db-custom-range-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:50;background:var(--db-card);border:1px solid var(--db-border2);border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:250px">
+          <div id="db-custom-range-panel" class="db-custom-range-panel" style="display:none">
             <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--db-text2)">${isBm?'Julat Tarikh Tersendiri':'Custom Date Range'}</div>
-            <div style="display:flex;gap:8px;margin-bottom:10px">
-              <div class="form-group" style="margin:0;flex:1"><label class="form-label" style="font-size:11px">${isBm?'Dari':'From'}</label><input type="date" id="db-custom-from" class="form-input" style="padding:6px 8px;font-size:12px"></div>
-              <div class="form-group" style="margin:0;flex:1"><label class="form-label" style="font-size:11px">${isBm?'Hingga':'To'}</label><input type="date" id="db-custom-to" class="form-input" style="padding:6px 8px;font-size:12px"></div>
+            <div class="db-custom-range-fields">
+              <div class="form-group" style="margin:0;flex:1;min-width:0"><label class="form-label" style="font-size:11px">${isBm?'Dari':'From'}</label><input type="date" id="db-custom-from" class="form-input" style="padding:6px 8px;font-size:12px;width:100%;max-width:100%;box-sizing:border-box"></div>
+              <div class="form-group" style="margin:0;flex:1;min-width:0"><label class="form-label" style="font-size:11px">${isBm?'Hingga':'To'}</label><input type="date" id="db-custom-to" class="form-input" style="padding:6px 8px;font-size:12px;width:100%;max-width:100%;box-sizing:border-box"></div>
             </div>
             <div style="display:flex;gap:8px;justify-content:flex-end">
               <button type="button" class="btn btn-outline btn-sm" onclick="_dbCloseCustomPanel()">${isBm?'Batal':'Cancel'}</button>
@@ -4861,6 +4888,32 @@ function _dbToggleCustomPanel() {
     const toEl = document.getElementById('db-custom-to')
     if(fromEl) fromEl.value = (_dbRange==='custom' && window._dbCustomFrom) ? window._dbCustomFrom : b.start
     if(toEl) toEl.value = (_dbRange==='custom' && window._dbCustomTo) ? window._dbCustomTo : b.end
+    // Keep panel inside viewport on phone
+    try {
+      const lbl = document.getElementById('db-range-label')
+      const mobile = window.matchMedia && window.matchMedia('(max-width:640px)').matches
+      if(mobile) {
+        panel.style.position = 'fixed'
+        panel.style.left = '12px'
+        panel.style.right = '12px'
+        panel.style.width = 'auto'
+        panel.style.maxWidth = 'none'
+        let top = 120
+        if(lbl) {
+          const r = lbl.getBoundingClientRect()
+          top = Math.min(r.bottom + 8, window.innerHeight - 220)
+          top = Math.max(56, top)
+        }
+        panel.style.top = top + 'px'
+        panel.style.bottom = 'auto'
+      } else {
+        panel.style.position = ''
+        panel.style.left = ''
+        panel.style.right = ''
+        panel.style.width = ''
+        panel.style.top = ''
+      }
+    } catch(e) {}
     if(!window._dbCustomPanelOutsideClickBound) {
       window._dbCustomPanelOutsideClickBound = true
       document.addEventListener('click', e => {
