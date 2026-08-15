@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-ocrmob">
+<meta name="nexerp-build" content="2026-08-15-pcaiproxy">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8348,7 +8348,7 @@ async function _pcRenderDetail(floatId, t, isBm) {
     <div style="font-weight:600;margin-bottom:8px">${t.addExp}</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">${isBm
       ? 'AI Scan: upload 1 atau banyak foto resit → OCR isi draf → semak → Simpan. 1 resit = 1 baris. Resit rosak: status Damaged + isi manual.'
-      : 'AI Scan: upload one or many receipt photos → OCR fills draft → review → Save. 1 receipt = 1 row. Damaged: set status + enter amount manually.'}</div>
+      : 'AI Scan (same as Expense Claim): upload receipt photos → AI fills draft → review → Save. 1 receipt = 1 row.'}</div>
     <div class="form-group"><label class="form-label">${isBm?'Scan / upload resit (boleh multiple)':'Scan / upload receipts (multiple OK)'}</label>
       <input id="pce-files" type="file" accept="image/*" multiple class="form-input" onchange="_pcOcrFilesSelected('${f.id}')">
       <div id="pce-ocr-status" style="font-size:12px;color:var(--text-3);margin-top:6px"></div>
@@ -8635,60 +8635,44 @@ async function _pcCanvasFromFile(file, opts={}) {
   }
 }
 
+/** Same path as Expense Claim: compress → Supabase ai-proxy action=receipt. */
 async function _pcOcrOneFile(file, onProgress) {
-  const T = await _pcEnsureTesseract()
-  const texts = []
-  const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '')
-  // Mobile: fewer passes (memory/time). Desktop: full multipass.
-  const passes = isMobile ? [
-    { name: 'raw', blob: true },
-    { name: 'contrast', prep: { scale: 1.5, maxW: 1400 } },
-    { name: 'threshold', prep: { scale: 1.6, threshold: 145, maxW: 1400 } }
-  ] : [
-    { name: 'raw', blob: true },
-    { name: 'contrast', prep: { scale: 2.0, maxW: 1800 } },
-    { name: 'threshold', prep: { scale: 2.2, threshold: 140, maxW: 1800 } },
-    { name: 'top', prep: { scale: 2.2, cropTop: 0.42, threshold: 130, maxW: 1800 } }
-  ]
-  let done = 0
-  for(const pass of passes) {
-    try {
-      let input = file
-      if(pass.prep) {
-        const blob = await _pcCanvasFromFile(file, pass.prep)
-        if(blob) input = blob
-      }
-      const result = await T.recognize(input, 'eng', {
-        logger: m => {
-          if(onProgress && m.status === 'recognizing text')
-            onProgress((done + (m.progress || 0)) / passes.length)
-        }
-      })
-      const t = (result?.data?.text || '').trim()
-      if(t.length > 5) texts.push(t)
-    } catch(e) {
-      console.warn('pc pass', pass.name, e)
-    }
-    done++
-    if(onProgress) onProgress(done / passes.length)
+  if(onProgress) onProgress(0.15)
+  const { base64, mimeType } = await _compressImageToBase64(file)
+  if(onProgress) onProgress(0.4)
+  const { data, error } = await sb.functions.invoke('ai-proxy', {
+    body: { action: 'receipt', image_base64: base64, mime_type: mimeType || 'image/jpeg' }
+  })
+  if(onProgress) onProgress(0.85)
+  if(error) throw error
+  if(!data?.success) throw new Error(data?.error || 'AI receipt scan failed')
+  const r = data.data || {}
+  let amount = r.amount != null ? Number(r.amount) : null
+  if(amount != null && (isNaN(amount) || amount <= 0)) amount = null
+  let dateStr = r.date || null
+  // normalize YYYY-MM-DD
+  if(dateStr && /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(dateStr)) {
+    const p = dateStr.split(/[\/\-]/)
+    let dd = p[0].padStart(2,'0'), mm = p[1].padStart(2,'0'), y = p[2]
+    if(y.length === 2) y = '20' + y
+    dateStr = `${y}-${mm}-${dd}`
   }
-  if(!texts.length) {
-    // last resort: raw only once more with worker path default
-    try {
-      const result = await T.recognize(file, 'eng')
-      const t = (result?.data?.text || '').trim()
-      if(t) texts.push(t)
-    } catch(e) {
-      console.error('pc ocr total fail', e)
-      return { amount: null, date: null, merchant: null, description: null, amountSrc: null, items: [], raw: '', error: String(e.message || e) }
-    }
+  const merchant = (r.vendor || r.merchant || '').trim() || null
+  let description = (r.description || '').trim() || null
+  if(!description && merchant) {
+    description = merchant
   }
-  const merged = texts.join('\n')
-  console.log('[pc-ocr merged]', merged.slice(0, 800))
-  const parsed = _pcParseReceiptText(merged)
-  console.log('[pc-ocr parsed]', parsed)
-  if(!parsed.raw) parsed.raw = merged.slice(0, 1200)
-  return parsed
+  if(onProgress) onProgress(1)
+  return {
+    amount,
+    date: dateStr,
+    merchant,
+    description,
+    amountSrc: amount != null ? 'ai-proxy' : null,
+    items: [],
+    confidence: r.confidence,
+    raw: JSON.stringify(r).slice(0, 500)
+  }
 }
 
 async function _pcOcrFilesSelected(floatId) {
@@ -8725,7 +8709,7 @@ async function _pcOcrFilesSelected(floatId) {
           ? ((isBm ? 'OCR tak jumpa data — isi manual. ' : 'OCR missed data — enter manually. ')
               + (parsed.error ? ('Err: '+parsed.error+' ') : '')
               + (parsed.raw ? parsed.raw.slice(0,80) : (isBm ? '(tiada teks dari imej)' : '(no text from image)')))
-          : ('OCR:' + file.name),
+          : ('AI:' + file.name + (parsed.confidence!=null ? (' '+Math.round(parsed.confidence*100)+'%') : '')),
         raw: parsed.raw
       })
     } catch(e) {
