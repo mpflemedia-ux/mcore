@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-pcbtn">
+<meta name="nexerp-build" content="2026-08-16-ostime">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4552,8 +4552,14 @@ async function _dbLoadPeople() {
       const osInfo = osToday[a.employee_id]
       let timeLine = ''
       if(osInfo) {
-        const loc = (osInfo.byDate?.[today]?.location || osInfo.location || '').trim()
-        timeLine = loc ? ((isBm?'Outstation · ':'Outstation · ')+loc) : (isBm?'Outstation hari ini':'Outstation today')
+        const dayOs = osInfo.byDate?.[today] || {}
+        const loc = (dayOs.location || osInfo.location || '').trim()
+        const dep = dayOs.depart_time || osInfo.depart_time
+        const ret = dayOs.return_time || osInfo.return_time
+        const tspan = (dep || ret) ? (_fmtTime12(dep||'') + ' – ' + _fmtTime12(ret||'')) : ''
+        timeLine = isBm ? 'Outstation' : 'Outstation'
+        if(tspan) timeLine += ' · ' + tspan
+        if(loc) timeLine += ' · ' + loc
         if(cin) timeLine += ' · '+(isBm?'Masuk ':'In ')+cin
       } else if(cin && cout) timeLine = (isBm?'Masuk ':'In ')+cin+' · '+(isBm?'Keluar ':'Out ')+cout
       else if(cin) timeLine = (isBm?'Masuk ':'In ')+cin
@@ -4614,7 +4620,7 @@ async function _attApprovedOutstationRange(from, to) {
   if(!APP.tenant?.id || !from || !to) return out
   try {
     let { data, error } = await sb.from('outstation_requests')
-      .select('employee_id, start_date, end_date, location, status')
+      .select('employee_id, start_date, end_date, depart_time, return_time, location, status')
       .eq('tenant_id', APP.tenant.id)
       .eq('status', 'approved')
       .lte('start_date', to)
@@ -4644,7 +4650,7 @@ async function _attApprovedOutstationRange(from, to) {
         const m = String(d.getMonth()+1).padStart(2,'0')
         const day = String(d.getDate()).padStart(2,'0')
         const ds = `${y}-${m}-${day}`
-        out[r.employee_id].byDate[ds] = { location: r.location||'', start_date: r.start_date, end_date: r.end_date }
+        out[r.employee_id].byDate[ds] = { location: r.location||'', start_date: r.start_date, end_date: r.end_date, depart_time: r.depart_time||null, return_time: r.return_time||null }
       }
     })
   } catch(e) { console.warn('outstation range', e) }
@@ -22155,6 +22161,16 @@ async function renderAttendance(params={}) {
       <input type="date" id="os-from" class="form-input">
       <input type="date" id="os-to" class="form-input">
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <div>
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${isBm?'Masa keluar':'Depart time'}</div>
+        <input type="time" id="os-depart" class="form-input" value="08:00">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${isBm?'Masa balik':'Return time'}</div>
+        <input type="time" id="os-return" class="form-input" value="18:00">
+      </div>
+    </div>
     <input type="text" id="os-loc" class="form-input" style="margin-top:8px" placeholder="${isBm?'Lokasi':'Location'}">
     <input type="text" id="os-purpose" class="form-input" style="margin-top:8px" placeholder="${isBm?'Tujuan':'Purpose'}">
     <button class="btn btn-primary btn-sm" style="margin-top:8px" type="button" onclick="_attSubmitOutstation()">${isBm?'Hantar permohonan':'Submit request'}</button>
@@ -22379,18 +22395,29 @@ async function _attSubmitOutstation() {
   const employeeId = (document.getElementById('att-employee-locked')||{}).value || document.getElementById('att-employee')?.value
   const start = document.getElementById('os-from')?.value
   const end = document.getElementById('os-to')?.value
+  const depart = (document.getElementById('os-depart')?.value || '').trim()
+  const ret = (document.getElementById('os-return')?.value || '').trim()
   const location = (document.getElementById('os-loc')?.value || '').trim()
   const purpose = (document.getElementById('os-purpose')?.value || '').trim()
   if(!employeeId || !start || !end) { showToast(isBm?'Isi pekerja + tarikh':'Employee + dates required', 'error'); return }
-  const { error } = await sb.from('outstation_requests').insert({
+  if(!depart || !ret) { showToast(isBm?'Isi masa keluar dan masa balik':'Depart and return time required', 'error'); return }
+  const payload = {
     tenant_id: APP.tenant.id, employee_id: employeeId, start_date: start, end_date: end,
+    depart_time: depart, return_time: ret,
     location, purpose, status: 'pending'
-  })
+  }
+  let { error } = await sb.from('outstation_requests').insert(payload)
+  if(error && /depart_time|return_time|column/i.test(error.message||'')) {
+    const fallback = { tenant_id: APP.tenant.id, employee_id: employeeId, start_date: start, end_date: end, location, purpose, status: 'pending' }
+    ;({ error } = await sb.from('outstation_requests').insert(fallback))
+    if(!error) showToast(isBm?'Disimpan tanpa masa — jalankan SQL outstation times di Supabase':'Saved without times — run outstation times SQL in Supabase', 'warning')
+  }
   if(error) { showToast('Error: '+error.message+' — '+ (isBm?'pastikan SQL migration dijalankan':'run SQL migration'), 'error'); return }
   showToast(isBm?'Permohonan dihantar — menunggu kelulusan HR/owner':'Request submitted — pending HR/owner approval', 'success')
   _attLoadOutstationList()
-  try { if(typeof loadNotifications === 'function') loadNotifications() } catch(e) {}
+  try { if(typeof _attRefreshOwnerNotif === 'function') _attRefreshOwnerNotif() } catch(e) {}
 }
+
 
 async function _attLoadOutstationList() {
   const el = document.getElementById('os-list')
@@ -22404,7 +22431,7 @@ async function _attLoadOutstationList() {
     // Prefer filter deleted_at; fall back if column/policy issues
     let data = null, error = null
     ;({ data, error } = await sb.from('outstation_requests')
-      .select('id,start_date,end_date,location,status,purpose,employee_id,created_at')
+      .select('id,start_date,end_date,depart_time,return_time,location,status,purpose,employee_id,created_at')
       .eq('tenant_id', APP.tenant.id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -22444,7 +22471,7 @@ async function _attLoadOutstationList() {
         </div>` : ''
       return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="font-weight:600;font-size:13px">${_aiEscapeHtml(name)} <span style="color:${stColor};font-weight:600;font-size:12px">· ${r.status}</span></div>
-        <div style="font-size:12px;color:var(--text-2)">${r.start_date} → ${r.end_date}</div>
+        <div style="font-size:12px;color:var(--text-2)">${r.start_date} → ${r.end_date}${(r.depart_time||r.return_time) ? ' · ' + _fmtTime12(r.depart_time||'') + ' – ' + _fmtTime12(r.return_time||'') : ''}</div>
         <div style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(r.location||'')} · ${_aiEscapeHtml(r.purpose||'')}</div>
         ${approve}
       </div>`
