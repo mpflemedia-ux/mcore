@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-anda">
+<meta name="nexerp-build" content="2026-08-16-sort">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11430,6 +11430,8 @@ function _expRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('exp-sort-bar', 'exp', [{v:'date',en:'Date',bm:'Tarikh'},{v:'total',en:'Amount',bm:'Jumlah'},{v:'status',en:'Status',bm:'Status'},{v:'staff',en:'Staff',bm:'Staf'}], `function(){_expRenderListTable()}`)
 }
 
 function _expRenderListTable() {
@@ -11439,6 +11441,12 @@ function _expRenderListTable() {
   const filter = window._expStatusFilter || 'all'
   let rows = window._expListCache || []
   if(filter !== 'all') rows = rows.filter(e => String(e.status||'pending').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'exp', {
+    date: r => r.claim_date || r.date || r.created_at || '',
+    total: r => Number(r.amount||r.total||0),
+    status: r => r.status || '',
+    staff: r => r.claimant_name || r.employee_name || ''
+  })
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const claimantMap = window._expClaimantMap || {}
   const statusColor = s => s==='approved'||s==='paid'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
@@ -15722,6 +15730,80 @@ async function _slLoadCustomers() {
 // ─── Invoices: List ────────────────────────────────────────────────────────────
 let _invListCache = []
 
+/** Shared client-side list sort for pages that have filters but no sort UI. */
+function _listSortState(key, defaultField, defaultDir) {
+  if(!window._listSort) window._listSort = {}
+  if(!window._listSort[key]) window._listSort[key] = { field: defaultField || 'date', dir: defaultDir || 'desc' }
+  return window._listSort[key]
+}
+function _listSetSort(key, field, dir, rerender) {
+  window._listSort = window._listSort || {}
+  window._listSort[key] = { field: field || 'date', dir: dir === 'asc' ? 'asc' : 'desc' }
+  try {
+    if(typeof rerender === 'function') rerender()
+    else if(typeof rerender === 'string') {
+      try { var fn = new Function('return (' + rerender + ')')(); if(typeof fn === 'function') fn() } catch(e2) {
+        if(typeof window[rerender] === 'function') window[rerender]()
+      }
+    }
+  } catch(e) { console.warn('list sort rerender', e) }
+}
+function _listApplySort(rows, key, getters) {
+  if(!rows || !rows.length) return rows || []
+  const st = _listSortState(key)
+  const get = (getters && getters[st.field]) || (r => r[st.field])
+  const dir = st.dir === 'asc' ? 1 : -1
+  return rows.slice().sort((a, b) => {
+    let va = get(a), vb = get(b)
+    if(va == null || va === '') va = ''
+    if(vb == null || vb === '') vb = ''
+    if(typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
+    const na = Number(va), nb = Number(vb)
+    if(va !== '' && vb !== '' && !isNaN(na) && !isNaN(nb) && String(va).trim() !== '' && String(vb).trim() !== '') {
+      // only treat pure numeric strings as numbers
+      if(String(va).match(/^-?\d+(\.\d+)?$/) && String(vb).match(/^-?\d+(\.\d+)?$/)) return (na - nb) * dir
+    }
+    return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * dir
+  })
+}
+function _listSortBarHtml(key, fields, rerenderExpr, isBm) {
+  const st = _listSortState(key, fields[0] && fields[0].v, 'desc')
+  const opts = fields.map(f => {
+    const sel = st.field === f.v ? ' selected' : ''
+    return `<option value="${f.v}"${sel}>${isBm ? (f.bm || f.en) : f.en}</option>`
+  }).join('')
+  // embed rerender as Function-eval string for _listSetSort
+  const rr = String(rerenderExpr || '').replace(/\\/g,'\\\\').replace(/'/g, "\\'")
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px" class="list-sort-bar" data-sort-key="${key}">
+    <div class="form-group" style="margin:0;min-width:140px">
+      <label class="form-label" style="font-size:11px">${isBm ? 'Susun mengikut' : 'Sort by'}</label>
+      <select class="form-input" style="padding:6px 8px;font-size:12px" onchange="_listSetSort('${key}', this.value, this.parentNode.parentNode.querySelector('[data-sort-dir]').value, '${rr}')">
+        ${opts}
+      </select>
+    </div>
+    <div class="form-group" style="margin:0;min-width:120px">
+      <label class="form-label" style="font-size:11px">${isBm ? 'Arah' : 'Order'}</label>
+      <select class="form-input" style="padding:6px 8px;font-size:12px" data-sort-dir onchange="_listSetSort('${key}', this.parentNode.parentNode.querySelector('select').value, this.value, '${rr}')">
+        <option value="desc"${st.dir==='desc'?' selected':''}>${isBm ? 'Menurun' : 'Descending'}</option>
+        <option value="asc"${st.dir==='asc'?' selected':''}>${isBm ? 'Menaik' : 'Ascending'}</option>
+      </select>
+    </div>
+  </div>`
+}
+function _listMountSortBar(barId, key, fields, rerenderExpr) {
+  let el = document.getElementById(barId)
+  if(!el) {
+    const filters = document.getElementById(barId.replace('-sort-bar', '-status-filters'))
+    if(filters && filters.parentNode) {
+      el = document.createElement('div')
+      el.id = barId
+      filters.parentNode.insertBefore(el, filters.nextSibling)
+    }
+  }
+  if(!el) return
+  el.innerHTML = _listSortBarHtml(key, fields, rerenderExpr, APP.language === 'bm')
+}
+
 async function renderInvList() {
   const t = APP.language==='bm' ? {
     title:'Invois', add:'Invois Baru', invNo:'No. Invois', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
@@ -15790,6 +15872,8 @@ function _invRenderStatusFilters(t) {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('inv-sort-bar', 'inv', [{v:'date',en:'Date',bm:'Tarikh'},{v:'due',en:'Due date',bm:'Tarikh akhir'},{v:'total',en:'Amount',bm:'Jumlah'},{v:'no',en:'Invoice no.',bm:'No. invois'},{v:'customer',en:'Customer',bm:'Pelanggan'},{v:'status',en:'Status',bm:'Status'}], 'function(){_invRenderListTable(window._invListT)}')
 }
 
 function _invRenderListTable(t) {
@@ -15799,6 +15883,14 @@ function _invRenderListTable(t) {
   const filter = window._invStatusFilter || 'all'
   let rows = _invListCache || []
   if(filter !== 'all') rows = rows.filter(i => String(i.status||'unpaid').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'inv', {
+    date: r => r.issue_date || r.invoice_date || r.date || '',
+    due: r => r.due_date || '',
+    total: r => Number(r.total||0),
+    no: r => r.ref_no || r.invoice_no || r.inv_no || '',
+    customer: r => (r.customers && r.customers.name) || r.customer_name || '',
+    status: r => r.status || ''
+  })
   if(!rows.length) {
     const isBm = APP.language==='bm'
     const cta = (filter==='all' || !filter)
@@ -16691,6 +16783,8 @@ function _quoRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('quo-sort-bar', 'quo', [{v:'date',en:'Date',bm:'Tarikh'},{v:'total',en:'Amount',bm:'Jumlah'},{v:'no',en:'Quote no.',bm:'No. sebut harga'},{v:'customer',en:'Customer',bm:'Pelanggan'},{v:'status',en:'Status',bm:'Status'}], `function(){_quoRenderListTable()}`)
 }
 
 function _quoRenderListTable() {
@@ -16701,6 +16795,13 @@ function _quoRenderListTable() {
   let rows = window._quoListCache || []
   if(filter === 'converted') rows = rows.filter(q => String(q.status||'').toLowerCase() === 'converted')
   else if(filter === 'draft') rows = rows.filter(q => String(q.status||'draft').toLowerCase() !== 'converted')
+  rows = _listApplySort(rows, 'quo', {
+    date: r => r.quote_date || r.date || '',
+    total: r => Number(r.total||0),
+    no: r => r.quote_no || r.quo_no || '',
+    customer: r => (r.customers && r.customers.name) || '',
+    status: r => r.status || ''
+  })
   if(!rows.length) {
     wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`
     return
@@ -16998,6 +17099,8 @@ function _doRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('do-sort-bar', 'do', [{v:'date',en:'Date',bm:'Tarikh'},{v:'no',en:'DO no.',bm:'No. DO'},{v:'customer',en:'Customer',bm:'Pelanggan'},{v:'status',en:'Status',bm:'Status'}], `function(){_doRenderListTable()}`)
 }
 
 function _doRenderListTable() {
@@ -17007,6 +17110,12 @@ function _doRenderListTable() {
   const filter = window._doStatusFilter || 'all'
   let rows = window._doListCache || []
   if(filter !== 'all') rows = rows.filter(d => String(d.status||'pending').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'do', {
+    date: r => r.do_date || r.date || '',
+    no: r => r.do_no || '',
+    customer: r => (r.customers && r.customers.name) || '',
+    status: r => r.status || ''
+  })
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='delivered'?'var(--success)':s==='in_transit'?'var(--warning)':'var(--text-3)'
   const statusLabel = s => s==='delivered'?t.delivered:s==='in_transit'?t.inTransit:t.pending
@@ -17426,6 +17535,8 @@ function _poRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('po-sort-bar', 'po', [{v:'date',en:'Date',bm:'Tarikh'},{v:'total',en:'Amount',bm:'Jumlah'},{v:'no',en:'PO no.',bm:'No. PO'},{v:'supplier',en:'Supplier',bm:'Pembekal'},{v:'status',en:'Status',bm:'Status'}], `function(){_poRenderListTable()}`)
 }
 
 function _poRenderListTable() {
@@ -17435,6 +17546,13 @@ function _poRenderListTable() {
   const filter = window._poStatusFilter || 'all'
   let rows = window._poListCache || []
   if(filter !== 'all') rows = rows.filter(p => String(p.status||'draft').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'po', {
+    date: r => r.order_date || r.date || '',
+    total: r => Number(r.total||0),
+    no: r => r.po_no || '',
+    supplier: r => (r.suppliers && r.suppliers.name) || '',
+    status: r => r.status || ''
+  })
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='received'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--danger)':'var(--text-3)'
   const statusLabel = s => t[s]||s
@@ -17872,6 +17990,8 @@ function _billRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('bill-sort-bar', 'bill', [{v:'date',en:'Date',bm:'Tarikh'},{v:'total',en:'Amount',bm:'Jumlah'},{v:'no',en:'Bill no.',bm:'No. bil'},{v:'supplier',en:'Supplier',bm:'Pembekal'},{v:'status',en:'Status',bm:'Status'}], `function(){_billRenderListTable()}`)
 }
 
 function _billRenderListTable() {
@@ -17881,6 +18001,13 @@ function _billRenderListTable() {
   const filter = window._billStatusFilter || 'all'
   let rows = window._billListCache || []
   if(filter !== 'all') rows = rows.filter(b => String(b.status||'unpaid').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'bill', {
+    date: r => r.bill_date || r.date || '',
+    total: r => Number(r.total||0),
+    no: r => r.bill_no || '',
+    supplier: r => (r.suppliers && r.suppliers.name) || '',
+    status: r => r.status || ''
+  })
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paid:s==='partial'?t.partial:t.unpaid
@@ -18537,6 +18664,8 @@ function _pvRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('pv-sort-bar', 'pv', [{v:'date',en:'Date',bm:'Tarikh'},{v:'total',en:'Amount',bm:'Jumlah'},{v:'no',en:'Voucher no.',bm:'No. baucar'},{v:'payee',en:'Payee',bm:'Penerima'},{v:'status',en:'Status',bm:'Status'}], `function(){_pvRenderListTable()}`)
 }
 
 function _pvRenderListTable() {
@@ -18546,6 +18675,13 @@ function _pvRenderListTable() {
   const filter = window._pvStatusFilter || 'all'
   let rows = window._pvListCache || []
   if(filter !== 'all') rows = rows.filter(v => String(v.status||'draft').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'pv', {
+    date: r => r.voucher_date || r.date || '',
+    total: r => Number(r.amount||r.total||0),
+    no: r => r.voucher_no || r.pv_no || '',
+    status: r => r.status || '',
+    payee: r => r.payee_name || r.payee || ''
+  })
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const stColor = s => s==='paid'?'var(--success)':s==='approved'?'#3B82F6':s==='void'?'var(--danger)':'var(--warning)'
   const stLabel = s => t[s]||s
@@ -19424,6 +19560,8 @@ function _woRenderStatusFilters() {
       ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
     </button>`
   }).join('')
+
+  _listMountSortBar('wo-sort-bar', 'wo', [{v:'date',en:'Date',bm:'Tarikh'},{v:'no',en:'WO no.',bm:'No. WO'},{v:'customer',en:'Customer',bm:'Pelanggan'},{v:'status',en:'Status',bm:'Status'}], `function(){_woRenderListTable()}`)
 }
 
 function _woRenderListTable() {
@@ -19433,6 +19571,12 @@ function _woRenderListTable() {
   const filter = window._woStatusFilter || 'all'
   let rows = window._woListCache || []
   if(filter !== 'all') rows = rows.filter(w => String(w.status||'pending').toLowerCase() === filter)
+  rows = _listApplySort(rows, 'wo', {
+    date: r => r.order_date || r.date || r.created_at || '',
+    no: r => r.wo_no || r.order_no || '',
+    status: r => r.status || '',
+    customer: r => (r.customers && r.customers.name) || r.customer_name || ''
+  })
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   const statusColor = s => s==='completed'?'var(--success)':s==='in_progress'?'var(--warning)':'var(--text-3)'
   const statusLabel = s => s==='completed'?t.completed:s==='in_progress'?t.inProgress:t.pending
