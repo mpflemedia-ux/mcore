@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-pcsync">
+<meta name="nexerp-build" content="2026-08-16-pcbtn">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9564,6 +9564,7 @@ async function _pcRenderDetail(floatId, t, isBm) {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       ${_repPrintToolbar('PettyCashFloat')}
+      <button type="button" class="btn btn-primary btn-sm" onclick="_pcSyncFloatJournals('${f.id}')"><i class="ti ti-book"></i> ${isBm?'Jana Jurnal':'Post Journals'}</button>
       ${!closed?`<button type="button" class="btn btn-outline btn-sm" onclick="_pcTopUp('${f.id}')">${isBm?'Top-up':'Top-up'}</button>
       <button type="button" class="btn btn-outline btn-sm" onclick="_pcCloseFloat('${f.id}',${bal})">${t.closeFloat}</button>`:''}
     </div>
@@ -9577,6 +9578,14 @@ async function _pcRenderDetail(floatId, t, isBm) {
       <div><div style="font-size:11px;color:var(--text-3)">${t.spent}</div><div style="font-weight:600">${formatRM(spent)}</div></div>
       <div><div style="font-size:11px;color:var(--text-3)">${t.balance}</div><div style="font-weight:700;color:var(--primary)">${formatRM(bal)}</div></div>
       <div><div style="font-size:11px;color:var(--text-3)">Status</div><div>${closed?t.closed:t.open}</div></div>
+    </div>
+    <div class="no-print" style="margin-top:14px">
+      <button type="button" class="btn btn-primary" style="width:100%" onclick="_pcSyncFloatJournals('${f.id}')">
+        <i class="ti ti-book"></i> ${isBm?'Jana Jurnal ke Accounting':'Post Journals to Accounting'}
+      </button>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px">${isBm
+        ? 'Cipta jurnal Issue / Belanja / Return (jika closed) — tidak double-post.'
+        : 'Creates issue / expense / return journals if missing — never double-posts.'}</div>
     </div>
   </div>
   ${!closed?`
