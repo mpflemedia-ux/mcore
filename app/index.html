@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-pplactive">
+<meta name="nexerp-build" content="2026-08-16-viewatt">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1496,7 +1496,7 @@ const LANG = {
       needsAttn:'Needs attention',thisMonth:'This month',active:'Active',invoices:'invoices',
       monthlySales:'Monthly Sales',recentInv:'Recent Invoices',viewAll:'View All',noInv:'No invoices yet',
       chartNote:'Will load with Chart.js',export:'Export',
-      people:'People',peopleSub:"Today's attendance",viewHR:'View HR',
+      people:'People',peopleSub:"Today's attendance",viewHR:'View Attendance',
       recentActivity:'Recent Activity',noPeople:'No team members yet',noActivity:'No recent activity',
       active:'Active'
     },
@@ -1514,7 +1514,7 @@ const LANG = {
       needsAttn:'Perlu perhatian',thisMonth:'Bulan ini',active:'Aktif',invoices:'invois',
       monthlySales:'Jualan Bulanan',recentInv:'Invois Terkini',viewAll:'Lihat Semua',noInv:'Tiada invois lagi',
       chartNote:'Akan dimuatkan dengan Chart.js',export:'Eksport',
-      people:'Pasukan',peopleSub:'Kehadiran hari ini',viewHR:'Lihat SDM',
+      people:'Pasukan',peopleSub:'Kehadiran hari ini',viewHR:'Lihat Kehadiran',
       recentActivity:'Aktiviti Terkini',noPeople:'Tiada ahli pasukan lagi',noActivity:'Tiada aktiviti terkini',
       active:'Aktif'
     },
@@ -3810,7 +3810,7 @@ function renderDashboard() {
             <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
             <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${t.peopleSub||(isBm?'Ahli pasukan':'Team members')}</div>
           </div>
-          <button class="db-btn" onclick="if(canAccess('hr')) openPage('hr')"><i class="ti ti-arrow-right"></i> ${t.viewHR||(isBm?'Lihat SDM':'View HR')}</button>
+          <button class="db-btn" onclick="if(canAccess('hr')) openPage('hr',{view:'attendance'})"><i class="ti ti-arrow-right"></i> ${t.viewHR||(isBm?'Lihat Kehadiran':'View Attendance')}</button>
         </div>
         <div id="db-people-list" style="display:flex;flex-direction:column;gap:10px">
           <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
