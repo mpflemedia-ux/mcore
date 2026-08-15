@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-presence-de">
+<meta name="nexerp-build" content="2026-08-16-pluscode">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22215,6 +22215,14 @@ async function renderAttendance(params={}) {
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="att-set-code-on"> ${isBm?'Wajib kod pejabat (mod Office)':'Require office code (Office mode)'}</label>
     <div style="margin:12px 0 8px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Presence Ring · Geofence pejabat':'Presence Ring · Office geofence'}</div>
+    <div class="form-group" style="margin:0 0 8px">
+      <label class="form-label">${isBm?'Alamat / Plus Code':'Address / Plus Code'}</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" id="att-set-office-address" class="form-input" style="flex:1;min-width:180px" placeholder="5M83+76 Mont Kiara, Kuala Lumpur">
+        <button type="button" class="btn btn-outline btn-sm" onclick="_attResolveOfficeAddress()"><i class="ti ti-search"></i> ${isBm?'Resolve':'Resolve'}</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:4px">${isBm?'Tampal alamat atau Plus Code → Resolve → Lat/Lng auto':'Paste address or Plus Code → Resolve → Lat/Lng auto-filled'}</div>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px">
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Nama lokasi':'Location name'}</label><input type="text" id="att-set-office-name" class="form-input" placeholder="HQ KL"></div>
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Radius (m)':'Radius (m)'}</label><input type="number" id="att-set-radius" class="form-input" value="500" min="50" max="5000"></div>
@@ -22510,6 +22518,74 @@ function _attendanceEdit(id) {
 }
 
 
+
+
+/** Resolve address / Plus Code → Lat/Lng (Photon + Nominatim fallback). No API key. Tenant-local settings only. */
+async function _attResolveOfficeAddress() {
+  const isBm = APP.language === 'bm'
+  const q = (document.getElementById('att-set-office-address')?.value || '').trim()
+  if(!q) {
+    showToast(isBm?'Isi alamat atau Plus Code dulu':'Enter address or Plus Code first', 'error')
+    return
+  }
+  showToast(isBm?'Mencari koordinat…':'Looking up coordinates…', 'info')
+  let lat = null, lng = null, label = null
+  try {
+    // 1) Photon (Komoot) — CORS-friendly, free
+    const u1 = 'https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=3&lang=en'
+    const r1 = await fetch(u1, { headers: { 'Accept': 'application/json' } })
+    if(r1.ok) {
+      const j = await r1.json()
+      const feats = j && j.features ? j.features : []
+      // Prefer result in Malaysia if multiple
+      let best = feats[0]
+      for(const f of feats) {
+        const cc = (f.properties && (f.properties.countrycode || f.properties.country)) || ''
+        if(String(cc).toUpperCase() === 'MY' || /malaysia/i.test(String(f.properties && f.properties.country || ''))) {
+          best = f; break
+        }
+      }
+      if(best && best.geometry && best.geometry.coordinates) {
+        lng = Number(best.geometry.coordinates[0])
+        lat = Number(best.geometry.coordinates[1])
+        const p = best.properties || {}
+        label = p.name || p.street || p.city || p.district || null
+        if(p.city && label && label !== p.city) label = label + ', ' + p.city
+      }
+    }
+  } catch(e1) { console.warn('photon geocode', e1) }
+
+  if(lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+    try {
+      // 2) Nominatim fallback (may fail CORS on some browsers)
+      const u2 = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q)
+      const r2 = await fetch(u2, { headers: { 'Accept': 'application/json', 'Accept-Language': 'en' } })
+      if(r2.ok) {
+        const arr = await r2.json()
+        if(arr && arr[0]) {
+          lat = Number(arr[0].lat)
+          lng = Number(arr[0].lon)
+          label = arr[0].display_name || null
+        }
+      }
+    } catch(e2) { console.warn('nominatim geocode', e2) }
+  }
+
+  if(lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+    showToast(isBm?'Tak jumpa koordinat — cuba alamat lebih lengkap atau pin manual di Google Maps':'Coordinates not found — try a fuller address or pin manually in Google Maps', 'error')
+    return
+  }
+
+  const la = document.getElementById('att-set-lat'); if(la) la.value = lat.toFixed(6)
+  const ln = document.getElementById('att-set-lng'); if(ln) ln.value = lng.toFixed(6)
+  const nm = document.getElementById('att-set-office-name')
+  if(nm && !(nm.value || '').trim()) {
+    // Short label from query (first segment) or geocoder label
+    const short = q.split(',')[0].trim().slice(0, 48)
+    nm.value = short || (label ? String(label).slice(0, 48) : '')
+  }
+  showToast(isBm?('Koordinat diisi: ' + lat.toFixed(5) + ', ' + lng.toFixed(5)) : ('Coordinates filled: ' + lat.toFixed(5) + ', ' + lng.toFixed(5)), 'success')
+}
 
 async function _attUseMyLocationAsOffice() {
   const isBm = APP.language === 'bm'
