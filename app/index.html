@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-pcaiproxy">
+<meta name="nexerp-build" content="2026-08-15-dbhealth">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3537,6 +3537,24 @@ function renderDashboard() {
       </div>
     </div>
 
+    <!-- Zone Power (combo) + Business Health (radar) -->
+    <div class="db-ops-row">
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Kuasa Zon (Skor 0–100)':'Zone Power (Score 0–100)'}</div>
+        <div style="position:relative;min-height:220px">
+          <canvas id="db-zone-power-chart" height="110"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'Bar = skor modul · Line = purata keseluruhan (tempoh semasa)':'Bars = module scores · Line = overall average (current period)'}</div>
+      </div>
+      <div class="db-card">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-radar"></i> ${isBm?'Kesihatan Bisnes':'Business Health'}</div>
+        <div style="position:relative;min-height:220px;max-width:340px;margin:0 auto">
+          <canvas id="db-health-radar" height="110"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--db-text4);margin-top:6px">${isBm?'6 paksi dari data tenant semasa (bukan target manual)':'6 axes from current tenant data (no manual targets)'}</div>
+      </div>
+    </div>
+
     <!-- Low stock strip -->
     <div class="db-card" style="margin-bottom:14px">
       <div class="db-card-title" style="margin-bottom:10px"><i class="ti ti-package"></i> ${isBm?'Stok Rendah':'Low Stock'}</div>
@@ -4074,6 +4092,30 @@ async function loadDashboardData() {
   })
 
   if(!_still()) return
+  // Zone Power + Business Health scores (tenant-scoped, no extra schema)
+  let _stockScore = 70
+  try {
+    const { data: _prods } = await sb.from('products').select('stock_qty,reorder_point')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(400)
+    const _pl = _prods || []
+    if(_pl.length) {
+      const _low = _pl.filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5)).length
+      _stockScore = Math.round(100 - Math.min(100, (_low / _pl.length) * 100))
+    }
+  } catch(e) { console.warn('health stock score', e) }
+  try {
+    const _hs = _dbBuildHealthScores({
+      curSales, prevSales, curRate,
+      payrollCost: typeof payrollCost === 'number' ? payrollCost : 0,
+      expense: plThis && plThis.expense, revenue: plThis && plThis.revenue,
+      overdueAmt: typeof overdueAmt === 'number' ? overdueAmt : 0,
+      billedThis, stockScore: _stockScore
+    })
+    window._dbHealthScores = _hs
+    _dbRenderZonePowerChart(_hs)
+    _dbRenderHealthRadar(_hs)
+  } catch(e) { console.warn('health charts', e) }
+
   try { _dbRenderGrowthChart(inv) } catch(e) { console.warn('chart growth', e) }
   try { _dbRenderStatusDonut(thisMonthAll) } catch(e) { console.warn('chart status', e) }
   try { _dbRenderPnLChart() } catch(e) { console.warn('chart pnl', e) }
@@ -4810,6 +4852,146 @@ function _dbSetPeriod(p) {
   _dbPeriod = p
   document.querySelectorAll('#db-period-toggle .db-toggle').forEach(el=>el.classList.toggle('active', el.dataset.p===p))
   _dbRenderGrowthChart(_dbInvCache)
+}
+
+function _dbClampScore(n) {
+  const x = Number(n)
+  if(!isFinite(x)) return 0
+  return Math.max(0, Math.min(100, Math.round(x)))
+}
+
+/** Build 0–100 scores from metrics already on the dashboard (tenant period). */
+function _dbBuildHealthScores(m) {
+  m = m || {}
+  const curS = Number(m.curSales||0), prevS = Number(m.prevSales||0)
+  let sales = 40
+  if(curS <= 0 && prevS <= 0) sales = 40
+  else if(prevS <= 0) sales = curS > 0 ? 75 : 40
+  else sales = _dbClampScore(50 + (((curS - prevS) / prevS) * 100) / 2)
+
+  const collection = _dbClampScore(m.curRate)
+
+  let payroll = 70
+  if(curS > 0.005) payroll = _dbClampScore(100 - (Number(m.payrollCost||0) / curS) * 100)
+  else if(Number(m.payrollCost||0) > 0) payroll = 35
+
+  const rev = Math.max(Number(m.revenue||0), curS, 0)
+  let expenses = 70
+  if(rev > 0.005) expenses = _dbClampScore(100 - (Number(m.expense||0) / rev) * 100)
+  else if(Number(m.expense||0) > 0) expenses = 40
+
+  const stock = _dbClampScore(m.stockScore != null ? m.stockScore : 70)
+
+  let overdue = 80
+  const billed = Number(m.billedThis||0)
+  if(billed > 0.005) overdue = _dbClampScore(100 - (Number(m.overdueAmt||0) / billed) * 100)
+  else if(Number(m.overdueAmt||0) > 0) overdue = 30
+
+  const zoneVals = [sales, collection, payroll, expenses, stock]
+  const avg = zoneVals.reduce((a,b)=>a+b,0) / zoneVals.length
+  return {
+    zoneVals,
+    zoneAvg: Math.round(avg * 10) / 10,
+    radarVals: [sales, collection, overdue, payroll, stock, expenses],
+    detail: { sales, collection, payroll, expenses, stock, overdue }
+  }
+}
+
+function _dbRenderZonePowerChart(scores) {
+  const isBm = APP.language==='bm'
+  const ctx = document.getElementById('db-zone-power-chart')
+  if(!ctx || typeof Chart === 'undefined' || !scores) return
+  _dbDestroy('zonePower', ctx)
+  const labels = isBm
+    ? ['Jualan','Kutipan','Gaji','Belanja','Stok']
+    : ['Sales','Collection','Payroll','Expenses','Stock']
+  const vals = scores.zoneVals || []
+  const avgLine = labels.map(() => scores.zoneAvg)
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  window._dbCharts = window._dbCharts || {}
+  window._dbCharts.zonePower = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: isBm ? 'Skor zon' : 'Zone score',
+          data: vals,
+          backgroundColor: vals.map(v => v >= 70 ? 'rgba(16,185,129,.75)' : v >= 40 ? 'rgba(14,116,144,.75)' : 'rgba(239,68,68,.7)'),
+          borderRadius: 6,
+          maxBarThickness: 36,
+          order: 2
+        },
+        {
+          type: 'line',
+          label: isBm ? 'Purata' : 'Average',
+          data: avgLine,
+          borderColor: primary,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: primary,
+          tension: 0.2,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: 'var(--db-text3)', boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: (x) => x.dataset.label + ': ' + x.raw } }
+      },
+      scales: {
+        x: { ticks: { color: 'var(--db-text4)', font: { size: 11 } }, grid: { display: false } },
+        y: { min: 0, max: 100, ticks: { color: 'var(--db-text4)', callback: v => v + '' }, grid: { color: 'rgba(128,128,128,.12)' } }
+      }
+    }
+  })
+}
+
+function _dbRenderHealthRadar(scores) {
+  const isBm = APP.language==='bm'
+  const ctx = document.getElementById('db-health-radar')
+  if(!ctx || typeof Chart === 'undefined' || !scores) return
+  _dbDestroy('healthRadar', ctx)
+  const labels = isBm
+    ? ['Jualan','Kutipan','Overdue','Gaji','Stok','Belanja']
+    : ['Sales','Collection','Overdue','Payroll','Stock','Expenses']
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  window._dbCharts = window._dbCharts || {}
+  window._dbCharts.healthRadar = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [{
+        label: isBm ? 'Skor' : 'Score',
+        data: scores.radarVals || [],
+        borderColor: primary,
+        backgroundColor: 'rgba(14,116,144,.22)',
+        pointBackgroundColor: primary,
+        pointBorderColor: '#fff',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        r: {
+          min: 0,
+          max: 100,
+          ticks: { display: false, backdropColor: 'transparent' },
+          grid: { color: 'rgba(128,128,128,.15)' },
+          angleLines: { color: 'rgba(128,128,128,.12)' },
+          pointLabels: { color: 'var(--db-text3)', font: { size: 11 } }
+        }
+      }
+    }
+  })
 }
 
 function _dbRenderGrowthChart(inv) {
