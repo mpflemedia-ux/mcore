@@ -3149,7 +3149,7 @@ async function doLogout() {
 let _sessionLoadPromise = null
 let _sessionLoadUserId = null
 
-function _captureInviteFromUrl(); setTimeout(function(){ try{_applyInvitePrefill()}catch(e){} }, 300) {
+function _captureInviteFromUrl() {
   try {
     const params = new URLSearchParams(location.search)
     const inv = params.get('invite')
