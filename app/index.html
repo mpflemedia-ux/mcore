@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-mobilepanels">
+<meta name="nexerp-build" content="2026-08-16-attctl">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21346,7 +21346,29 @@ async function renderAttendance(params={}) {
       </div>
     </div>
   </div>
-  <div class="card"><div id="att-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div class="card">
+  <div class="card" style="padding:14px;margin-bottom:14px" id="att-controls-panel">
+    <div style="font-weight:600;margin-bottom:8px"><i class="ti ti-shield-check"></i> ${isBm?'Kawalan kehadiran':'Attendance controls'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Mula kerja':'Work start'}</label><input type="time" id="att-set-start" class="form-input" value="09:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Grace (min)':'Grace (min)'}</label><input type="number" id="att-set-grace" class="form-input" value="15" min="0" max="120"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Had field/bulan':'Field cap/mo'}</label><input type="number" id="att-set-fieldmax" class="form-input" value="12" min="0" max="31"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Kod pejabat hari ini':'Office code today'}</label><input type="text" id="att-set-code" class="form-input" placeholder="e.g. 4821"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="att-set-code-on"> ${isBm?'Wajib kod pejabat (mod Office)':'Require office code (Office mode)'}</label>
+    <button class="btn btn-outline btn-sm" type="button" onclick="_attSavePolicy()" ${'${canManageHR() ? "" : "disabled"}'}><i class="ti ti-device-floppy"></i> ${isBm?'Simpan polisi':'Save policy'}</button>
+    <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+    <div style="font-weight:600;margin-bottom:6px">${isBm?'Permohonan outstation':'Outstation request'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <input type="date" id="os-from" class="form-input">
+      <input type="date" id="os-to" class="form-input">
+    </div>
+    <input type="text" id="os-loc" class="form-input" style="margin-top:8px" placeholder="${isBm?'Lokasi':'Location'}">
+    <input type="text" id="os-purpose" class="form-input" style="margin-top:8px" placeholder="${isBm?'Tujuan':'Purpose'}">
+    <button class="btn btn-primary btn-sm" style="margin-top:8px" type="button" onclick="_attSubmitOutstation()">${isBm?'Hantar permohonan':'Submit request'}</button>
+    <div id="os-list" style="margin-top:10px;font-size:12px;color:var(--text-3)"></div>
+  </div>
+  <div id="att-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   await _attendanceLoadTable(month, year)
 }
@@ -21365,6 +21387,33 @@ function _attendanceResetForm() {
 }
 
 async function _attendanceLoadTable(month, year) {
+  try {
+    await _attLoadPolicy(); _attModeChanged()
+    const p = window._attPolicy || {}
+    const s = document.getElementById('att-set-start'); if(s && p.work_start) s.value = String(p.work_start).slice(0,5)
+    const g = document.getElementById('att-set-grace'); if(g && p.grace_minutes!=null) g.value = p.grace_minutes
+    const f = document.getElementById('att-set-fieldmax'); if(f && p.field_max_days_month!=null) f.value = p.field_max_days_month
+    const on = document.getElementById('att-set-code-on'); if(on) on.checked = !!p.office_code_enabled
+    const code = document.getElementById('att-set-code'); if(code && p.daily_code) code.value = p.daily_code
+    _attLoadOutstationList()
+  } catch(e) {}
+  try {
+    const selfId = (document.getElementById('att-employee-locked')||{}).value || document.getElementById('att-employee')?.value
+    if(selfId) {
+      const st = await _attOnTimeStreak(selfId)
+      let el = document.getElementById('att-streak-badge')
+      if(!el) {
+        const form = document.getElementById('att-notes')
+        if(form && form.parentElement) {
+          el = document.createElement('div')
+          el.id = 'att-streak-badge'
+          el.style.cssText = 'font-size:12px;color:var(--primary);margin:6px 0;font-weight:600'
+          form.parentElement.parentElement.appendChild(el)
+        }
+      }
+      if(el) el.textContent = (APP.language==='bm'?'Streak tepat masa: ':'On-time streak: ') + st + (APP.language==='bm'?' hari':' days')
+    }
+  } catch(e) {}
   const isBm = APP.language==='bm'
   const t = isBm ? {
     employee:'Pekerja', date:'Tarikh', status:'Status', notes:'Catatan',
@@ -21379,7 +21428,7 @@ async function _attendanceLoadTable(month, year) {
   const from = `${year}-${String(month).padStart(2,'0')}-01`
   const lastDay = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
-  const {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,employees(name)')
+  const {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,employees(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _attendanceRecords = data || []
@@ -21420,6 +21469,67 @@ function _attendanceEdit(id) {
   window.scrollTo({top:0, behavior:'smooth'})
 }
 
+
+async function _attSavePolicy() {
+  if(!canManageHR()) return
+  const isBm = APP.language==='bm'
+  const row = {
+    tenant_id: APP.tenant.id,
+    work_start: document.getElementById('att-set-start')?.value || '09:00',
+    grace_minutes: Number(document.getElementById('att-set-grace')?.value || 15),
+    field_max_days_month: Number(document.getElementById('att-set-fieldmax')?.value || 12),
+    office_code_enabled: !!document.getElementById('att-set-code-on')?.checked,
+    daily_code: (document.getElementById('att-set-code')?.value || '').trim() || null,
+    daily_code_date: _nowDateLocal(),
+    updated_at: new Date().toISOString()
+  }
+  const { error } = await sb.from('tenant_attendance_settings').upsert(row, { onConflict: 'tenant_id' })
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  window._attPolicy = { ...(window._attPolicy||{}), ...row }
+  _attModeChanged()
+  showToast(isBm?'Polisi disimpan':'Policy saved', 'success')
+}
+
+async function _attSubmitOutstation() {
+  const isBm = APP.language==='bm'
+  const employeeId = (document.getElementById('att-employee-locked')||{}).value || document.getElementById('att-employee')?.value
+  const start = document.getElementById('os-from')?.value
+  const end = document.getElementById('os-to')?.value
+  const location = (document.getElementById('os-loc')?.value || '').trim()
+  const purpose = (document.getElementById('os-purpose')?.value || '').trim()
+  if(!employeeId || !start || !end) { showToast(isBm?'Isi pekerja + tarikh':'Employee + dates required', 'error'); return }
+  const { error } = await sb.from('outstation_requests').insert({
+    tenant_id: APP.tenant.id, employee_id: employeeId, start_date: start, end_date: end,
+    location, purpose, status: 'pending'
+  })
+  if(error) { showToast('Error: '+error.message+' — '+ (isBm?'pastikan SQL migration dijalankan':'run SQL migration'), 'error'); return }
+  showToast(isBm?'Permohonan dihantar':'Request submitted', 'success')
+  _attLoadOutstationList()
+}
+
+async function _attLoadOutstationList() {
+  const el = document.getElementById('os-list')
+  if(!el || !APP.tenant?.id) return
+  try {
+    const { data } = await sb.from('outstation_requests').select('id,start_date,end_date,location,status,purpose,employee_id')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(15)
+    if(!data?.length) { el.innerHTML = ''; return }
+    const isBm = APP.language==='bm'
+    el.innerHTML = data.map(r => {
+      const approve = canManageHR() && r.status==='pending' ? `<button class="btn btn-outline btn-sm" onclick="_attReviewOutstation('${r.id}','approved')">OK</button> <button class="btn btn-outline btn-sm" onclick="_attReviewOutstation('${r.id}','rejected')">X</button>` : ''
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">${r.start_date}→${r.end_date} · ${r.status} · ${(r.location||'')}<br>${(r.purpose||'')} ${approve}</div>`
+    }).join('')
+  } catch(e) { el.innerHTML = '' }
+}
+
+async function _attReviewOutstation(id, status) {
+  if(!canManageHR()) return
+  const { error } = await sb.from('outstation_requests').update({ status, reviewed_by: APP.user?.id || null, updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast('Updated', 'success')
+  _attLoadOutstationList()
+}
+
 async function _attendanceSave() {
   const isBm = APP.language==='bm'
   const id = document.getElementById('att-edit-id').value
@@ -21437,22 +21547,68 @@ async function _attendanceSave() {
   const statusEl = document.querySelector('input[name="att-status"]:checked')
   if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
   if(!date) { showToast(isBm?'Sila pilih tarikh':'Please select a date', 'error'); return }
+  const workMode = document.getElementById('att-work-mode')?.value || 'office'
+  const notes = (document.getElementById('att-notes')?.value || '').trim()
+  const policy = window._attPolicy || await _attLoadPolicy()
+  if(workMode === 'field' && policy.require_field_notes !== false && notes.length < 3) {
+    showToast(isBm?'Field: catatan pelanggan/lokasi/tujuan wajib':'Field: customer/location/purpose notes required', 'error')
+    return
+  }
+  if(workMode === 'office' && policy.office_code_enabled) {
+    const code = (document.getElementById('att-office-code')?.value || '').trim()
+    const today = _nowDateLocal()
+    const expected = (policy.daily_code_date === today) ? String(policy.daily_code || '') : ''
+    if(!expected || code !== expected) {
+      showToast(isBm?'Kod pejabat tidak sah atau belum ditetapkan hari ini':'Invalid or unset office code for today', 'error')
+      return
+    }
+  }
+  if(workMode === 'outstation') {
+    const ok = await _attHasApprovedOutstation(employeeId, date)
+    if(!ok && !canManageHR()) {
+      showToast(isBm?'Tiada outstation diluluskan untuk tarikh ini':'No approved outstation for this date', 'error')
+      return
+    }
+  }
+  if(workMode === 'field' && !id) {
+    const d = new Date(date + 'T12:00:00')
+    const cnt = await _attCountFieldDays(employeeId, d.getFullYear(), d.getMonth()+1)
+    const maxF = Number(policy.field_max_days_month != null ? policy.field_max_days_month : 12)
+    if(cnt >= maxF && !canManageHR()) {
+      showToast(isBm?`Had field bulan ini (${maxF} hari)`:`Field day limit reached (${maxF}/month)`, 'error')
+      return
+    }
+  }
+  let status = statusEl ? statusEl.value : 'present'
+  let isLate = _attComputeLate(clockIn, policy, workMode)
+  if(isLate && status === 'present') status = 'late'
   if(clockIn && clockIn.length === 5) clockIn = clockIn + ':00'
   if(clockOut && clockOut.length === 5) clockOut = clockOut + ':00'
   const payload = {
     tenant_id: APP.tenant.id,
     employee_id: employeeId,
     date,
-    status: statusEl ? statusEl.value : 'present',
+    status,
     clock_in: clockIn || null,
     clock_out: clockOut || null,
-    notes: document.getElementById('att-notes').value.trim() || null,
+    notes: notes || null,
+    work_mode: workMode,
+    is_late: !!isLate,
+    office_code_entered: (document.getElementById('att-office-code')?.value || '').trim() || null,
+    geo_lat: window._attGeo?.lat ?? null,
+    geo_lng: window._attGeo?.lng ?? null
   }
   let error
   if(id) {
     ({error} = await sb.from('attendance').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
   } else {
     ({error} = await sb.from('attendance').insert(payload))
+  }
+  if(error && /work_mode|is_late|office_code|geo_lat|geo_lng|schema cache/i.test(String(error.message||''))) {
+    const fallback = { tenant_id: payload.tenant_id, employee_id: payload.employee_id, date: payload.date, status: payload.status, clock_in: payload.clock_in, clock_out: payload.clock_out, notes: payload.notes }
+    if(id) ({error} = await sb.from('attendance').update(fallback).eq('id',id).eq('tenant_id',APP.tenant.id))
+    else ({error} = await sb.from('attendance').insert(fallback))
+    if(!error) showToast(APP.language==='bm'?'Disimpan (jalankan SQL attendance controls untuk mod penuh)':'Saved (run attendance controls SQL for full modes)', 'info')
   }
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog(id?'update':'create', 'attendance', id||null)
