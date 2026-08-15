@@ -9004,6 +9004,7 @@ function accTypeColor(id) { const x=ACC_TYPES.find(a=>a.id===id); return x?x.col
 // about them is locked or protected.
 const DEFAULT_COA_SEED = [
   { code:'1000', name_en:'Cash in Hand',      account_type:'asset' },
+  { code:'1010', name_en:'Petty Cash',        account_type:'asset' },
   { code:'2100', name_en:'Accounts Payable',  account_type:'liability' },
   { code:'2200', name_en:'EPF Payable',       account_type:'liability' },
   { code:'2210', name_en:'SOCSO Payable',     account_type:'liability' },
@@ -9023,7 +9024,7 @@ const DEFAULT_COA_SEED = [
 // have no standard code in the seed list and are intentionally not
 // auto-filled — there's no COGS/Inventory account seeded to point them at.
 const COA_SEED_MAPPING_BY_CODE = {
-  '1000': 'cash', '4000': 'sales_revenue', '2100': 'accounts_payable',
+  '1000': 'cash', '1010': 'petty_cash', '4000': 'sales_revenue', '2100': 'accounts_payable',
   '5000': 'general_expense', '5100': 'salary_expense',
   '2200': 'epf_payable', '2210': 'socso_payable', '2220': 'eis_payable', '2230': 'pcb_payable',
 }
@@ -9111,6 +9112,7 @@ async function _coaSeedDefaults() {
 // makes sense for a rare action like Fixed Assets depreciation).
 const DEFAULT_ACCOUNT_MAPPING_KEYS = [
   { key:'cash',              accountType:'asset',     en:'Cash / Bank',              bm:'Tunai / Bank',              required:true  },
+  { key:'petty_cash',        accountType:'asset',     en:'Petty Cash',               bm:'Petty Cash / Wang Kecil',   required:false },
   { key:'sales_revenue',     accountType:'revenue',   en:'Sales Revenue',            bm:'Hasil Jualan',              required:true  },
   { key:'cogs',              accountType:'expense',   en:'Cost of Goods Sold',       bm:'Kos Barang Dijual',         required:false },
   { key:'inventory',         accountType:'asset',     en:'Inventory',                bm:'Inventori',                 required:false },
@@ -9280,21 +9282,66 @@ async function _pcIssueSave() {
   openPage('accounting', {view:'petty-detail', id: data.id})
 }
 
+
+/** Resolve Petty Cash GL: mapping → code 1010 → name%petty% → create+map once. Never overwrites existing mapping. Tenant-scoped. */
+async function _pcEnsurePettyAccountId() {
+  let id = await _getDefaultAccountId('petty_cash')
+  if(id) return id
+  if(!APP.tenant || !APP.tenant.id) return null
+  try {
+    let acc = null
+    let {data: byCode} = await sb.from('chart_of_accounts').select('id,code,name_en')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).eq('code', '1010').limit(1)
+    if(byCode && byCode[0]) acc = byCode[0]
+    if(!acc) {
+      const {data: byName} = await sb.from('chart_of_accounts').select('id,code,name_en')
+        .eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
+      if(byName && byName[0]) acc = byName[0]
+    }
+    if(!acc) {
+      const {data: ins, error} = await sb.from('chart_of_accounts').insert({
+        tenant_id: APP.tenant.id,
+        code: '1010',
+        name_en: 'Petty Cash',
+        account_type: 'asset',
+        account_class: 'balance_sheet',
+        is_active: true
+      }).select('id,code,name_en').single()
+      if(error) {
+        const {data: again} = await sb.from('chart_of_accounts').select('id').eq('tenant_id', APP.tenant.id).is('deleted_at', null).eq('code', '1010').limit(1)
+        acc = again && again[0]
+      } else {
+        acc = ins
+        try { auditLog('create','chart_of_accounts', acc.id) } catch(e) {}
+      }
+    }
+    if(!acc || !acc.id) return null
+    id = acc.id
+    const {data: existMap} = await sb.from('default_account_mappings').select('id')
+      .eq('tenant_id', APP.tenant.id).eq('mapping_key', 'petty_cash').limit(1)
+    if(!existMap || !existMap.length) {
+      const {error: me} = await sb.from('default_account_mappings').insert({
+        tenant_id: APP.tenant.id,
+        mapping_key: 'petty_cash',
+        account_id: id
+      })
+      if(me) console.warn('petty_cash map', me)
+    }
+    if(typeof _damClearCache === 'function') _damClearCache()
+    return id
+  } catch(e) {
+    console.warn('_pcEnsurePettyAccountId', e)
+    return null
+  }
+}
+
 async function _pcPostIssueJournal(floatId, holder, amount, date) {
   const cashAcc = await _getDefaultAccountId('cash')
-  // Prefer general_expense only as last resort; try find COA named petty
-  let pettyAcc = await _getDefaultAccountId('petty_cash')
-  if(!pettyAcc && cashAcc) {
-    try {
-      const {data: accs} = await sb.from('chart_of_accounts').select('id,name_en,code')
-        .eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
-      if(accs && accs[0]) pettyAcc = accs[0].id
-    } catch(e) {}
-  }
+  const pettyAcc = await _pcEnsurePettyAccountId()
   if(!cashAcc || !pettyAcc) {
     showToast(APP.language==='bm'
-      ? 'Float disimpan. Journal skip — cipta akaun "Petty Cash" (Asset) & map cash di Default Accounts.'
-      : 'Float saved. Journal skipped — create "Petty Cash" (Asset) COA & map Cash in Default Accounts.', 'warning')
+      ? 'Float disimpan. Journal skip — map Tunai/Bank di Settings → Default Accounts (Petty Cash auto dijana).'
+      : 'Float saved. Journal skipped — map Cash/Bank in Settings → Default Accounts (Petty Cash is auto-created).', 'warning')
     return null
   }
   if(await _journalAlreadyPosted('petty_cash_floats', floatId)) return null
@@ -9934,13 +9981,7 @@ async function _pcAddExpense(floatId) {
 
 async function _pcPostExpenseJournal(expId, amount, date, label) {
   const expAcc = await _getDefaultAccountId('general_expense')
-  let pettyAcc = await _getDefaultAccountId('petty_cash')
-  if(!pettyAcc) {
-    try {
-      const {data: accs} = await sb.from('chart_of_accounts').select('id').eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
-      if(accs && accs[0]) pettyAcc = accs[0].id
-    } catch(e) {}
-  }
+  const pettyAcc = await _pcEnsurePettyAccountId()
   if(!expAcc || !pettyAcc) return null
   if(await _journalAlreadyPosted('petty_cash_expenses', expId)) return null
   return _postJournalEntry({
@@ -10006,11 +10047,7 @@ async function _pcCloseFloat(floatId, suggestedReturn) {
   if(returned > 0) {
     try {
       const cashAcc = await _getDefaultAccountId('cash')
-      let pettyAcc = await _getDefaultAccountId('petty_cash')
-      if(!pettyAcc) {
-        const {data: accs} = await sb.from('chart_of_accounts').select('id').eq('tenant_id', APP.tenant.id).is('deleted_at', null).ilike('name_en', '%petty%').limit(1)
-        if(accs && accs[0]) pettyAcc = accs[0].id
-      }
+      const pettyAcc = await _pcEnsurePettyAccountId()
       if(cashAcc && pettyAcc && !(await _journalAlreadyPosted('petty_cash_floats_close', floatId))) {
         await _postJournalEntry({
           description: `Petty cash return`,
