@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-atthist">
+<meta name="nexerp-build" content="2026-08-16-empinvite">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3117,7 +3117,7 @@ async function doLogout() {
 let _sessionLoadPromise = null
 let _sessionLoadUserId = null
 
-function _captureInviteFromUrl() {
+function _captureInviteFromUrl(); setTimeout(function(){ try{_applyInvitePrefill()}catch(e){} }, 300) {
   try {
     const params = new URLSearchParams(location.search)
     const inv = params.get('invite')
@@ -3127,9 +3127,45 @@ function _captureInviteFromUrl() {
       const qs = params.toString()
       const clean = location.pathname + (qs ? '?' + qs : '') + location.hash
       history.replaceState({}, '', clean)
+      setTimeout(() => _applyInvitePrefill(), 200)
     }
   } catch(e) {}
 }
+
+async function _applyInvitePrefill() {
+  try {
+    const token = (localStorage.getItem('nexerp_invite_token') || document.getElementById('reg-invite')?.value || '').trim()
+    if(!token) return
+    const invEl = document.getElementById('reg-invite')
+    if(invEl) invEl.value = token
+    let preview = null
+    try {
+      const { data, error } = await sb.rpc('preview_team_invite', { p_token: token })
+      if(!error && data && data.ok) preview = data
+    } catch(e) {}
+    const nameEl = document.getElementById('reg-name')
+    const emailEl = document.getElementById('reg-email')
+    const companyEl = document.getElementById('reg-company')
+    if(preview) {
+      if(nameEl && preview.full_name) { nameEl.value = preview.full_name; nameEl.readOnly = true }
+      if(emailEl && preview.email) { emailEl.value = preview.email; emailEl.readOnly = true }
+      if(companyEl && preview.company) { companyEl.value = preview.company; companyEl.readOnly = true }
+      if(invEl) invEl.readOnly = true
+    }
+    // Always show register tab when invite present
+    try {
+      document.querySelector('[data-auth-tab="register"]')?.click()
+      document.getElementById('tab-register')?.click()
+      const regBtn = document.querySelector('.auth-tab[data-tab="register"], [onclick*="register"]')
+      // soft: show register panel
+      const loginPanel = document.getElementById('login-form') || document.getElementById('panel-login')
+      const regPanel = document.getElementById('register-form') || document.getElementById('panel-register')
+      if(regPanel) { regPanel.style.display = ''; regPanel.classList.add('active') }
+      if(loginPanel) { loginPanel.classList.remove('active') }
+    } catch(e) {}
+  } catch(e) { console.warn('invite prefill', e) }
+}
+
 /** Clear invite code from storage + register form (after join success / logout) */
 function _clearInviteAuthUI() {
   try {
@@ -6150,20 +6186,45 @@ function _adminSubmitInvite() {
   _adminCreateInvite(role, moduleOverride)
 }
 
-async function _adminCreateInvite(role, moduleOverride) {
+async function _empInviteToTeam(empId) {
+  const isBm = APP.language === 'bm'
+  if(!(typeof isTenantAdmin === 'function' && isTenantAdmin()) && !(typeof canManageHR === 'function' && canManageHR())) {
+    showToast(isBm ? 'Tiada kebenaran' : 'Not permitted', 'error'); return
+  }
+  const emp = (window._hrEmployeesCache || []).find(e => String(e.id) === String(empId))
+  if(!emp) { showToast('Employee not found', 'error'); return }
+  if(!emp.email) { showToast(isBm ? 'Isi email pada rekod pekerja dulu' : 'Set email on employee record first', 'error'); return }
+  const roles = ['staff','cashier','manager','accountant','admin']
+  const labels = isBm ? ['1 Staf','2 Kasir','3 Pengurus','4 Akauntan','5 Admin'] : ['1 Staff','2 Cashier','3 Manager','4 Accountant','5 Admin']
+  const choice = prompt((isBm?'Role untuk ':'Role for ')+(emp.name||'')+'\n'+labels.join('\n')+'\n', '1')
+  if(choice === null) return
+  const idx = Math.max(0, Math.min(4, (parseInt(choice,10)||1)-1))
+  await _adminCreateInvite(roles[idx], null, { email: emp.email, full_name: emp.name||'', employee_id: emp.id, max_uses: 1 })
+}
+
+async function _adminCreateInvite(role, moduleOverride, empMeta) {
   const isBm = APP.language==='bm'
+  empMeta = empMeta || {}
   const token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'').slice(0,16)) || (Date.now().toString(36)+Math.random().toString(36).slice(2,10))
   const expires = new Date(Date.now() + 7*86400000).toISOString()
-  const {error} = await sb.from('team_invites').insert({
+  const row = {
     tenant_id: APP.tenant.id,
     token,
     role,
     module_override: (moduleOverride && Array.isArray(moduleOverride)) ? moduleOverride : null,
     created_by: APP.user.id,
     expires_at: expires,
-    max_uses: null,
-    use_count: 0
-  })
+    max_uses: empMeta.max_uses != null ? empMeta.max_uses : null,
+    use_count: 0,
+    email: empMeta.email || null,
+    full_name: empMeta.full_name || null,
+    employee_id: empMeta.employee_id || null
+  }
+  let {error} = await sb.from('team_invites').insert(row)
+  if(error && /full_name|employee_id|schema cache|column/i.test(String(error.message||''))) {
+    delete row.full_name; delete row.employee_id
+    ;({error} = await sb.from('team_invites').insert(row))
+  }
   if(error) {
     showToast('Error: '+error.message + (isBm?' — pastikan migration SQL sudah dijalankan di Supabase.':' — ensure SQL migration is applied in Supabase.'), 'error')
     return
@@ -19374,10 +19435,11 @@ async function renderEmployeeList() {
   </div>
   <div class="card"><div id="emp-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('emp-list-wrap')
-  const {data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary')
+  const {data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary,email')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._hrEmployeesCache = data
   wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.ic}</th><th>${t.position}</th><th style="text-align:right">${t.salary}</th><th></th></tr></thead>
   <tbody>${data.map(e=>`<tr>
     <td>${_aiEscapeHtml(e.name)}</td>
@@ -19386,6 +19448,7 @@ async function renderEmployeeList() {
     <td style="text-align:right">${formatRM(e.basic_salary)}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('hr',{view:'employee-form',id:'${e.id}'})"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_empInviteToTeam('${e.id}')" title="Invite to Team"><i class="ti ti-user-plus"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_employeeDelete('${e.id}','${e.name.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td>
   </tr>`).join('')}</tbody></table>`
