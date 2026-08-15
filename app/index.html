@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-pcjnl">
+<meta name="nexerp-build" content="2026-08-16-pcsync">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6755,6 +6755,19 @@ async function renderSettings(params={}) {
     coaAccounts = coaData || []
     const {data: mapData} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
     ;(mapData||[]).forEach(m => { acctMappings[m.mapping_key] = m.account_id })
+    // Auto-map Petty Cash (1010) if COA exists and mapping missing — never overwrite
+    if(!acctMappings['petty_cash']) {
+      const pcAcc = (coaAccounts||[]).find(a => a.code === '1010' || /petty/i.test(a.name_en||''))
+      if(pcAcc && pcAcc.id) {
+        try {
+          await sb.from('default_account_mappings').insert({
+            tenant_id: APP.tenant.id, mapping_key: 'petty_cash', account_id: pcAcc.id
+          })
+          acctMappings['petty_cash'] = pcAcc.id
+          if(typeof _damClearCache === 'function') _damClearCache()
+        } catch(e) { console.warn('auto map petty_cash', e) }
+      }
+    }
     glCheck.coa = coaAccounts.length
     // Minimum for sales journals: cash + sales_revenue. Full list for go-live health.
     const need = ['cash','sales_revenue','accounts_payable','general_expense','salary_expense','epf_payable','socso_payable','eis_payable','pcb_payable']
