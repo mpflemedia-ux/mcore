@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-viewatt">
+<meta name="nexerp-build" content="2026-08-16-presence">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22048,8 +22048,8 @@ function _attClockTap(kind) {
     disp.style.fontWeight = '600'
   }
 }
-function _attClockInTap() { _attClockTap('in') }
-function _attClockOutTap() { _attClockTap('out') }
+function _attClockInTap() { _attClockTap('in'); try { _attPrefetchGeo() } catch(e) {} }
+function _attClockOutTap() { _attClockTap('out'); try { _attPrefetchGeo() } catch(e) {} }
 function _attClockOutClear() {
   const hidden = document.getElementById('att-clock-out')
   const disp = document.getElementById('att-clock-out-display')
@@ -22214,6 +22214,17 @@ async function renderAttendance(params={}) {
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Kod pejabat hari ini':'Office code today'}</label><input type="text" id="att-set-code" class="form-input" placeholder="e.g. 4821"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="att-set-code-on"> ${isBm?'Wajib kod pejabat (mod Office)':'Require office code (Office mode)'}</label>
+    <div style="margin:12px 0 8px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Presence Ring · Geofence pejabat':'Presence Ring · Office geofence'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px">
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Nama lokasi':'Location name'}</label><input type="text" id="att-set-office-name" class="form-input" placeholder="HQ KL"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Radius (m)':'Radius (m)'}</label><input type="number" id="att-set-radius" class="form-input" value="500" min="50" max="5000"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Lat</label><input type="number" step="any" id="att-set-lat" class="form-input" placeholder="3.1390"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Lng</label><input type="number" step="any" id="att-set-lng" class="form-input" placeholder="101.6869"></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
+      <button type="button" class="btn btn-outline btn-sm" onclick="_attUseMyLocationAsOffice()"><i class="ti ti-current-location"></i> ${isBm?'Guna lokasi saya sekarang':'Use my location now'}</button>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="checkbox" id="att-set-geo-enforce"> ${isBm?'Wajib dalam radius (staff Office)':'Enforce radius (staff Office)'}</label>
+    </div>
     <button class="btn btn-outline btn-sm" type="button" onclick="_attSavePolicy()"><i class="ti ti-device-floppy"></i> ${isBm?'Simpan polisi':'Save policy'}</button>
   </div>` : ''}
   <div class="card" style="padding:14px;margin-bottom:14px" id="att-outstation-panel">
@@ -22268,6 +22279,11 @@ async function _attendanceLoadTable(month, year) {
     const f = document.getElementById('att-set-fieldmax'); if(f && p.field_max_days_month!=null) f.value = p.field_max_days_month
     const on = document.getElementById('att-set-code-on'); if(on) on.checked = !!p.office_code_enabled
     const code = document.getElementById('att-set-code'); if(code && p.daily_code) code.value = p.daily_code
+    const oname = document.getElementById('att-set-office-name'); if(oname) oname.value = p.office_name || ''
+    const orad = document.getElementById('att-set-radius'); if(orad && p.office_radius_m != null) orad.value = p.office_radius_m
+    const olat = document.getElementById('att-set-lat'); if(olat && p.office_lat != null) olat.value = p.office_lat
+    const olng = document.getElementById('att-set-lng'); if(olng && p.office_lng != null) olng.value = p.office_lng
+    const genf = document.getElementById('att-set-geo-enforce'); if(genf) genf.checked = !!p.geo_enforce
     _attLoadOutstationList()
   } catch(e) {}
   try {
@@ -22454,6 +22470,16 @@ function _attendanceEdit(id) {
 }
 
 
+
+async function _attUseMyLocationAsOffice() {
+  const isBm = APP.language === 'bm'
+  showToast(isBm ? 'Mendapatkan GPS…' : 'Getting GPS…', 'info')
+  const g = await _attCaptureGeo(15000)
+  if(!g) { showToast(isBm?'GPS gagal — benarkan lokasi':'GPS failed — allow location', 'error'); return }
+  const la = document.getElementById('att-set-lat'); if(la) la.value = g.lat.toFixed(6)
+  const ln = document.getElementById('att-set-lng'); if(ln) ln.value = g.lng.toFixed(6)
+  showToast(isBm?'Lokasi pejabat diisi dari GPS anda':'Office location filled from your GPS', 'success')
+}
 async function _attSavePolicy() {
   if(!canManageHR()) return
   const isBm = APP.language==='bm'
@@ -22465,9 +22491,20 @@ async function _attSavePolicy() {
     office_code_enabled: !!document.getElementById('att-set-code-on')?.checked,
     daily_code: (document.getElementById('att-set-code')?.value || '').trim() || null,
     daily_code_date: _nowDateLocal(),
+    office_name: (document.getElementById('att-set-office-name')?.value || '').trim() || null,
+    office_radius_m: Number(document.getElementById('att-set-radius')?.value || 500),
+    office_lat: document.getElementById('att-set-lat')?.value !== '' ? Number(document.getElementById('att-set-lat')?.value) : null,
+    office_lng: document.getElementById('att-set-lng')?.value !== '' ? Number(document.getElementById('att-set-lng')?.value) : null,
+    geo_enforce: !!document.getElementById('att-set-geo-enforce')?.checked,
     updated_at: new Date().toISOString()
   }
-  const { error } = await sb.from('tenant_attendance_settings').upsert(row, { onConflict: 'tenant_id' })
+  let { error } = await sb.from('tenant_attendance_settings').upsert(row, { onConflict: 'tenant_id' })
+  if(error && /office_lat|office_lng|office_radius|office_name|geo_enforce|column/i.test(error.message||'')) {
+    // SQL not applied yet — save core fields only
+    const core = { tenant_id: row.tenant_id, work_start: row.work_start, grace_minutes: row.grace_minutes, field_max_days_month: row.field_max_days_month, office_code_enabled: row.office_code_enabled, daily_code: row.daily_code, daily_code_date: row.daily_code_date, updated_at: row.updated_at }
+    ;({ error } = await sb.from('tenant_attendance_settings').upsert(core, { onConflict: 'tenant_id' }))
+    if(!error) showToast(isBm?'Polisi asas disimpan — jalankan SQL Presence Ring untuk geofence':'Core policy saved — run Presence Ring SQL for geofence', 'warning')
+  }
   if(error) { showToast('Error: '+error.message, 'error'); return }
   window._attPolicy = { ...(window._attPolicy||{}), ...row }
   _attModeChanged()
@@ -22577,6 +22614,83 @@ async function _attReviewOutstation(id, status) {
 /** Load tenant attendance policy (cached on window._attPolicy). */
 function _attModeChanged() { /* work-mode UI optional */ }
 
+
+/** Haversine distance in metres */
+function _attHaversineM(lat1, lng1, lat2, lng2) {
+  const toR = d => Number(d) * Math.PI / 180
+  const R = 6371000
+  const dLat = toR(lat2 - lat1)
+  const dLng = toR(lng2 - lng1)
+  const a = Math.sin(dLat/2)**2 + Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng/2)**2
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)))
+}
+
+/** Capture device GPS once. Returns {lat,lng} or null. */
+function _attCaptureGeo(timeoutMs) {
+  return new Promise(resolve => {
+    if(!navigator.geolocation) { resolve(null); return }
+    const t = timeoutMs || 12000
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: t, maximumAge: 30000 }
+    )
+  })
+}
+
+/** Presence Ring UI — distance feedback (Nex theme, not police-app error). */
+function _attShowPresenceRing(opts) {
+  const isBm = APP.language === 'bm'
+  let el = document.getElementById('att-presence-ring')
+  if(!el) {
+    const notes = document.getElementById('att-notes')
+    const host = notes && notes.closest('.card')
+    el = document.createElement('div')
+    el.id = 'att-presence-ring'
+    el.style.cssText = 'margin:10px 0 0;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-2)'
+    if(host) host.appendChild(el)
+    else return
+  }
+  const dist = opts.distM
+  const radius = opts.radiusM || 500
+  const name = opts.officeName || (isBm ? 'Pejabat' : 'Office')
+  const ok = opts.ok
+  const allowedOutside = !!opts.allowedOutside
+  let ringColor = ok ? '#34d399' : (allowedOutside ? '#38bdf8' : '#f87171')
+  let title, sub
+  if(allowedOutside) {
+    title = isBm ? 'Luar pejabat · dibenarkan' : 'Away from office · allowed'
+    sub = dist != null ? ((isBm ? 'Jarak ' : 'Distance ') + (dist >= 1000 ? (dist/1000).toFixed(1)+' km' : dist+' m') + ' · ' + name) : (isBm ? 'GPS direkod' : 'GPS recorded')
+  } else if(ok) {
+    title = isBm ? 'Lokasi disahkan' : 'Location verified'
+    sub = dist != null ? ((dist >= 1000 ? (dist/1000).toFixed(1)+' km' : dist+' m') + (isBm ? ' dari ' : ' from ') + name) : ''
+  } else if(dist == null) {
+    title = isBm ? 'GPS tidak tersedia' : 'GPS unavailable'
+    sub = isBm ? 'Benarkan lokasi pada browser / telefon' : 'Allow location on browser / phone'
+  } else {
+    title = isBm ? 'Di luar radius kehadiran' : 'Outside presence radius'
+    sub = (dist >= 1000 ? (dist/1000).toFixed(1)+' km' : dist+' m') + (isBm ? ' dari ' : ' from ') + name + (isBm ? ' · had ' : ' · limit ') + radius + ' m'
+  }
+  // Simple ring visual via CSS border
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
+    <div style="width:44px;height:44px;border-radius:50%;border:3px solid ${ringColor};box-shadow:0 0 0 4px ${ringColor}22;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+      <div style="width:12px;height:12px;border-radius:50%;background:${ringColor}"></div>
+    </div>
+    <div style="min-width:0">
+      <div style="font-weight:600;font-size:13px;color:${ringColor}">${title}</div>
+      <div style="font-size:12px;color:var(--text-3);margin-top:2px">${sub}</div>
+    </div>
+  </div>`
+  el.style.borderColor = ringColor + '55'
+}
+
+async function _attPrefetchGeo() {
+  try {
+    const g = await _attCaptureGeo(8000)
+    if(g) window._attGeo = g
+  } catch(e) {}
+}
+
 async function _attLoadPolicy() {
   const defaults = {
     work_start: '09:00',
@@ -22585,7 +22699,12 @@ async function _attLoadPolicy() {
     office_code_enabled: false,
     daily_code: null,
     daily_code_date: null,
-    require_field_notes: true
+    require_field_notes: true,
+    office_lat: null,
+    office_lng: null,
+    office_radius_m: 500,
+    office_name: null,
+    geo_enforce: false
   }
   if(!APP.tenant?.id) {
     window._attPolicy = defaults
@@ -22732,6 +22851,44 @@ async function _attendanceSave() {
   if(isLate && status === 'present') status = 'late'
   if(clockIn && clockIn.length === 5) clockIn = clockIn + ':00'
   if(clockOut && clockOut.length === 5) clockOut = clockOut + ':00'
+
+  // Presence Ring — staff self clock only
+  if(!canManageHR()) {
+    const policyG = policy || window._attPolicy || await _attLoadPolicy()
+    let geo = window._attGeo || null
+    if(!geo || geo.lat == null) {
+      showToast(isBm?'Mengesahkan lokasi…':'Verifying location…', 'info')
+      geo = await _attCaptureGeo(12000)
+      if(geo) window._attGeo = geo
+    }
+    const hasOffice = policyG.office_lat != null && policyG.office_lng != null && !isNaN(Number(policyG.office_lat)) && !isNaN(Number(policyG.office_lng))
+    const radius = Number(policyG.office_radius_m != null ? policyG.office_radius_m : 500)
+    const officeName = policyG.office_name || (isBm ? 'Pejabat' : 'Office')
+    const enforce = !!policyG.geo_enforce
+    const outsideAllowed = workMode === 'field' || workMode === 'outstation'
+    if(geo && hasOffice) {
+      const dist = _attHaversineM(geo.lat, geo.lng, Number(policyG.office_lat), Number(policyG.office_lng))
+      const inside = dist <= radius
+      if(outsideAllowed) {
+        _attShowPresenceRing({ ok: true, allowedOutside: true, distM: dist, radiusM: radius, officeName })
+      } else if(inside) {
+        _attShowPresenceRing({ ok: true, distM: dist, radiusM: radius, officeName })
+      } else {
+        _attShowPresenceRing({ ok: false, distM: dist, radiusM: radius, officeName })
+        if(enforce && workMode === 'office') {
+          showToast(isBm?`Di luar radius (${dist>=1000?(dist/1000).toFixed(1)+' km':dist+' m'} dari ${officeName})`:`Outside radius (${dist>=1000?(dist/1000).toFixed(1)+' km':dist+' m'} from ${officeName})`, 'error')
+          return
+        }
+      }
+    } else if(!geo) {
+      _attShowPresenceRing({ ok: false, distM: null, radiusM: radius, officeName })
+      if(enforce && workMode === 'office' && hasOffice) {
+        showToast(isBm?'GPS diperlukan untuk clock in pejabat':'GPS required for office clock-in', 'error')
+        return
+      }
+    }
+  }
+
   const payload = {
     tenant_id: APP.tenant.id,
     employee_id: employeeId,
