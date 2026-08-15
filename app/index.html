@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-attsave">
+<meta name="nexerp-build" content="2026-08-16-atthelpers">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22509,8 +22509,112 @@ async function _attReviewOutstation(id, status) {
   try { if(typeof loadNotifications === 'function') loadNotifications() } catch(e) {}
 }
 
+
+/** Load tenant attendance policy (cached on window._attPolicy). */
+function _attModeChanged() { /* work-mode UI optional */ }
+
+async function _attLoadPolicy() {
+  const defaults = {
+    work_start: '09:00',
+    grace_minutes: 15,
+    field_max_days_month: 12,
+    office_code_enabled: false,
+    daily_code: null,
+    daily_code_date: null,
+    require_field_notes: true
+  }
+  if(!APP.tenant?.id) {
+    window._attPolicy = defaults
+    return defaults
+  }
+  try {
+    const { data, error } = await sb.from('tenant_attendance_settings')
+      .select('*')
+      .eq('tenant_id', APP.tenant.id)
+      .maybeSingle()
+    if(error) {
+      console.warn('att policy', error)
+      window._attPolicy = defaults
+      return defaults
+    }
+    const policy = { ...defaults, ...(data || {}) }
+    window._attPolicy = policy
+    return policy
+  } catch(e) {
+    console.warn('att policy', e)
+    window._attPolicy = defaults
+    return defaults
+  }
+}
+
+/** True if clock-in is after work_start + grace (office mode only). */
+function _attComputeLate(clockIn, policy, workMode) {
+  if(!clockIn || workMode === 'field' || workMode === 'outstation') return false
+  const p = policy || window._attPolicy || {}
+  const start = String(p.work_start || '09:00').slice(0, 5)
+  const grace = Number(p.grace_minutes != null ? p.grace_minutes : 15)
+  const m = String(clockIn).match(/^(\d{1,2}):(\d{2})/)
+  if(!m) return false
+  const cinMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10)
+  const sm = start.match(/^(\d{1,2}):(\d{2})/)
+  if(!sm) return false
+  const startMin = parseInt(sm[1], 10) * 60 + parseInt(sm[2], 10) + grace
+  return cinMin > startMin
+}
+
+/** Approved outstation covering YYYY-MM-DD for employee. */
+async function _attHasApprovedOutstation(employeeId, date) {
+  if(!employeeId || !date || !APP.tenant?.id) return false
+  try {
+    const { data, error } = await sb.from('outstation_requests')
+      .select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('employee_id', employeeId)
+      .eq('status', 'approved')
+      .lte('start_date', date)
+      .gte('end_date', date)
+      .limit(1)
+    if(error) {
+      const { data: all } = await sb.from('outstation_requests')
+        .select('id,start_date,end_date,status')
+        .eq('tenant_id', APP.tenant.id)
+        .eq('employee_id', employeeId)
+        .eq('status', 'approved')
+        .limit(50)
+      return !!(all || []).some(r => r.start_date <= date && r.end_date >= date)
+    }
+    return !!(data && data.length)
+  } catch(e) {
+    console.warn('has outstation', e)
+    return false
+  }
+}
+
+/** Count field-mode attendance days for employee in month. */
+async function _attCountFieldDays(employeeId, year, month) {
+  if(!employeeId || !APP.tenant?.id) return 0
+  const from = year + '-' + String(month).padStart(2, '0') + '-01'
+  const last = new Date(year, month, 0).getDate()
+  const to = year + '-' + String(month).padStart(2, '0') + '-' + String(last).padStart(2, '0')
+  try {
+    const { data, error } = await sb.from('attendance')
+      .select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('employee_id', employeeId)
+      .eq('work_mode', 'field')
+      .gte('date', from)
+      .lte('date', to)
+      .is('deleted_at', null)
+    if(error) return 0
+    return (data || []).length
+  } catch(e) {
+    return 0
+  }
+}
+
 async function _attendanceSave() {
   const isBm = APP.language==='bm'
+  try {
   const id = document.getElementById('att-edit-id').value
   const employeeId = (document.getElementById('att-employee-locked')||{}).value || document.getElementById('att-employee').value
   let date = document.getElementById('att-date')?.value
@@ -22613,6 +22717,10 @@ async function _attendanceSave() {
   await _attendanceLoadTable(month, year)
   const wrap = document.getElementById('att-table-wrap')
   if(wrap) try { wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) } catch(e) {}
+  } catch(err) {
+    console.error('attendance save', err)
+    showToast((isBm?'Gagal simpan kehadiran: ':'Attendance save failed: ') + (err.message || err), 'error')
+  }
 }
 
 async function _attendanceDelete(id) {
