@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-attctl">
+<meta name="nexerp-build" content="2026-08-16-atthist">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21432,20 +21432,111 @@ async function _attendanceLoadTable(month, year) {
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _attendanceRecords = data || []
-  if(_attendanceRecords.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._attHistFilter = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
+  _attendanceRenderHistoryTable(t)
+}
+
+function _attFmtClock(t) {
+  if(!t) return '—'
+  const s = String(t)
+  // "09:00:00" or "09:00" → display 12h-ish short HH:MM
+  const m = s.match(/(\d{1,2}):(\d{2})/)
+  if(!m) return s
+  let h = Number(m[1]), min = m[2]
+  const ap = h >= 12 ? 'PM' : 'AM'
+  const h12 = ((h % 12) || 12)
+  return h12 + ':' + min + ' ' + ap
+}
+
+function _attendanceRenderHistoryTable(t) {
+  const isBm = APP.language === 'bm'
+  t = t || (isBm
+    ? { employee:'Pekerja', date:'Tarikh', status:'Status', notes:'Catatan', present:'Hadir', absent:'Tidak Hadir', late:'Lewat', halfDay:'Setengah Hari', onLeave:'Bercuti', noData:'Tiada rekod kehadiran untuk bulan ini' }
+    : { employee:'Employee', date:'Date', status:'Status', notes:'Notes', present:'Present', absent:'Absent', late:'Late', halfDay:'Half Day', onLeave:'On Leave', noData:'No attendance records for this month' })
+  const wrap = document.getElementById('att-table-wrap')
+  if(!wrap) return
+  const f = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
+  let rows = (_attendanceRecords || []).slice()
+  if(f.status && f.status !== 'all') rows = rows.filter(a => String(a.status||'') === f.status)
+  if(f.employee && f.employee !== 'all') rows = rows.filter(a => String(a.employee_id) === f.employee)
+  if(f.mode && f.mode !== 'all') rows = rows.filter(a => String(a.work_mode || 'office') === f.mode)
+  const sort = f.sort || 'date_desc'
+  rows.sort((a, b) => {
+    if(sort === 'date_asc') return String(a.date).localeCompare(String(b.date)) || String(a.clock_in||'').localeCompare(String(b.clock_in||''))
+    if(sort === 'name') return String(a.employees?.name||'').localeCompare(String(b.employees?.name||'')) || String(b.date).localeCompare(String(a.date))
+    if(sort === 'in_asc') return String(a.clock_in||'99').localeCompare(String(b.clock_in||'99'))
+    if(sort === 'in_desc') return String(b.clock_in||'').localeCompare(String(a.clock_in||''))
+    // date_desc default
+    return String(b.date).localeCompare(String(a.date)) || String(b.clock_in||'').localeCompare(String(a.clock_in||''))
+  })
+  const empOpts = [...new Map((_attendanceRecords||[]).map(a => [a.employee_id, a.employees?.name || a.employee_id])).entries()]
+    .sort((x,y)=>String(x[1]).localeCompare(String(y[1])))
   const statusColor = s => s==='present'?'var(--success)':s==='absent'?'var(--danger)':s==='late'||s==='half_day'?'var(--warning)':'#7C3AED'
   const statusLabel = s => s==='present'?t.present:s==='absent'?t.absent:s==='late'?t.late:s==='half_day'?t.halfDay:t.onLeave
-  wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.employee}</th><th>${t.status}</th><th>${t.notes}</th><th></th></tr></thead>
-  <tbody>${_attendanceRecords.map(a=>`<tr>
-    <td>${formatDate(a.date)}</td>
+  const modeLabel = m => {
+    const x = String(m||'office')
+    if(x==='field') return isBm?'Field':'Field'
+    if(x==='outstation') return isBm?'Outstation':'Outstation'
+    return isBm?'Pejabat':'Office'
+  }
+  const filters = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
+    <select id="att-hist-status" class="form-select" style="width:auto;min-width:110px;padding:6px 8px;font-size:12px" onchange="window._attHistFilter.status=this.value;_attendanceRenderHistoryTable()">
+      <option value="all"${f.status==='all'?' selected':''}>${isBm?'Semua status':'All status'}</option>
+      <option value="present"${f.status==='present'?' selected':''}>${t.present}</option>
+      <option value="late"${f.status==='late'?' selected':''}>${t.late}</option>
+      <option value="absent"${f.status==='absent'?' selected':''}>${t.absent}</option>
+      <option value="half_day"${f.status==='half_day'?' selected':''}>${t.halfDay}</option>
+      <option value="on_leave"${f.status==='on_leave'?' selected':''}>${t.onLeave}</option>
+    </select>
+    <select id="att-hist-emp" class="form-select" style="width:auto;min-width:120px;padding:6px 8px;font-size:12px" onchange="window._attHistFilter.employee=this.value;_attendanceRenderHistoryTable()">
+      <option value="all"${f.employee==='all'?' selected':''}>${isBm?'Semua pekerja':'All employees'}</option>
+      ${empOpts.map(([id,name])=>`<option value="${id}"${f.employee===String(id)?' selected':''}>${_aiEscapeHtml(name||id)}</option>`).join('')}
+    </select>
+    <select id="att-hist-mode" class="form-select" style="width:auto;min-width:100px;padding:6px 8px;font-size:12px" onchange="window._attHistFilter.mode=this.value;_attendanceRenderHistoryTable()">
+      <option value="all"${f.mode==='all'?' selected':''}>${isBm?'Semua mod':'All modes'}</option>
+      <option value="office"${f.mode==='office'?' selected':''}>${isBm?'Pejabat':'Office'}</option>
+      <option value="field"${f.mode==='field'?' selected':''}>Field</option>
+      <option value="outstation"${f.mode==='outstation'?' selected':''}>Outstation</option>
+    </select>
+    <select id="att-hist-sort" class="form-select" style="width:auto;min-width:130px;padding:6px 8px;font-size:12px" onchange="window._attHistFilter.sort=this.value;_attendanceRenderHistoryTable()">
+      <option value="date_desc"${sort==='date_desc'?' selected':''}>${isBm?'Tarikh ↓':'Date ↓'}</option>
+      <option value="date_asc"${sort==='date_asc'?' selected':''}>${isBm?'Tarikh ↑':'Date ↑'}</option>
+      <option value="name"${sort==='name'?' selected':''}>${isBm?'Nama':'Name'}</option>
+      <option value="in_asc"${sort==='in_asc'?' selected':''}>${isBm?'Masuk ↑':'In ↑'}</option>
+      <option value="in_desc"${sort==='in_desc'?' selected':''}>${isBm?'Masuk ↓':'In ↓'}</option>
+    </select>
+  </div>`
+  if(!(_attendanceRecords||[]).length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
+    return
+  }
+  if(!rows.length) {
+    wrap.innerHTML = filters + `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod untuk penapis ini':'No rows for this filter'}</p></div>`
+    return
+  }
+  wrap.innerHTML = filters + `<div class="db-table-scroll"><table class="db-mini-table" style="width:100%"><thead><tr>
+    <th>${t.date}</th>
+    <th>${isBm?'Masuk':'In'}</th>
+    <th>${isBm?'Keluar':'Out'}</th>
+    <th>${t.employee}</th>
+    <th>${t.status}</th>
+    <th>${isBm?'Mod':'Mode'}</th>
+    <th>${t.notes}</th>
+    <th></th>
+  </tr></thead>
+  <tbody>${rows.map(a=>`<tr>
+    <td style="white-space:nowrap">${formatDate(a.date)}</td>
+    <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_in)}</td>
+    <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_out)}</td>
     <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
     <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
-    <td style="color:var(--text-2)">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
+    <td style="font-size:12px;color:var(--text-3)">${modeLabel(a.work_mode)}</td>
+    <td style="color:var(--text-2);max-width:140px;overflow:hidden;text-overflow:ellipsis">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
     <td style="white-space:nowrap">
       ${canManageHR()?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_attendanceEdit('${a.id}')"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_attendanceDelete('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
     </td>
-  </tr>`).join('')}</tbody></table>`
+  </tr>`).join('')}</tbody></table></div>`
 }
 
 function _attendanceEdit(id) {
