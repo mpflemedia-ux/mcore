@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-sort">
+<meta name="nexerp-build" content="2026-08-16-fsort">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9199,7 +9199,7 @@ async function renderPettyCash(params={}) {
   <div class="no-print">${_accTabs('petty')}</div>
   <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
   <div id="pc-issue-wrap" class="no-print"></div>
-  <div class="card acc-print-body"><div id="pc-list-wrap" style="padding:24px"><div class="spinner"></div></div></div>`
+  <div class="card acc-print-body"><div id="pc-sort-bar"></div><div id="pc-list-wrap" style="padding:24px"><div class="spinner"></div></div></div>`
   await _pcLoadList(t, isBm)
 }
 
@@ -9317,17 +9317,30 @@ async function _pcLoadList(t, isBm) {
   const {data, error} = await sb.from('petty_cash_floats').select('id,holder_name,issued_date,amount,status,notes')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .order('issued_date', {ascending:false})
+  let pcRows = data || []
+  pcRows = _listApplySort(pcRows, 'pc', {
+    date: r => r.issued_date || '',
+    holder: r => r.holder_name || '',
+    amount: r => Number(r.amount||0),
+    status: r => r.status || ''
+  })
+  _listMountSortBar('pc-sort-bar', 'pc', [
+    {v:'date', en:'Date', bm:'Tarikh'},
+    {v:'holder', en:'Holder', bm:'Pegangan'},
+    {v:'amount', en:'Amount', bm:'Jumlah'},
+    {v:'status', en:'Status', bm:'Status'}
+  ], 'function(){_pcLoadList(window._pcListT||{}, APP.language===\'bm\')}')
   if(error) {
     wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${t.needTable}</p>
       <p style="font-size:12px;color:var(--text-3);margin-top:8px">${_aiEscapeHtml(error.message||'')}</p></div>`
     return
   }
-  if(!data || !data.length) {
+  if(!pcRows.length) {
     wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`
     return
   }
   // spent totals
-  const ids = data.map(d => d.id)
+  const ids = pcRows.map(d => d.id)
   const {data: exps} = await sb.from('petty_cash_expenses').select('float_id,amount')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).in('float_id', ids)
   const spentMap = {}
@@ -9338,7 +9351,7 @@ async function _pcLoadList(t, isBm) {
       <th>${t.holder}</th><th>${t.date}</th><th style="text-align:right">${t.amount}</th>
       <th style="text-align:right">${t.spent}</th><th style="text-align:right">${t.balance}</th><th>Status</th>
     </tr></thead>
-    <tbody>${data.map(f => {
+    <tbody>${pcRows.map(f => {
       const spent = spentMap[f.id]||0
       const bal = Number(f.amount) - spent
       const st = f.status==='closed' ? t.closed : t.open
@@ -10144,7 +10157,7 @@ async function renderFixedAssets() {
   </div>
   <div id="fa-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div id="fa-run-summary"></div>
-  <div class="card"><div id="fa-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+  <div class="card"><div id="fa-sort-bar"></div><div id="fa-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
   ${_faRunModalHtml()}`
   if(!window._faStatusFilter) window._faStatusFilter = 'all'
   await _faLoadList()
@@ -10206,6 +10219,20 @@ async function _faLoadList() {
   let rows = data
   if(filter==='active') rows = data.filter(a => String(a.status||'active').toLowerCase() !== 'disposed')
   else if(filter==='disposed') rows = data.filter(a => String(a.status||'').toLowerCase() === 'disposed')
+  rows = _listApplySort(rows, 'fa', {
+    no: r => r.asset_no || '',
+    name: r => r.name || r.asset_name || '',
+    date: r => r.purchase_date || '',
+    cost: r => Number(r.purchase_price||r.cost||0),
+    status: r => r.status || ''
+  })
+  _listMountSortBar('fa-sort-bar', 'fa', [
+    {v:'no', en:'Asset no.', bm:'No. aset'},
+    {v:'name', en:'Name', bm:'Nama'},
+    {v:'date', en:'Purchase date', bm:'Tarikh beli'},
+    {v:'cost', en:'Cost', bm:'Kos'},
+    {v:'status', en:'Status', bm:'Status'}
+  ], 'function(){_faLoadList()}')
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.assetNo}</th><th>${t.name}</th><th>${t.category}</th><th>${t.purchaseDate}</th>
     <th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.accumDep}</th><th style="text-align:right">${t.nbv}</th><th>${t.status}</th></tr></thead>
@@ -10506,7 +10533,7 @@ async function _faRunDepreciation() {
 }
 
 // ─── Chart of Accounts: List ──────────────────────────────────────────────────
-let _coaState = { search:'', type:'', data:[] }
+let _coaState = { search:'', type:'', data:[], sort:'code', dir:'asc' }
 
 async function renderCOAList() {
   const t = APP.language==='bm' ? {
@@ -10532,6 +10559,7 @@ async function renderCOAList() {
   </div>
   <div class="no-print">${_accTabs('coa')}</div>
   <div class="acc-print-title">${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')} — ${t.title}</div>
+  <div id="coa-sort-bar" class="no-print" style="padding:0 0 8px"></div>
   <div class="card" style="margin-bottom:0">
     <div style="display:flex;gap:12px;padding:16px;border-bottom:1px solid var(--border);flex-wrap:wrap">
       <div class="input-group" style="flex:1;min-width:220px">
@@ -10578,19 +10606,35 @@ async function _coaLoad() {
   if(_coaState.type) q = q.eq('account_type', _coaState.type)
 
   const {data, error} = await q
-  _coaState.data = data || []
+  let list = data || []
+  list = _listApplySort(list, 'coa', {
+    code: r => r.code || '',
+    name: r => r.name_en || '',
+    type: r => r.account_type || '',
+    status: r => r.is_active ? '1' : '0'
+  })
+  // sync bar state defaults
+  const st = _listSortState('coa', 'code', 'asc')
+  _coaState.sort = st.field; _coaState.dir = st.dir
+  _coaState.data = list
+  _listMountSortBar('coa-sort-bar', 'coa', [
+    {v:'code', en:'Code', bm:'Kod'},
+    {v:'name', en:'Name', bm:'Nama'},
+    {v:'type', en:'Type', bm:'Jenis'},
+    {v:'status', en:'Status', bm:'Status'}
+  ], 'function(){_coaLoad()}')
   if(!wrap) return
 
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
 
-  if(!data || data.length===0) {
+  if(!list.length) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><i class="ti ti-list-tree" style="font-size:48px;opacity:.2"></i><p>${_coaState.search||_coaState.type?t.noResult:t.noData}</p>${!_coaState.search&&!_coaState.type?`<button class="btn btn-primary btn-sm" onclick="openPage('accounting',{view:'coa-form'})"><i class="ti ti-plus"></i> ${t.add}</button>`:''}</div>`
     return
   }
 
   wrap.innerHTML = `<table>
     <thead><tr><th>${t.code}</th><th>${t.name}</th><th>${t.type}</th><th>${t.balance}</th><th style="width:70px"></th><th style="width:100px"></th></tr></thead>
-    <tbody>${data.map(a => {
+    <tbody>${list.map(a => {
       const typeInfo = ACC_TYPES.find(x=>x.id===a.account_type)
       return `<tr>
         <td><strong>${a.code||'-'}</strong></td>
@@ -10892,6 +10936,29 @@ async function _jnlLoadTable(t) {
     if(!totals[l.entry_id]) totals[l.entry_id] = {debit:0,credit:0}
     totals[l.entry_id].debit += Number(l.debit_amt||0)
     totals[l.entry_id].credit += Number(l.credit_amt||0)
+  })
+
+  // Attach totals for sort getters then client-side sort
+  entries.forEach(e => {
+    const t0 = totals[e.id] || {debit:0,credit:0}
+    e._debit = t0.debit; e._credit = t0.credit
+  })
+  _listMountSortBar('jnl-sort-bar', 'jnl', [
+    {v:'date', en:'Date', bm:'Tarikh'},
+    {v:'no', en:'Entry no.', bm:'No. entri'},
+    {v:'desc', en:'Description', bm:'Keterangan'},
+    {v:'debit', en:'Debit', bm:'Debit'},
+    {v:'credit', en:'Credit', bm:'Kredit'},
+    {v:'source', en:'Source', bm:'Sumber'}
+  ], 'function(){_jnlLoadTable(window._jnlListT||{})}')
+  window._jnlListT = t
+  entries = _listApplySort(entries, 'jnl', {
+    date: r => r.entry_date || '',
+    no: r => r.ref_no || '',
+    desc: r => r.description || '',
+    debit: r => Number(r._debit||0),
+    credit: r => Number(r._credit||0),
+    source: r => r.source_table || ''
   })
 
   const srcLabel = s => {
@@ -15078,6 +15145,7 @@ async function renderProductList() {
     <button class="btn btn-primary btn-sm" onclick="openPage('inventory',{view:'product-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_invTabs('products')}
   <div id="inv-lowstock-wrap" style="margin-bottom:16px"></div>
+  <div id="prod-sort-bar"></div>
   <div class="card" style="margin-bottom:0">
     <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <div class="input-group" style="flex:1;min-width:180px"><i class="ti ti-search input-icon"></i>
@@ -15142,6 +15210,20 @@ async function _invLoad() {
   if(_invState.lowOnly) {
     list = list.filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
   }
+  list = _listApplySort(list, 'products', {
+    name: r => r.name_en || r.name_bm || '',
+    code: r => r.code || '',
+    price: r => Number(r.unit_price||0),
+    cost: r => Number(r.unit_cost||0),
+    stock: r => Number(r.stock_qty||0)
+  })
+  _listMountSortBar('prod-sort-bar', 'products', [
+    {v:'name', en:'Name', bm:'Nama'},
+    {v:'code', en:'SKU', bm:'SKU'},
+    {v:'price', en:'Sell price', bm:'Harga jual'},
+    {v:'cost', en:'Cost', bm:'Kos'},
+    {v:'stock', en:'Stock', bm:'Stok'}
+  ], 'function(){_invLoad()}')
   _invState.data = list
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
@@ -17251,6 +17333,7 @@ async function renderSuppliers() {
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
     <button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'supplier-form'})"><i class="ti ti-plus"></i> ${t.add}</button></div>
   ${_purchTabs('suppliers')}
+  <div id="supp-sort-bar"></div>
   <div class="card" style="margin-bottom:0">
     <div style="padding:16px;border-bottom:1px solid var(--border)">
       <div class="input-group"><i class="ti ti-search input-icon"></i>
@@ -17272,12 +17355,23 @@ async function _suppLoad() {
   let q = sb.from('suppliers').select('id,name,phone,email').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
   if(_suppState.search) { const s=_suppState.search.trim(); q = q.ilike('name', `%${s}%`) }
   const {data, error} = await q
-  _suppState.data = data || []
+  let list = data || []
+  list = _listApplySort(list, 'supp', {
+    name: r => r.name || '',
+    phone: r => r.phone || '',
+    email: r => r.email || ''
+  })
+  _listMountSortBar('supp-sort-bar', 'supp', [
+    {v:'name', en:'Name', bm:'Nama'},
+    {v:'phone', en:'Phone', bm:'Telefon'},
+    {v:'email', en:'Email', bm:'Emel'}
+  ], 'function(){_suppLoad()}')
+  _suppState.data = list
   if(!wrap) return
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
-  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_suppState.search?t.noResult:t.noData}</p></div>`; return }
+  if(!data || list.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${_suppState.search?t.noResult:t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.phone}</th><th>${t.email}</th><th style="width:100px"></th></tr></thead>
-  <tbody>${data.map(s=>`<tr>
+  <tbody>${list.map(s=>`<tr>
     <td><strong>${_aiEscapeHtml(s.name)}</strong></td>
     <td>${s.phone||'-'}</td>
     <td>${s.email||'-'}</td>
@@ -18380,23 +18474,39 @@ async function renderCreditNoteList() {
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_salesTabs('cn')}
+  <div id="cn-sort-bar"></div>
   <div class="card"><div id="cn-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('cn-list-wrap')
   const {data, error} = await sb.from('credit_notes')
     .select('id,ref_no,customer_name,credit_date,amount,reason,refunded,invoice_id,status,created_at')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .order('credit_date', {ascending:false})
+  let cnRows = data || []
+  cnRows = _listApplySort(cnRows, 'cn', {
+    date: r => r.credit_date || r.created_at || '',
+    no: r => r.ref_no || '',
+    customer: r => r.customer_name || '',
+    amount: r => Number(r.amount||0),
+    status: r => r.status || (r.refunded ? 'refunded' : 'open')
+  })
+  _listMountSortBar('cn-sort-bar', 'cn', [
+    {v:'date', en:'Date', bm:'Tarikh'},
+    {v:'no', en:'Ref no.', bm:'No. rujukan'},
+    {v:'customer', en:'Customer', bm:'Pelanggan'},
+    {v:'amount', en:'Amount', bm:'Jumlah'},
+    {v:'status', en:'Status', bm:'Status'}
+  ], "function(){openPage('sales',{view:'cn'})}")
   if(error) {
     wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">${isBm?'Jadual credit_notes belum wujud. Jalankan migration di Supabase.':'credit_notes table missing. Run migration in Supabase.'}<br><span style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(error.message||'')}</span></p></div>`
     return
   }
-  if(!data || !data.length) {
+  if(!cnRows.length) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p>
       <button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="openPage('sales',{})"><i class="ti ti-file-invoice"></i> ${isBm?'Ke Invois':'Go to Invoices'}</button></div>`
     return
   }
   // Optional: load invoice refs
-  const invIds = [...new Set(data.map(r => r.invoice_id).filter(Boolean))]
+  const invIds = [...new Set(cnRows.map(r => r.invoice_id).filter(Boolean))]
   let invMap = {}
   if(invIds.length) {
     const {data: invs} = await sb.from('invoices').select('id,ref_no').in('id', invIds)
@@ -18406,7 +18516,7 @@ async function renderCreditNoteList() {
     <th>${t.ref}</th><th>${t.date}</th><th>${t.customer}</th><th>${t.invoice}</th>
     <th style="text-align:right">${t.amount}</th><th>${t.refund}</th><th>${t.reason}</th>
   </tr></thead><tbody>
-  ${data.map(r => `<tr>
+  ${cnRows.map(r => `<tr>
     <td><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
     <td>${formatDate(r.credit_date)}</td>
     <td>${_aiEscapeHtml(r.customer_name||'-')}</td>
@@ -19840,15 +19950,29 @@ async function renderEmployeeList() {
   <div style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
   </div>
+  <div id="emp-sort-bar"></div>
   <div class="card"><div id="emp-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('emp-list-wrap')
   const {data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary,email')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  let empRows = data || []
+  empRows = _listApplySort(empRows, 'emp', {
+    name: r => r.name || '',
+    position: r => r.position || '',
+    salary: r => Number(r.basic_salary||0),
+    ic: r => r.ic_no || ''
+  })
+  _listMountSortBar('emp-sort-bar', 'emp', [
+    {v:'name', en:'Name', bm:'Nama'},
+    {v:'position', en:'Position', bm:'Jawatan'},
+    {v:'salary', en:'Salary', bm:'Gaji'},
+    {v:'ic', en:'IC', bm:'IC'}
+  ], "function(){openPage('hr',{})}")
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
-  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
-  window._hrEmployeesCache = data
+  if(!empRows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  window._hrEmployeesCache = empRows
   wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.ic}</th><th>${t.position}</th><th style="text-align:right">${t.salary}</th><th></th></tr></thead>
-  <tbody>${data.map(e=>`<tr>
+  <tbody>${empRows.map(e=>`<tr>
     <td>${_aiEscapeHtml(e.name)}</td>
     <td>${e.ic_no||'-'}</td>
     <td>${_aiEscapeHtml(e.position||'-')}</td>
