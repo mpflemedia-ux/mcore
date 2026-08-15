@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-aiai">
+<meta name="nexerp-build" content="2026-08-16-slots">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1748,6 +1748,20 @@ async function loadNotifications() {
         go: () => openPage('hr',{view:'leave'})
       })
     })
+    // Dashboard AI insight slot notifications (local, per tenant)
+    try {
+      const insightNotifs = _dbInsightReadNotifs()
+      insightNotifs.slice(0, 10).forEach(n => {
+        items.unshift({
+          icon: 'ti-sparkles',
+          color: 'var(--primary)',
+          text: n.text,
+          meta: n.meta || '',
+          go: () => openPage('dashboard')
+        })
+      })
+    } catch(e) { console.warn('insight notifs merge', e) }
+
     if(badge) {
       badge.textContent = String(items.length)
       badge.classList.toggle('show', items.length > 0)
@@ -4897,6 +4911,105 @@ function _dbChartTickColor() {
   return '#94A3B8'
 }
 
+
+/** Malaysia (Asia/Kuala_Lumpur) insight slots: Zohor / Asar / Isyak — max 3 AI refreshes per day. */
+const _DB_INSIGHT_SLOTS = [
+  { id: 'zohor', hour: 13, minute: 0 },
+  { id: 'asar', hour: 16, minute: 30 },
+  { id: 'isyak', hour: 20, minute: 30 }
+]
+function _dbInsightTzNow() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date())
+    const g = (t) => parts.find(p => p.type === t)?.value
+    return {
+      day: `${g('year')}-${g('month')}-${g('day')}`,
+      hour: Number(g('hour')),
+      minute: Number(g('minute'))
+    }
+  } catch(e) {
+    const d = new Date()
+    return {
+      day: d.toISOString().slice(0,10),
+      hour: d.getHours(),
+      minute: d.getMinutes()
+    }
+  }
+}
+function _dbInsightActiveSlot(now) {
+  now = now || _dbInsightTzNow()
+  const mins = now.hour * 60 + now.minute
+  let active = null
+  _DB_INSIGHT_SLOTS.forEach(s => {
+    if(mins >= s.hour * 60 + s.minute) active = s.id
+  })
+  return active // null = before Zohor
+}
+function _dbInsightStoreKey() {
+  return 'nexerp_db_insights_' + (APP.tenant?.id || 'none')
+}
+function _dbInsightNotifKey() {
+  return 'nexerp_db_insight_notifs_' + (APP.tenant?.id || 'none')
+}
+function _dbInsightLoadStore() {
+  try {
+    const raw = localStorage.getItem(_dbInsightStoreKey())
+    if(!raw) return { day: null, slots: {} }
+    const p = JSON.parse(raw)
+    return { day: p.day || null, slots: p.slots || {} }
+  } catch(e) { return { day: null, slots: {} } }
+}
+function _dbInsightSaveStore(store) {
+  try { localStorage.setItem(_dbInsightStoreKey(), JSON.stringify(store)) } catch(e) {}
+}
+function _dbInsightPushNotif(slotId, isBm) {
+  try {
+    const key = _dbInsightNotifKey()
+    let arr = []
+    try { arr = JSON.parse(localStorage.getItem(key) || '[]') } catch(e) { arr = [] }
+    if(!Array.isArray(arr)) arr = []
+    const labels = {
+      zohor: isBm ? 'Zohor' : 'Dhuhr',
+      asar: isBm ? 'Asar' : 'Asr',
+      isyak: isBm ? 'Isyak' : 'Isha'
+    }
+    const lab = labels[slotId] || slotId
+    const item = {
+      id: 'insight-' + slotId + '-' + Date.now(),
+      slot: slotId,
+      at: new Date().toISOString(),
+      text: isBm
+        ? `Insight dashboard dikemas kini (${lab})`
+        : `Dashboard insights refreshed (${lab})`,
+      meta: isBm
+        ? 'Carta Trend, Status, Zone, Health & P&L — deskripsi AI baharu'
+        : 'Trend, Status, Zone, Health & P&L cards — fresh AI copy',
+      read: false
+    }
+    arr.unshift(item)
+    arr = arr.slice(0, 30)
+    localStorage.setItem(key, JSON.stringify(arr))
+    // bump badge optimistically
+    try {
+      const badge = document.getElementById('notif-badge')
+      if(badge) {
+        const n = Number(badge.textContent || 0) + 1
+        badge.textContent = String(n)
+        badge.classList.add('show')
+      }
+    } catch(e) {}
+  } catch(e) { console.warn('insight notif', e) }
+}
+function _dbInsightReadNotifs() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_dbInsightNotifKey()) || '[]')
+    return Array.isArray(arr) ? arr : []
+  } catch(e) { return [] }
+}
+
 function _dbInsightTitles(isBm) {
   return ['Vibe check', 'Real talk', 'Plot twist', 'Pulse check', 'No cap', 'Tea', 'Main character energy']
 }
@@ -5059,31 +5172,68 @@ async function _dbFillCardInsights(ctx) {
     { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 }
   ]
 
-  // Show loading immediately (don't block dashboard)
+  const paint = (bodies, fromCache) => {
+    if(gen !== window._dbInsightGen) return
+    cards.forEach(c => {
+      const el = document.getElementById(c.id)
+      if(!el) return
+      let body = (bodies && bodies[c.key]) || _dbInsightFallbackBody(c.key, ctx, isBm)
+      let tIdx = c.titleIdx
+      if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
+      const src = fromCache
+        ? (isBm ? ' · cache slot' : ' · cached slot')
+        : ''
+      el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + String(body).replace(/</g, '&lt;') + '</div>'
+    })
+  }
+
+  const now = _dbInsightTzNow()
+  const slot = _dbInsightActiveSlot(now)
+  let store = _dbInsightLoadStore()
+  if(store.day !== now.day) {
+    store = { day: now.day, slots: {} }
+    _dbInsightSaveStore(store)
+  }
+
+  // Before Zohor: show last cached slot from today if any, else fallback — no AI
+  if(!slot) {
+    const prev = store.slots.isyak || store.slots.asar || store.slots.zohor
+    if(prev && prev.cards) paint(prev.cards, true)
+    else paint(null, true)
+    return
+  }
+
+  // Slot already generated today → reuse cache, no AI
+  if(store.slots[slot] && store.slots[slot].cards) {
+    paint(store.slots[slot].cards, true)
+    return
+  }
+
+  // Need fresh AI for this prayer slot
   cards.forEach(c => {
     const el = document.getElementById(c.id)
     if(!el) return
     el.innerHTML = _dbInsightTag(c.titleIdx, isBm) +
-      '<div style="opacity:.75">' + (isBm ? 'AI tengah tulis insight segar…' : 'AI writing a fresh take…') + '</div>'
+      '<div style="opacity:.75">' + (isBm
+        ? `AI update slot ${slot}…`
+        : `AI refresh for ${slot} slot…`) + '</div>'
   })
 
-  // Parallel AI calls — each card independent; fallback per card
+  const bodies = {}
   await Promise.all(cards.map(async (c) => {
-    const el = document.getElementById(c.id)
-    if(!el) return
-    let body
     try {
-      body = await _dbInsightAI(c.key, ctx, isBm)
+      bodies[c.key] = await _dbInsightAI(c.key, ctx, isBm)
     } catch(e) {
       console.warn('card insight AI', c.key, e)
-      body = _dbInsightFallbackBody(c.key, ctx, isBm)
+      bodies[c.key] = _dbInsightFallbackBody(c.key, ctx, isBm)
     }
-    if(gen !== window._dbInsightGen) return // stale generation
-    // P&L title: W vs tea
-    let tIdx = c.titleIdx
-    if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
-    el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + body.replace(/</g, '&lt;') + '</div>'
   }))
+  if(gen !== window._dbInsightGen) return
+
+  store.slots[slot] = { at: new Date().toISOString(), cards: bodies }
+  _dbInsightSaveStore(store)
+  _dbInsightPushNotif(slot, isBm)
+  paint(bodies, false)
 }
 
 
