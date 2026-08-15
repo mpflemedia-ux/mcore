@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-15-lowstock">
+<meta name="nexerp-build" content="2026-08-15-dbai">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -511,6 +511,9 @@ html[data-skip-intro="1"] #intro-skip {
 .db-ops-row > .db-card{display:flex;flex-direction:column;min-height:0}
 .db-ops-row .db-chart-slot{position:relative;flex:1;min-height:220px;width:100%}
 .db-ops-row .db-card-foot{font-size:11px;color:var(--db-text4);margin-top:6px;line-height:1.35}
+.db-ai-insight{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(14,116,144,.1);border:1px solid rgba(14,116,144,.28);font-size:11.5px;line-height:1.45;color:var(--db-text2,#cbd5e1)}
+.db-ai-insight strong{color:var(--primary,#0E7490);font-weight:700}
+.db-ai-insight .db-ai-tag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#5eead4;margin-bottom:4px}
 @media (max-width:900px){.db-ops-row{grid-template-columns:1fr}}
 .db-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .db-mini-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -3515,6 +3518,7 @@ function renderDashboard() {
           <canvas id="db-growth-chart"></canvas>
         </div>
         <div class="db-card-foot">${isBm?'Jualan diiktiraf = paid_amt (Paid/Partial) + POS':'Recognised sales = paid_amt (Paid/Partial) + POS'}</div>
+        <div class="db-ai-insight" id="db-ai-growth"><span class="db-ai-tag">AI</span> …</div>
       </div>
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut-3"></i> ${isBm?'Mix Status Invois':'Invoice Status Mix'}</div>
@@ -3522,6 +3526,7 @@ function renderDashboard() {
           <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
         </div>
         <div id="db-status-legend"></div>
+        <div class="db-ai-insight" id="db-ai-status"><span class="db-ai-tag">AI</span> …</div>
       </div>
     </div>
 
@@ -3533,6 +3538,7 @@ function renderDashboard() {
           <canvas id="db-zone-power-chart"></canvas>
         </div>
         <div class="db-card-foot">${isBm?'Bar = skor modul · Line = purata keseluruhan (tempoh semasa)':'Bars = module scores · Line = overall average (current period)'}</div>
+        <div class="db-ai-insight" id="db-ai-zone"><span class="db-ai-tag">AI</span> …</div>
       </div>
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-radar"></i> ${isBm?'Kesihatan Bisnes':'Business Health'}</div>
@@ -3540,6 +3546,7 @@ function renderDashboard() {
           <canvas id="db-health-radar"></canvas>
         </div>
         <div class="db-card-foot">${isBm?'6 paksi dari data tenant semasa (bukan target manual)':'6 axes from current tenant data (no manual targets)'}</div>
+        <div class="db-ai-insight" id="db-ai-health"><span class="db-ai-tag">AI</span> …</div>
       </div>
     </div>
 
@@ -3551,6 +3558,7 @@ function renderDashboard() {
           <canvas id="db-pnl-chart"></canvas>
         </div>
         <div class="db-card-foot">${isBm?'Dari entri jurnal (akaun hasil & belanja)':'From journal entries (revenue & expense accounts)'}</div>
+        <div class="db-ai-insight" id="db-ai-pnl"><span class="db-ai-tag">AI</span> …</div>
       </div>
       <div class="db-card">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
@@ -4121,9 +4129,23 @@ async function loadDashboardData() {
     window._dbHealthScores = _hs
     _dbRenderZonePowerChart(_hs)
     _dbRenderHealthRadar(_hs)
+    window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
+      health: _hs,
+      curSales: typeof curSales === 'number' ? curSales : 0,
+      prevSales: typeof prevSales === 'number' ? prevSales : 0,
+      curRate: typeof curRate === 'number' ? curRate : 0,
+      revenue: plThis && plThis.revenue,
+      expense: plThis && plThis.expense,
+      netPL: plThis && plThis.net,
+      periodLabel: (typeof bounds !== 'undefined' && bounds && bounds.start)
+        ? (bounds.start + ' → ' + bounds.end)
+        : (isBm ? 'tempoh semasa' : 'current period')
+    })
+    try { _dbFillCardInsights() } catch(e) { console.warn('insights health', e) }
   } catch(e) { console.warn('health charts', e) }
 
   try { _dbRenderGrowthChart(inv) } catch(e) { console.warn('chart growth', e) }
+  try { _dbFillCardInsights() } catch(e) { console.warn('insights', e) }
   try { _dbRenderStatusDonut(thisMonthAll) } catch(e) { console.warn('chart status', e) }
   try { _dbRenderPnLChart() } catch(e) { console.warn('chart pnl', e) }
   try { _dbRenderTopCustomers(thisMonth) } catch(e) { console.warn('top cust', e) }
@@ -4874,6 +4896,94 @@ function _dbChartTickColor() {
   } catch(e) {}
   return '#94A3B8'
 }
+
+function _dbFillCardInsights(ctx) {
+  const isBm = APP.language === 'bm'
+  const tag = '<span class="db-ai-tag">AI · 4W1H</span>'
+  ctx = Object.assign({}, window._dbInsightCtx || {}, ctx || {})
+  const fmt = (n) => (typeof formatRM === 'function' ? formatRM(n) : ('RM ' + Number(n||0).toFixed(2)))
+  const period = ctx.periodLabel || (isBm ? 'tempoh semasa' : 'current period')
+  const hs = ctx.health || window._dbHealthScores
+
+  const gEl = document.getElementById('db-ai-growth')
+  if(gEl) {
+    const sales = Number(ctx.curSales||0), prev = Number(ctx.prevSales||0), rate = Number(ctx.curRate||0)
+    let what, why, how
+    if(sales <= 0 && prev <= 0) {
+      what = isBm ? 'Belum ada jualan diiktiraf.' : 'No recognised sales yet.'
+      why = isBm ? 'Tiada invois Paid/Partial atau POS dalam julat.' : 'No Paid/Partial invoices or POS in range.'
+      how = isBm ? 'Rekod jualan POS atau terima bayaran invois.' : 'Record POS sales or collect invoice payments.'
+    } else if(sales >= prev) {
+      what = isBm ? `Jualan diiktiraf ${fmt(sales)} (naik vs tempoh lepas).` : `Recognised sales ${fmt(sales)} (up vs prior period).`
+      why = isBm ? `Kadar kutipan ${rate.toFixed(1)}%.` : `Collection rate ${rate.toFixed(1)}%.`
+      how = isBm ? 'Kekalkan momentum; pantau minggu puncak pada carta.' : 'Keep momentum; watch peak weeks on the chart.'
+    } else {
+      what = isBm ? `Jualan diiktiraf ${fmt(sales)} (turun vs ${fmt(prev)}).` : `Recognised sales ${fmt(sales)} (down vs ${fmt(prev)}).`
+      why = isBm ? 'Volume bayaran/POS lebih rendah dalam julat ini.' : 'Lower paid/POS volume in this range.'
+      how = isBm ? 'Semak invois tertunggak & aktiviti POS.' : 'Review overdue invoices and POS activity.'
+    }
+    gEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${what} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Siapa':'Who'}:</strong> ${isBm?'pasukan jualan & kutipan tenant ini':'this tenant sales & collections'}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${how}</div>`
+  }
+
+  const sEl = document.getElementById('db-ai-status')
+  if(sEl) {
+    const st = ctx.status || {}
+    const paid = st.paid||0, partial = st.partial||0, unpaid = st.unpaid||0, cancelled = st.cancelled||0
+    const total = paid + partial + unpaid + cancelled
+    let what, why, how
+    if(total === 0) {
+      what = isBm ? 'Tiada invois dalam tempoh ini.' : 'No invoices in this period.'
+      why = isBm ? 'Belum ada dokumen jualan dalam julat.' : 'No sales documents in range.'
+      how = isBm ? 'Cipta invois atau luaskan penapis tempoh.' : 'Create invoices or widen period filter.'
+    } else if(unpaid + partial > paid) {
+      what = isBm ? `Majoriti belum penuh bayar (Unpaid ${unpaid}, Partial ${partial}, Paid ${paid}).` : `Most not fully paid (Unpaid ${unpaid}, Partial ${partial}, Paid ${paid}).`
+      why = isBm ? 'Tekanan kutipan pada pipeline.' : 'Collection pressure on the pipeline.'
+      how = isBm ? 'Utamakan follow-up Unpaid/Partial & SOA.' : 'Prioritise Unpaid/Partial follow-up and SOA.'
+    } else {
+      what = isBm ? `Paid ${paid} / ${total} invois; Unpaid ${unpaid}; Cancelled ${cancelled}.` : `Paid ${paid} / ${total} invoices; Unpaid ${unpaid}; Cancelled ${cancelled}.`
+      why = isBm ? 'Mix status = kualiti kutipan.' : 'Status mix reflects collection quality.'
+      how = isBm ? 'Kekalkan disiplin bayaran.' : 'Keep payment discipline.'
+    }
+    sEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${what} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${how}</div>`
+  }
+
+  const zEl = document.getElementById('db-ai-zone')
+  if(zEl && hs && hs.detail) {
+    const d = hs.detail
+    const entries = [[isBm?'Jualan':'Sales',d.sales],[isBm?'Kutipan':'Collection',d.collection],[isBm?'Gaji':'Payroll',d.payroll],[isBm?'Belanja':'Expenses',d.expenses],[isBm?'Stok':'Stock',d.stock]]
+    entries.sort((a,b)=>a[1]-b[1])
+    const weak = entries[0], strong = entries[entries.length-1]
+    zEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${isBm?`Purata skor ${hs.zoneAvg}/100. Terkuat: ${strong[0]} (${strong[1]}). Terlemah: ${weak[0]} (${weak[1]}).`:`Average ${hs.zoneAvg}/100. Strongest: ${strong[0]} (${strong[1]}). Weakest: ${weak[0]} (${weak[1]}).`} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${isBm?'Skor dari data tenant semasa.':'Scores from current tenant data.'} <strong>${isBm?'Bagaimana':'How'}:</strong> ${isBm?`Fokus perbaiki zon ${weak[0]}.`:`Focus on improving ${weak[0]}.`}</div>`
+  } else if(zEl) zEl.innerHTML = `${tag}<div>${isBm?'Menunggu skor zon…':'Waiting for zone scores…'}</div>`
+
+  const hEl = document.getElementById('db-ai-health')
+  if(hEl && hs && hs.detail) {
+    const d = hs.detail
+    const why = d.overdue < 50 ? (isBm?'Risiko hutang menekan radar.':'Debt risk is pulling the radar.') : (isBm?'Bentuk radar = imbangan operasi.':'Radar shape = operating balance.')
+    hEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${isBm?`Overdue ${d.overdue}, Kutipan ${d.collection}, Stok ${d.stock}.`:`Overdue ${d.overdue}, Collection ${d.collection}, Stock ${d.stock}.`} <strong>${isBm?'Bila':'When'}:</strong> ${period}. <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${isBm?'Seimbangkan kutipan, gaji/belanja & stok.':'Balance collections, payroll/expenses and stock.'}</div>`
+  } else if(hEl) hEl.innerHTML = `${tag}<div>${isBm?'Menunggu data kesihatan…':'Waiting for health data…'}</div>`
+
+  const pEl = document.getElementById('db-ai-pnl')
+  if(pEl) {
+    const rev = Number(ctx.revenue||0), exp = Number(ctx.expense||0), net = Number(ctx.netPL||0)
+    let what, why, how
+    if(rev === 0 && exp === 0) {
+      what = isBm ? 'Tiada hasil/belanja jurnal ketara (atau mapping akaun kosong).' : 'No material journal revenue/expense (or empty account mapping).'
+      why = isBm ? 'P&L bergantung jurnal + jenis akaun.' : 'P&L depends on journals and account types.'
+      how = isBm ? 'Semak Default Accounts & post ke jurnal.' : 'Check Default Accounts and post to journals.'
+    } else if(net >= 0) {
+      what = isBm ? `Hasil ${fmt(rev)}, belanja ${fmt(exp)}, untung ${fmt(net)}.` : `Revenue ${fmt(rev)}, expenses ${fmt(exp)}, profit ${fmt(net)}.`
+      why = isBm ? 'Hasil menandingi/melebihi belanja pada buku.' : 'Revenue meets or exceeds expenses on the books.'
+      how = isBm ? 'Kekalkan kawalan kos.' : 'Keep cost control.'
+    } else {
+      what = isBm ? `Hasil ${fmt(rev)}, belanja ${fmt(exp)}, rugi ${fmt(net)}.` : `Revenue ${fmt(rev)}, expenses ${fmt(exp)}, loss ${fmt(net)}.`
+      why = isBm ? 'Belanja jurnal melebihi hasil.' : 'Journaled expenses exceed revenue.'
+      how = isBm ? 'Semak akaun belanja & margin.' : 'Review expense accounts and margin.'
+    }
+    pEl.innerHTML = `${tag}<div><strong>${isBm?'Apa':'What'}:</strong> ${what} <strong>${isBm?'Bila':'When'}:</strong> ${isBm?'KPI + trend 6 bulan.':'KPI period + 6-mo trend.'} <strong>${isBm?'Kenapa':'Why'}:</strong> ${why} <strong>${isBm?'Bagaimana':'How'}:</strong> ${how}</div>`
+  }
+}
+
 function _dbClampScore(n) {
   const x = Number(n)
   if(!isFinite(x)) return 0
@@ -5141,6 +5251,10 @@ function _dbRenderStatusDonut(thisMonthAll) {
   if(legend) {
     legend.innerHTML = labels.map((l,i)=>`<div class="db-legend-item"><span class="db-legend-dot" style="background:${colors[i]}"></span>${l} <span style="margin-left:auto;font-weight:600;color:var(--db-text)">${values[i]}</span></div>`).join('')
   }
+  window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
+    status: { paid, partial, unpaid, cancelled, total }
+  })
+  try { _dbFillCardInsights() } catch(e) { console.warn('insights status', e) }
 }
 
 async function _dbRenderLowStock() {
