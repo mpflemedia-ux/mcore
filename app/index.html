@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-fsort">
+<meta name="nexerp-build" content="2026-08-16-jnlsort">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10799,6 +10799,7 @@ async function renderJournalList() {
       <select class="form-select" id="jnl-pick-year" style="width:130px;padding:6px 10px;font-size:12px" onchange="_jnlPickRange('year',this.value)">${jnlYearOptions}</select>
     </div>
   </div>
+  <div id="jnl-sort-bar" class="no-print" style="margin-bottom:8px"></div>
   <div class="card" style="margin-bottom:0">
     <div id="jnl-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:60px"><div class="spinner"></div></div></div>
   </div>`
@@ -15880,6 +15881,26 @@ function _listMountSortBar(barId, key, fields, rerenderExpr) {
       el = document.createElement('div')
       el.id = barId
       filters.parentNode.insertBefore(el, filters.nextSibling)
+    }
+  }
+  // Fallback: insert before common list wraps (journal has date filters, not status chips)
+  if(!el) {
+    const prefixes = [barId.replace('-sort-bar',''), key]
+    const wrapIds = []
+    prefixes.forEach(p => {
+      wrapIds.push(p + '-table-wrap', p + '-list-wrap')
+    })
+    wrapIds.push('jnl-table-wrap', 'coa-table-wrap', 'emp-list-wrap')
+    for(const wid of wrapIds) {
+      const wrap = document.getElementById(wid)
+      if(wrap && wrap.parentNode) {
+        el = document.createElement('div')
+        el.id = barId
+        el.className = 'no-print'
+        el.style.marginBottom = '8px'
+        wrap.parentNode.insertBefore(el, wrap)
+        break
+      }
     }
   }
   if(!el) return
