@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-osnotif">
+<meta name="nexerp-build" content="2026-08-16-oslist">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21527,7 +21527,10 @@ async function renderAttendance(params={}) {
     <button class="btn btn-outline btn-sm" type="button" onclick="_attSavePolicy()"><i class="ti ti-device-floppy"></i> ${isBm?'Simpan polisi':'Save policy'}</button>
   </div>` : ''}
   <div class="card" style="padding:14px;margin-bottom:14px" id="att-outstation-panel">
-    <div style="font-weight:600;margin-bottom:6px">${isBm?'Permohonan outstation':'Outstation request'}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+      <div style="font-weight:600">${isBm?'Permohonan outstation':'Outstation request'}</div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="_attLoadOutstationList()"><i class="ti ti-refresh"></i> ${isBm?'Muat semula':'Refresh'}</button>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <input type="date" id="os-from" class="form-input">
       <input type="date" id="os-to" class="form-input">
@@ -21540,6 +21543,7 @@ async function renderAttendance(params={}) {
   <div id="att-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   await _attendanceLoadTable(month, year)
+  try { await _attLoadOutstationList() } catch(e) { console.warn(e) }
 }
 
 function _attendanceResetForm() {
@@ -21770,16 +21774,38 @@ async function _attSubmitOutstation() {
 
 async function _attLoadOutstationList() {
   const el = document.getElementById('os-list')
-  if(!el || !APP.tenant?.id) return
+  if(!el) return
+  if(!APP.tenant?.id) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--danger)">No tenant</div>`
+    return
+  }
+  el.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:6px 0">Loading…</div>`
   try {
-    let q = sb.from('outstation_requests').select('id,start_date,end_date,location,status,purpose,employee_id')
-      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(20)
-    const { data, error } = await q
+    // Prefer filter deleted_at; fall back if column/policy issues
+    let data = null, error = null
+    ;({ data, error } = await sb.from('outstation_requests')
+      .select('id,start_date,end_date,location,status,purpose,employee_id,created_at')
+      .eq('tenant_id', APP.tenant.id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(30))
     if(error) {
-      el.innerHTML = `<div style="font-size:12px;color:var(--text-3)">${APP.language==='bm'?'Jadual outstation belum siap (jalankan SQL).':'Outstation table missing (run SQL).'}</div>`
+      console.warn('outstation list try1', error)
+      ;({ data, error } = await sb.from('outstation_requests')
+        .select('id,start_date,end_date,location,status,purpose,employee_id')
+        .eq('tenant_id', APP.tenant.id)
+        .order('start_date', { ascending: false })
+        .limit(30))
+    }
+    if(error) {
+      console.warn('outstation list try2', error)
+      el.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:8px 0">${APP.language==='bm'?'Gagal muat outstation: ':'Failed to load outstation: '}${_aiEscapeHtml(error.message||'')}<br><span style="color:var(--text-3)">${APP.language==='bm'?'Pastikan SQL attendance controls sudah dijalankan.':'Ensure attendance controls SQL was applied.'}</span></div>`
       return
     }
-    if(!data?.length) { el.innerHTML = `<div style="font-size:12px;color:var(--text-3)">${APP.language==='bm'?'Tiada permohonan lagi.':'No requests yet.'}</div>`; return }
+    if(!data?.length) {
+      el.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:8px 0">${APP.language==='bm'?'Tiada permohonan outstation untuk tenant ini.':'No outstation requests for this tenant.'}</div>`
+      return
+    }
     const isBm = APP.language==='bm'
     const empIds = [...new Set(data.map(r => r.employee_id).filter(Boolean))]
     let empMap = {}
