@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-ostime">
+<meta name="nexerp-build" content="2026-08-16-attsave">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22237,10 +22237,30 @@ async function _attendanceLoadTable(month, year) {
   const from = `${year}-${String(month).padStart(2,'0')}-01`
   const lastDay = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
-  const {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,employees(name)')
+  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,employees(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
+  if(error) {
+    console.warn('attendance load embed', error)
+    ;({data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late')
+      .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false}))
+  }
+  if(error) {
+    // last resort: no soft-delete / extra cols
+    ;({data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes')
+      .eq('tenant_id',APP.tenant.id).gte('date',from).lte('date',to).order('date',{ascending:false}))
+  }
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   _attendanceRecords = data || []
+  // Attach employee names if embed missing
+  if(_attendanceRecords.length && !_attendanceRecords[0].employees) {
+    const ids = [...new Set(_attendanceRecords.map(r => r.employee_id).filter(Boolean))]
+    if(ids.length) {
+      const { data: emps } = await sb.from('employees').select('id,name').in('id', ids).eq('tenant_id', APP.tenant.id)
+      const map = {}
+      ;(emps||[]).forEach(e => { map[e.id] = e.name })
+      _attendanceRecords.forEach(r => { r.employees = { name: map[r.employee_id] || '—' } })
+    }
+  }
   window._attHistFilter = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
   _attendanceRenderHistoryTable(t)
 }
@@ -22513,7 +22533,8 @@ async function _attendanceSave() {
     showToast(isBm?'Field: catatan pelanggan/lokasi/tujuan wajib':'Field: customer/location/purpose notes required', 'error')
     return
   }
-  if(workMode === 'office' && policy.office_code_enabled) {
+  // Office daily code only for staff self-clock (form has no code field for HR/admin bulk log)
+  if(workMode === 'office' && policy.office_code_enabled && !canManageHR()) {
     const code = (document.getElementById('att-office-code')?.value || '').trim()
     const today = _nowDateLocal()
     const expected = (policy.daily_code_date === today) ? String(policy.daily_code || '') : ''
@@ -22557,6 +22578,15 @@ async function _attendanceSave() {
     geo_lat: window._attGeo?.lat ?? null,
     geo_lng: window._attGeo?.lng ?? null
   }
+  // Same employee+date → update (avoid silent unique failure / "not reflecting")
+  if(!id) {
+    try {
+      const { data: existing } = await sb.from('attendance').select('id')
+        .eq('tenant_id', APP.tenant.id).eq('employee_id', employeeId).eq('date', date)
+        .is('deleted_at', null).maybeSingle()
+      if(existing && existing.id) id = existing.id
+    } catch(e) { console.warn('att existing lookup', e) }
+  }
   let error
   if(id) {
     ({error} = await sb.from('attendance').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
@@ -22573,9 +22603,16 @@ async function _attendanceSave() {
   auditLog(id?'update':'create', 'attendance', id||null)
   showToast(isBm?'Kehadiran disimpan!':'Attendance saved!', 'success')
   _attendanceResetForm()
-  const month = Number(document.getElementById('att-month').value)
-  const year = Number(document.getElementById('att-year').value)
+  // Ensure history filter shows the new row
+  window._attHistFilter = window._attHistFilter || {}
+  window._attHistFilter.status = 'all'
+  window._attHistFilter.employee = 'all'
+  window._attHistFilter.mode = 'all'
+  const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('att-year')?.value) || (new Date().getFullYear())
   await _attendanceLoadTable(month, year)
+  const wrap = document.getElementById('att-table-wrap')
+  if(wrap) try { wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) } catch(e) {}
 }
 
 async function _attendanceDelete(id) {
