@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-loginerr">
+<meta name="nexerp-build" content="2026-08-16-obtside">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2831,6 +2831,34 @@ function _obtBuildSteps() {
   return steps
 }
 
+
+function _obtEnsureTargetVisible(selector) {
+  if(!selector) return
+  // Mobile: sidebar nav is off-canvas when collapsed — open so spotlight has a real rect
+  if(window.innerWidth <= 768 && /nav-item|sidebar|#sidebar/.test(selector)) {
+    const sidebar = document.getElementById('sidebar')
+    if(sidebar && sidebar.classList.contains('collapsed')) {
+      sidebar.classList.remove('collapsed')
+      const backdrop = document.getElementById('sidebar-backdrop')
+      if(backdrop) {
+        backdrop.style.display = 'block'
+        // Keep backdrop under tour overlay; tour handles dismiss
+        backdrop.style.zIndex = '99980'
+      }
+      sidebar.style.zIndex = '99985'
+    }
+  }
+}
+
+function _obtResetSidebarTourStyles() {
+  try {
+    const sidebar = document.getElementById('sidebar')
+    const backdrop = document.getElementById('sidebar-backdrop')
+    if(sidebar) sidebar.style.zIndex = ''
+    if(backdrop) backdrop.style.zIndex = ''
+  } catch(e) {}
+}
+
 function _obtStart() {
   if(_obtActive) return
   _obtSteps = _obtBuildSteps()
@@ -2848,6 +2876,7 @@ function _obtEnd(markDone) {
   const el = document.getElementById('obt-overlay')
   if(el) el.remove()
   if(_obtResizeHandler) { window.removeEventListener('resize', _obtResizeHandler); _obtResizeHandler = null }
+  _obtResetSidebarTourStyles()
   if(markDone) _obtMarkDone()
 }
 
@@ -2870,12 +2899,24 @@ function _obtRenderStep() {
   const step = _obtSteps[_obtStepIdx]
   const total = _obtSteps.length
   const isLast = _obtStepIdx === total-1
+  if(step.selector) _obtEnsureTargetVisible(step.selector)
+  else if(window.innerWidth <= 768) {
+    // Non-nav steps: collapse sidebar again so dashboard tooltip is readable
+    const sidebar = document.getElementById('sidebar')
+    if(sidebar && !sidebar.classList.contains('collapsed')) {
+      sidebar.classList.add('collapsed')
+      const backdrop = document.getElementById('sidebar-backdrop')
+      if(backdrop) backdrop.style.display = 'none'
+    }
+    _obtResetSidebarTourStyles()
+  }
   const target = step.selector ? document.querySelector(step.selector) : null
   const pad = 8
   const M = 'rgba(15,23,42,.72)'
   let maskHtml, tooltipPos
   if(target) {
-    try { target.scrollIntoView({ block:'nearest' }) } catch(e) {}
+    try { target.scrollIntoView({ block:'nearest', inline:'nearest' }) } catch(e) {}
+    try { void document.getElementById('sidebar')?.offsetWidth } catch(e) {}
     const rect = target.getBoundingClientRect()
     const top = Math.max(rect.top - pad, 0)
     const left = Math.max(rect.left - pad, 0)
