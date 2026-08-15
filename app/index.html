@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-pcjnl">
+<meta name="nexerp-build" content="2026-08-16-pcsync">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6755,6 +6755,19 @@ async function renderSettings(params={}) {
     coaAccounts = coaData || []
     const {data: mapData} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
     ;(mapData||[]).forEach(m => { acctMappings[m.mapping_key] = m.account_id })
+    // Auto-map Petty Cash (1010) if COA exists and mapping missing — never overwrite
+    if(!acctMappings['petty_cash']) {
+      const pcAcc = (coaAccounts||[]).find(a => a.code === '1010' || /petty/i.test(a.name_en||''))
+      if(pcAcc && pcAcc.id) {
+        try {
+          await sb.from('default_account_mappings').insert({
+            tenant_id: APP.tenant.id, mapping_key: 'petty_cash', account_id: pcAcc.id
+          })
+          acctMappings['petty_cash'] = pcAcc.id
+          if(typeof _damClearCache === 'function') _damClearCache()
+        } catch(e) { console.warn('auto map petty_cash', e) }
+      }
+    }
     glCheck.coa = coaAccounts.length
     // Minimum for sales journals: cash + sales_revenue. Full list for go-live health.
     const need = ['cash','sales_revenue','accounts_payable','general_expense','salary_expense','epf_payable','socso_payable','eis_payable','pcb_payable']
@@ -9335,6 +9348,115 @@ async function _pcEnsurePettyAccountId() {
   }
 }
 
+
+/** Post all missing journals for one float (issue + expenses + close return). Idempotent. Tenant-scoped. */
+async function _pcSyncFloatJournals(floatId, opts={}) {
+  const silent = !!opts.silent
+  const isBm = APP.language === 'bm'
+  if(!floatId || !APP.tenant?.id) return { ok:false, reason:'no-float' }
+
+  const {data: f, error} = await sb.from('petty_cash_floats').select('*')
+    .eq('id', floatId).eq('tenant_id', APP.tenant.id).is('deleted_at', null).maybeSingle()
+  if(error || !f) return { ok:false, reason: error?.message || 'not-found' }
+
+  const cashAcc = await _getDefaultAccountId('cash')
+  const pettyAcc = await _pcEnsurePettyAccountId()
+  if(!cashAcc) {
+    if(!silent) showToast(isBm
+      ? 'Jurnal tak boleh dijana: map Tunai/Bank dulu di Settings → Default Accounts.'
+      : 'Cannot post journals: map Cash/Bank first in Settings → Default Accounts.', 'error')
+    return { ok:false, reason:'no-cash' }
+  }
+  if(!pettyAcc) {
+    if(!silent) showToast(isBm
+      ? 'Jurnal tak boleh dijana: gagal cipta/map akaun Petty Cash.'
+      : 'Cannot post journals: failed to create/map Petty Cash account.', 'error')
+    return { ok:false, reason:'no-petty' }
+  }
+
+  let posted = 0
+  const errs = []
+
+  try {
+    const r = await _pcPostIssueJournal(f.id, f.holder_name || 'Staff', Number(f.amount||0), f.issued_date || new Date().toISOString().slice(0,10))
+    if(r && r.id) posted++
+  } catch(e) {
+    errs.push('issue: ' + (e.message||e))
+    console.warn('pc sync issue', e)
+  }
+
+  const {data: exps} = await sb.from('petty_cash_expenses').select('id,amount,expense_date,merchant,description')
+    .eq('float_id', floatId).eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  for(const e of (exps||[])) {
+    try {
+      const r = await _pcPostExpenseJournal(e.id, Number(e.amount||0), e.expense_date, e.merchant || e.description || 'Petty expense')
+      if(r && r.id) posted++
+    } catch(err) {
+      errs.push('exp: ' + (err.message||err))
+      console.warn('pc sync exp', err)
+    }
+  }
+
+  if(String(f.status||'') === 'closed') {
+    let returned = null
+    const m = String(f.notes||'').match(/returned\s*=\s*([0-9.]+)/i)
+    if(m) returned = Number(m[1])
+    if(returned == null || isNaN(returned)) {
+      const spent = (exps||[]).reduce((s,x)=>s+Number(x.amount||0), 0)
+      returned = Math.max(0, Number(f.amount||0) - spent)
+    }
+    if(returned > 0) {
+      try {
+        if(!(await _journalAlreadyPosted('petty_cash_floats_close', floatId))) {
+          const r = await _postJournalEntry({
+            description: `Petty cash return — ${f.holder_name||''}`.trim(),
+            entryDate: (f.closed_at || '').slice(0,10) || new Date().toISOString().slice(0,10),
+            entryType: 'auto',
+            lines: [
+              { account_id: cashAcc, debit: returned, credit: 0 },
+              { account_id: pettyAcc, debit: 0, credit: returned }
+            ],
+            sourceTable: 'petty_cash_floats_close',
+            sourceId: floatId
+          })
+          if(r && r.id) posted++
+        }
+      } catch(e) {
+        errs.push('close: ' + (e.message||e))
+        console.warn('pc sync close', e)
+      }
+    }
+  }
+
+  let hasIssue = false
+  try { hasIssue = await _journalAlreadyPosted('petty_cash_floats', floatId) } catch(e) {}
+
+  if(!silent) {
+    if(posted > 0) {
+      showToast(isBm
+        ? `${posted} jurnal petty cash dijana. Semak Journal Entries.`
+        : `${posted} petty cash journal(s) posted. Check Journal Entries.`, 'success')
+    } else if(errs.length) {
+      showToast(isBm ? ('Gagal jana jurnal: ' + errs[0]) : ('Journal post failed: ' + errs[0]), 'error')
+    } else if(hasIssue) {
+      showToast(isBm ? 'Semua jurnal petty cash dah wujud.' : 'Petty cash journals already up to date.', 'success')
+    } else {
+      const lock = (typeof getBooksLockDate === 'function') ? getBooksLockDate() : null
+      const idate = (f.issued_date || '').slice(0,10)
+      if(lock && idate && idate <= lock) {
+        showToast(isBm
+          ? ('Tempoh dikunci sehingga '+lock+'. Buka kunci di Settings → Period Lock, kemudian tekan Jana Jurnal.')
+          : ('Books locked through '+lock+'. Unlock in Settings → Period Lock, then Post Journals.'), 'error')
+      } else {
+        showToast(isBm
+          ? 'Jurnal masih tiada. Pastikan Cash/Bank dimap di Default Accounts, kemudian tekan Jana Jurnal.'
+          : 'Still no journal. Map Cash/Bank in Default Accounts, then tap Post Journals.', 'error')
+      }
+    }
+  }
+  return { ok: errs.length===0 && (posted>0 || hasIssue), posted, errs, hasIssue }
+}
+
 async function _pcPostIssueJournal(floatId, holder, amount, date) {
   const cashAcc = await _getDefaultAccountId('cash')
   const pettyAcc = await _pcEnsurePettyAccountId()
@@ -9425,6 +9547,7 @@ async function _pcRenderDetail(floatId, t, isBm) {
   try {
     await _pcPostIssueJournal(f.id, f.holder_name || 'Staff', Number(f.amount||0), f.issued_date || new Date().toISOString().slice(0,10))
   } catch(e) { console.warn('pc journal backfill', e) }
+  try { await _pcSyncFloatJournals(f.id, { silent: true }) } catch(e) { console.warn('pc journal sync', e) }
   const {data: exps} = await sb.from('petty_cash_expenses').select('*')
     .eq('float_id', floatId).eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .order('expense_date', {ascending:false})
