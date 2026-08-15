@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-empinvite">
+<meta name="nexerp-build" content="2026-08-16-loginerr">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2935,25 +2935,57 @@ async function doLogin() {
   const pass=document.getElementById('login-password').value
   const errEl=document.getElementById('login-error')
   const btn=document.getElementById('btn-login')
+  const isBm = (localStorage.getItem('nexerp_lang') === 'bm') || (typeof APP !== 'undefined' && APP.language === 'bm')
   errEl.classList.remove('show')
-  if(!email||!pass){errEl.textContent='Please enter your email and password.';errEl.classList.add('show');return}
+  if(!email||!pass){
+    errEl.textContent = isBm ? 'Sila masukkan email dan kata laluan.' : 'Please enter your email and password.'
+    errEl.classList.add('show'); return
+  }
   btn.innerHTML='<div class="spinner"></div> Signing in...'
   btn.disabled=true
 
-  // Timeout 10s — prevent infinite hang bila Supabase pause
-  const loginPromise = sb.auth.signInWithPassword({email,password:pass})
-  const timeoutPromise = new Promise((_,rej) => setTimeout(() => rej(new Error('Connection timeout. Please try again.')), 10000))
-
   try {
-    const {data,error} = await Promise.race([loginPromise, timeoutPromise])
+    const {data, error} = await sb.auth.signInWithPassword({ email, password: pass })
     btn.innerHTML='Sign In'; btn.disabled=false
-    if(error){errEl.textContent=error.message==='Invalid login credentials'?'Invalid email or password.':error.message;errEl.classList.add('show');return}
+    if(error) {
+      const msg = String(error.message || '')
+      let friendly = msg
+      if(/invalid login credentials/i.test(msg)) {
+        friendly = isBm
+          ? 'Email atau kata laluan salah. Jika baru daftar, sahkan email atau guna Forgot password.'
+          : 'Invalid email or password. If you just registered, confirm email or use Forgot password.'
+      } else if(/email not confirmed/i.test(msg)) {
+        friendly = isBm
+          ? 'Email belum disahkan. Buka pautan dalam email, atau minta admin sahkan akaun di Supabase.'
+          : 'Email not confirmed. Open the link in your email, or ask admin to confirm the account in Supabase.'
+      } else if(/network|fetch|failed to fetch/i.test(msg)) {
+        friendly = isBm ? 'Ralat rangkaian. Cuba lagi.' : 'Network error. Please try again.'
+      }
+      errEl.textContent = friendly
+      errEl.classList.add('show')
+      console.warn('doLogin', error)
+      return
+    }
+    if(!data?.user) {
+      errEl.textContent = isBm ? 'Log masuk gagal (tiada user).' : 'Sign-in failed (no user).'
+      errEl.classList.add('show')
+      return
+    }
     await loadUserSession(data.user)
   } catch(e) {
     btn.innerHTML='Sign In'; btn.disabled=false
-    errEl.textContent=e.message; errEl.classList.add('show')
-    // Clear stale cache and retry hint
-    if(e.message.includes('timeout')) { localStorage.clear(); errEl.textContent='Connection timeout. Cache cleared — please try again.' }
+    errEl.textContent = e.message || (isBm ? 'Log masuk gagal.' : 'Sign-in failed.')
+    errEl.classList.add('show')
+    console.warn('doLogin catch', e)
+    // Do NOT clear all localStorage — wipes language/theme/invite and hurts other tabs
+    if(/timeout/i.test(String(e.message||''))) {
+      try {
+        Object.keys(localStorage).filter(k => /supabase|sb-|auth-token/i.test(k)).forEach(k => localStorage.removeItem(k))
+      } catch(_) {}
+      errEl.textContent = isBm
+        ? 'Sambungan timeout. Sesi auth dibersihkan — cuba lagi.'
+        : 'Connection timeout. Auth session cleared — please try again.'
+    }
   }
 }
 
