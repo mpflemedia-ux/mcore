@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-slots">
+<meta name="nexerp-build" content="2026-08-16-fp">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4957,15 +4957,37 @@ function _dbInsightNotifKey() {
 function _dbInsightLoadStore() {
   try {
     const raw = localStorage.getItem(_dbInsightStoreKey())
-    if(!raw) return { day: null, slots: {} }
+    if(!raw) return { day: null, slots: {}, fingerprint: null, cards: null }
     const p = JSON.parse(raw)
-    return { day: p.day || null, slots: p.slots || {} }
-  } catch(e) { return { day: null, slots: {} } }
+    return {
+      day: p.day || null,
+      slots: p.slots || {},
+      fingerprint: p.fingerprint || null,
+      cards: p.cards || null
+    }
+  } catch(e) { return { day: null, slots: {}, fingerprint: null, cards: null } }
+}
+function _dbInsightFingerprint(ctx) {
+  const hs = (ctx && ctx.health) || window._dbHealthScores || {}
+  const d = hs.detail || {}
+  const st = (ctx && ctx.status) || {}
+  const parts = [
+    Number(ctx && ctx.curSales || 0).toFixed(2),
+    Number(ctx && ctx.prevSales || 0).toFixed(2),
+    Number(ctx && ctx.curRate || 0).toFixed(2),
+    Number(ctx && ctx.revenue || 0).toFixed(2),
+    Number(ctx && ctx.expense || 0).toFixed(2),
+    Number(ctx && ctx.netPL || 0).toFixed(2),
+    st.paid||0, st.partial||0, st.unpaid||0, st.cancelled||0,
+    d.sales, d.collection, d.payroll, d.expenses, d.stock, d.overdue,
+    hs.zoneAvg
+  ]
+  return parts.join('|')
 }
 function _dbInsightSaveStore(store) {
   try { localStorage.setItem(_dbInsightStoreKey(), JSON.stringify(store)) } catch(e) {}
 }
-function _dbInsightPushNotif(slotId, isBm) {
+function _dbInsightPushNotif(slotId, isBm, reason) {
   try {
     const key = _dbInsightNotifKey()
     let arr = []
@@ -4974,19 +4996,24 @@ function _dbInsightPushNotif(slotId, isBm) {
     const labels = {
       zohor: isBm ? 'Zohor' : 'Dhuhr',
       asar: isBm ? 'Asar' : 'Asr',
-      isyak: isBm ? 'Isyak' : 'Isha'
+      isyak: isBm ? 'Isyak' : 'Isha',
+      data: isBm ? 'data baharu' : 'data change'
     }
-    const lab = labels[slotId] || slotId
+    const lab = labels[slotId] || labels[reason] || slotId || (isBm ? 'kemas kini' : 'update')
+    const why = reason === 'data'
+      ? (isBm ? 'Kerana metrik dashboard berubah' : 'Because dashboard metrics changed')
+      : (isBm ? 'Slot waktu ' + lab : 'Scheduled slot ' + lab)
     const item = {
-      id: 'insight-' + slotId + '-' + Date.now(),
-      slot: slotId,
+      id: 'insight-' + (slotId || reason || 'x') + '-' + Date.now(),
+      slot: slotId || null,
+      reason: reason || 'slot',
       at: new Date().toISOString(),
       text: isBm
         ? `Insight dashboard dikemas kini (${lab})`
         : `Dashboard insights refreshed (${lab})`,
       meta: isBm
-        ? 'Carta Trend, Status, Zone, Health & P&L — deskripsi AI baharu'
-        : 'Trend, Status, Zone, Health & P&L cards — fresh AI copy',
+        ? why + ' · Trend, Status, Zone, Health & P&L'
+        : why + ' · Trend, Status, Zone, Health & P&L',
       read: false
     }
     arr.unshift(item)
@@ -5172,7 +5199,7 @@ async function _dbFillCardInsights(ctx) {
     { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 }
   ]
 
-  const paint = (bodies, fromCache) => {
+  const paint = (bodies) => {
     if(gen !== window._dbInsightGen) return
     cards.forEach(c => {
       const el = document.getElementById(c.id)
@@ -5180,9 +5207,6 @@ async function _dbFillCardInsights(ctx) {
       let body = (bodies && bodies[c.key]) || _dbInsightFallbackBody(c.key, ctx, isBm)
       let tIdx = c.titleIdx
       if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
-      const src = fromCache
-        ? (isBm ? ' · cache slot' : ' · cached slot')
-        : ''
       el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + String(body).replace(/</g, '&lt;') + '</div>'
     })
   }
@@ -5191,32 +5215,29 @@ async function _dbFillCardInsights(ctx) {
   const slot = _dbInsightActiveSlot(now)
   let store = _dbInsightLoadStore()
   if(store.day !== now.day) {
-    store = { day: now.day, slots: {} }
+    store = { day: now.day, slots: {}, fingerprint: null, cards: null }
     _dbInsightSaveStore(store)
   }
 
-  // Before Zohor: show last cached slot from today if any, else fallback — no AI
-  if(!slot) {
-    const prev = store.slots.isyak || store.slots.asar || store.slots.zohor
-    if(prev && prev.cards) paint(prev.cards, true)
-    else paint(null, true)
+  const fp = _dbInsightFingerprint(ctx)
+  const dataChanged = !!(store.fingerprint && store.fingerprint !== fp)
+  const firstLoadNoCache = !store.cards
+  const needSlot = !!(slot && !(store.slots[slot] && store.slots[slot].cards))
+  // Refresh AI when: metrics changed, scheduled slot not done, or no cache yet
+  const needAI = dataChanged || needSlot || firstLoadNoCache
+
+  if(!needAI && store.cards) {
+    paint(store.cards)
     return
   }
 
-  // Slot already generated today → reuse cache, no AI
-  if(store.slots[slot] && store.slots[slot].cards) {
-    paint(store.slots[slot].cards, true)
-    return
-  }
-
-  // Need fresh AI for this prayer slot
   cards.forEach(c => {
     const el = document.getElementById(c.id)
     if(!el) return
-    el.innerHTML = _dbInsightTag(c.titleIdx, isBm) +
-      '<div style="opacity:.75">' + (isBm
-        ? `AI update slot ${slot}…`
-        : `AI refresh for ${slot} slot…`) + '</div>'
+    const msg = dataChanged
+      ? (isBm ? 'Data berubah — AI update…' : 'Data changed — AI update…')
+      : (isBm ? `AI update${slot ? ' · ' + slot : ''}…` : `AI refresh${slot ? ' · ' + slot : ''}…`)
+    el.innerHTML = _dbInsightTag(c.titleIdx, isBm) + '<div style="opacity:.75">' + msg + '</div>'
   })
 
   const bodies = {}
@@ -5230,10 +5251,14 @@ async function _dbFillCardInsights(ctx) {
   }))
   if(gen !== window._dbInsightGen) return
 
-  store.slots[slot] = { at: new Date().toISOString(), cards: bodies }
+  store.cards = bodies
+  store.fingerprint = fp
+  if(slot) store.slots[slot] = { at: new Date().toISOString(), cards: bodies }
   _dbInsightSaveStore(store)
-  _dbInsightPushNotif(slot, isBm)
-  paint(bodies, false)
+
+  const reason = dataChanged ? 'data' : (slot || 'data')
+  _dbInsightPushNotif(dataChanged ? 'data' : slot, isBm, dataChanged ? 'data' : 'slot')
+  paint(bodies)
 }
 
 
