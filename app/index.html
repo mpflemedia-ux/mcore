@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-lang">
+<meta name="nexerp-build" content="2026-08-16-mobdrop">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -134,8 +134,16 @@ input,select,textarea{font-family:inherit}
 .notif-wrap{position:relative;flex-shrink:0}
 .notif-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1}
 .notif-badge.show{display:flex}
-.notif-menu{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,92vw);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.2));display:none;z-index:200;max-height:70vh;overflow:hidden;flex-direction:column}
+.notif-menu{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,calc(100vw - 16px));max-width:calc(100vw - 16px);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.2));display:none;z-index:300;max-height:min(70vh,420px);overflow:hidden;flex-direction:column;box-sizing:border-box}
 .notif-menu.open{display:flex}
+.notif-menu.notif-fixed{position:fixed;right:auto}
+.db-custom-range-panel{position:absolute;right:0;top:calc(100% + 8px);z-index:300;background:var(--db-card,var(--bg-card));border:1px solid var(--db-border2,var(--border));border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:min(280px,calc(100vw - 16px));max-width:calc(100vw - 16px);box-sizing:border-box}
+.db-custom-range-panel.db-range-fixed{position:fixed;right:auto}
+@media (max-width:640px){
+  .notif-menu{width:calc(100vw - 16px);max-width:calc(100vw - 16px)}
+  .db-custom-range-panel{left:8px;right:8px;width:auto;min-width:0;max-width:none}
+  .db-custom-range-panel .db-range-row{flex-direction:column!important}
+}
 .notif-menu-h{padding:12px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border)}
 .notif-list{overflow-y:auto;max-height:320px}
 .notif-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
@@ -1687,17 +1695,58 @@ function isPlatformAdmin() {
 
 // ── In-app notifications (derived: overdue + low stock) ─────────────────────
 let _notifOpen = false
+/** Keep dropdown fully on-screen (phone safe). */
+function _placeInViewport(panel, anchor) {
+  if(!panel || !anchor) return
+  const r = anchor.getBoundingClientRect()
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const pad = 8
+  panel.classList.add(panel.id === 'notif-menu' ? 'notif-fixed' : 'db-range-fixed')
+  panel.style.position = 'fixed'
+  panel.style.zIndex = '400'
+  // measure after visible
+  panel.style.visibility = 'hidden'
+  panel.style.display = panel.id === 'notif-menu' ? 'flex' : 'block'
+  const pw = Math.min(panel.offsetWidth || 320, vw - pad * 2)
+  const ph = Math.min(panel.offsetHeight || 280, vh - pad * 2)
+  let left = Math.min(r.right - pw, vw - pw - pad)
+  left = Math.max(pad, left)
+  let top = r.bottom + 6
+  if(top + ph > vh - pad) top = Math.max(pad, r.top - ph - 6)
+  if(top + ph > vh - pad) top = pad
+  panel.style.left = left + 'px'
+  panel.style.right = 'auto'
+  panel.style.top = top + 'px'
+  panel.style.width = pw + 'px'
+  panel.style.maxWidth = (vw - pad * 2) + 'px'
+  panel.style.maxHeight = Math.min(vh - top - pad, vh - pad * 2) + 'px'
+  panel.style.visibility = ''
+}
 function toggleNotifMenu() {
   _notifOpen = !_notifOpen
   const m = document.getElementById('notif-menu')
-  if(m) m.classList.toggle('open', _notifOpen)
-  if(_notifOpen) loadNotifications()
+  const wrap = document.querySelector('.notif-wrap')
+  if(!m) return
+  m.classList.toggle('open', _notifOpen)
+  if(_notifOpen) {
+    const anchor = wrap || m.parentElement
+    _placeInViewport(m, anchor)
+    loadNotifications()
+  } else {
+    m.classList.remove('notif-fixed')
+    m.style.left = m.style.top = m.style.width = m.style.maxWidth = m.style.maxHeight = m.style.position = ''
+  }
 }
 document.addEventListener('click', e => {
   const wrap = document.querySelector('.notif-wrap')
   if(_notifOpen && wrap && !wrap.contains(e.target)) {
     _notifOpen = false
-    document.getElementById('notif-menu')?.classList.remove('open')
+    const m = document.getElementById('notif-menu')
+    if(m) {
+      m.classList.remove('open', 'notif-fixed')
+      m.style.left = m.style.top = m.style.width = m.style.maxWidth = m.style.maxHeight = m.style.position = ''
+    }
   }
 })
 async function loadNotifications() {
@@ -3454,9 +3503,9 @@ function renderDashboard() {
         <span id="db-range-picker-slot"></span>
         <span style="position:relative;display:inline-block">
           <span class="db-btn" style="font-size:12px" id="db-range-label" onclick="_dbToggleCustomPanel()"><i class="ti ti-calendar"></i> ${monthLabel}</span>
-          <div id="db-custom-range-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:50;background:var(--db-card);border:1px solid var(--db-border2);border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:250px">
+          <div id="db-custom-range-panel" class="db-custom-range-panel" style="display:none">
             <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--db-text2)">${isBm?'Julat Tarikh Tersendiri':'Custom Date Range'}</div>
-            <div style="display:flex;gap:8px;margin-bottom:10px">
+            <div class="db-range-row" style="display:flex;gap:8px;margin-bottom:10px">
               <div class="form-group" style="margin:0;flex:1"><label class="form-label" style="font-size:11px">${isBm?'Dari':'From'}</label><input type="date" id="db-custom-from" class="form-input" style="padding:6px 8px;font-size:12px"></div>
               <div class="form-group" style="margin:0;flex:1"><label class="form-label" style="font-size:11px">${isBm?'Hingga':'To'}</label><input type="date" id="db-custom-to" class="form-input" style="padding:6px 8px;font-size:12px"></div>
             </div>
@@ -4854,8 +4903,10 @@ function _dbToggleCustomPanel() {
   const panel = document.getElementById('db-custom-range-panel')
   if(!panel) return
   const opening = panel.style.display === 'none' || !panel.style.display
-  panel.style.display = opening ? 'block' : 'none'
   if(opening) {
+    panel.style.display = 'block'
+    const anchor = document.getElementById('db-range-label') || panel.parentElement
+    _placeInViewport(panel, anchor)
     const b = _dbRangeBounds()
     const fromEl = document.getElementById('db-custom-from')
     const toEl = document.getElementById('db-custom-to')
@@ -4869,8 +4920,14 @@ function _dbToggleCustomPanel() {
         if(!p || p.style.display==='none') return
         if(p.contains(e.target) || (lbl && lbl.contains(e.target))) return
         p.style.display = 'none'
+        p.classList.remove('db-range-fixed')
+        p.style.left = p.style.top = p.style.width = p.style.maxWidth = p.style.maxHeight = p.style.position = ''
       })
     }
+  } else {
+    panel.style.display = 'none'
+    panel.classList.remove('db-range-fixed')
+    panel.style.left = panel.style.top = panel.style.width = panel.style.maxWidth = panel.style.maxHeight = panel.style.position = ''
   }
 }
 function _dbCloseCustomPanel() {
