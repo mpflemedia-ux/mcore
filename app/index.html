@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-presence">
+<meta name="nexerp-build" content="2026-08-16-presence-de">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22317,16 +22317,16 @@ async function _attendanceLoadTable(month, year) {
   const from = `${year}-${String(month).padStart(2,'0')}-01`
   const lastDay = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
-  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,employees(name)')
+  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,geo_lat,geo_lng,employees(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
   if(error) {
     console.warn('attendance load embed', error)
-    ;({data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late')
+    ;({data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,geo_lat,geo_lng')
       .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false}))
   }
   if(error) {
     // last resort: no soft-delete / extra cols
-    ;({data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes')
+    ;({data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,geo_lat,geo_lng')
       .eq('tenant_id',APP.tenant.id).gte('date',from).lte('date',to).order('date',{ascending:false}))
   }
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
@@ -22355,6 +22355,39 @@ function _attFmtClock(t) {
   const ap = h >= 12 ? 'PM' : 'AM'
   const h12 = ((h % 12) || 12)
   return h12 + ':' + min + ' ' + ap
+}
+
+
+/** Phase E — Presence map modal (Google Maps embed, no API key). */
+function _attOpenGeoMap(lat, lng, name) {
+  const isBm = APP.language === 'bm'
+  lat = Number(lat); lng = Number(lng)
+  if(isNaN(lat) || isNaN(lng)) { showToast(isBm?'Koordinat tidak sah':'Invalid coordinates', 'error'); return }
+  const q = encodeURIComponent(lat + ',' + lng)
+  const embed = 'https://maps.google.com/maps?q=' + q + '&z=17&output=embed'
+  const openUrl = 'https://www.google.com/maps?q=' + q
+  let modal = document.getElementById('att-geo-modal')
+  if(!modal) {
+    modal = document.createElement('div')
+    modal.id = 'att-geo-modal'
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px'
+    document.body.appendChild(modal)
+  }
+  modal.onclick = (e) => { if(e.target === modal) modal.style.display = 'none' }
+  modal.innerHTML = `<div style="background:var(--bg-1,#0f172a);border:1px solid var(--border);border-radius:14px;width:min(520px,100%);max-height:90vh;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.4)" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-weight:600;font-size:14px"><i class="ti ti-map-pin" style="color:#38bdf8"></i> ${isBm?'Lokasi kehadiran':'Attendance location'}</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:2px">${_aiEscapeHtml(name||'')} · ${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('att-geo-modal').style.display='none'"><i class="ti ti-x"></i></button>
+    </div>
+    <iframe src="${embed}" style="width:100%;height:min(360px,50vh);border:0;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+    <div style="padding:10px 14px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border)">
+      <a class="btn btn-primary btn-sm" href="${openUrl}" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> ${isBm?'Buka di Google Maps':'Open in Google Maps'}</a>
+    </div>
+  </div>`
+  modal.style.display = 'flex'
 }
 
 function _attendanceRenderHistoryTable(t) {
@@ -22430,22 +22463,29 @@ function _attendanceRenderHistoryTable(t) {
     <th>${t.employee}</th>
     <th>${t.status}</th>
     <th>${isBm?'Mod':'Mode'}</th>
+    <th>GPS</th>
     <th>${t.notes}</th>
     <th></th>
   </tr></thead>
-  <tbody>${rows.map(a=>`<tr>
+  <tbody>${rows.map(a=>{
+    const hasGeo = a.geo_lat != null && a.geo_lng != null && !isNaN(Number(a.geo_lat)) && !isNaN(Number(a.geo_lng))
+    const geoCell = hasGeo
+      ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px;color:#38bdf8;border-color:#38bdf855" onclick="_attOpenGeoMap(${Number(a.geo_lat)},${Number(a.geo_lng)},'${_aiEscapeHtml(a.employees?.name||'').replace(/'/g,"\\'")}')" title="Maps"><i class="ti ti-map-pin"></i> GPS</button>`
+      : `<span style="font-size:11px;color:var(--text-3)">—</span>`
+    return `<tr>
     <td style="white-space:nowrap">${formatDate(a.date)}</td>
     <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_in)}</td>
     <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_out)}</td>
     <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
     <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
     <td style="font-size:12px;color:var(--text-3)">${modeLabel(a.work_mode)}</td>
+    <td>${geoCell}</td>
     <td style="color:var(--text-2);max-width:140px;overflow:hidden;text-overflow:ellipsis">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
     <td style="white-space:nowrap">
       ${canManageHR()?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_attendanceEdit('${a.id}')"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_attendanceDelete('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
     </td>
-  </tr>`).join('')}</tbody></table></div>`
+  </tr>`}).join('')}</tbody></table></div>`
 }
 
 function _attendanceEdit(id) {
