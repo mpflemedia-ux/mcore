@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-genz">
+<meta name="nexerp-build" content="2026-08-16-aiai">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4897,114 +4897,193 @@ function _dbChartTickColor() {
   return '#94A3B8'
 }
 
-function _dbFillCardInsights(ctx) {
-  const isBm = APP.language === 'bm'
-  ctx = Object.assign({}, window._dbInsightCtx || {}, ctx || {})
-  const fmt = (n) => (typeof formatRM === 'function' ? formatRM(n) : ('RM ' + Number(n||0).toFixed(2)))
-  const pct = (n) => (Math.round(Number(n||0) * 10) / 10).toFixed(1)
-  const hs = ctx.health || window._dbHealthScores
-  const titles = isBm
-    ? ['Vibe check', 'Real talk', 'Plot twist', 'Pulse check', 'No cap', 'Tea', 'Main character energy']
-    : ['Vibe check', 'Real talk', 'Plot twist', 'Pulse check', 'No cap', 'Tea', 'Main character energy']
-  const pickTitle = (i) => titles[i % titles.length]
-  const tag = (i) => '<span class="db-ai-tag">' + pickTitle(i) + '</span>'
+function _dbInsightTitles(isBm) {
+  return ['Vibe check', 'Real talk', 'Plot twist', 'Pulse check', 'No cap', 'Tea', 'Main character energy']
+}
+function _dbInsightTag(i, isBm) {
+  const t = _dbInsightTitles(isBm)
+  return '<span class="db-ai-tag">' + t[i % t.length] + '</span>'
+}
+function _dbInsightFmtRM(n) {
+  return (typeof formatRM === 'function' ? formatRM(n) : ('RM ' + Number(n||0).toFixed(2)))
+}
+function _dbInsightPct(n) {
+  return (Math.round(Number(n||0) * 10) / 10).toFixed(1)
+}
 
-  const gEl = document.getElementById('db-ai-growth')
-  if(gEl) {
+/** Deterministic fallback (same rules / numbers) if AI API fails. */
+function _dbInsightFallbackBody(card, ctx, isBm) {
+  const fmt = _dbInsightFmtRM
+  const pct = _dbInsightPct
+  const hs = ctx.health || window._dbHealthScores
+  if(card === 'growth') {
     const sales = Number(ctx.curSales||0), prev = Number(ctx.prevSales||0), rate = Number(ctx.curRate||0)
-    let body
     if(sales <= 0 && prev <= 0) {
-      body = isBm
+      return isBm
         ? 'Belum ada jualan diiktiraf dalam julat ni — zero Paid/Partial/POS. Rekod satu sale atau clear bayaran invois supaya carta tak tinggal empty vibes.'
         : 'No recognised sales in this range yet — zero Paid/Partial/POS. Log a sale or clear an invoice payment so the chart isn\'t just empty vibes.'
-    } else if(sales >= prev) {
-      body = isBm
-        ? `Jualan diiktiraf ${fmt(sales)} period ni lowkey serving (naik vs lepas ${fmt(prev)}), kadar kutipan ~${pct(rate)}%. Paid + POS yang bawa beg — jangan ghost minggu puncak kat carta, takut glow-up layu tengah jalan.`
-        : `Recognised sales ${fmt(sales)} this period is lowkey serving (up vs last ${fmt(prev)}), collection rate ~${pct(rate)}%. Paid + POS carried the bag — don\'t ghost the peak weeks on the chart or that glow-up fades mid-run.`
-    } else {
-      body = isBm
-        ? `Real talk: jualan diiktiraf ${fmt(sales)} je, turun dari ~${fmt(prev)}. Kutipan ~${pct(rate)}% — chase overdue terbesar dulu, lepas tu satu hari POS focused supaya slide ni tak jadi whole plot.`
-        : `Not gonna sugarcoat it — recognised sales only ${fmt(sales)} vs ~${fmt(prev)} last period. Collection ~${pct(rate)}%; chase the fattest overdue first, then one focused POS day so this dip doesn\'t become the whole plot.`
     }
-    gEl.innerHTML = tag(0) + '<div>' + body + '</div>'
+    if(sales >= prev) {
+      return isBm
+        ? `Jualan diiktiraf ${fmt(sales)} period ni lowkey serving (naik vs lepas ${fmt(prev)}), kadar kutipan ~${pct(rate)}%. Paid + POS yang bawa beg — jangan ghost minggu puncak kat carta.`
+        : `Recognised sales ${fmt(sales)} this period is lowkey serving (up vs last ${fmt(prev)}), collection rate ~${pct(rate)}%. Paid + POS carried the bag — don\'t ghost the peak weeks on the chart.`
+    }
+    return isBm
+      ? `Real talk: jualan diiktiraf ${fmt(sales)} je, turun dari ~${fmt(prev)}. Kutipan ~${pct(rate)}% — chase overdue terbesar dulu, lepas tu satu hari POS focused.`
+      : `Not gonna sugarcoat it — recognised sales only ${fmt(sales)} vs ~${fmt(prev)} last period. Collection ~${pct(rate)}%; chase the fattest overdue first, then one focused POS day.`
   }
-
-  const sEl = document.getElementById('db-ai-status')
-  if(sEl) {
+  if(card === 'status') {
     const st = ctx.status || {}
     const paid = st.paid||0, partial = st.partial||0, unpaid = st.unpaid||0, cancelled = st.cancelled||0
     const total = paid + partial + unpaid + cancelled
-    let body
     if(total === 0) {
-      body = isBm
-        ? 'Tiada invois dalam tempoh ni. Cipta invois atau luaskan penapis — pipeline kosong, bukan bug carta.'
-        : 'No invoices in this period. Create one or widen the filter — empty pipeline, not a chart bug.'
-    } else if(unpaid + partial > paid) {
-      body = isBm
-        ? `Dari ${total} invois: Paid ${paid}, Partial ${partial}, Unpaid ${unpaid}. Book still mid af — cash on read, not delivered. Nudge top unpaid by amount hari ni, lepas tu clean partials.`
-        : `Out of ${total} invoices: Paid ${paid}, Partial ${partial}, Unpaid ${unpaid}. Book is still mid af — cash on read, not delivered. Nudge the top unpaid by amount today, then clean partials.`
-    } else {
-      body = isBm
-        ? `Paid ${paid}/${total} invois, Unpaid ${unpaid}, Cancelled ${cancelled}. Mix ni nampak collection quality okay — kekalkan disiplin bayaran jangan ratio sendiri.`
-        : `Paid ${paid}/${total} invoices, Unpaid ${unpaid}, Cancelled ${cancelled}. Mix is giving decent collection quality — keep payment discipline so you don\'t ratio yourself.`
+      return isBm ? 'Tiada invois dalam tempoh ni. Cipta invois atau luaskan penapis.' : 'No invoices in this period. Create one or widen the filter.'
     }
-    sEl.innerHTML = tag(2) + '<div>' + body + '</div>'
+    if(unpaid + partial > paid) {
+      return isBm
+        ? `Dari ${total} invois: Paid ${paid}, Partial ${partial}, Unpaid ${unpaid}. Book still mid — nudge top unpaid by amount hari ni.`
+        : `Out of ${total} invoices: Paid ${paid}, Partial ${partial}, Unpaid ${unpaid}. Book is still mid — nudge the top unpaid by amount today.`
+    }
+    return isBm
+      ? `Paid ${paid}/${total} invois, Unpaid ${unpaid}, Cancelled ${cancelled}. Mix collection quality okay — kekalkan disiplin bayaran.`
+      : `Paid ${paid}/${total} invoices, Unpaid ${unpaid}, Cancelled ${cancelled}. Decent collection mix — keep payment discipline.`
   }
-
-  const zEl = document.getElementById('db-ai-zone')
-  if(zEl && hs && hs.detail) {
+  if(card === 'zone' && hs && hs.detail) {
     const d = hs.detail
     const entries = [
-      [isBm?'Jualan':'Sales', d.sales],
-      [isBm?'Kutipan':'Collection', d.collection],
-      [isBm?'Gaji':'Payroll', d.payroll],
-      [isBm?'Belanja':'Expenses', d.expenses],
-      [isBm?'Stok':'Stock', d.stock]
+      [isBm?'Jualan':'Sales', d.sales], [isBm?'Kutipan':'Collection', d.collection],
+      [isBm?'Gaji':'Payroll', d.payroll], [isBm?'Belanja':'Expenses', d.expenses], [isBm?'Stok':'Stock', d.stock]
     ]
     entries.sort((a,b)=>a[1]-b[1])
     const weak = entries[0], strong = entries[entries.length-1]
-    const body = isBm
-      ? `Purata zon ~${hs.zoneAvg}/100 — ${strong[0]} in its bag (${strong[1]}), ${weak[0]} the flop (${weak[1]}). Fokus lift ${weak[0]} minggu ni supaya whole board tak dig.`
-      : `Zone avg ~${hs.zoneAvg}/100 — ${strong[0]} is in its bag (${strong[1]}), ${weak[0]} is the flop (${weak[1]}). Focus lifting ${weak[0]} this week so the whole board doesn\'t get dug.`
-    zEl.innerHTML = tag(3) + '<div>' + body + '</div>'
-  } else if(zEl) {
-    zEl.innerHTML = tag(3) + '<div>' + (isBm ? 'Tunggu skor zon load…' : 'Waiting on zone scores…') + '</div>'
+    return isBm
+      ? `Purata zon ~${hs.zoneAvg}/100 — ${strong[0]} (${strong[1]}) kuat, ${weak[0]} (${weak[1]}) lemah. Fokus lift ${weak[0]} minggu ni.`
+      : `Zone avg ~${hs.zoneAvg}/100 — ${strong[0]} (${strong[1]}) strong, ${weak[0]} (${weak[1]}) weak. Focus lifting ${weak[0]} this week.`
   }
-
-  const hEl = document.getElementById('db-ai-health')
-  if(hEl && hs && hs.detail) {
+  if(card === 'health' && hs && hs.detail) {
     const d = hs.detail
-    const body = d.overdue < 50
-      ? (isBm
-        ? `Radar unhinged sikit: Overdue ~${d.overdue}/100 while Kutipan ~${d.collection}, Stok ~${d.stock}. Debt risk the villain arc — satu collect week on big balances > vibes-only busywork.`
-        : `Radar\'s looking unhinged: Overdue ~${d.overdue}/100 while Collection ~${d.collection}, Stock ~${d.stock}. Debt risk is the villain arc — one collect week on big balances > vibes-only busywork.`)
-      : (isBm
-        ? `Health spider lagi balanced: Overdue ~${d.overdue}, Kutipan ~${d.collection}, Stok ~${d.stock}. Stay locked — jangan biar satu paksi crash out.`
-        : `Health spider is more balanced: Overdue ~${d.overdue}, Collection ~${d.collection}, Stock ~${d.stock}. Stay locked — don\'t let one axis crash out.`)
-    hEl.innerHTML = tag(4) + '<div>' + body + '</div>'
-  } else if(hEl) {
-    hEl.innerHTML = tag(4) + '<div>' + (isBm ? 'Tunggu health data…' : 'Waiting on health data…') + '</div>'
+    return isBm
+      ? `Overdue ~${d.overdue}/100, Kutipan ~${d.collection}, Stok ~${d.stock}. ${d.overdue < 50 ? 'Debt risk villain arc — collect week on big balances.' : 'Radar lagi balanced — jangan biar satu paksi crash.'}`
+      : `Overdue ~${d.overdue}/100, Collection ~${d.collection}, Stock ~${d.stock}. ${d.overdue < 50 ? 'Debt risk is the villain arc — one collect week on big balances.' : 'Radar more balanced — don\'t let one axis crash out.'}`
   }
-
-  const pEl = document.getElementById('db-ai-pnl')
-  if(pEl) {
+  if(card === 'pnl') {
     const rev = Number(ctx.revenue||0), exp = Number(ctx.expense||0), net = Number(ctx.netPL||0)
-    let body
     if(rev === 0 && exp === 0) {
-      body = isBm
-        ? 'P&L flat — tiada hasil/belanja jurnal ketara (atau mapping akaun kosong). Semak Default Accounts & pastikan sales hit journal, bukan invoice list je fr.'
-        : 'P&L is flat — no material journal revenue/expense (or empty account mapping). Check Default Accounts and make sure sales hit the journal, not just the invoice list fr.'
-    } else if(net >= 0) {
-      body = isBm
-        ? `Hasil ${fmt(rev)} cleared belanja ${fmt(exp)} — net ${fmt(net)}, straight W on the strip. Hold cost discipline supaya next month tak ratio this win.`
-        : `Revenue ${fmt(rev)} cleared expenses ${fmt(exp)} — net ${fmt(net)}, straight W on the strip. Hold cost discipline so next month doesn\'t ratio this win.`
-    } else {
-      body = isBm
-        ? `Books: hasil ${fmt(rev)}, belanja ${fmt(exp)}, net ${fmt(net)} — expenses ate and left no crumbs. Review chunky expense lines & confirm sales post to journal.`
-        : `Books: revenue ${fmt(rev)}, expenses ${fmt(exp)}, net ${fmt(net)} — expenses ate and left no crumbs. Review chunky expense lines and confirm sales post to the journal.`
+      return isBm
+        ? 'P&L flat — tiada hasil/belanja jurnal ketara. Semak Default Accounts & journal posts.'
+        : 'P&L flat — no material journal revenue/expense. Check Default Accounts and journal posts.'
     }
-    pEl.innerHTML = tag(net >= 0 ? 6 : 5) + '<div>' + body + '</div>'
+    if(net >= 0) {
+      return isBm
+        ? `Hasil ${fmt(rev)} cleared belanja ${fmt(exp)} — net ${fmt(net)}, W on the strip. Hold cost discipline.`
+        : `Revenue ${fmt(rev)} cleared expenses ${fmt(exp)} — net ${fmt(net)}, W on the strip. Hold cost discipline.`
+    }
+    return isBm
+      ? `Hasil ${fmt(rev)}, belanja ${fmt(exp)}, net ${fmt(net)} — expenses ate. Review chunky expense lines + journal sales.`
+      : `Revenue ${fmt(rev)}, expenses ${fmt(exp)}, net ${fmt(net)} — expenses ate. Review chunky expense lines + journal sales.`
   }
+  return isBm ? 'Data masih loading…' : 'Still loading data…'
+}
+
+function _dbInsightFacts(card, ctx) {
+  const hs = ctx.health || window._dbHealthScores
+  if(card === 'growth') {
+    return {
+      card: 'sales_collections_trend',
+      recognised_sales: Number(ctx.curSales||0),
+      prior_sales: Number(ctx.prevSales||0),
+      collection_rate_pct: Number(ctx.curRate||0),
+      period: ctx.periodLabel || null
+    }
+  }
+  if(card === 'status') {
+    const st = ctx.status || {}
+    return {
+      card: 'invoice_status_mix',
+      paid: st.paid||0, partial: st.partial||0, unpaid: st.unpaid||0, cancelled: st.cancelled||0,
+      total: (st.paid||0)+(st.partial||0)+(st.unpaid||0)+(st.cancelled||0),
+      period: ctx.periodLabel || null
+    }
+  }
+  if(card === 'zone') {
+    return { card: 'zone_power', zone_avg: hs && hs.zoneAvg, detail: hs && hs.detail, period: ctx.periodLabel || null }
+  }
+  if(card === 'health') {
+    return { card: 'business_health_radar', detail: hs && hs.detail, period: ctx.periodLabel || null }
+  }
+  if(card === 'pnl') {
+    return {
+      card: 'revenue_vs_expenses',
+      revenue: Number(ctx.revenue||0), expense: Number(ctx.expense||0), net: Number(ctx.netPL||0),
+      period: ctx.periodLabel || null
+    }
+  }
+  return { card }
+}
+
+async function _dbInsightAI(card, ctx, isBm) {
+  const facts = _dbInsightFacts(card, ctx)
+  const lang = isBm ? 'Bahasa Melayu Malaysia, casual Gen Z (bukan formal DBP rigid)' : 'English, casual Gen Z'
+  const message =
+    `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
+    `Language: ${lang}.\n` +
+    `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+    `Facts JSON: ${JSON.stringify(facts)}`
+  const { data, error } = await sb.functions.invoke('ai-proxy', {
+    body: {
+      action: 'chat',
+      message,
+      context: `NexERP dashboard card insight. Tenant-scoped metrics only. Card=${card}.`
+    }
+  })
+  if(error) throw error
+  if(!data?.success) throw new Error(data?.error || 'AI failed')
+  let reply = (data.data && (data.data.reply || data.data.text || data.data.message)) || ''
+  reply = String(reply).trim().replace(/^["']|["']$/g, '')
+  if(!reply || reply.length < 12) throw new Error('empty AI reply')
+  // hard cap length for UI
+  if(reply.length > 420) reply = reply.slice(0, 417) + '…'
+  return reply
+}
+
+async function _dbFillCardInsights(ctx) {
+  const isBm = APP.language === 'bm'
+  ctx = Object.assign({}, window._dbInsightCtx || {}, ctx || {})
+  const gen = (window._dbInsightGen = (window._dbInsightGen || 0) + 1)
+
+  const cards = [
+    { id: 'db-ai-growth', key: 'growth', titleIdx: 0 },
+    { id: 'db-ai-status', key: 'status', titleIdx: 2 },
+    { id: 'db-ai-zone', key: 'zone', titleIdx: 3 },
+    { id: 'db-ai-health', key: 'health', titleIdx: 4 },
+    { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 }
+  ]
+
+  // Show loading immediately (don't block dashboard)
+  cards.forEach(c => {
+    const el = document.getElementById(c.id)
+    if(!el) return
+    el.innerHTML = _dbInsightTag(c.titleIdx, isBm) +
+      '<div style="opacity:.75">' + (isBm ? 'AI tengah tulis insight segar…' : 'AI writing a fresh take…') + '</div>'
+  })
+
+  // Parallel AI calls — each card independent; fallback per card
+  await Promise.all(cards.map(async (c) => {
+    const el = document.getElementById(c.id)
+    if(!el) return
+    let body
+    try {
+      body = await _dbInsightAI(c.key, ctx, isBm)
+    } catch(e) {
+      console.warn('card insight AI', c.key, e)
+      body = _dbInsightFallbackBody(c.key, ctx, isBm)
+    }
+    if(gen !== window._dbInsightGen) return // stale generation
+    // P&L title: W vs tea
+    let tIdx = c.titleIdx
+    if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
+    el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + body.replace(/</g, '&lt;') + '</div>'
+  }))
 }
 
 
