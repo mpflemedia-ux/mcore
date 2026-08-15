@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-dbsc">
+<meta name="nexerp-build" content="2026-08-16-dbscroll">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3609,36 +3609,39 @@ document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&document.getElement
 // PAGES — DASHBOARD (dark analytics theme, inspired by trading dashboard reference)
 
 function _dbShortcutsHtml(isBm) {
-  // Accounting-style quick nav — only modules the role canAccess
+  // Scroll to cards ON the dashboard (not navigate away to other modules)
   const items = [
-    { page:'sales', params:{view:'invoices'}, module:'sales', icon:'ti-file-invoice', en:'Invoices', bm:'Invois' },
-    { page:'sales', params:{view:'invoices', filter:'overdue'}, module:'sales', icon:'ti-alert-triangle', en:'Overdue', bm:'Tertunggak' },
-    { page:'pos', params:{}, module:'pos', icon:'ti-device-desktop', en:'POS', bm:'POS' },
-    { page:'crm', params:{}, module:'crm', icon:'ti-users', en:'Customers', bm:'Pelanggan' },
-    { page:'accounting', params:{}, module:'accounting', icon:'ti-calculator', en:'Accounting', bm:'Perakaunan' },
-    { page:'accounting', params:{view:'expense'}, module:'accounting', icon:'ti-receipt', en:'Expenses', bm:'Belanja' },
-    { page:'accounting', params:{view:'petty'}, module:'accounting', icon:'ti-wallet', en:'Petty Cash', bm:'Petty Cash' },
-    { page:'reports', params:{}, module:'reports', icon:'ti-chart-bar', en:'Reports', bm:'Laporan' },
-    { page:'hr', params:{view:'attendance'}, module:'hr', icon:'ti-clock', en:'Attendance', bm:'Kehadiran' },
-    { page:'inventory', params:{}, module:'inventory', icon:'ti-box', en:'Inventory', bm:'Inventori' },
-    { page:'purchasing', params:{}, module:'purchasing', icon:'ti-shopping-cart', en:'Purchasing', bm:'Perolehan' },
-    { page:'vouchers', params:{}, module:'vouchers', icon:'ti-file-description', en:'Vouchers', bm:'Baucar' },
+    { id:'db-kpi-grid', icon:'ti-layout-grid', en:'KPI Cards', bm:'Kad KPI' },
+    { id:'db-sec-trend', icon:'ti-chart-area-line', en:'Sales Trend', bm:'Trend Jualan' },
+    { id:'db-sec-status', icon:'ti-chart-donut', en:'Invoice Mix', bm:'Status Invois' },
+    { id:'db-sec-zone', icon:'ti-chart-bar', en:'Zone Power', bm:'Zone Power' },
+    { id:'db-sec-health', icon:'ti-chart-radar', en:'Business Health', bm:'Kesihatan' },
+    { id:'db-sec-pnl', icon:'ti-scale', en:'P&L Chart', bm:'Carta P&L' },
+    { id:'db-sec-customers', icon:'ti-users', en:'Top Customers', bm:'Pelanggan Top' },
+    { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
+    { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
+    { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
+    { id:'db-sec-ai', icon:'ti-sparkles', en:'AI Insight', bm:'AI Insight' },
+    { id:'db-sec-activity', icon:'ti-activity', en:'Recent Activity', bm:'Aktiviti' },
   ]
-  const allowed = items.filter(it => {
-    try { return typeof canAccess === 'function' ? canAccess(it.module) : true } catch(e) { return false }
-  })
-  if(!allowed.length) return ''
   return `<div class="card" style="padding:8px;margin-bottom:14px" id="db-shortcuts">
-    <div style="font-size:11px;font-weight:600;color:var(--text-3);margin:0 4px 6px;letter-spacing:.3px">${isBm?'PINTASAN':'SHORTCUTS'}</div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-3);margin:0 4px 6px;letter-spacing:.3px">${isBm?'PINTASAN KAD':'CARD SHORTCUTS'}</div>
     <div style="display:flex;gap:4px;flex-wrap:wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm,8px);padding:4px">
-      ${allowed.map(it => {
-        const p = JSON.stringify(it.params||{}).replace(/"/g, '&quot;')
-        return `<button type="button" class="btn btn-sm btn-outline" style="border:none;white-space:nowrap" onclick='openPage("${it.page}", ${JSON.stringify(it.params||{})})'><i class="ti ${it.icon}"></i> ${isBm?it.bm:it.en}</button>`
-      }).join('')}
+      ${items.map(it => `<button type="button" class="btn btn-sm btn-outline" style="border:none;white-space:nowrap" onclick="_dbScrollToSec('${it.id}')"><i class="ti ${it.icon}"></i> ${isBm?it.bm:it.en}</button>`).join('')}
     </div>
   </div>`
 }
 
+function _dbScrollToSec(id) {
+  try {
+    const el = document.getElementById(id)
+    if(!el) { showToast(APP.language==='bm'?'Bahagian tidak dijumpai':'Section not found', 'error'); return }
+    el.scrollIntoView({ behavior:'smooth', block:'start' })
+    const prev = el.style.boxShadow
+    el.style.boxShadow = '0 0 0 2px var(--primary,#0E7490)'
+    setTimeout(() => { try { el.style.boxShadow = prev || '' } catch(e) {} }, 1200)
+  } catch(e) { console.warn('scroll sec', e) }
+}
 function renderDashboard() {
   const t = LANG[APP.language].dashboard
   const isBm = APP.language==='bm'
@@ -3727,7 +3730,7 @@ function renderDashboard() {
     </div>
 
     <!-- Hero charts: Sales trend (wide) + Invoice mix -->
-    <div class="db-hero-row">
+    <div class="db-hero-row" id="db-sec-trend">
       <div class="db-card db-card-glow">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <div class="db-card-title"><i class="ti ti-chart-area-line"></i> ${isBm?'Trend Jualan & Kutipan':'Sales & Collections Trend'}</div>
@@ -3743,7 +3746,7 @@ function renderDashboard() {
         <div class="db-card-foot">${isBm?'Jualan diiktiraf = paid_amt (Paid/Partial) + POS':'Recognised sales = paid_amt (Paid/Partial) + POS'}</div>
         <div class="db-ai-insight" id="db-ai-growth"><span class="db-ai-tag">AI</span> …</div>
       </div>
-      <div class="db-card">
+      <div class="db-card" id="db-sec-status">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-donut-3"></i> ${isBm?'Mix Status Invois':'Invoice Status Mix'}</div>
         <div class="db-donut-wrap"><canvas id="db-status-donut" width="170" height="170"></canvas>
           <div class="db-donut-center"><div style="font-size:22px;font-weight:700;color:var(--db-text)" id="db-status-total">0</div><div style="font-size:11px;color:var(--db-text4)">${isBm?'Invois':'Invoices'}</div></div>
@@ -3755,7 +3758,7 @@ function renderDashboard() {
 
     <!-- Zone Power (combo) + Business Health (radar) -->
     <div class="db-ops-row">
-      <div class="db-card">
+      <div class="db-card" id="db-sec-zone">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Kuasa Zon (Skor 0–100)':'Zone Power (Score 0–100)'}</div>
         <div class="db-chart-slot">
           <canvas id="db-zone-power-chart"></canvas>
@@ -3763,7 +3766,7 @@ function renderDashboard() {
         <div class="db-card-foot">${isBm?'Bar = skor modul · Line = purata keseluruhan (tempoh semasa)':'Bars = module scores · Line = overall average (current period)'}</div>
         <div class="db-ai-insight" id="db-ai-zone"><span class="db-ai-tag">AI</span> …</div>
       </div>
-      <div class="db-card">
+      <div class="db-card" id="db-sec-health">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-radar"></i> ${isBm?'Kesihatan Bisnes':'Business Health'}</div>
         <div class="db-chart-slot" style="max-width:360px;margin:0 auto">
           <canvas id="db-health-radar"></canvas>
@@ -3775,7 +3778,7 @@ function renderDashboard() {
 
     <!-- P&L bars + Top customers -->
     <div class="db-ops-row">
-      <div class="db-card db-card-glow">
+      <div class="db-card db-card-glow" id="db-sec-pnl">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Hasil vs Perbelanjaan (6 bulan)':'Revenue vs Expenses (6 mo)'}</div>
         <div class="db-chart-slot">
           <canvas id="db-pnl-chart"></canvas>
@@ -3783,7 +3786,7 @@ function renderDashboard() {
         <div class="db-card-foot">${isBm?'Dari entri jurnal (akaun hasil & belanja)':'From journal entries (revenue & expense accounts)'}</div>
         <div class="db-ai-insight" id="db-ai-pnl"><span class="db-ai-tag">AI</span> …</div>
       </div>
-      <div class="db-card">
+      <div class="db-card" id="db-sec-customers">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-users-group"></i> ${isBm?'Pelanggan Teratas (kutipan)':'Top Customers (collected)'}</div>
         <div class="db-chart-slot">
           <canvas id="db-top-customers-chart"></canvas>
@@ -3794,14 +3797,14 @@ function renderDashboard() {
     </div>
 
     <!-- Low stock strip -->
-    <div class="db-card" style="margin-bottom:14px">
+    <div class="db-card" style="margin-bottom:14px" id="db-sec-stock">
       <div class="db-card-title" style="margin-bottom:10px"><i class="ti ti-package"></i> ${isBm?'Stok Rendah':'Low Stock'}</div>
       <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>
 
     <!-- People (narrower) + Staff Attendance Tracker (wider) -->
     <div class="db-people-row-2">
-      <div class="db-card">
+      <div class="db-card" id="db-sec-people">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
           <div>
             <div class="db-card-title"><i class="ti ti-users"></i> ${t.people||(isBm?'Pasukan':'People')}</div>
@@ -3815,7 +3818,7 @@ function renderDashboard() {
       </div>
 
       <!-- Staff Attendance Tracker (monthly heatmap: employees × days) -->
-      <div class="db-card">
+      <div class="db-card" id="db-sec-tracker">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
           <div>
             <div class="db-card-title"><i class="ti ti-calendar-stats"></i> ${isBm?'Penjejak Kehadiran Staff':'Staff Attendance Tracker'}</div>
@@ -3849,7 +3852,7 @@ function renderDashboard() {
 
     <!-- AI Business Insight + Marketing (above Recent Activity) -->
     ${(isTenantAdmin() || canAccess('reports') || canAccess('sales')) ? `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px" id="db-sec-ai">
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <div class="db-card-title" style="margin:0"><i class="ti ti-bulb"></i> ${isBm?'Wawasan AI Perniagaan':'AI Business Insight'}</div>
@@ -3874,7 +3877,7 @@ function renderDashboard() {
     </div>` : ''}
 
     <!-- Recent Activity — always last; keep any new dashboard card above this one -->
-    <div class="db-card" style="margin-top:14px">
+    <div class="db-card" style="margin-top:14px" id="db-sec-activity">
       <div class="db-card-title" style="margin-bottom:14px"><i class="ti ti-activity"></i> ${t.recentActivity||(isBm?'Aktiviti Terkini':'Recent Activity')}</div>
       <div id="db-activity-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">
         <div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div>
