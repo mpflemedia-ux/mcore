@@ -13,9 +13,11 @@ insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)
 on conflict (id) do nothing;
 
+drop policy if exists "product_images_public_read" on storage.objects;
 create policy "product_images_public_read" on storage.objects
   for select using (bucket_id = 'product-images');
 
+drop policy if exists "product_images_tenant_insert" on storage.objects;
 create policy "product_images_tenant_insert" on storage.objects
   for insert to authenticated
   with check (
@@ -23,6 +25,7 @@ create policy "product_images_tenant_insert" on storage.objects
     and (storage.foldername(name))[1] = (select tenant_id::text from user_profiles where id = auth.uid())
   );
 
+drop policy if exists "product_images_tenant_update" on storage.objects;
 create policy "product_images_tenant_update" on storage.objects
   for update to authenticated
   using (
