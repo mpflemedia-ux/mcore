@@ -22723,7 +22723,7 @@ function _attendanceRenderHistoryTable(t) {
     wrap.innerHTML = filters + `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod untuk penapis ini':'No rows for this filter'}</p></div>`
     return
   }
-  wrap.innerHTML = filters + `<div class="db-table-scroll"><table class="db-mini-table" style="width:100%"><thead><tr>
+  wrap.innerHTML = filters + `<div class="db-table-scroll" style="max-height:280px;overflow-y:auto"><table class="db-mini-table" style="width:100%"><thead><tr>
     <th>${t.date}</th>
     <th>${isBm?'Masuk':'In'}</th>
     <th>${isBm?'Keluar':'Out'}</th>
