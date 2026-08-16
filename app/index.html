@@ -4618,27 +4618,43 @@ async function loadDashboardData() {
     const _ay = _today.getFullYear(), _am = _today.getMonth()+1
     const _aFrom = `${_ay}-${String(_am).padStart(2,'0')}-01`
     const _aTo = `${_ay}-${String(_am).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`
-    const { data: _aEmp } = await sb.from('employees').select('id')
+    const { data: _aEmp } = await sb.from('employees').select('id,name')
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(50)
-    const _aEmpCount = (_aEmp || []).length
-    if(_aEmpCount) {
-      const { data: _aRows } = await sb.from('attendance').select('status')
+    const _aEmpList = _aEmp || []
+    if(_aEmpList.length) {
+      const { data: _aRows } = await sb.from('attendance').select('employee_id,status')
         .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
         .gte('date', _aFrom).lte('date', _aTo)
       const _weights = { present:100, outstation:100, on_leave:95, late:70, half_day:55, absent:0 }
+      const _empName = {}
+      _aEmpList.forEach(e => { _empName[e.id] = e.name })
+      const _byEmp = {}
       let present=0, late=0, halfDay=0, onLeave=0, outstation=0, absent=0, sum=0, n=0
       ;(_aRows||[]).forEach(r => {
         const s = String(r.status||'').toLowerCase()
+        if(!(s in _weights)) return
         if(s==='present') present++
         else if(s==='late') late++
         else if(s==='half_day') halfDay++
         else if(s==='on_leave') onLeave++
         else if(s==='outstation') outstation++
         else if(s==='absent') absent++
-        else return
-        sum += (_weights[s] ?? 70); n++
+        sum += _weights[s]; n++
+        const eid = r.employee_id
+        if(!_byEmp[eid]) _byEmp[eid] = { absent:0, late:0 }
+        if(s==='absent') _byEmp[eid].absent++
+        else if(s==='late') _byEmp[eid].late++
       })
-      _attScore = { score: n ? _dbClampScore(sum / n) : 70, present, late, halfDay, onLeave, outstation, absent, total: n, employees: _aEmpCount }
+      // WHO — staff member driving the pattern (most unexcused absences, then most lates)
+      let _worst = null
+      Object.keys(_byEmp).forEach(eid => {
+        const rec = _byEmp[eid]
+        if(rec.absent === 0 && rec.late === 0) return
+        if(!_worst || rec.absent > _worst.absent || (rec.absent === _worst.absent && rec.late > _worst.late)) {
+          _worst = { id: eid, name: _empName[eid] || null, absent: rec.absent, late: rec.late }
+        }
+      })
+      _attScore = { score: n ? _dbClampScore(sum / n) : 70, present, late, halfDay, onLeave, outstation, absent, total: n, employees: _aEmpList.length, worstEmployee: _worst }
     }
   } catch(e) { console.warn('att score', e) }
 
@@ -5835,19 +5851,23 @@ function _dbInsightFallbackBody(card, ctx, isBm) {
     const a = ctx.attendance || {}
     const score = a.score != null ? a.score : 70
     const total = (a.present||0)+(a.late||0)+(a.halfDay||0)+(a.onLeave||0)+(a.outstation||0)+(a.absent||0)
+    const w = a.worstEmployee
     if(total === 0) {
       return isBm
         ? 'Tiada rekod clock-in lagi bulan ni. Suruh staff clock in untuk unlock insight kehadiran.'
         : 'No clock-ins logged yet this month. Get staff clocking in to unlock attendance insight.'
     }
-    if((a.absent||0) > 0) {
+    if(w && w.name && (w.absent > 0 || w.late > 0)) {
+      const whatWrong = w.absent > 0
+        ? (isBm ? `${w.absent}x tak hadir` : `${w.absent} absence(s)`)
+        : (isBm ? `${w.late}x lewat` : `${w.late} late clock-in(s)`)
       return isBm
-        ? `Score kehadiran ~${score}/100 — ${a.absent} tak hadir tanpa rekod cuti bulan ni. Follow up staff yang absent sebelum jadi pattern.`
-        : `Attendance score ~${score}/100 — ${a.absent} unexcused absence(s) this month. Follow up before it becomes a pattern.`
+        ? `Score kehadiran ~${score}/100 — bad sign, ${w.name} plak yang paling banyak ${whatWrong} bulan ni. Boleh jadi pattern kalau tak follow up cepat — sembang dengan dia minggu ni.`
+        : `Attendance score ~${score}/100 — that's a bad sign, ${w.name} is driving it with ${whatWrong} this month. Left unchecked it becomes a pattern — have a check-in with them this week.`
     }
     return isBm
-      ? `Score kehadiran ~${score}/100 dari ${total} rekod — team mostly on time. Kekalkan momentum ni.`
-      : `Attendance score ~${score}/100 from ${total} records — team mostly showing up on time. Keep the momentum going.`
+      ? `Score kehadiran ~${score}/100 dari ${total} rekod — good sign, team mostly on time & accounted for. Kekalkan momentum ni, tak perlu intervene sekarang.`
+      : `Attendance score ~${score}/100 from ${total} records — good sign, team's mostly on time and accounted for. Keep the momentum, no intervention needed right now.`
   }
   if(card === 'pnl') {
     const rev = Number(ctx.revenue||0), exp = Number(ctx.expense||0), net = Number(ctx.netPL||0)
@@ -5903,12 +5923,16 @@ function _dbInsightFacts(card, ctx) {
   }
   if(card === 'attendance') {
     const a = ctx.attendance || {}
+    const w = a.worstEmployee
+    const negative = (a.absent||0) > 0 || (a.late||0) > (a.present||0) * 0.2
     return {
       card: 'staff_attendance',
       attendance_score: a.score,
       present: a.present||0, late: a.late||0, half_day: a.halfDay||0,
       on_leave: a.onLeave||0, outstation: a.outstation||0, absent: a.absent||0,
       employees: a.employees||0,
+      flagged_employee: (w && w.name) ? { name: w.name, absent_days: w.absent, late_days: w.late } : null,
+      impact: negative ? 'negative' : (((a.present||0)+(a.outstation||0)) > 0 ? 'positive' : 'neutral'),
       period: ctx.periodLabel || null
     }
   }
@@ -5921,12 +5945,22 @@ async function _dbInsightAI(card, ctx, isBm) {
   const voice = isBm
     ? 'Address the business owner as "anda" only. NEVER use "kita" or "kami".'
     : 'Address the business owner as "you/your" only. NEVER use "we/our/us".'
-  const message =
-    `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
-    `Language: ${lang}.\n` +
-    `Voice: ${voice}\n` +
-    `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
-    `Facts JSON: ${JSON.stringify(facts)}`
+  const message = card === 'attendance'
+    ? `Write ONE fresh Gen Z paragraph (max 65 words) for a Malaysian SME ERP dashboard "Staff Attendance Tracker" AI insight.\n` +
+      `Language: ${lang}.\n` +
+      `Voice: ${voice}\n` +
+      `Reason through these 4 questions first, then blend the answers into ONE natural flowing paragraph — do NOT print the labels themselves:\n` +
+      `- WHAT: the attendance pattern this month from the facts (score + mix of present/late/half-day/leave/outstation/absent)\n` +
+      `- WHO: name the flagged_employee from the facts if one is given — they are driving the pattern\n` +
+      `- WHY: state plainly whether this is a GOOD or BAD sign for the business, per the "impact" field\n` +
+      `- HOW: one concrete next action for the owner\n` +
+      `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who in the output; MUST include the numeric facts given; if flagged_employee is null do not invent a name; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+      `Facts JSON: ${JSON.stringify(facts)}`
+    : `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
+      `Language: ${lang}.\n` +
+      `Voice: ${voice}\n` +
+      `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+      `Facts JSON: ${JSON.stringify(facts)}`
   const { data, error } = await sb.functions.invoke('ai-proxy', {
     body: {
       action: 'chat',
