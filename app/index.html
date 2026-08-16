@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-fab2">
+<meta name="nexerp-build" content="2026-08-16-notif12">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -163,8 +163,14 @@ input,select,textarea{font-family:inherit}
   .page-content,main,#page-content{overflow-x:hidden}
 }
 
-.notif-menu-h{padding:12px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border)}
-.notif-list{overflow-y:auto;max-height:320px}
+.notif-menu-h{padding:10px 12px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.notif-menu-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.notif-menu-actions button{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);cursor:pointer}
+.notif-menu-actions button:hover{border-color:var(--primary);color:var(--primary)}
+.notif-menu-actions button.on{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.notif-prefs{padding:10px 12px;border-top:1px solid var(--border);font-size:12px;background:var(--bg)}
+.notif-prefs label{display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer}
+.notif-list{overflow-y:auto;max-height:280px}
 .notif-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
 .notif-item:hover{background:var(--bg)}
 .notif-item .n-meta{font-size:11px;color:var(--text-3);margin-top:2px}
@@ -1403,8 +1409,15 @@ html[data-skip-intro="1"] #intro-skip {
             <span class="notif-badge" id="notif-badge">0</span>
           </button>
           <div class="notif-menu" id="notif-menu">
-            <div class="notif-menu-h" id="notif-menu-title">Notifications</div>
+            <div class="notif-menu-h">
+              <span id="notif-menu-title">Notifications</span>
+              <div class="notif-menu-actions">
+                <button type="button" id="notif-btn-mute" onclick="event.stopPropagation();_notifToggleMute()">Off</button>
+                <button type="button" id="notif-btn-clear" onclick="event.stopPropagation();_notifClearAll()">Clear</button>
+              </div>
+            </div>
             <div class="notif-list" id="notif-list"><div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">…</div></div>
+            <div class="notif-prefs" id="notif-prefs-panel" onclick="event.stopPropagation()"></div>
           </div>
         </div>
         <button class="header-btn" onclick="toggleTheme()" title="Toggle tema"><i class="ti ti-moon" id="theme-icon"></i></button>
@@ -1730,111 +1743,166 @@ document.addEventListener('click', e => {
     document.getElementById('notif-menu')?.classList.remove('open')
   }
 })
+
+function _notifPrefsKey() {
+  return 'nexerp_notif_prefs_' + (APP.tenant?.id || 'x') + '_' + (APP.user?.id || APP.user?.email || 'x')
+}
+function _notifDefaultPrefs() {
+  return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, wa_on:false, wa_phone:'', dismissed:[] }
+}
+function _notifGetPrefs() {
+  const d = _notifDefaultPrefs()
+  try {
+    const raw = JSON.parse(localStorage.getItem(_notifPrefsKey()) || '{}')
+    if(raw && typeof raw === 'object') {
+      Object.assign(d, raw)
+      if(!Array.isArray(d.dismissed)) d.dismissed = []
+    }
+  } catch(e) {}
+  return d
+}
+function _notifSetPrefs(patch) {
+  const cur = _notifGetPrefs()
+  const next = Object.assign({}, cur, patch)
+  if(patch && patch.dismissed) next.dismissed = patch.dismissed
+  try { localStorage.setItem(_notifPrefsKey(), JSON.stringify(next)) } catch(e) {}
+  return next
+}
+function _notifFp(it) {
+  return String(it.kind || '') + '|' + String(it.ref || it.text || '').slice(0, 80)
+}
+function _notifToggleMute() {
+  const p = _notifGetPrefs()
+  _notifSetPrefs({ muted: !p.muted })
+  loadNotifications()
+}
+function _notifClearAll() {
+  const isBm = APP.language === 'bm'
+  const items = window._notifItems || []
+  const p = _notifGetPrefs()
+  const dismissed = new Set(p.dismissed || [])
+  items.forEach(it => dismissed.add(_notifFp(it)))
+  _notifSetPrefs({ dismissed: [...dismissed].slice(-200) })
+  try { localStorage.setItem(typeof _dbInsightNotifKey === 'function' ? _dbInsightNotifKey() : ('nexerp_db_insight_notifs_'+(APP.tenant?.id||'none')), '[]') } catch(e) {}
+  showToast(isBm ? 'Pemberitahuan dikosongkan' : 'Notifications cleared', 'success')
+  loadNotifications()
+}
+function _notifSavePrefsFromUI() {
+  const isBm = APP.language === 'bm'
+  const phone = (document.getElementById('notif-wa-phone')?.value || '').replace(/\D/g, '')
+  _notifSetPrefs({
+    insight: !!document.getElementById('notif-ev-insight')?.checked,
+    overdue: !!document.getElementById('notif-ev-overdue')?.checked,
+    low_stock: !!document.getElementById('notif-ev-stock')?.checked,
+    leave: !!document.getElementById('notif-ev-leave')?.checked,
+    outstation: !!document.getElementById('notif-ev-outstation')?.checked,
+    wa_on: !!document.getElementById('notif-wa-on')?.checked,
+    wa_phone: phone
+  })
+  showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
+  loadNotifications()
+}
+function _notifRenderPrefsPanel() {
+  const el = document.getElementById('notif-prefs-panel')
+  if(!el) return
+  const isBm = APP.language === 'bm'
+  const p = _notifGetPrefs()
+  el.innerHTML = '<div style="font-weight:600;margin-bottom:6px">'+(isBm?'Tetapan':'Settings')+'</div>'
+    + '<label><input type="checkbox" id="notif-ev-overdue" '+(p.overdue?'checked':'')+'> '+(isBm?'Invois tertunggak':'Overdue invoices')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-stock" '+(p.low_stock?'checked':'')+'> '+(isBm?'Stok rendah':'Low stock')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-leave" '+(p.leave?'checked':'')+'> '+(isBm?'Cuti pending':'Leave pending')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
+    + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
+    + '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'
+    + '<label><input type="checkbox" id="notif-wa-on" '+(p.wa_on?'checked':'')+'> WhatsApp Cloud API (Phase 3)</label>'
+    + '<input type="tel" id="notif-wa-phone" class="form-input" style="margin-top:6px;font-size:12px;padding:6px 8px" placeholder="60xxxxxxxxx" value="'+_aiEscapeHtml(p.wa_phone||'')+'">'
+    + '<div style="font-size:10px;color:var(--text-3);margin-top:4px">'+(isBm?'Nombor designated — hantar auto selepas Cloud API':'Designated number — auto-send after Cloud API')+'</div></div>'
+    + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+}
+
 async function loadNotifications() {
   const list = document.getElementById('notif-list')
   const badge = document.getElementById('notif-badge')
   const title = document.getElementById('notif-menu-title')
+  const muteBtn = document.getElementById('notif-btn-mute')
   const isBm = APP.language==='bm'
   if(title) title.textContent = isBm ? 'Pemberitahuan' : 'Notifications'
+  const prefs = _notifGetPrefs()
+  if(muteBtn) {
+    muteBtn.textContent = prefs.muted ? 'On' : 'Off'
+    muteBtn.classList.toggle('on', !!prefs.muted)
+  }
   if(!APP.tenant?.id) {
-    if(list) list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-3)">${isBm?'Log masuk dulu':'Sign in first'}</div>`
+    if(list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">'+(isBm?'Log masuk dulu':'Sign in first')+'</div>'
     return
   }
-  if(list) list.innerHTML = `<div style="padding:20px;text-align:center"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block"></div></div>`
+  _notifRenderPrefsPanel()
+  if(prefs.muted) {
+    if(badge) { badge.textContent = '0'; badge.classList.remove('show') }
+    if(list) list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">'+(isBm?'Pemberitahuan dimatikan (Off)':'Notifications are off')+'</div>'
+    window._notifItems = []
+    return
+  }
+  if(list) list.innerHTML = '<div style="padding:20px;text-align:center"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block"></div></div>'
   try {
     const today = new Date().toISOString().slice(0,10)
     const [{data: overdue}, {data: products}, {data: leaves}] = await Promise.all([
-      sb.from('invoices').select('id,ref_no,customer_name,total,paid_amt,due_date')
-        .eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('status','paid').lt('due_date', today).limit(15),
-      sb.from('products').select('id,name_en,name_bm,stock_qty,reorder_point')
-        .eq('tenant_id',APP.tenant.id).is('deleted_at',null).limit(200),
-      sb.from('leave_requests').select('id,employee_id,start_date,status,leave_type')
-        .eq('tenant_id',APP.tenant.id).eq('status','pending').limit(10),
+      prefs.overdue ? sb.from('invoices').select('id,ref_no,customer_name,total,paid_amt,due_date').eq('tenant_id',APP.tenant.id).is('deleted_at',null).neq('status','paid').lt('due_date', today).limit(15) : Promise.resolve({data:[]}),
+      prefs.low_stock ? sb.from('products').select('id,name_en,name_bm,stock_qty,reorder_point').eq('tenant_id',APP.tenant.id).is('deleted_at',null).limit(200) : Promise.resolve({data:[]}),
+      prefs.leave ? sb.from('leave_requests').select('id,employee_id,start_date,status,leave_type').eq('tenant_id',APP.tenant.id).eq('status','pending').limit(10) : Promise.resolve({data:[]}),
     ])
     const low = (products||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5)).slice(0,10)
     const items = []
+    const dismissed = new Set(prefs.dismissed || [])
     ;(overdue||[]).forEach(inv => {
       const bal = Number(inv.total||0) - Number(inv.paid_amt||0)
-      items.push({
-        icon:'ti-file-invoice', color:'var(--danger)',
-        text: isBm ? `Invois tertunggak ${inv.ref_no}` : `Overdue invoice ${inv.ref_no}`,
-        meta: `${inv.customer_name||''} · ${formatRM(bal)} · due ${formatDate(inv.due_date)}`,
-        go: () => openPage('sales',{view:'inv-detail',id:inv.id})
-      })
+      const it = { kind:'overdue', ref:inv.id, ts:inv.due_date?new Date(inv.due_date).getTime():0, icon:'ti-file-invoice', color:'var(--danger)', text:isBm?('Invois tertunggak '+inv.ref_no):('Overdue invoice '+inv.ref_no), meta:(inv.customer_name||'')+' · '+formatRM(bal)+' · due '+formatDate(inv.due_date), go:()=>openPage('sales',{view:'inv-detail',id:inv.id}) }
+      if(!dismissed.has(_notifFp(it))) items.push(it)
     })
     low.forEach(p => {
-      items.push({
-        icon:'ti-box', color:'var(--warning)',
-        text: isBm ? `Stok rendah: ${prodName(p)}` : `Low stock: ${prodName(p)}`,
-        meta: `stock ${p.stock_qty} ≤ reorder ${p.reorder_point??5}`,
-        go: () => openPage('inventory',{view:'product-form',id:p.id})
-      })
+      const it = { kind:'low_stock', ref:p.id, ts:Date.now()-1, icon:'ti-box', color:'var(--warning)', text:isBm?('Stok rendah: '+prodName(p)):('Low stock: '+prodName(p)), meta:'stock '+p.stock_qty+' ≤ reorder '+(p.reorder_point??5), go:()=>openPage('inventory',{view:'product-form',id:p.id}) }
+      if(!dismissed.has(_notifFp(it))) items.push(it)
     })
     ;(leaves||[]).forEach(lv => {
-      items.push({
-        icon:'ti-calendar-event', color:'var(--primary)',
-        text: isBm ? `Cuti menunggu kelulusan` : `Leave pending approval`,
-        meta: `${lv.leave_type||''} · ${formatDate(lv.start_date)}`,
-        go: () => openPage('hr',{view:'leave'})
-      })
+      const it = { kind:'leave', ref:lv.id, ts:lv.start_date?new Date(lv.start_date).getTime():0, icon:'ti-calendar-event', color:'var(--primary)', text:isBm?'Cuti menunggu kelulusan':'Leave pending approval', meta:(lv.leave_type||'')+' · '+formatDate(lv.start_date), go:()=>openPage('hr',{view:'leave'}) }
+      if(!dismissed.has(_notifFp(it))) items.push(it)
     })
-    // Outstation pending — owner/HR only
-    if(typeof canManageHR === 'function' && canManageHR()) {
+    if(prefs.outstation && typeof canManageHR==='function' && canManageHR()) {
       try {
-        const { data: osPend } = await sb.from('outstation_requests')
-          .select('id,start_date,end_date,location,purpose,employee_id,status')
-          .eq('tenant_id', APP.tenant.id).eq('status','pending').is('deleted_at', null).limit(15)
+        const { data: osPend } = await sb.from('outstation_requests').select('id,start_date,end_date,location,purpose,employee_id,status,created_at').eq('tenant_id',APP.tenant.id).eq('status','pending').is('deleted_at',null).limit(15)
         let empMap = {}
-        const ids = [...new Set((osPend||[]).map(r => r.employee_id).filter(Boolean))]
+        const ids = [...new Set((osPend||[]).map(r=>r.employee_id).filter(Boolean))]
         if(ids.length) {
-          const { data: emps } = await sb.from('employees').select('id,name').in('id', ids).eq('tenant_id', APP.tenant.id)
-          ;(emps||[]).forEach(e => { empMap[e.id] = e.name })
+          const { data: emps } = await sb.from('employees').select('id,name').in('id',ids).eq('tenant_id',APP.tenant.id)
+          ;(emps||[]).forEach(e=>{ empMap[e.id]=e.name })
         }
         ;(osPend||[]).forEach(r => {
-          items.push({
-            icon: 'ti-map-pin',
-            color: 'var(--warning)',
-            text: isBm ? `Outstation menunggu: ${empMap[r.employee_id]||'—'}` : `Outstation pending: ${empMap[r.employee_id]||'—'}`,
-            meta: `${r.start_date} → ${r.end_date} · ${r.location||''}`,
-            go: () => openPage('hr',{view:'attendance'})
-          })
+          const it = { kind:'outstation', ref:r.id, ts:r.created_at?new Date(r.created_at).getTime():(r.start_date?new Date(r.start_date).getTime():0), icon:'ti-map-pin', color:'var(--warning)', text:isBm?('Outstation menunggu: '+(empMap[r.employee_id]||'—')):('Outstation pending: '+(empMap[r.employee_id]||'—')), meta:r.start_date+' → '+r.end_date+' · '+(r.location||''), go:()=>openPage('hr',{view:'attendance'}) }
+          if(!dismissed.has(_notifFp(it))) items.push(it)
         })
       } catch(e) { console.warn('outstation notifs', e) }
     }
-    // Dashboard AI insight slot notifications (local, per tenant)
-    try {
-      const insightNotifs = _dbInsightReadNotifs()
-      insightNotifs.slice(0, 10).forEach(n => {
-        items.unshift({
-          icon: 'ti-sparkles',
-          color: 'var(--primary)',
-          text: n.text,
-          meta: n.meta || '',
-          go: () => openPage('dashboard')
+    if(prefs.insight) {
+      try {
+        const insightNotifs = _dbInsightReadNotifs()
+        insightNotifs.slice(0,5).forEach(n => {
+          const it = { kind:'insight', ref:n.id||n.text, ts:n.ts||0, icon:'ti-sparkles', color:'var(--primary)', text:n.text, meta:n.meta||'', go:()=>openPage('dashboard') }
+          if(!dismissed.has(_notifFp(it))) items.push(it)
         })
-      })
-    } catch(e) { console.warn('insight notifs merge', e) }
-
-    if(badge) {
-      badge.textContent = String(items.length)
-      badge.classList.toggle('show', items.length > 0)
+      } catch(e) {}
     }
+    items.sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0))
+    if(badge) { badge.textContent=String(items.length); badge.classList.toggle('show', items.length>0) }
     if(!items.length) {
-      if(list) list.innerHTML = `<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">${isBm?'Tiada pemberitahuan':'No notifications'}</div>`
+      if(list) list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">'+(isBm?'Tiada pemberitahuan':'No notifications')+'</div>'
+      window._notifItems = []
       return
     }
     window._notifItems = items
-    if(list) list.innerHTML = items.map((it,i) => `
-      <div class="notif-item" onclick="closeNotifAndGo(${i})">
-        <div style="display:flex;gap:10px;align-items:flex-start">
-          <i class="ti ${it.icon}" style="color:${it.color};margin-top:2px"></i>
-          <div><div style="font-weight:600">${_aiEscapeHtml(it.text)}</div>
-          <div class="n-meta">${_aiEscapeHtml(it.meta||'')}</div></div>
-        </div>
-      </div>`).join('')
+    if(list) list.innerHTML = items.map((it,i)=>'<div class="notif-item" onclick="closeNotifAndGo('+i+')"><div style="display:flex;gap:10px;align-items:flex-start"><i class="ti '+it.icon+'" style="color:'+it.color+';margin-top:2px"></i><div><div style="font-weight:600">'+_aiEscapeHtml(it.text)+'</div><div class="n-meta">'+_aiEscapeHtml(it.meta||'')+'</div></div></div></div>').join('')
   } catch(err) {
     console.error('notifications', err)
-    if(list) list.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">${_aiEscapeHtml(err.message||'Error')}</div>`
+    if(list) list.innerHTML = '<div style="padding:16px;color:var(--danger);font-size:12px">'+_aiEscapeHtml(err.message||'Error')+'</div>'
   }
 }
 function closeNotifAndGo(i) {
@@ -5389,10 +5457,12 @@ function _dbInsightSaveStore(store) {
 }
 function _dbInsightPushNotif(slotId, isBm, reason) {
   try {
+    try { const pr = _notifGetPrefs(); if(pr && pr.insight === false) return } catch(e) {}
     const key = _dbInsightNotifKey()
     let arr = []
     try { arr = JSON.parse(localStorage.getItem(key) || '[]') } catch(e) { arr = [] }
     if(!Array.isArray(arr)) arr = []
+    if(reason === 'data') arr = arr.filter(x => x.reason !== 'data')
     const labels = {
       zohor: isBm ? 'Zohor' : 'Dhuhr',
       asar: isBm ? 'Asar' : 'Asr',
@@ -5408,6 +5478,7 @@ function _dbInsightPushNotif(slotId, isBm, reason) {
       id: 'insight-' + (slotId || reason || 'x') + '-' + Date.now(),
       slot: slotId || null,
       reason: reason || 'slot',
+      ts: Date.now(),
       at: new Date().toISOString(),
       text: isBm
         ? `Insight dashboard dikemas kini (${lab})`
@@ -5418,7 +5489,7 @@ function _dbInsightPushNotif(slotId, isBm, reason) {
       read: false
     }
     arr.unshift(item)
-    arr = arr.slice(0, 30)
+    arr = arr.slice(0, 5)
     localStorage.setItem(key, JSON.stringify(arr))
     // bump badge optimistically
     try {
