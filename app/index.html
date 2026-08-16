@@ -25540,7 +25540,7 @@ async function _posShowQrToCustomer() {
     }
     body.innerHTML = `
       <div style="font-size:22px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:14px">${formatRM(total)}</div>
-      <img src="${_aiEscapeHtml(tn.payment_qr_url)}" alt="Payment QR" style="width:100%;max-width:280px;border-radius:10px;border:1px solid var(--border)">
+      <img src="${_aiEscapeHtml(tn.payment_qr_url)}" alt="Payment QR" style="width:min(280px,45vh,70vw);max-width:100%;border-radius:10px;border:1px solid var(--border)">
       <div style="font-size:12px;color:var(--text-3);margin-top:10px">${isBm?'Imbas untuk bayar':'Scan to pay'} — ${_aiEscapeHtml(tn.name||'')}</div>`
   } catch(err) {
     console.error('_posShowQrToCustomer error:', err)
