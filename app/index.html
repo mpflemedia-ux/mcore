@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-olcfix">
+<meta name="nexerp-build" content="2026-08-16-workbase">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20292,7 +20292,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     titleAdd:'Tambah Pekerja', titleEdit:'Kemaskini Pekerja', name:'Nama', ic:'No. IC', icPh:'XXXXXX-XX-XXXX',
-    position:'Jawatan', salary:'Gaji Pokok (RM)', epfNo:'No. EPF', socsoNo:'No. SOCSO', bankName:'Nama Bank', bankAcc:'No. Akaun Bank', save:'Simpan', cancel:'Batal',
+    position:'Jawatan', workBase:'Lokasi kerja', workBaseOffice:'Pejabat (geofence)', workBaseField:'Field / WFH', salary:'Gaji Pokok (RM)', epfNo:'No. EPF', socsoNo:'No. SOCSO', bankName:'Nama Bank', bankAcc:'No. Akaun Bank', save:'Simpan', cancel:'Batal',
     nameRequired:'Nama diperlukan', icInvalid:'Format IC tidak sah (XXXXXX-XX-XXXX)', notFound:'Pekerja tidak dijumpai.',
     fromApplicant:'Pekerja baru ini akan pautkan balik ke permohonan kerja asal.',
     phone:'Telefon', email:'Emel', address:'Alamat', dob:'Tarikh Lahir', gender:'Jantina', male:'Lelaki', female:'Perempuan',
@@ -20300,7 +20300,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
     emergencyName:'Nama Kenalan Kecemasan', emergencyRel:'Hubungan', emergencyMobile:'No. Telefon Kecemasan', emergencyAddress:'Alamat Kecemasan'
   } : {
     titleAdd:'Add Employee', titleEdit:'Edit Employee', name:'Name', ic:'IC No.', icPh:'XXXXXX-XX-XXXX',
-    position:'Position', salary:'Basic Salary (RM)', epfNo:'EPF No.', socsoNo:'SOCSO No.', bankName:'Bank Name', bankAcc:'Bank Account No.', save:'Save', cancel:'Cancel',
+    position:'Position', workBase:'Work base', workBaseOffice:'Office (geofence)', workBaseField:'Field / WFH', salary:'Basic Salary (RM)', epfNo:'EPF No.', socsoNo:'SOCSO No.', bankName:'Bank Name', bankAcc:'Bank Account No.', save:'Save', cancel:'Cancel',
     nameRequired:'Name is required', icInvalid:'Invalid IC format (XXXXXX-XX-XXXX)', notFound:'Employee not found.',
     fromApplicant:'This new employee will be linked back to the original job application.',
     phone:'Phone', email:'Email', address:'Address', dob:'Date of Birth', gender:'Gender', male:'Male', female:'Female',
@@ -20338,6 +20338,13 @@ async function renderEmployeeForm(id, fromApplicantId) {
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="emp-name" class="form-input" value="${_aiEscapeHtml(src.name||'')}"></div>
       <div class="form-group"><label class="form-label">${t.ic}</label><input id="emp-ic" class="form-input" placeholder="${t.icPh}" value="${src.ic_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.position}</label><input id="emp-position" class="form-input" value="${_aiEscapeHtml(src.position||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.workBase||(isBm?'Lokasi kerja':'Work base')}</label>
+        <select id="emp-work-base" class="form-select">
+          <option value="office" ${(src.work_base||'office')==='office'?'selected':''}>${t.workBaseOffice||(isBm?'Pejabat (geofence)':'Office (geofence)')}</option>
+          <option value="field" ${src.work_base==='field'?'selected':''}>${t.workBaseField||(isBm?'Field / WFH':'Field / WFH')}</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px">${isBm?'Owner set — staff clock ikut setting ini':'Owner set — staff clock follows this setting'}</div>
+      </div>
       <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${src.basic_salary??''}"></div>
       <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
@@ -20440,6 +20447,7 @@ async function _employeeSave(id, fromApplicantId) {
     name,
     ic_no: ic || null,
     position: document.getElementById('emp-position').value.trim() || null,
+    work_base: (document.getElementById('emp-work-base')?.value === 'field') ? 'field' : 'office',
     basic_salary: Number(document.getElementById('emp-salary').value) || 0,
     epf_no: document.getElementById('emp-epf').value.trim() || null,
     socso_no: document.getElementById('emp-socso').value.trim() || null,
@@ -20467,6 +20475,17 @@ async function _employeeSave(id, fromApplicantId) {
     const {data, error: insErr} = await sb.from('employees').insert(payload).select('id').single()
     error = insErr
     if(data) newId = data.id
+  }
+  // Soft-fail if work_base column not migrated yet
+  if(error && /work_base/i.test(error.message||'')) {
+    delete payload.work_base
+    if(id) ({error} = await sb.from('employees').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+    else {
+      const {data, error: insErr2} = await sb.from('employees').insert(payload).select('id').single()
+      error = insErr2
+      if(data) newId = data.id
+    }
+    if(!error) showToast(isBm?'Disimpan — jalankan SQL work_base untuk Field/WFH':'Saved — run work_base SQL for Field/WFH', 'warning')
   }
   // Soft-fail if PZB columns not migrated yet
   if(error && /zakat/i.test(error.message||'')) {
@@ -23704,7 +23723,16 @@ async function _attendanceSave() {
   const statusEl = document.querySelector('input[name="att-status"]:checked')
   if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
   if(!date) { showToast(isBm?'Sila pilih tarikh':'Please select a date', 'error'); return }
-  const workMode = document.getElementById('att-work-mode')?.value || 'office'
+  let workMode = document.getElementById('att-work-mode')?.value || 'office'
+  // Staff: work mode from employee.work_base (owner-controlled), not self-select
+  if(!canManageHR() && employeeId) {
+    try {
+      const { data: empRow } = await sb.from('employees').select('work_base')
+        .eq('id', employeeId).eq('tenant_id', APP.tenant.id).maybeSingle()
+      if(empRow && empRow.work_base === 'field') workMode = 'field'
+      else workMode = 'office'
+    } catch(e) { console.warn('work_base lookup', e) }
+  }
   const notes = (document.getElementById('att-notes')?.value || '').trim()
   const policy = window._attPolicy || await _attLoadPolicy()
   if(workMode === 'field' && policy.require_field_notes !== false && notes.length < 3) {
