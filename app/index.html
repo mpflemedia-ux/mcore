@@ -27452,7 +27452,10 @@ window.onYouTubeIframeAPIReady = function() {
   _ytPlayer = new YT.Player('intro-video', {
     events: {
       onReady: function(e) {
-        e.target.playVideo()
+        // Iframe URL already carries autoplay=1 — calling playVideo() again
+        // here is redundant and, with the YouTube IFrame API attaching to
+        // an already-autoplaying iframe, can restart/replay it (reported as
+        // "intro plays twice"). Let autoplay alone own starting playback.
         _startProgressBar(INTRO_VIDEO_DURATION)
         // Clear hard timer, set proper one based on actual duration
         clearTimeout(_hardTimer)
@@ -27537,19 +27540,14 @@ window.onYouTubeIframeAPIReady = function() {
     if(fb) fb.style.display = 'none'
     if(ov) ov.style.display = 'flex'
   } catch(e) {}
-  try {
-    const tag = document.createElement('script')
-    tag.src = 'https://www.youtube.com/iframe_api'
-    document.head.appendChild(tag)
-  } catch(e) {}
-  // Watchdog: if youtube.com is blocked outright (ad-blocker/privacy
-  // extension/region), the iframe_api script itself never loads, so
-  // onYouTubeIframeAPIReady never fires and _ytPlayer stays null — none of
-  // the YT.Player onError/onStateChange handling above ever gets attached,
-  // and the browser is left showing its native broken-content icon for the
-  // full 8s hard-timer duration. Detect that specific case early and swap
-  // to the existing text-logo fallback instead of waiting it out.
-  setTimeout(() => {
+  // If youtube.com is blocked outright (ad-blocker/privacy extension/
+  // region), the iframe_api script fails to load, onYouTubeIframeAPIReady
+  // never fires, and _ytPlayer stays null — none of the YT.Player
+  // onError/onStateChange handling above ever attaches, leaving the
+  // browser's native broken-content icon on screen. tag.onerror is a real
+  // load-failure signal (unlike a timing guess), so it can't misfire on a
+  // merely-slow-but-working connection the way a short timeout would.
+  function _introFallbackToLogo() {
     if(_ytPlayer) return
     const vid = document.getElementById('intro-video')
     const fb = document.getElementById('intro-fallback')
@@ -27557,7 +27555,17 @@ window.onYouTubeIframeAPIReady = function() {
     if(vid) vid.style.display = 'none'
     if(fb) fb.style.display = 'flex'
     if(ov) ov.style.display = 'none'
-  }, 2500)
+  }
+  try {
+    const tag = document.createElement('script')
+    tag.src = 'https://www.youtube.com/iframe_api'
+    tag.onerror = _introFallbackToLogo
+    document.head.appendChild(tag)
+  } catch(e) { _introFallbackToLogo() }
+  // Secondary safety net for the rare case the script loads but the API
+  // never calls back — generous enough not to interrupt a genuinely slow
+  // (not blocked) load, well under the 8s hard timer.
+  setTimeout(_introFallbackToLogo, 6000)
 })()
 init()
 </script>
