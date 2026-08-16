@@ -16213,6 +16213,35 @@ async function _bomRemove(id, productId) {
   _bomRefresh(productId)
 }
 
+/** Product photo → centered square crop + mild brightness/contrast/saturation
+    normalize, so POS card photos look consistent without a paid AI vendor.
+    Separate from _compressImageToPngBlob (Company Profile logo/QR keep their
+    non-square object-fit:contain look — this is product-photo-only). */
+function _prodSquareNormalizeBlob(file, size=500) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Failed to load image'))
+      img.onload = () => {
+        const side = Math.min(img.width, img.height)
+        const sx = (img.width - side) / 2
+        const sy = (img.height - side) / 2
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        ctx.filter = 'brightness(1.04) contrast(1.06) saturate(1.03)'
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size)
+        canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Failed to convert image')), 'image/png')
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 async function _prodUploadImage(event) {
   const file = event.target.files[0]
   if(!file) return
@@ -16226,7 +16255,7 @@ async function _prodUploadImage(event) {
   if(statusEl) statusEl.textContent = t.uploading
 
   try {
-    const blob = await _compressImageToPngBlob(file, 400)
+    const blob = await _prodSquareNormalizeBlob(file, 500)
     const rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())
     const path = `${APP.tenant.id}/products/${rand}.png`
     const {error: upErr} = await sb.storage.from('product-images').upload(path, blob, {contentType:'image/png', upsert:true})
