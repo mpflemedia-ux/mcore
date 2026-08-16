@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-tg">
+<meta name="nexerp-build" content="2026-08-16-nsave">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1828,6 +1828,24 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
     + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
     + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+}
+
+
+async function _notifSavePrefsFromUI() {
+  if (typeof isTenantAdmin === 'function' && !isTenantAdmin()) {
+    showToast(APP.language === 'bm' ? 'Akses ditolak' : 'Access denied', 'error')
+    return
+  }
+  const isBm = APP.language === 'bm'
+  _notifSetPrefs({
+    insight: !!document.getElementById('notif-ev-insight')?.checked,
+    overdue: !!document.getElementById('notif-ev-overdue')?.checked,
+    low_stock: !!document.getElementById('notif-ev-stock')?.checked,
+    leave: !!document.getElementById('notif-ev-leave')?.checked,
+    outstation: !!document.getElementById('notif-ev-outstation')?.checked
+  })
+  showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
+  try { loadNotifications() } catch (e) {}
 }
 
 async function _tgMaybeShowGate() {
