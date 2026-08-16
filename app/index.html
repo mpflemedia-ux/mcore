@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-wa34">
+<meta name="nexerp-build" content="2026-08-16-notif-adm2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1791,6 +1791,13 @@ function _notifClearAll() {
 }
 
 function _notifToggleSettingsPanel() {
+  if(typeof isTenantAdmin === 'function' && !isTenantAdmin()) {
+    const el = document.getElementById('notif-prefs-panel')
+    if(el) { el.setAttribute('hidden', ''); el.innerHTML = '' }
+    const btn = document.getElementById('notif-btn-settings')
+    if(btn) btn.style.display = 'none'
+    return
+  }
   const el = document.getElementById('notif-prefs-panel')
   const btn = document.getElementById('notif-btn-settings')
   if(!el) return
@@ -1803,34 +1810,15 @@ function _notifToggleSettingsPanel() {
   }
   if(btn) btn.classList.toggle('on', show)
 }
-async function _notifSavePrefsFromUI() {
-  const isBm = APP.language === 'bm'
-  const phone = (document.getElementById('notif-wa-phone')?.value || '').replace(/\D/g, '')
-  _notifSetPrefs({
-    insight: !!document.getElementById('notif-ev-insight')?.checked,
-    overdue: !!document.getElementById('notif-ev-overdue')?.checked,
-    low_stock: !!document.getElementById('notif-ev-stock')?.checked,
-    leave: !!document.getElementById('notif-ev-leave')?.checked,
-    outstation: !!document.getElementById('notif-ev-outstation')?.checked,
-    wa_on: !!document.getElementById('notif-wa-on')?.checked,
-    wa_phone: phone
-  })
-  try {
-    if (APP.tenant?.id && (typeof isTenantAdmin === 'function' ? isTenantAdmin() : true)) {
-      const row = { wa_notify_phone: phone || null, wa_notify_enabled: !!document.getElementById('notif-wa-on')?.checked }
-      const { error } = await sb.from('tenants').update(row).eq('id', APP.tenant.id)
-      if (!error) {
-        APP.tenant.wa_notify_phone = row.wa_notify_phone
-        APP.tenant.wa_notify_enabled = row.wa_notify_enabled
-      }
-    }
-  } catch (e) { console.warn('tenant wa sync', e) }
-  showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
-  loadNotifications()
-}
+
 function _notifRenderPrefsPanel() {
   const el = document.getElementById('notif-prefs-panel')
   if(!el) return
+  if(typeof isTenantAdmin === 'function' && !isTenantAdmin()) {
+    el.setAttribute('hidden', '')
+    el.innerHTML = ''
+    return
+  }
   const isBm = APP.language === 'bm'
   const p = _notifGetPrefs()
   el.innerHTML = '<div style="font-weight:600;margin-bottom:6px">'+(isBm?'Tetapan':'Settings')+'</div>'
@@ -1920,6 +1908,14 @@ async function loadNotifications() {
   if(muteBtn) {
     muteBtn.textContent = prefs.muted ? 'On' : 'Off'
     muteBtn.classList.toggle('on', !!prefs.muted)
+  }
+  const setBtn = document.getElementById('notif-btn-settings')
+  const prefsPanel = document.getElementById('notif-prefs-panel')
+  const canNotifSettings = typeof isTenantAdmin === 'function' ? isTenantAdmin() : false
+  if(setBtn) setBtn.style.display = canNotifSettings ? '' : 'none'
+  if(prefsPanel && !canNotifSettings) {
+    prefsPanel.setAttribute('hidden', '')
+    prefsPanel.innerHTML = ''
   }
   if(!APP.tenant?.id) {
     if(list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">'+(isBm?'Log masuk dulu':'Sign in first')+'</div>'
