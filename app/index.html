@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-notif-adm2">
+<meta name="nexerp-build" content="2026-08-16-rmwa">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1750,7 +1750,7 @@ function _notifPrefsKey() {
   return 'nexerp_notif_prefs_' + (APP.tenant?.id || 'x') + '_' + (APP.user?.id || APP.user?.email || 'x')
 }
 function _notifDefaultPrefs() {
-  return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, wa_on:false, wa_phone:'', dismissed:[] }
+  return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, dismissed:[] }
 }
 function _notifGetPrefs() {
   const d = _notifDefaultPrefs()
@@ -1827,76 +1827,8 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-leave" '+(p.leave?'checked':'')+'> '+(isBm?'Cuti pending':'Leave pending')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
     + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
-    + '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'
-    + '<label><input type="checkbox" id="notif-wa-on" '+(p.wa_on?'checked':'')+'> WhatsApp Cloud API (Phase 3)</label>'
-    + '<input type="tel" id="notif-wa-phone" class="form-input" style="margin-top:6px;font-size:12px;padding:6px 8px" placeholder="60xxxxxxxxx" value="'+_aiEscapeHtml(p.wa_phone||'')+'">'
-    + '<div style="font-size:10px;color:var(--text-3);margin-top:4px">'+(isBm?'Nombor designated — hantar auto selepas Cloud API':'Designated number — auto-send after Cloud API')+'</div></div>'
     + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
-
-
-/** Phase 3/4 WhatsApp Cloud API via Edge Function (token only on server). */
-function _waDedupKey(kind, ref) {
-  return 'nexerp_wa_sent_' + (APP.tenant?.id || 'x') + '_' + kind + '_' + String(ref || '')
-}
-function _waRecentlySent(kind, ref, hours) {
-  try {
-    const t = Number(localStorage.getItem(_waDedupKey(kind, ref)) || 0)
-    return t && (Date.now() - t) < (hours || 6) * 3600 * 1000
-  } catch (e) { return false }
-}
-function _waMarkSent(kind, ref) {
-  try { localStorage.setItem(_waDedupKey(kind, ref), String(Date.now())) } catch (e) {}
-}
-async function _waSendCloud({ to, text, template, params, kind, ref }) {
-  const isBm = APP.language === 'bm'
-  let phone = String(to || '').replace(/\D/g, '')
-  if (phone.startsWith('0') && phone.length >= 9) phone = '60' + phone.slice(1)
-  if (!phone || phone.length < 10) return { ok: false, error: 'bad_phone' }
-  if (kind && ref && _waRecentlySent(kind, ref, 6)) return { ok: false, error: 'dedup' }
-  try {
-    const { data, error } = await sb.functions.invoke('whatsapp-send', {
-      body: {
-        to: phone,
-        text: text || '',
-        template: template || undefined,
-        language: isBm ? 'ms' : 'en',
-        params: params || undefined,
-      },
-    })
-    if (error) throw error
-    if (!data?.success) throw new Error(data?.error || 'WhatsApp send failed')
-    if (kind && ref) _waMarkSent(kind, ref)
-    return { ok: true, data }
-  } catch (e) {
-    console.warn('wa send', e)
-    return { ok: false, error: (e && e.message) || String(e) }
-  }
-}
-async function _notifNotifyOwnerWhatsApp(kind, title, meta, ref) {
-  try {
-    let to = null
-    let enabled = true
-    try {
-      const { data: trow } = await sb.from('tenants').select('wa_notify_phone,wa_notify_enabled').eq('id', APP.tenant.id).maybeSingle()
-      if (trow) {
-        if (trow.wa_notify_enabled === false) enabled = false
-        if (trow.wa_notify_phone) to = trow.wa_notify_phone
-      }
-    } catch (e) {}
-    if (!enabled) return
-    if (!to) {
-      try {
-        const p = _notifGetPrefs()
-        if (!p.wa_on || !p.wa_phone) return
-        to = p.wa_phone
-      } catch (e2) { return }
-    }
-    const text = 'NexERP: ' + title + (meta ? ('\n' + meta) : '')
-    await _waSendCloud({ to, text, params: [String(title).slice(0,120), String(meta || '-').slice(0,120)], kind: kind || 'owner', ref: ref || title })
-  } catch (e) { console.warn('owner wa', e) }
-}
-
 async function loadNotifications() {
   const list = document.getElementById('notif-list')
   const badge = document.getElementById('notif-badge')
@@ -8891,13 +8823,13 @@ let _custDetailCache = null
 async function renderCustomerSOA(id) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Penyata Akaun Pelanggan', back:'Pelanggan', print:'Cetak', whatsapp:'WhatsApp',
+    title:'Penyata Akaun Pelanggan', back:'Pelanggan', print:'Cetak',
     inv:'Invois', date:'Tarikh', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
     status:'Status', noData:'Tiada invois untuk pelanggan ini.', outstanding:'Jumlah Hutang',
     current:'Semasa', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari',
     aging:'Analisis Umur Hutang', payments:'Sejarah Bayaran', method:'Kaedah', noPay:'Tiada bayaran direkod.', notes:'Nota'
   } : {
-    title:'Customer Statement of Account', back:'Customer', print:'Print', whatsapp:'WhatsApp',
+    title:'Customer Statement of Account', back:'Customer', print:'Print',
     inv:'Invoice', date:'Date', due:'Due', total:'Total', paid:'Paid', balance:'Balance',
     status:'Status', noData:'No invoices for this customer.', outstanding:'Total Outstanding',
     current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days',
@@ -8952,7 +8884,6 @@ async function renderCustomerSOA(id) {
       <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('crm',{view:'detail',id:'${id}'})">← ${t.back}: ${cust.name}</div>
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_soaWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
       <button class="btn btn-primary btn-sm" onclick="_pdocSetPrintFilename('${soaPrintFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
@@ -9063,19 +8994,6 @@ async function renderCustomerSOA(id) {
   </div>`
 
   window._soaCache = { id, cust, outstanding, rows, aging, pays }
-}
-
-function _soaWhatsApp(custId) {
-  const c = window._soaCache
-  if(!c || String(c.id)!==String(custId)) return
-  const isBm = APP.language==='bm'
-  const co = (APP.tenant && APP.tenant.name) || 'NexERP'
-  const openLines = c.rows.filter(r=>r.balance>0.005).slice(0,8)
-    .map(r=>`• ${r.ref_no}: ${formatRM(r.balance)}`).join('\\n')
-  const msg = isBm
-    ? `*${co}*\\n\\nPenyata Akaun — *${c.cust.name}*\\nJumlah hutang: *${formatRM(c.outstanding)}*\\n\\n${openLines||'(tiada baki)'}\\n\\nSila semak & buat bayaran. Terima kasih!`
-    : `*${co}*\\n\\nStatement of Account — *${c.cust.name}*\\nOutstanding: *${formatRM(c.outstanding)}*\\n\\n${openLines||'(no balance)'}\\n\\nPlease review & settle. Thank you!`
-  _waOpen(c.cust.phone||'', msg)
 }
 
 async function renderCustomerDetail(id) {
@@ -16972,7 +16890,6 @@ async function _tryShowPublicInvoice() {
       </div>
       <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap" class="no-print">
         <button onclick="_pdocSetPrintFilename('Invoice_${_pdocSlug(inv.ref_no)}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
-        <button onclick="(function(){var t=location.href;var m='Invoice '+(_aiEscapeHtml(inv.ref_no||''))+': '+t;window.open('https://wa.me/?text='+encodeURIComponent(m),'_blank')})()" style="padding:10px 16px;border-radius:8px;border:1px solid #16a34a;color:#16a34a;background:#fff;cursor:pointer;font-size:13px">WhatsApp</button>
       </div>
       <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
     </div>`
@@ -16990,13 +16907,13 @@ async function renderInvDetail(id) {
     items:'Item', qty:'Kuantiti', price:'Harga', amount:'Jumlah', total:'Jumlah Besar',
     paid:'Dibayar', balance:'Baki',
     unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai',
-    print:'Cetak', whatsapp:'WhatsApp'
+    print:'Cetak'
   } : {
     back:'Invoices', edit:'Edit', customer:'Customer', date:'Date', due:'Due Date',
     items:'Items', qty:'Qty', price:'Price', amount:'Amount', total:'Grand Total',
     paid:'Paid', balance:'Balance',
     unpaid:'Unpaid', partial:'Partial', paidFull:'Paid',
-    print:'Print', whatsapp:'WhatsApp'
+    print:'Print'
   }
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
@@ -17021,7 +16938,6 @@ async function renderInvDetail(id) {
   <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn btn-outline btn-sm" onclick="openPage('sales',{view:'inv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
     <button class="btn btn-outline btn-sm" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilename.replace(/'/g,"\\'")}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
-    <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendInvWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(inv.ref_no||'').replace(/'/g,"\\'")}','${formatRM(inv.total)}','${formatDate(inv.due_date)}',${APP.language==='bm'},'${(inv.customer_name||'').replace(/'/g,"\\'")}','${formatRM(balance)}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
     <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     <button class="btn btn-outline btn-sm" onclick="_cnOpenForm('${id}')"><i class="ti ti-receipt-refund"></i> ${APP.language==='bm'?'Nota Kredit':'Credit Note'}</button>
@@ -17205,63 +17121,6 @@ async function _paySave(invoiceId, balance) {
   renderInvDetail(invoiceId)
 }
 
-function _waNormalizePhone(phone) {
-  if(!phone) return ''
-  let p = String(phone).replace(/[^0-9]/g,'')
-  if(p.startsWith('0')) p = '60' + p.slice(1)
-  if(!p.startsWith('60') && p.length >= 9) p = '60' + p
-  return p
-}
-function _waOpen(phone, msg) {
-  const finalPhone = _waNormalizePhone(phone)
-  const url = finalPhone
-    ? `https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`
-    : `https://wa.me/?text=${encodeURIComponent(msg)}`
-  window.open(url, '_blank')
-}
-function _waCompanyName() {
-  return (APP.tenant && (APP.tenant.name || APP.tenant.company_name)) || 'NexERP'
-}
-async function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm, customerName, balance) {
-  const co = (typeof _waCompanyName === 'function' ? _waCompanyName() : (APP.tenant?.name || 'NexERP'))
-  const cust = customerName || ''
-  const bal = balance != null ? balance : total
-  const msg = isBm
-    ? `*${co}*\n\nInvois: *${refNo}*\nPelanggan: ${cust}\nJumlah: *${total}*\nBaki: ${bal}\nTarikh akhir: ${dueDate || '-'}\n\nSila buat bayaran mengikut invois. Terima kasih!`
-    : `*${co}*\n\nInvoice: *${refNo}*\nCustomer: ${cust}\nAmount: *${total}*\nBalance: ${bal}\nDue: ${dueDate || '-'}\n\nPlease settle payment as per invoice. Thank you!`
-  let ph = phone
-  if (!ph) {
-    const entered = prompt(isBm ? 'No. WhatsApp pelanggan (contoh 0123456789):' : 'Customer WhatsApp (e.g. 0123456789):')
-    ph = entered || ''
-  }
-  // Phase 4: try Cloud API first
-  if (ph && typeof _waSendCloud === 'function') {
-    const r = await _waSendCloud({
-      to: ph,
-      text: msg.replace(/\*/g, ''),
-      params: [String(refNo), String(total), String(dueDate || '-')],
-      kind: 'invoice',
-      ref: refNo,
-    })
-    if (r.ok) {
-      showToast(isBm ? 'WhatsApp Cloud API: invois dihantar' : 'WhatsApp Cloud API: invoice sent', 'success')
-      return
-    }
-    if (r.error && r.error !== 'dedup' && r.error !== 'bad_phone') {
-      console.warn('Cloud API fallback to wa.me', r.error)
-    }
-    if (r.error === 'dedup') {
-      showToast(isBm ? 'Sudah dihantar baru-baru ini' : 'Already sent recently', 'info')
-      return
-    }
-  }
-  if (typeof _waOpen === 'function') _waOpen(ph || '', msg)
-  else {
-    const n = String(ph || '').replace(/\D/g, '')
-    window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(msg), '_blank')
-  }
-}
-
 // ─── Quotations: List + Form (mirrors invoice, converts to invoice) ────────────
 async function renderQuoList() {
   const t = APP.language==='bm' ? {
@@ -17377,12 +17236,12 @@ async function renderQuoForm(id=null) {
     addTitle:'Sebut Harga Baru', editTitle:'Edit Sebut Harga', back:'Sebut Harga',
     customer:'Pelanggan *', date:'Tarikh *', valid:'Sah Sehingga', addLine:'Tambah Item',
     save:'Simpan', cancel:'Batal', convert:'Tukar kepada Invois', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.',
-    print:'Cetak', whatsapp:'WhatsApp'
+    print:'Cetak'
   } : {
     addTitle:'New Quotation', editTitle:'Edit Quotation', back:'Quotations',
     customer:'Customer *', date:'Date *', valid:'Valid Until', addLine:'Add Item',
     save:'Save', cancel:'Cancel', convert:'Convert to Invoice', required:'Customer and at least one item are required.',
-    print:'Print', whatsapp:'WhatsApp'
+    print:'Print'
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
@@ -17414,7 +17273,6 @@ async function renderQuoForm(id=null) {
     ${id?`<div class="no-print" style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="_quoConvert('${id}')"><i class="ti ti-arrow-right"></i> ${t.convert}</button>
       <button class="btn btn-outline btn-sm" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
-      <button class="btn btn-outline btn-sm" style="color:#16A34A;border-color:#16A34A" onclick="_sendQuoWhatsApp('${(custPhone?.phone||'').replace(/'/g,"\\'")}','${(quo.ref_no||'').replace(/'/g,"\\'")}','${formatRM(quo.total)}','${quo.valid_until ? formatDate(quo.valid_until) : ''}',${APP.language==='bm'},'${(quo.customer_name||'').replace(/'/g,"\\'")}')"><i class="ti ti-brand-whatsapp"></i> ${t.whatsapp}</button>
     <button class="btn btn-outline btn-sm" onclick="_quoPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     </div>`:''}</div>
   <div class="card no-print" style="max-width:900px">
@@ -17555,20 +17413,6 @@ async function _quoConvert(quoId) {
 
   showToast(APP.language==='bm'?'Ditukar kepada invois!':'Converted to invoice!', 'success')
   openPage('sales',{view:'inv-detail',id:newInv.id})
-}
-
-function _sendQuoWhatsApp(phone, refNo, total, validUntil, isBm, customerName) {
-  const co = _waCompanyName()
-  const validPart = validUntil ? (isBm ? `\nSah sehingga: ${validUntil}` : `\nValid until: ${validUntil}`) : ''
-  const msg = isBm
-    ? `*${co}*\n\nSebut harga: *${refNo}*\nPelanggan: ${customerName||'-'}\nJumlah: *${total}*${validPart}\n\nTerima kasih!`
-    : `*${co}*\n\nQuotation: *${refNo}*\nCustomer: ${customerName||'-'}\nAmount: *${total}*${validPart}\n\nThank you!`
-  if(!phone) {
-    const entered = prompt(isBm ? 'No. WhatsApp (kosong = pilih contact):' : 'WhatsApp number (blank = pick contact):')
-    _waOpen(entered || '', msg)
-  } else {
-    _waOpen(phone, msg)
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -19429,7 +19273,6 @@ async function renderPVDetail(id) {
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       ${_pdocColorPickerHtml('pv', accent)}
       <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
-      <button class="btn btn-outline" style="color:#16A34A;border-color:#16A34A" onclick="_pvShareWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
       <button class="btn btn-outline" onclick="_pvShareEmail('${id}')"><i class="ti ti-mail"></i> Email</button>
       ${v.status==='draft'?`<button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>`:''}
       ${v.status==='draft'?`<button class="btn btn-primary btn-sm" onclick="_pvSetStatus('${id}','approved')"><i class="ti ti-check"></i> ${t.approve}</button>`:''}
@@ -19947,17 +19790,6 @@ async function _pvdConvert(batchId) {
   openPage('vouchers',{})
 }
 
-
-async function _pvShareWhatsApp(id) {
-  const isBm = APP.language==='bm'
-  const {data: v} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
-  if(!v) return
-  const co = APP.tenant?.name || 'Company'
-  const msg = isBm
-    ? `*${co} — Baucar Bayaran*\n\nNo: *${v.ref_no}*\nPenerima: *${v.payee_name}*\nJumlah: *${formatRM(v.amount)}*\nTarikh: ${formatDate(v.voucher_date)}\nKaedah: ${v.payment_method||'-'}\nStatus: ${v.status}\n\n${v.description||''}`
-    : `*${co} — Payment Voucher*\n\nNo: *${v.ref_no}*\nPayee: *${v.payee_name}*\nAmount: *${formatRM(v.amount)}*\nDate: ${formatDate(v.voucher_date)}\nMethod: ${v.payment_method||'-'}\nStatus: ${v.status}\n\n${v.description||''}`
-  window.open('https://wa.me/?text='+encodeURIComponent(msg), '_blank')
-}
 
 async function _pvShareEmail(id) {
   const isBm = APP.language==='bm'
@@ -21309,66 +21141,6 @@ async function _payrollRunExecute() {
   result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
   showToast(isBm?'Payroll selesai dijalankan':'Payroll run complete', 'success')
 }
-
-/** Normalize MY mobile to WhatsApp international (60…). Empty → ''. */
-function _waNormalizeMyPhone(raw) {
-  let p = String(raw || '').replace(/\D/g, '')
-  if(!p) return ''
-  if(p.startsWith('00')) p = p.slice(2)
-  if(p.startsWith('0')) p = '60' + p.slice(1)
-  if(!p.startsWith('60') && p.length >= 9 && p.length <= 11) p = '60' + p
-  // already 60…
-  return p
-}
-/** Open WhatsApp chat with prefilled text. Reliable on desktop + mobile. */
-function _waOpenShare(phone, msg) {
-  const isBm = APP.language === 'bm'
-  const p = _waNormalizeMyPhone(phone)
-  const text = String(msg || '').slice(0, 1200)
-  const url = p
-    ? ('https://wa.me/' + p + '?text=' + encodeURIComponent(text))
-    : ('https://wa.me/?text=' + encodeURIComponent(text))
-  let w = null
-  try { w = window.open(url, '_blank', 'noopener,noreferrer') } catch(e) { w = null }
-  if(!w) {
-    try {
-      if(navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text)
-        showToast(isBm ? 'Popup disekat. Teks slip disalin — buka WhatsApp & tampal.' : 'Popup blocked. Payslip text copied — open WhatsApp & paste.', 'info')
-      } else {
-        showToast(isBm ? 'Benarkan popup untuk buka WhatsApp.' : 'Allow popups to open WhatsApp.', 'error')
-      }
-    } catch(e2) {
-      showToast(isBm ? 'Benarkan popup untuk buka WhatsApp.' : 'Allow popups to open WhatsApp.', 'error')
-    }
-  }
-}
-
-async function _payslipShareWhatsApp(id) {
-  const isBm = APP.language==='bm'
-  const {data: rec} = await sb.from('payroll_records').select('*,employees(name,phone,email,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
-  if(!rec) { showToast('Not found','error'); return }
-  const co = (APP.tenant && APP.tenant.name) || 'Company'
-  const name = rec.employees?.name || ''
-  const period = _pdocMonthYearLabel(rec.month, rec.year, isBm)
-  const net = formatRM(rec.net_pay)
-  const bank = rec.employees?.bank_name ? (rec.employees.bank_name + ' ' + (rec.employees.bank_account_no||'')).trim() : '-'
-  const msg = isBm
-    ? ('*' + co + ' — Slip Gaji*\n\nPekerja: *' + name + '*\nTempoh: ' + period + '\nGaji bersih: *' + net + '*\nBank: ' + bank + '\n\nSila semak slip gaji anda. Sebarang pertanyaan hubungi HR.\n\n_Nota: PDF penuh — NexERP → HR → Print._')
-    : ('*' + co + ' — Payslip*\n\nEmployee: *' + name + '*\nPeriod: ' + period + '\nNet pay: *' + net + '*\nBank: ' + bank + '\n\nPlease review your payslip. Contact HR for questions.\n\n_Note: Full PDF — NexERP → HR → Print._')
-  let phone = _waNormalizeMyPhone(rec.employees?.phone || '')
-  if(!phone) {
-    const entered = prompt(isBm ? 'No. WhatsApp staf (cth 012-3456789):' : 'Staff WhatsApp no. (e.g. 012-3456789):', '')
-    if(entered == null || String(entered).trim() === '') return
-    phone = _waNormalizeMyPhone(entered)
-  }
-  if(!phone) {
-    showToast(isBm ? 'No. telefon tidak sah.' : 'Invalid phone number.', 'error')
-    return
-  }
-  _waOpenShare(phone, msg)
-}
-
 async function _payslipShareEmail(id) {
   const isBm = APP.language==='bm'
   const {data: rec} = await sb.from('payroll_records').select('*,employees(name,phone,email,bank_name,bank_account_no)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
@@ -21525,7 +21297,6 @@ async function renderPayslipDetail(id) {
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('payslip', accent)}
       <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilenamePrefix}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
-      <button class="btn btn-outline" style="color:#16A34A;border-color:#16A34A" onclick="_payslipShareWhatsApp('${id}')"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
       <button class="btn btn-outline" onclick="_payslipShareEmail('${id}')"><i class="ti ti-mail"></i> Email</button>
     </div>
   </div>
@@ -23631,7 +23402,7 @@ async function _attSubmitOutstation() {
   showToast(isBm?'Permohonan dihantar — menunggu kelulusan HR/owner':'Request submitted — pending HR/owner approval', 'success')
   _attLoadOutstationList()
   try { if(typeof _attRefreshOwnerNotif === 'function') _attRefreshOwnerNotif() } catch(e) {}
-  try { _notifNotifyOwnerWhatsApp('outstation', isBm ? 'Outstation menunggu kelulusan' : 'Outstation pending approval', (location || '') + ' · ' + start + ' → ' + end, 'os-' + start + '-' + (employeeId || '')) } catch(e) {}
+  
 }
 
 
@@ -24181,7 +23952,7 @@ async function _leaveSave() {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('create', 'leave_requests', null)
   showToast(isBm?'Permohonan cuti dihantar!':'Leave request submitted!', 'success')
-  try { _notifNotifyOwnerWhatsApp('leave', isBm ? 'Cuti menunggu kelulusan' : 'Leave pending approval', (payload.leave_type || '') + ' · ' + (payload.start_date || ''), 'lv-' + (payload.start_date || '') + '-' + (payload.employee_id || '')) } catch(e) {}
+  
   openPage('hr',{view:'leave'})
 }
 
@@ -24773,7 +24544,6 @@ async function renderPOS(params={}) {
       <div class="modal-box-body" id="pos-receipt-body"></div>
       <div class="modal-box-footer" style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-outline no-print" style="flex:1" onclick="_posPrintReceipt()"><i class="ti ti-printer"></i> ${isBm?'Cetak':'Print'}</button>
-        <button id="pos-wa-btn" class="btn btn-outline no-print" style="flex:1;color:#16A34A;border-color:#16A34A" onclick="_posShareWhatsApp()"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>
         <button class="btn btn-primary no-print" style="flex:1" onclick="_posCloseReceipt()"><i class="ti ti-check"></i> ${isBm?'Selesai':'Done'}</button>
       </div>
     </div>
@@ -25511,8 +25281,8 @@ async function _posPrintReceipt() {
 }
 
 // Builds the same receipt as an actual PDF file (via pdf-lib, loaded from
-// CDN) so it can be handed to navigator.share()/WhatsApp as a real
-// attachment — a wa.me link can only ever carry prefilled TEXT, never a
+// CDN) so it can be handed to navigator.share() as a real
+// attachment — share link carries text; binary file via Web Share when available
 // file, so sending an actual PDF needs a real file object, not a URL trick.
 // A4 page (matches the browser-print version); the receipt itself stays a
 // narrower centered card on it rather than stretched edge-to-edge. The logo
@@ -25626,50 +25396,6 @@ async function _posBuildReceiptPdf(r) {
   drawCenter(isBm?'Ini resit janaan komputer.':'This is a computer-generated receipt.', regular, 7, rgb(0.6,0.64,0.7))
 
   return await doc.save()
-}
-
-async function _posShareWhatsApp() {
-  const r = window._posLastReceipt
-  if(!r) { showToast(APP.language==='bm'?'Tiada resit':'No receipt', 'error'); return }
-  const isBm = APP.language==='bm'
-  if(typeof PDFLib === 'undefined') {
-    showToast(isBm?'Penjana PDF tidak tersedia, sila cuba lagi.':'PDF generator unavailable, please retry.', 'error')
-    return
-  }
-  const btn = document.getElementById('pos-wa-btn')
-  const btnLabel = `<i class="ti ti-brand-whatsapp"></i> WhatsApp`
-  if(btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block"></div>' }
-  try {
-    const pdfBytes = await _posBuildReceiptPdf(r)
-    const fileName = `Receipt_${_pdocSlug(r.receiptNo)}_${_pdocDateStamp()}.pdf`
-    const file = new File([pdfBytes], fileName, { type:'application/pdf' })
-
-    if(navigator.canShare && navigator.canShare({ files:[file] })) {
-      // Native share sheet — the person picks WhatsApp (or any other app)
-      // themselves; there's no way to jump straight into WhatsApp with a
-      // file pre-attached from the web.
-      await navigator.share({ files:[file], title: fileName, text: isBm?'Resit pembelian anda':'Your purchase receipt' })
-    } else {
-      // Desktop / browsers without file-sharing support: a wa.me link can
-      // only carry text, never an attachment, so download the PDF and open
-      // WhatsApp with a short note instead of pretending the file went along.
-      const blobUrl = URL.createObjectURL(new Blob([pdfBytes], {type:'application/pdf'}))
-      const a = document.createElement('a')
-      a.href = blobUrl; a.download = fileName; a.click()
-      URL.revokeObjectURL(blobUrl)
-      showToast(isBm?'PDF dimuat turun — sila lampirkan manual dalam WhatsApp.':'PDF downloaded — please attach it manually in WhatsApp.', 'warning')
-      const co = _waCompanyName()
-      const msg = isBm
-        ? `*${co}* — Resit ${r.receiptNo}\n\nSila lihat PDF resit yang baru dimuat turun.`
-        : `*${co}* — Receipt ${r.receiptNo}\n\nPlease see the receipt PDF just downloaded.`
-      _waOpen('', msg)
-    }
-  } catch(err) {
-    if(err?.name === 'AbortError') { /* user cancelled the native share sheet — not an error */ }
-    else { console.error('_posShareWhatsApp error:', err); showToast('Error: '+(err.message||err), 'error') }
-  } finally {
-    if(btn) { btn.disabled = false; btn.innerHTML = btnLabel }
-  }
 }
 
 function _posCloseReceipt() {
