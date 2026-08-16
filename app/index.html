@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-rmwa">
+<meta name="nexerp-build" content="2026-08-16-tg">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1804,7 +1804,7 @@ function _notifToggleSettingsPanel() {
   const show = el.hasAttribute('hidden')
   if(show) {
     el.removeAttribute('hidden')
-    try { _notifRenderPrefsPanel() } catch(e) {}
+    try { _notifRenderPrefsPanel(); setTimeout(_tgRefreshMyLinkStatus, 50) } catch(e) {}
   } else {
     el.setAttribute('hidden', '')
   }
@@ -1827,9 +1827,131 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-leave" '+(p.leave?'checked':'')+'> '+(isBm?'Cuti pending':'Leave pending')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
     + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
-    + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
+
+async function _tgMaybeShowGate() {
+  if (!APP.user?.id || !APP.tenant?.id) return
+  if (sessionStorage.getItem('nexerp_tg_gate_dismiss') === '1') return
+  let linked = false
+  try { linked = await _tgIsLinked('user', APP.user.id) } catch (e) {}
+  if (linked) { document.getElementById('tg-force-gate')?.remove(); return }
+  if (document.getElementById('tg-force-gate')) return
+  const isBm = APP.language === 'bm'
+  const bar = document.createElement('div')
+  bar.id = 'tg-force-gate'
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:10001;background:#0f172a;color:#e2e8f0;padding:12px 14px;border-top:1px solid #334155;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;font-size:13px'
+  bar.innerHTML = '<div style="flex:1;min-width:200px"><b>' + (isBm ? 'Wajib: Pautkan Telegram' : 'Required: Link Telegram') + '</b><div style="opacity:.85;font-size:12px">' + (isBm ? 'Semua notifikasi dihantar melalui Telegram.' : 'All notifications are sent via Telegram.') + '</div></div>'
+    + '<button type="button" class="btn btn-primary btn-sm" id="tg-gate-link">' + (isBm ? 'Pautkan sekarang' : 'Link now') + '</button>'
+    + '<button type="button" class="btn btn-outline btn-sm" id="tg-gate-dismiss" style="color:#94a3b8">' + (isBm ? 'Nanti' : 'Later') + '</button>'
+  document.body.appendChild(bar)
+  document.getElementById('tg-gate-link')?.addEventListener('click', function () { _tgOpenLinkForMe() })
+  document.getElementById('tg-gate-dismiss')?.addEventListener('click', function () {
+    sessionStorage.setItem('nexerp_tg_gate_dismiss', '1')
+    bar.remove()
+  })
+}
+function _tgBotUsername() {
+  return (window.NEXERP_TELEGRAM_BOT || localStorage.getItem('nexerp_tg_bot') || '').replace(/^@/, '')
+}
+async function _tgIsLinked(subjectType, subjectId) {
+  if (!APP.tenant?.id || !subjectId) return false
+  try {
+    const { data } = await sb.from('telegram_links').select('chat_id')
+      .eq('tenant_id', APP.tenant.id).eq('subject_type', subjectType).eq('subject_id', subjectId).maybeSingle()
+    return !!(data && data.chat_id)
+  } catch (e) { return false }
+}
+async function _tgCreateLinkCode(subjectType, subjectId) {
+  const code = 'nex' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
+  const expires = new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+  const { error } = await sb.from('telegram_link_codes').insert({
+    code: code, tenant_id: APP.tenant.id, subject_type: subjectType, subject_id: subjectId, expires_at: expires
+  })
+  if (error) throw error
+  return code
+}
+async function _tgOpenLinkForMe() {
+  const isBm = APP.language === 'bm'
+  const uid = APP.user && APP.user.id
+  if (!uid || !APP.tenant || !APP.tenant.id) {
+    showToast(isBm ? 'Log masuk dulu' : 'Sign in first', 'error')
+    return
+  }
+  const bot = _tgBotUsername()
+  if (!bot) {
+    showToast(isBm ? 'Isi nama bot Telegram dalam Settings notifikasi dulu' : 'Set Telegram bot name in notification settings first', 'error')
+    return
+  }
+  try {
+    const code = await _tgCreateLinkCode('user', uid)
+    window.open('https://t.me/' + bot + '?start=' + encodeURIComponent(code), '_blank')
+    showToast(isBm ? 'Buka Telegram → tekan Start' : 'Open Telegram → tap Start', 'info')
+  } catch (e) {
+    showToast((isBm ? 'Gagal: ' : 'Failed: ') + (e.message || e), 'error')
+  }
+}
+async function _tgSend(opts) {
+  try {
+    const body = { text: String(opts.text || '').slice(0, 3500) }
+    if (opts.chatId) body.chat_id = String(opts.chatId)
+    else {
+      body.tenant_id = APP.tenant.id
+      body.subject_type = opts.subjectType
+      body.subject_id = opts.subjectId
+    }
+    const { data, error } = await sb.functions.invoke('telegram-send', { body: body })
+    if (error) throw error
+    if (!data || !data.success) throw new Error((data && data.error) || 'send failed')
+    return { ok: true }
+  } catch (e) {
+    console.warn('tg send', e)
+    return { ok: false, error: e.message || String(e) }
+  }
+}
+async function _tgNotifyOwners(text) {
+  if (!APP.tenant || !APP.tenant.id) return
+  try {
+    const { data: links } = await sb.from('telegram_links').select('chat_id, subject_id')
+      .eq('tenant_id', APP.tenant.id).eq('subject_type', 'user')
+    if (!links || !links.length) return
+    const ids = links.map(function (l) { return l.subject_id })
+    const { data: profiles } = await sb.from('user_profiles').select('id, role')
+      .eq('tenant_id', APP.tenant.id).in('id', ids)
+    const adminIds = {}
+    ;(profiles || []).forEach(function (p) {
+      const r = String(p.role || '').toLowerCase()
+      if (r === 'owner' || r === 'admin') adminIds[p.id] = true
+    })
+    const hasAdmin = Object.keys(adminIds).length > 0
+    for (let i = 0; i < links.length; i++) {
+      const t = links[i]
+      if (hasAdmin && !adminIds[t.subject_id]) continue
+      await _tgSend({ chatId: t.chat_id, text: text })
+    }
+  } catch (e) { console.warn('tg owners', e) }
+}
+async function _tgNotifySubject(subjectType, subjectId, text) {
+  return _tgSend({ subjectType: subjectType, subjectId: subjectId, text: text })
+}
+async function _tgRefreshMyLinkStatus() {
+  const el = document.getElementById('tg-link-status')
+  if (!el || !APP.user || !APP.user.id) return
+  const isBm = APP.language === 'bm'
+  const ok = await _tgIsLinked('user', APP.user.id)
+  el.textContent = ok ? (isBm ? 'Telegram dipautkan' : 'Telegram linked') : (isBm ? 'Belum pautkan Telegram' : 'Telegram not linked')
+  el.style.color = ok ? 'var(--success)' : 'var(--warning)'
+}
+function _tgSaveBotName() {
+  const v = (document.getElementById('tg-bot-username') && document.getElementById('tg-bot-username').value) || ''
+  const name = v.replace(/^@/, '').trim()
+  localStorage.setItem('nexerp_tg_bot', name)
+  window.NEXERP_TELEGRAM_BOT = name
+  showToast(APP.language === 'bm' ? 'Nama bot disimpan' : 'Bot name saved', 'success')
+}
+
 async function loadNotifications() {
+  try { _tgMaybeShowGate() } catch (e) {}
   const list = document.getElementById('notif-list')
   const badge = document.getElementById('notif-badge')
   const title = document.getElementById('notif-menu-title')
@@ -23402,6 +23524,7 @@ async function _attSubmitOutstation() {
   showToast(isBm?'Permohonan dihantar — menunggu kelulusan HR/owner':'Request submitted — pending HR/owner approval', 'success')
   _attLoadOutstationList()
   try { if(typeof _attRefreshOwnerNotif === 'function') _attRefreshOwnerNotif() } catch(e) {}
+  try { _tgNotifyOwners((isBm?'NexERP · Outstation menunggu':'NexERP · Outstation pending')+'\n'+(location||'')+' · '+start+' → '+end) } catch(e) {}
   
 }
 
@@ -23952,7 +24075,7 @@ async function _leaveSave() {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('create', 'leave_requests', null)
   showToast(isBm?'Permohonan cuti dihantar!':'Leave request submitted!', 'success')
-  
+  try { _tgNotifyOwners((isBm?'NexERP · Cuti menunggu':'NexERP · Leave pending')+'\n'+(payload.leave_type||'')+' · '+(payload.start_date||'')) } catch(e) {}
   openPage('hr',{view:'leave'})
 }
 
