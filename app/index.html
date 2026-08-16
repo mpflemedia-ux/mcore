@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-nsave">
+<meta name="nexerp-build" content="2026-08-16-osstaff">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1927,6 +1927,31 @@ async function _tgSend(opts) {
     return { ok: false, error: e.message || String(e) }
   }
 }
+
+async function _tgNotifyEmployee(employeeId, text) {
+  if (!employeeId || !APP.tenant?.id) return
+  try {
+    const { data: emp } = await sb.from('employees').select('id,name,email').eq('id', employeeId).eq('tenant_id', APP.tenant.id).maybeSingle()
+    if (!emp) return
+    let userId = null
+    const email = String(emp.email || '').trim()
+    if (email) {
+      const { data: ups } = await sb.from('user_profiles').select('id,full_name').eq('tenant_id', APP.tenant.id)
+      // profiles may not expose email; match name first
+      const nm = String(emp.name || '').trim().toLowerCase()
+      const hit = (ups || []).find(u => String(u.full_name || '').trim().toLowerCase() === nm)
+      if (hit) userId = hit.id
+    }
+    if (!userId) {
+      const nm = String(emp.name || '').trim().toLowerCase()
+      const { data: ups } = await sb.from('user_profiles').select('id,full_name').eq('tenant_id', APP.tenant.id)
+      const hit = (ups || []).find(u => String(u.full_name || '').trim().toLowerCase() === nm)
+      if (hit) userId = hit.id
+    }
+    if (userId) await _tgNotifySubject('user', userId, text)
+  } catch (e) { console.warn('tg employee', e) }
+}
+
 async function _tgNotifyOwners(text) {
   if (!APP.tenant || !APP.tenant.id) return
   try {
@@ -2038,6 +2063,36 @@ async function loadNotifications() {
           if(!dismissed.has(_notifFp(it))) items.push(it)
         })
       } catch(e) { console.warn('outstation notifs', e) }
+    }
+    if(prefs.outstation && typeof canManageHR==='function' && !canManageHR()) {
+      try {
+        const selfEmp = typeof _hrResolveSelfEmployee==='function' ? await _hrResolveSelfEmployee() : null
+        if(selfEmp && selfEmp.id) {
+          const { data: mine } = await sb.from('outstation_requests')
+            .select('id,start_date,end_date,location,purpose,status,created_at,updated_at')
+            .eq('tenant_id', APP.tenant.id).eq('employee_id', selfEmp.id).is('deleted_at', null)
+            .order('created_at', { ascending: false }).limit(20)
+          const now = Date.now()
+          ;(mine||[]).forEach(r => {
+            const st = String(r.status||'')
+            const ts = r.updated_at ? new Date(r.updated_at).getTime() : (r.created_at ? new Date(r.created_at).getTime() : 0)
+            if(st === 'pending') {
+              const it = { kind:'outstation_mine', ref:r.id, ts:ts||now, icon:'ti-map-pin', color:'var(--warning)',
+                text: isBm ? 'Outstation anda menunggu kelulusan' : 'Your outstation is pending approval',
+                meta: (r.start_date||'')+' → '+(r.end_date||'')+' · '+(r.location||''),
+                go:()=>openPage('hr',{view:'attendance'}) }
+              if(!dismissed.has(_notifFp(it))) items.push(it)
+            } else if((st === 'approved' || st === 'rejected') && ts && (now - ts) < 14*24*3600*1000) {
+              const it = { kind:'outstation_result', ref:r.id+':'+st, ts:ts, icon: st==='approved'?'ti-check':'ti-x',
+                color: st==='approved'?'var(--success)':'var(--danger)',
+                text: isBm ? (st==='approved'?'Outstation diluluskan':'Outstation ditolak') : (st==='approved'?'Outstation approved':'Outstation rejected'),
+                meta: (r.start_date||'')+' → '+(r.end_date||'')+' · '+(r.location||''),
+                go:()=>openPage('hr',{view:'attendance'}) }
+              if(!dismissed.has(_notifFp(it))) items.push(it)
+            }
+          })
+        }
+      } catch(e) { console.warn('staff outstation notifs', e) }
     }
     if(prefs.insight) {
       try {
@@ -23610,11 +23665,25 @@ async function _attLoadOutstationList() {
 async function _attReviewOutstation(id, status) {
   if(!canManageHR()) return
   const isBm = APP.language==='bm'
+  let row = null
+  try {
+    const { data } = await sb.from('outstation_requests').select('id,employee_id,start_date,end_date,location').eq('id', id).eq('tenant_id', APP.tenant.id).maybeSingle()
+    row = data
+  } catch (e) {}
   const { error } = await sb.from('outstation_requests').update({ status, reviewed_by: APP.user?.id || null, updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
   if(error) { showToast(error.message, 'error'); return }
   showToast(status==='approved' ? (isBm?'Outstation diluluskan':'Outstation approved') : (isBm?'Outstation ditolak':'Outstation rejected'), 'success')
   _attLoadOutstationList()
   try { if(typeof loadNotifications === 'function') loadNotifications() } catch(e) {}
+  try {
+    if (row && row.employee_id) {
+      const line = (status==='approved'
+        ? (isBm ? 'NexERP · Outstation diluluskan' : 'NexERP · Outstation approved')
+        : (isBm ? 'NexERP · Outstation ditolak' : 'NexERP · Outstation rejected'))
+        + '\n' + (row.location||'') + ' · ' + (row.start_date||'') + ' → ' + (row.end_date||'')
+      await _tgNotifyEmployee(row.employee_id, line)
+    }
+  } catch(e) {}
 }
 
 
@@ -24217,10 +24286,23 @@ async function _leaveSetStatus(id, status) {
   const isBm = APP.language==='bm'
   const isAdminOwner = isTenantAdmin()
   if(!isAdminOwner) { showToast(isBm?'Tiada kebenaran':'Not permitted', 'error'); return }
+  let leaveRow = null
+  try {
+    const { data } = await sb.from('leave_requests').select('id,employee_id,start_date,end_date,leave_type').eq('id',id).eq('tenant_id',APP.tenant.id).maybeSingle()
+    leaveRow = data
+  } catch(e) {}
   const {error} = await sb.from('leave_requests').update({status, approved_by:APP.user.id}).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('update', 'leave_requests', id)
   showToast(status==='approved' ? (isBm?'Cuti diluluskan!':'Leave approved!') : (isBm?'Cuti ditolak.':'Leave rejected.'), 'success')
+  try {
+    if(leaveRow && leaveRow.employee_id) {
+      const line = (status==='approved' ? (isBm?'NexERP · Cuti diluluskan':'NexERP · Leave approved') : (isBm?'NexERP · Cuti ditolak':'NexERP · Leave rejected'))
+        + '\n' + (leaveRow.leave_type||'') + ' · ' + (leaveRow.start_date||'')
+      await _tgNotifyEmployee(leaveRow.employee_id, line)
+    }
+  } catch(e) {}
+  try { if(typeof loadNotifications==='function') loadNotifications() } catch(e) {}
   await _leaveLoadTable()
   const {data: employees} = await sb.from('employees').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
   await _leaveLoadBalances(employees||[])
