@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-notif-set">
+<meta name="nexerp-build" content="2026-08-16-wa34">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1803,7 +1803,7 @@ function _notifToggleSettingsPanel() {
   }
   if(btn) btn.classList.toggle('on', show)
 }
-function _notifSavePrefsFromUI() {
+async function _notifSavePrefsFromUI() {
   const isBm = APP.language === 'bm'
   const phone = (document.getElementById('notif-wa-phone')?.value || '').replace(/\D/g, '')
   _notifSetPrefs({
@@ -1815,6 +1815,16 @@ function _notifSavePrefsFromUI() {
     wa_on: !!document.getElementById('notif-wa-on')?.checked,
     wa_phone: phone
   })
+  try {
+    if (APP.tenant?.id && (typeof isTenantAdmin === 'function' ? isTenantAdmin() : true)) {
+      const row = { wa_notify_phone: phone || null, wa_notify_enabled: !!document.getElementById('notif-wa-on')?.checked }
+      const { error } = await sb.from('tenants').update(row).eq('id', APP.tenant.id)
+      if (!error) {
+        APP.tenant.wa_notify_phone = row.wa_notify_phone
+        APP.tenant.wa_notify_enabled = row.wa_notify_enabled
+      }
+    }
+  } catch (e) { console.warn('tenant wa sync', e) }
   showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
   loadNotifications()
 }
@@ -1834,6 +1844,69 @@ function _notifRenderPrefsPanel() {
     + '<input type="tel" id="notif-wa-phone" class="form-input" style="margin-top:6px;font-size:12px;padding:6px 8px" placeholder="60xxxxxxxxx" value="'+_aiEscapeHtml(p.wa_phone||'')+'">'
     + '<div style="font-size:10px;color:var(--text-3);margin-top:4px">'+(isBm?'Nombor designated — hantar auto selepas Cloud API':'Designated number — auto-send after Cloud API')+'</div></div>'
     + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+}
+
+
+/** Phase 3/4 WhatsApp Cloud API via Edge Function (token only on server). */
+function _waDedupKey(kind, ref) {
+  return 'nexerp_wa_sent_' + (APP.tenant?.id || 'x') + '_' + kind + '_' + String(ref || '')
+}
+function _waRecentlySent(kind, ref, hours) {
+  try {
+    const t = Number(localStorage.getItem(_waDedupKey(kind, ref)) || 0)
+    return t && (Date.now() - t) < (hours || 6) * 3600 * 1000
+  } catch (e) { return false }
+}
+function _waMarkSent(kind, ref) {
+  try { localStorage.setItem(_waDedupKey(kind, ref), String(Date.now())) } catch (e) {}
+}
+async function _waSendCloud({ to, text, template, params, kind, ref }) {
+  const isBm = APP.language === 'bm'
+  let phone = String(to || '').replace(/\D/g, '')
+  if (phone.startsWith('0') && phone.length >= 9) phone = '60' + phone.slice(1)
+  if (!phone || phone.length < 10) return { ok: false, error: 'bad_phone' }
+  if (kind && ref && _waRecentlySent(kind, ref, 6)) return { ok: false, error: 'dedup' }
+  try {
+    const { data, error } = await sb.functions.invoke('whatsapp-send', {
+      body: {
+        to: phone,
+        text: text || '',
+        template: template || undefined,
+        language: isBm ? 'ms' : 'en',
+        params: params || undefined,
+      },
+    })
+    if (error) throw error
+    if (!data?.success) throw new Error(data?.error || 'WhatsApp send failed')
+    if (kind && ref) _waMarkSent(kind, ref)
+    return { ok: true, data }
+  } catch (e) {
+    console.warn('wa send', e)
+    return { ok: false, error: (e && e.message) || String(e) }
+  }
+}
+async function _notifNotifyOwnerWhatsApp(kind, title, meta, ref) {
+  try {
+    let to = null
+    let enabled = true
+    try {
+      const { data: trow } = await sb.from('tenants').select('wa_notify_phone,wa_notify_enabled').eq('id', APP.tenant.id).maybeSingle()
+      if (trow) {
+        if (trow.wa_notify_enabled === false) enabled = false
+        if (trow.wa_notify_phone) to = trow.wa_notify_phone
+      }
+    } catch (e) {}
+    if (!enabled) return
+    if (!to) {
+      try {
+        const p = _notifGetPrefs()
+        if (!p.wa_on || !p.wa_phone) return
+        to = p.wa_phone
+      } catch (e2) { return }
+    }
+    const text = 'NexERP: ' + title + (meta ? ('\n' + meta) : '')
+    await _waSendCloud({ to, text, params: [String(title).slice(0,120), String(meta || '-').slice(0,120)], kind: kind || 'owner', ref: ref || title })
+  } catch (e) { console.warn('owner wa', e) }
 }
 
 async function loadNotifications() {
@@ -17153,18 +17226,43 @@ function _waOpen(phone, msg) {
 function _waCompanyName() {
   return (APP.tenant && (APP.tenant.name || APP.tenant.company_name)) || 'NexERP'
 }
-function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm, customerName, balance) {
-  const co = _waCompanyName()
+async function _sendInvWhatsApp(phone, refNo, total, dueDate, isBm, customerName, balance) {
+  const co = (typeof _waCompanyName === 'function' ? _waCompanyName() : (APP.tenant?.name || 'NexERP'))
   const cust = customerName || ''
   const bal = balance != null ? balance : total
   const msg = isBm
     ? `*${co}*\n\nInvois: *${refNo}*\nPelanggan: ${cust}\nJumlah: *${total}*\nBaki: ${bal}\nTarikh akhir: ${dueDate || '-'}\n\nSila buat bayaran mengikut invois. Terima kasih!`
     : `*${co}*\n\nInvoice: *${refNo}*\nCustomer: ${cust}\nAmount: *${total}*\nBalance: ${bal}\nDue: ${dueDate || '-'}\n\nPlease settle payment as per invoice. Thank you!`
-  if(!phone) {
-    const entered = prompt(isBm ? 'No. WhatsApp pelanggan (contoh 0123456789) — biar kosong untuk pilih manual:' : 'Customer WhatsApp (e.g. 0123456789) — leave blank to pick contact:')
-    _waOpen(entered || '', msg)
-  } else {
-    _waOpen(phone, msg)
+  let ph = phone
+  if (!ph) {
+    const entered = prompt(isBm ? 'No. WhatsApp pelanggan (contoh 0123456789):' : 'Customer WhatsApp (e.g. 0123456789):')
+    ph = entered || ''
+  }
+  // Phase 4: try Cloud API first
+  if (ph && typeof _waSendCloud === 'function') {
+    const r = await _waSendCloud({
+      to: ph,
+      text: msg.replace(/\*/g, ''),
+      params: [String(refNo), String(total), String(dueDate || '-')],
+      kind: 'invoice',
+      ref: refNo,
+    })
+    if (r.ok) {
+      showToast(isBm ? 'WhatsApp Cloud API: invois dihantar' : 'WhatsApp Cloud API: invoice sent', 'success')
+      return
+    }
+    if (r.error && r.error !== 'dedup' && r.error !== 'bad_phone') {
+      console.warn('Cloud API fallback to wa.me', r.error)
+    }
+    if (r.error === 'dedup') {
+      showToast(isBm ? 'Sudah dihantar baru-baru ini' : 'Already sent recently', 'info')
+      return
+    }
+  }
+  if (typeof _waOpen === 'function') _waOpen(ph || '', msg)
+  else {
+    const n = String(ph || '').replace(/\D/g, '')
+    window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(msg), '_blank')
   }
 }
 
@@ -23537,6 +23635,7 @@ async function _attSubmitOutstation() {
   showToast(isBm?'Permohonan dihantar — menunggu kelulusan HR/owner':'Request submitted — pending HR/owner approval', 'success')
   _attLoadOutstationList()
   try { if(typeof _attRefreshOwnerNotif === 'function') _attRefreshOwnerNotif() } catch(e) {}
+  try { _notifNotifyOwnerWhatsApp('outstation', isBm ? 'Outstation menunggu kelulusan' : 'Outstation pending approval', (location || '') + ' · ' + start + ' → ' + end, 'os-' + start + '-' + (employeeId || '')) } catch(e) {}
 }
 
 
@@ -24086,6 +24185,7 @@ async function _leaveSave() {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('create', 'leave_requests', null)
   showToast(isBm?'Permohonan cuti dihantar!':'Leave request submitted!', 'success')
+  try { _notifNotifyOwnerWhatsApp('leave', isBm ? 'Cuti menunggu kelulusan' : 'Leave pending approval', (payload.leave_type || '') + ' · ' + (payload.start_date || ''), 'lv-' + (payload.start_date || '') + '-' + (payload.employee_id || '')) } catch(e) {}
   openPage('hr',{view:'leave'})
 }
 
