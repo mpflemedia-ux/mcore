@@ -7,18 +7,27 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
-/* Intro splash disabled permanently — the YouTube iframe embed had no
-   fallback when the embed failed to load (blocked/network/region), leaving
-   a full-screen broken-content icon on the login flow. Reuses the existing
-   returning-user skip mechanism unconditionally instead of only on repeat
-   visits, so nothing else about this hide path needed to change. */
+/* Sync intro skip — phone-friendly, no console needed */
 (function(){
   try {
-    localStorage.setItem('nexerp_intro_done', '1');
-    document.documentElement.setAttribute('data-skip-intro', '1');
-    var st = document.createElement('style');
-    st.textContent = '#intro-screen,.intro-floating-btn,#intro-sound,#intro-skip{display:none!important;visibility:hidden!important;pointer-events:none!important}';
-    document.documentElement.appendChild(st);
+    var skip = localStorage.getItem('nexerp_intro_done') === '1';
+    if(!skip) {
+      for(var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if(!k || k.indexOf('auth-token') === -1) continue;
+        try {
+          var raw = localStorage.getItem(k);
+          if(raw && raw.indexOf('access_token') !== -1) { skip = true; break; }
+        } catch(e2) {}
+      }
+    }
+    if(skip) {
+      try { localStorage.setItem('nexerp_intro_done', '1'); } catch(e3) {}
+      document.documentElement.setAttribute('data-skip-intro', '1');
+      var st = document.createElement('style');
+      st.textContent = '#intro-screen,.intro-floating-btn,#intro-sound,#intro-skip{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+      document.documentElement.appendChild(st);
+    }
   } catch(e) {}
 })();
 </script>
@@ -27533,6 +27542,22 @@ window.onYouTubeIframeAPIReady = function() {
     tag.src = 'https://www.youtube.com/iframe_api'
     document.head.appendChild(tag)
   } catch(e) {}
+  // Watchdog: if youtube.com is blocked outright (ad-blocker/privacy
+  // extension/region), the iframe_api script itself never loads, so
+  // onYouTubeIframeAPIReady never fires and _ytPlayer stays null — none of
+  // the YT.Player onError/onStateChange handling above ever gets attached,
+  // and the browser is left showing its native broken-content icon for the
+  // full 8s hard-timer duration. Detect that specific case early and swap
+  // to the existing text-logo fallback instead of waiting it out.
+  setTimeout(() => {
+    if(_ytPlayer) return
+    const vid = document.getElementById('intro-video')
+    const fb = document.getElementById('intro-fallback')
+    const ov = document.getElementById('intro-logo-overlay')
+    if(vid) vid.style.display = 'none'
+    if(fb) fb.style.display = 'flex'
+    if(ov) ov.style.display = 'none'
+  }, 2500)
 })()
 init()
 </script>
