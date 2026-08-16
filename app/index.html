@@ -2049,24 +2049,29 @@ async function loadNotifications() {
       const it = { kind:'leave', ref:lv.id, ts:lv.start_date?new Date(lv.start_date).getTime():0, icon:'ti-calendar-event', color:'var(--primary)', text:isBm?'Cuti menunggu kelulusan':'Leave pending approval', meta:(lv.leave_type||'')+' · '+formatDate(lv.start_date), go:()=>openPage('hr',{view:'leave'}) }
       if(!dismissed.has(_notifFp(it))) items.push(it)
     })
-    if(prefs.outstation && typeof canManageHR==='function' && canManageHR()) {
+    if(prefs.outstation && typeof canManageHR==='function') {
+      // Resolved once, any role — an owner/manager can also be an outstation
+      // requester themselves, not just an approver.
+      const selfEmp = typeof _hrResolveSelfEmployee==='function' ? await _hrResolveSelfEmployee() : null
+      if(canManageHR()) {
+        try {
+          const { data: osPend } = await sb.from('outstation_requests').select('id,start_date,end_date,location,purpose,employee_id,status,created_at').eq('tenant_id',APP.tenant.id).eq('status','pending').is('deleted_at',null).limit(15)
+          let empMap = {}
+          const ids = [...new Set((osPend||[]).map(r=>r.employee_id).filter(Boolean))]
+          if(ids.length) {
+            const { data: emps } = await sb.from('employees').select('id,name').in('id',ids).eq('tenant_id',APP.tenant.id)
+            ;(emps||[]).forEach(e=>{ empMap[e.id]=e.name })
+          }
+          ;(osPend||[]).forEach(r => {
+            // Own pending request surfaces below as "your outstation is pending"
+            // instead — reviewing your own request isn't a real approval action.
+            if(selfEmp && r.employee_id === selfEmp.id) return
+            const it = { kind:'outstation', ref:r.id, ts:r.created_at?new Date(r.created_at).getTime():(r.start_date?new Date(r.start_date).getTime():0), icon:'ti-map-pin', color:'var(--warning)', text:isBm?('Outstation menunggu: '+(empMap[r.employee_id]||'—')):('Outstation pending: '+(empMap[r.employee_id]||'—')), meta:r.start_date+' → '+r.end_date+' · '+(r.location||''), go:()=>openPage('hr',{view:'attendance'}) }
+            if(!dismissed.has(_notifFp(it))) items.push(it)
+          })
+        } catch(e) { console.warn('outstation notifs', e) }
+      }
       try {
-        const { data: osPend } = await sb.from('outstation_requests').select('id,start_date,end_date,location,purpose,employee_id,status,created_at').eq('tenant_id',APP.tenant.id).eq('status','pending').is('deleted_at',null).limit(15)
-        let empMap = {}
-        const ids = [...new Set((osPend||[]).map(r=>r.employee_id).filter(Boolean))]
-        if(ids.length) {
-          const { data: emps } = await sb.from('employees').select('id,name').in('id',ids).eq('tenant_id',APP.tenant.id)
-          ;(emps||[]).forEach(e=>{ empMap[e.id]=e.name })
-        }
-        ;(osPend||[]).forEach(r => {
-          const it = { kind:'outstation', ref:r.id, ts:r.created_at?new Date(r.created_at).getTime():(r.start_date?new Date(r.start_date).getTime():0), icon:'ti-map-pin', color:'var(--warning)', text:isBm?('Outstation menunggu: '+(empMap[r.employee_id]||'—')):('Outstation pending: '+(empMap[r.employee_id]||'—')), meta:r.start_date+' → '+r.end_date+' · '+(r.location||''), go:()=>openPage('hr',{view:'attendance'}) }
-          if(!dismissed.has(_notifFp(it))) items.push(it)
-        })
-      } catch(e) { console.warn('outstation notifs', e) }
-    }
-    if(prefs.outstation && typeof canManageHR==='function' && !canManageHR()) {
-      try {
-        const selfEmp = typeof _hrResolveSelfEmployee==='function' ? await _hrResolveSelfEmployee() : null
         if(selfEmp && selfEmp.id) {
           const { data: mine } = await sb.from('outstation_requests')
             .select('id,start_date,end_date,location,purpose,status,created_at,updated_at')
@@ -2092,7 +2097,7 @@ async function loadNotifications() {
             }
           })
         }
-      } catch(e) { console.warn('staff outstation notifs', e) }
+      } catch(e) { console.warn('own outstation notifs', e) }
     }
     if(prefs.insight) {
       try {
@@ -23609,23 +23614,38 @@ async function _attLoadOutstationList() {
     el.innerHTML = `<div style="font-size:12px;color:var(--danger)">No tenant</div>`
     return
   }
+  const isBm0 = APP.language==='bm'
+  const mgr0 = typeof canManageHR === 'function' && canManageHR()
+  // Non-managers only ever see their OWN outstation requests here — this list
+  // used to be tenant-wide for everyone (only the Approve/Reject buttons were
+  // role-gated), so any staff member could read every other employee's
+  // outstation dates/location/purpose. Managers still need the full tenant
+  // list to review and approve.
+  let selfEmp0 = null
+  if(!mgr0) {
+    selfEmp0 = typeof _hrResolveSelfEmployee === 'function' ? await _hrResolveSelfEmployee() : null
+    if(!selfEmp0 || !selfEmp0.id) {
+      el.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:8px 0">${isBm0?'Akaun anda belum dipautkan ke rekod pekerja.':'Your login is not linked to an employee record.'}</div>`
+      return
+    }
+  }
   el.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:6px 0">Loading…</div>`
   try {
     // Prefer filter deleted_at; fall back if column/policy issues
     let data = null, error = null
-    ;({ data, error } = await sb.from('outstation_requests')
+    let q1 = sb.from('outstation_requests')
       .select('id,start_date,end_date,depart_time,return_time,location,status,purpose,employee_id,created_at')
       .eq('tenant_id', APP.tenant.id)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(30))
+    if(selfEmp0) q1 = q1.eq('employee_id', selfEmp0.id)
+    ;({ data, error } = await q1.order('created_at', { ascending: false }).limit(30))
     if(error) {
       console.warn('outstation list try1', error)
-      ;({ data, error } = await sb.from('outstation_requests')
+      let q2 = sb.from('outstation_requests')
         .select('id,start_date,end_date,location,status,purpose,employee_id')
         .eq('tenant_id', APP.tenant.id)
-        .order('start_date', { ascending: false })
-        .limit(30))
+      if(selfEmp0) q2 = q2.eq('employee_id', selfEmp0.id)
+      ;({ data, error } = await q2.order('start_date', { ascending: false }).limit(30))
     }
     if(error) {
       console.warn('outstation list try2', error)
