@@ -4123,6 +4123,7 @@ function renderDashboard() {
           </div>
         </div>
         <div id="db-att-tracker" class="db-hscroll" style="overflow-x:auto"><div style="font-size:13px;color:var(--db-text3);padding:12px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+        <div class="db-ai-insight" id="db-ai-attendance" style="margin-top:12px"><span class="db-ai-tag">AI</span> ${isBm?'Memuatkan wawasan...':'Loading insight...'}</div>
       </div>
     </div>
 
@@ -4610,6 +4611,37 @@ async function loadDashboardData() {
   })
 
   if(!_still()) return
+  // Staff Attendance score (tenant-scoped, no extra schema) — feeds AI insight card
+  let _attScore = null
+  try {
+    const _today = new Date()
+    const _ay = _today.getFullYear(), _am = _today.getMonth()+1
+    const _aFrom = `${_ay}-${String(_am).padStart(2,'0')}-01`
+    const _aTo = `${_ay}-${String(_am).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`
+    const { data: _aEmp } = await sb.from('employees').select('id')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(50)
+    const _aEmpCount = (_aEmp || []).length
+    if(_aEmpCount) {
+      const { data: _aRows } = await sb.from('attendance').select('status')
+        .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+        .gte('date', _aFrom).lte('date', _aTo)
+      const _weights = { present:100, outstation:100, on_leave:95, late:70, half_day:55, absent:0 }
+      let present=0, late=0, halfDay=0, onLeave=0, outstation=0, absent=0, sum=0, n=0
+      ;(_aRows||[]).forEach(r => {
+        const s = String(r.status||'').toLowerCase()
+        if(s==='present') present++
+        else if(s==='late') late++
+        else if(s==='half_day') halfDay++
+        else if(s==='on_leave') onLeave++
+        else if(s==='outstation') outstation++
+        else if(s==='absent') absent++
+        else return
+        sum += (_weights[s] ?? 70); n++
+      })
+      _attScore = { score: n ? _dbClampScore(sum / n) : 70, present, late, halfDay, onLeave, outstation, absent, total: n, employees: _aEmpCount }
+    }
+  } catch(e) { console.warn('att score', e) }
+
   // Zone Power + Business Health scores (tenant-scoped, no extra schema)
   let _stockScore = 70
   try {
@@ -4634,6 +4666,7 @@ async function loadDashboardData() {
     _dbRenderHealthRadar(_hs)
     window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
       health: _hs,
+      attendance: _attScore,
       curSales: typeof curSales === 'number' ? curSales : 0,
       prevSales: typeof prevSales === 'number' ? prevSales : 0,
       curRate: typeof curRate === 'number' ? curRate : 0,
@@ -5798,6 +5831,24 @@ function _dbInsightFallbackBody(card, ctx, isBm) {
       ? `Overdue ~${d.overdue}/100, Kutipan ~${d.collection}, Stok ~${d.stock}. ${d.overdue < 50 ? 'Debt risk villain arc — collect week on big balances.' : 'Radar lagi balanced — jangan biar satu paksi crash.'}`
       : `Overdue ~${d.overdue}/100, Collection ~${d.collection}, Stock ~${d.stock}. ${d.overdue < 50 ? 'Debt risk is the villain arc — one collect week on big balances.' : 'Radar more balanced — don\'t let one axis crash out.'}`
   }
+  if(card === 'attendance') {
+    const a = ctx.attendance || {}
+    const score = a.score != null ? a.score : 70
+    const total = (a.present||0)+(a.late||0)+(a.halfDay||0)+(a.onLeave||0)+(a.outstation||0)+(a.absent||0)
+    if(total === 0) {
+      return isBm
+        ? 'Tiada rekod clock-in lagi bulan ni. Suruh staff clock in untuk unlock insight kehadiran.'
+        : 'No clock-ins logged yet this month. Get staff clocking in to unlock attendance insight.'
+    }
+    if((a.absent||0) > 0) {
+      return isBm
+        ? `Score kehadiran ~${score}/100 — ${a.absent} tak hadir tanpa rekod cuti bulan ni. Follow up staff yang absent sebelum jadi pattern.`
+        : `Attendance score ~${score}/100 — ${a.absent} unexcused absence(s) this month. Follow up before it becomes a pattern.`
+    }
+    return isBm
+      ? `Score kehadiran ~${score}/100 dari ${total} rekod — team mostly on time. Kekalkan momentum ni.`
+      : `Attendance score ~${score}/100 from ${total} records — team mostly showing up on time. Keep the momentum going.`
+  }
   if(card === 'pnl') {
     const rev = Number(ctx.revenue||0), exp = Number(ctx.expense||0), net = Number(ctx.netPL||0)
     if(rev === 0 && exp === 0) {
@@ -5850,6 +5901,17 @@ function _dbInsightFacts(card, ctx) {
       period: ctx.periodLabel || null
     }
   }
+  if(card === 'attendance') {
+    const a = ctx.attendance || {}
+    return {
+      card: 'staff_attendance',
+      attendance_score: a.score,
+      present: a.present||0, late: a.late||0, half_day: a.halfDay||0,
+      on_leave: a.onLeave||0, outstation: a.outstation||0, absent: a.absent||0,
+      employees: a.employees||0,
+      period: ctx.periodLabel || null
+    }
+  }
   return { card }
 }
 
@@ -5894,7 +5956,8 @@ async function _dbFillCardInsights(ctx) {
     { id: 'db-ai-status', key: 'status', titleIdx: 2 },
     { id: 'db-ai-zone', key: 'zone', titleIdx: 3 },
     { id: 'db-ai-health', key: 'health', titleIdx: 4 },
-    { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 }
+    { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 },
+    { id: 'db-ai-attendance', key: 'attendance', titleIdx: 1 }
   ]
 
   const paint = (bodies) => {
