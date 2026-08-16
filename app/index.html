@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-notif12">
+<meta name="nexerp-build" content="2026-08-16-notif-set">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -168,6 +168,7 @@ input,select,textarea{font-family:inherit}
 .notif-menu-actions button{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);cursor:pointer}
 .notif-menu-actions button:hover{border-color:var(--primary);color:var(--primary)}
 .notif-menu-actions button.on{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.notif-prefs[hidden]{display:none!important}
 .notif-prefs{padding:10px 12px;border-top:1px solid var(--border);font-size:12px;background:var(--bg)}
 .notif-prefs label{display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer}
 .notif-list{overflow-y:auto;max-height:280px}
@@ -1414,10 +1415,11 @@ html[data-skip-intro="1"] #intro-skip {
               <div class="notif-menu-actions">
                 <button type="button" id="notif-btn-mute" onclick="event.stopPropagation();_notifToggleMute()">Off</button>
                 <button type="button" id="notif-btn-clear" onclick="event.stopPropagation();_notifClearAll()">Clear</button>
+                <button type="button" id="notif-btn-settings" onclick="event.stopPropagation();_notifToggleSettingsPanel()" title="Settings"><i class="ti ti-settings"></i></button>
               </div>
             </div>
             <div class="notif-list" id="notif-list"><div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">…</div></div>
-            <div class="notif-prefs" id="notif-prefs-panel" onclick="event.stopPropagation()"></div>
+            <div class="notif-prefs" id="notif-prefs-panel" onclick="event.stopPropagation()" hidden></div>
           </div>
         </div>
         <button class="header-btn" onclick="toggleTheme()" title="Toggle tema"><i class="ti ti-moon" id="theme-icon"></i></button>
@@ -1786,6 +1788,20 @@ function _notifClearAll() {
   try { localStorage.setItem(typeof _dbInsightNotifKey === 'function' ? _dbInsightNotifKey() : ('nexerp_db_insight_notifs_'+(APP.tenant?.id||'none')), '[]') } catch(e) {}
   showToast(isBm ? 'Pemberitahuan dikosongkan' : 'Notifications cleared', 'success')
   loadNotifications()
+}
+
+function _notifToggleSettingsPanel() {
+  const el = document.getElementById('notif-prefs-panel')
+  const btn = document.getElementById('notif-btn-settings')
+  if(!el) return
+  const show = el.hasAttribute('hidden')
+  if(show) {
+    el.removeAttribute('hidden')
+    try { _notifRenderPrefsPanel() } catch(e) {}
+  } else {
+    el.setAttribute('hidden', '')
+  }
+  if(btn) btn.classList.toggle('on', show)
 }
 function _notifSavePrefsFromUI() {
   const isBm = APP.language === 'bm'
