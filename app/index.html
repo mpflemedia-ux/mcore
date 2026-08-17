@@ -17593,15 +17593,15 @@ async function renderInvDetail(id) {
       </table>
     </div>
     <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
-      <div style="min-width:260px;font-size:13px">
+      <div style="min-width:260px;font-size:13px;overflow-x:auto">
         ${Number(inv.tax_amt)>0 ? `
         <div style="display:flex;justify-content:space-between;padding:4px 0;color:#64748B"><span>${isBm?'Subjumlah':'Subtotal'}</span><span>${formatRM(inv.subtotal!=null?inv.subtotal:(Number(inv.total)-Number(inv.tax_amt)))}</span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;color:#64748B"><span>SST (${((Number(inv.tax_rate)||0)*100).toFixed(0)}%)</span><span>${formatRM(inv.tax_amt)}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
-          <span>${t.total}</span><span style="color:#0E7490;min-width:0">${formatRM(inv.total)}</span>
+        <div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
+          <span>${t.total}</span><span style="color:#0E7490">${formatRM(inv.total)}</span>
         </div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;color:#16A34A"><span>${t.paid}</span><span>${formatRM(inv.paid_amt)}</span></div>
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:4px 0;font-weight:600;color:${balance>0?'#DC2626':'#64748B'}"><span>${t.balance}</span><span style="min-width:0">${formatRM(balance)}</span></div>
+        <div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;padding:4px 0;font-weight:600;color:${balance>0?'#DC2626':'#64748B'}"><span>${t.balance}</span><span>${formatRM(balance)}</span></div>
       </div>
     </div>
     <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
@@ -17984,9 +17984,9 @@ async function renderQuoForm(id=null) {
       </table>
     </div>
     <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
-      <div style="min-width:240px;font-size:13px">
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
-          <span>${isBmQ?'Jumlah Besar':'Grand Total'}</span><span style="color:#0E7490;min-width:0">${formatRM(quo.total!=null?quo.total:quoSubtotal)}</span>
+      <div style="min-width:240px;font-size:13px;overflow-x:auto">
+        <div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
+          <span>${isBmQ?'Jumlah Besar':'Grand Total'}</span><span style="color:#0E7490">${formatRM(quo.total!=null?quo.total:quoSubtotal)}</span>
         </div>
       </div>
     </div>
@@ -27322,13 +27322,13 @@ async function _pnlLoad() {
     <div style="font-size:13px;color:var(--text-3);margin-bottom:14px">${periodLabel}</div>
     <div style="font-weight:700;margin-bottom:8px">${t.revenue}</div>
     <table><tbody>${revRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.revenue}</span><span style="min-width:0">${formatRM(totalRev)}</span></div>
+    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.revenue}</span><span>${formatRM(totalRev)}</span></div></div>
     <div style="font-weight:700;margin:16px 0 8px">${t.expense}</div>
     <table><tbody>${expRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.expense}</span><span style="min-width:0">${formatRM(totalExp)}</span></div>
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;font-size:18px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px;color:${(totalRev-totalExp)>=0?'var(--success)':'var(--danger)'}">
-      <span>${t.netProfit}</span><span style="min-width:0">${formatRM(totalRev-totalExp)}</span>
-    </div>
+    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.expense}</span><span>${formatRM(totalExp)}</span></div></div>
+    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:700;font-size:18px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px;color:${(totalRev-totalExp)>=0?'var(--success)':'var(--danger)'}">
+      <span>${t.netProfit}</span><span>${formatRM(totalRev-totalExp)}</span>
+    </div></div>
   </div>` + _repAiSummaryBlock('pnl-ai-btn','pnl-ai-out')
 
   _repPnlContext = `Period: ${from} to ${to}. Total Revenue: RM${totalRev.toFixed(2)}. Total Expenses: RM${totalExp.toFixed(2)}. Net Profit/Loss: RM${(totalRev-totalExp).toFixed(2)}.\n` +
@@ -27408,7 +27408,7 @@ async function _bsLoad() {
 
   const section = (label, group) => `<div style="font-weight:700;margin:16px 0 8px">${label}</div>
     <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code?r.a.code+' - ':''}${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span style="min-width:0">${formatRM(group.total)}</span></div>`
+    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div></div>`
 
   const negCash = assets.rows.some(r => r.amt < -0.01) || assets.total < -0.01
   const isBm = APP.language==='bm'
@@ -27427,10 +27427,10 @@ async function _bsLoad() {
     <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">${t.asOf}: ${formatDate(asOf)}</div>
     ${cashHint}
     ${section(t.assets, assets)}
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span style="min-width:0">${formatRM(assets.total)}</span></div>
+    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span>${formatRM(assets.total)}</span></div></div>
     ${section(t.liabilities, liab)}
     ${section(t.equity, eq)}
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span style="min-width:0">${formatRM(liab.total+eq.total)}</span></div>
+    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span>${formatRM(liab.total+eq.total)}</span></div></div>
   </div>` + _repAiSummaryBlock('bs-ai-btn','bs-ai-out')
 
   _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity (incl. Retained Earnings RM${retainedEarnings.toFixed(2)}): RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
