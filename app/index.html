@@ -3900,6 +3900,7 @@ function _dbShortcutsHtml(isBm) {
     { id:'db-sec-health', icon:'ti-chart-radar', en:'Business Health', bm:'Kesihatan' },
     { id:'db-sec-pnl', icon:'ti-scale', en:'P&L Chart', bm:'Carta P&L' },
     { id:'db-sec-customers', icon:'ti-users', en:'Top Customers', bm:'Pelanggan Top' },
+    { id:'db-sec-topsp', icon:'ti-medal', en:'Top Sales Person', bm:'Jualan Terbaik' },
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
@@ -6558,7 +6559,11 @@ async function _dbRenderTopSalesPerson() {
     prevRows.forEach(r => { prevTotalById[r.id] = r.total })
 
     const top = curRanked.slice(0, 5)
-    const labels = top.map(r => (r.name.length > 18 ? r.name.slice(0, 16) + '…' : r.name)).reverse()
+    // Tier badge per person — same _scTiers()/_scTierForTotal() the Leaderboard/
+    // Achievements tabs use, computed off the exact total already driving the bar.
+    const tiers = _scTiers()
+    const tierEmojiFor = (total) => _scTierEmoji(_scTierForTotal(total, tiers))
+    const labels = top.map(r => `${tierEmojiFor(r.total)} ${r.name.length > 18 ? r.name.slice(0, 16) + '…' : r.name}`).reverse()
     const data = top.map(r => Math.round(Number(r.total) * 100) / 100).reverse()
     const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
     const tick = _dbChartTickColor()
@@ -6618,7 +6623,7 @@ async function _dbRenderTopSalesPerson() {
         else if(curRank > prevRank) { cls = 'down'; icon = 'ti-trending-down'; label = '-' + (curRank - prevRank) }
         else { cls = 'neutral'; icon = 'ti-minus'; label = isBm ? 'Sama' : 'Same' }
         const shortName = r.name.length > 12 ? r.name.slice(0, 10) + '…' : r.name
-        return `<span class="db-kpi-pill ${cls}" style="font-size:10px"><i class="ti ${icon}"></i> ${_aiEscapeHtml(shortName)} ${label}</span>`
+        return `<span class="db-kpi-pill ${cls}" style="font-size:10px"><i class="ti ${icon}"></i> ${tierEmojiFor(r.total)} ${_aiEscapeHtml(shortName)} ${label}</span>`
       }).join('')
     }
 
@@ -21872,6 +21877,9 @@ function _scTierLabel(tier, isBm) {
 }
 function _scTierColor(tier) {
   return { bronze:'#B45309', silver:'#64748B', gold:'#CA8A04', platinum:'#7C3AED' }[tier] || 'var(--text-3)'
+}
+function _scTierEmoji(tier) {
+  return { bronze:'🥉', silver:'🥈', gold:'🥇', platinum:'💎' }[tier] || ''
 }
 function _scBadgeLabel(key, isBm) {
   const labels = isBm ? {
