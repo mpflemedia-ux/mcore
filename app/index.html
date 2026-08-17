@@ -1540,6 +1540,7 @@ const NAV_ITEMS = [
   { id:'crm',        icon:'ti-users',             label_en:'Customers',   label_bm:'Pelanggan',    module:'crm' },
   { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },
   { id:'pos',        icon:'ti-device-desktop',    label_en:'POS',         label_bm:'POS',          module:'pos' },
+  { id:'sales_commission', icon:'ti-award',       label_en:'Sales Commission', label_bm:'Komisyen Jualan', module:'sales_commission' },
   { id:'inventory',  icon:'ti-box',               label_en:'Inventory',   label_bm:'Inventori',    module:'inventory' },
   { id:'logistics',  icon:'ti-truck-delivery',    label_en:'Logistics',   label_bm:'Logistik',     module:'logistics' },
   { id:'purchasing', icon:'ti-shopping-cart',     label_en:'Purchasing',  label_bm:'Perolehan',    module:'purchasing' },
@@ -1591,11 +1592,11 @@ function _rpModulesForCurrentUser() {
 
 // Default module map when tenant has not configured custom role permissions yet
 const _DEFAULT_ROLE_MODULES = {
-  manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
+  manager: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
   accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
   cashier: ['pos','sales'],
   staff: ['hr_attendance'],
-  admin: ['crm','sales','pos','inventory','logistics','purchasing','production','hr','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports','admin'],
+  admin: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports','admin'],
 }
 
 
@@ -2330,6 +2331,7 @@ function openPage(page, params={}) {
       case 'crm':        _safeRender(() => renderCRM(params)); break
       case 'sales':      _safeRender(() => renderSales(params)); break
       case 'pos':        _safeRender(() => renderPOS(params)); break
+      case 'sales_commission': _safeRender(() => renderSalesCommission(params)); break
       case 'inventory':  _safeRender(() => renderInventory(params)); break
       case 'logistics':  _safeRender(() => renderLogistics(params)); break
       case 'purchasing': _safeRender(() => renderPurchasing(params)); break
@@ -6616,6 +6618,7 @@ const RP_SECTIONS = [
     { id:'crm',        en:'Customers', bm:'Pelanggan' },
     { id:'sales',      en:'Sales / Invoices', bm:'Jualan / Invois' },
     { id:'pos',        en:'POS', bm:'POS' },
+    { id:'sales_commission', en:'Sales Commission', bm:'Komisyen Jualan' },
     { id:'inventory',  en:'Inventory', bm:'Inventori' },
     { id:'logistics',  en:'Logistics', bm:'Logistik' },
     { id:'purchasing', en:'Purchasing', bm:'Perolehan' },
@@ -6644,8 +6647,8 @@ const RP_ROLE_DEFAULTS = {
   staff: ['hr_attendance'],
   cashier: ['pos','sales'],
   accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
-  manager: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
-  admin: ['crm','sales','pos','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','hr','accounting','vouchers','reports','admin'],
+  manager: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
+  admin: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','hr','accounting','vouchers','reports','admin'],
 }
 
 let _rolePermsState = {}
@@ -9570,6 +9573,7 @@ const DEFAULT_ACCOUNT_MAPPING_KEYS = [
   { key:'socso_payable',     accountType:'liability', en:'SOCSO Payable',            bm:'PERKESO Belum Bayar',       required:true  },
   { key:'eis_payable',       accountType:'liability', en:'EIS Payable',              bm:'EIS Belum Bayar',           required:true  },
   { key:'pcb_payable',       accountType:'liability', en:'PCB Payable',              bm:'PCB Belum Bayar',           required:true  },
+  { key:'commission_expense', accountType:'expense',  en:'Commission Expense',       bm:'Perbelanjaan Komisen',      required:false },
 ]
 
 function renderAccounting(params={}) {
@@ -16779,15 +16783,18 @@ async function renderInvForm(id=null) {
     addTitle:'Invois Baru', editTitle:'Edit Invois', back:'Invois',
     customer:'Pelanggan *', date:'Tarikh *', due:'Tarikh Akhir', status:'Status', addLine:'Tambah Item',
     save:'Simpan', cancel:'Batal', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.',
-    stUnpaid:'Belum dibayar', stPartial:'Separa', stPaid:'Lunas', stCancelled:'Dibatalkan'
+    stUnpaid:'Belum dibayar', stPartial:'Separa', stPaid:'Lunas', stCancelled:'Dibatalkan',
+    salesPerson:'Sales Person', channel:'Saluran', none:'— Tiada —', retail:'Retail', event:'Event', platform:'Platform'
   } : {
     addTitle:'New Invoice', editTitle:'Edit Invoice', back:'Invoices',
     customer:'Customer *', date:'Date *', due:'Due Date', status:'Status', addLine:'Add Item',
     save:'Save', cancel:'Cancel', required:'Customer and at least one item are required.',
-    stUnpaid:'Unpaid', stPartial:'Partial', stPaid:'Paid', stCancelled:'Cancelled'
+    stUnpaid:'Unpaid', stPartial:'Partial', stPaid:'Paid', stCancelled:'Cancelled',
+    salesPerson:'Sales Person', channel:'Channel', none:'— None —', retail:'Retail', event:'Event', platform:'Platform'
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
+  const _invEmployees = await _scLoadEmployees()
   let inv = { issue_date: new Date().toISOString().slice(0,10) }
   _slItems = [{product_id:'',description:'',qty:1,unit_price:0}]
   if(id) {
@@ -16817,6 +16824,19 @@ async function renderInvForm(id=null) {
           <option value="partial" ${inv.status==='partial'?'selected':''}>${t.stPartial}</option>
           <option value="paid" ${inv.status==='paid'?'selected':''}>${t.stPaid}</option>
           <option value="cancelled" ${inv.status==='cancelled'?'selected':''}>${t.stCancelled}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.salesPerson}</label>
+        <select id="if-sales-person" class="form-select">
+          <option value="">${t.none}</option>
+          ${_invEmployees.map(e=>`<option value="${e.id}" ${inv.sales_person_id===e.id?'selected':''}>${_aiEscapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.channel}</label>
+        <select id="if-channel" class="form-select">
+          <option value="retail" ${(inv.channel||'retail')==='retail'?'selected':''}>${t.retail}</option>
+          <option value="event" ${inv.channel==='event'?'selected':''}>${t.event}</option>
+          <option value="platform" ${inv.channel==='platform'?'selected':''}>${t.platform}</option>
         </select>
       </div>
     </div>
@@ -16909,7 +16929,9 @@ async function _invSave(id) {
     tenant_id: APP.tenant.id, customer_id: customerId, customer_name: customerName,
     issue_date: issueDate,
     due_date: document.getElementById('if-due').value||null,
-    total: total, status: status, updated_at: new Date().toISOString()
+    total: total, status: status, updated_at: new Date().toISOString(),
+    sales_person_id: document.getElementById('if-sales-person')?.value || null,
+    channel: document.getElementById('if-channel')?.value || 'retail'
   }
   // Keep paid_amt consistent with status when user changes status manually
   if(status === 'paid') payload.paid_amt = total
@@ -16978,6 +17000,10 @@ async function _invSave(id) {
   }
 
   auditLog(id?'update':'create','invoices', invId)
+  // Fire-and-forget — commission capture must never block/slow the invoice
+  // save flow (it already guards itself against non-'paid' invoices and
+  // any internal failure; see _commissionCaptureForSale).
+  if(status === 'paid') _commissionCaptureForSale('invoice', invId)
   showToast(APP.language==='bm'?'Invois disimpan!':'Invoice saved!', 'success')
   openPage('sales',{view:'inv-detail',id:invId})
 }
@@ -17458,6 +17484,7 @@ async function _paySave(invoiceId, balance) {
   const newPaid = Number(inv.paid_amt||0) + amount
   const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
   await sb.from('invoices').update({paid_amt:newPaid, status:newStatus}).eq('id',invoiceId).eq('tenant_id',APP.tenant.id)
+  if(newStatus === 'paid') _commissionCaptureForSale('invoice', invoiceId) // fire-and-forget, never blocks payment save
 
   try {
     const cogs = (newStatus==='paid' && inv.status!=='paid') ? await _calcCOGS('invoice_items','invoice_id',invoiceId) : 0
@@ -21452,11 +21479,22 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
   }
   const totalAllowance = Number(calc.allowance_1||0) + Number(calc.allowance_2||0) + Number(calc.allowance_3||0)
   const totalDeduction = Number(calc.advance||0) + Number(calc.deduction_1||0) + Number(calc.deduction_2||0)
-  const totalExpense = Number(calc.basic_salary||0) + totalAllowance + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0) - totalDeduction
+  // Commission (calc.commission, from Sales Commission — see _sdRowValues) is
+  // already baked into calc.net_pay, so it must be balanced by an equal debit
+  // somewhere. A dedicated commission_expense account gets its OWN line
+  // (cleaner GL); if the tenant hasn't configured one, fold it into Salary
+  // Expense instead of dropping it — same "no dedicated account yet, so net
+  // it against Salary Expense" fallback already used above for advance/deduction,
+  // rather than silently posting an unbalanced entry.
+  const commission = Number(calc.commission||0)
+  const commissionAcc = commission > 0 ? await _getDefaultAccountId('commission_expense') : null
+  let totalExpense = Number(calc.basic_salary||0) + totalAllowance + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0) - totalDeduction
+  if(commission > 0 && !commissionAcc) totalExpense += commission
   const epfTotal = Number(calc.epf_employee||0) + Number(calc.epf_employer||0)
   const socsoTotal = Number(calc.socso_employee||0) + Number(calc.socso_employer||0)
   const eisTotal = Number(calc.eis_employee||0) + Number(calc.eis_employer||0)
   const lines = [{ account_id: salaryAcc, debit: totalExpense, credit: 0 }]
+  if(commission > 0 && commissionAcc) lines.push({ account_id: commissionAcc, debit: commission, credit: 0 })
   if(calc.net_pay > 0) lines.push({ account_id: cashAcc, debit: 0, credit: calc.net_pay })
   if(epfTotal > 0) lines.push({ account_id: epfAcc, debit: 0, credit: epfTotal })
   if(socsoTotal > 0) lines.push({ account_id: socsoAcc, debit: 0, credit: socsoTotal })
@@ -21543,6 +21581,491 @@ async function _hrResolveSelfEmployee() {
     }
   } catch(e) { console.warn('_hrResolveSelfEmployee', e) }
   return null
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SALES COMMISSION + GAMIFICATION (tenant-scoped, invoice/POS → payroll)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _scNextPeriod(month, year) {
+  let m = Number(month) + 1, y = Number(year)
+  if(m > 12) { m = 1; y += 1 }
+  return { month: m, year: y }
+}
+
+/** Called right after an invoice's status becomes 'paid' or a POS sale completes.
+    Never throws — a commission-capture failure must never block the sale flow. */
+async function _commissionCaptureForSale(sourceType, sourceId) {
+  try {
+    if(!APP.tenant?.id || !sourceId) return
+    const isInvoice = sourceType === 'invoice'
+    const headerTable = isInvoice ? 'invoices' : 'pos_transactions'
+    const itemsTable = isInvoice ? 'invoice_items' : 'pos_transaction_items'
+    const fkCol = isInvoice ? 'invoice_id' : 'txn_id'
+
+    const { data: header } = await sb.from(headerTable)
+      .select('sales_person_id,channel')
+      .eq('id', sourceId).eq('tenant_id', APP.tenant.id).maybeSingle()
+    if(!header || !header.sales_person_id) return // not every sale has one — no-op, not an error
+
+    const { data: items } = await sb.from(itemsTable)
+      .select('id,product_id,line_total')
+      .eq(fkCol, sourceId).eq('tenant_id', APP.tenant.id)
+    if(!items || !items.length) return
+
+    const channel = header.channel || 'retail'
+    const salesPersonId = header.sales_person_id
+
+    // Clear this sale's prior commission rows before recomputing. Required
+    // for invoices — invoice_items are deleted+reinserted on every edit
+    // (_invSave), so item ids are never stable across saves and a per-item
+    // unique key alone can't prevent double-count on a re-saved paid
+    // invoice. POS items are immutable after checkout, so this is a no-op
+    // safety net there, not a normal-path requirement.
+    await sb.from('sales_commissions')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('tenant_id', APP.tenant.id).eq('source_type', sourceType).eq('source_id', sourceId)
+      .is('deleted_at', null)
+
+    const { data: rules } = await sb.from('sales_commission_rules')
+      .select('sales_person_id,channel,product_id,rate_percent')
+      .eq('tenant_id', APP.tenant.id).eq('channel', channel).is('deleted_at', null)
+    const ruleList = rules || []
+    // Priority: (a) this person + this product > (b) any person + this product
+    // > (c) any person + any product (channel-wide) > (d) no match → skip line
+    const findRate = (productId) => {
+      const a = ruleList.find(r => String(r.sales_person_id||'')===String(salesPersonId) && r.product_id && String(r.product_id)===String(productId))
+      if(a) return a.rate_percent
+      const b = ruleList.find(r => !r.sales_person_id && r.product_id && String(r.product_id)===String(productId))
+      if(b) return b.rate_percent
+      const c = ruleList.find(r => !r.sales_person_id && !r.product_id)
+      if(c) return c.rate_percent
+      return null
+    }
+
+    const now = new Date()
+    const earned_month = now.getMonth()+1, earned_year = now.getFullYear()
+    const next = _scNextPeriod(earned_month, earned_year)
+
+    const rows = []
+    for(const it of items) {
+      const rate = findRate(it.product_id)
+      if(rate == null) continue // no matching rule → skip this line, not an error
+      const lineTotal = Number(it.line_total||0)
+      const commission_amount = Math.round(lineTotal * Number(rate)) / 100
+      rows.push({
+        tenant_id: APP.tenant.id, sales_person_id: salesPersonId,
+        source_type: sourceType, source_id: sourceId, source_item_id: it.id,
+        product_id: it.product_id || null, channel,
+        sale_amount: lineTotal, rate_applied: rate, commission_amount,
+        earned_month, earned_year, payout_month: next.month, payout_year: next.year,
+        status: 'confirmed'
+      })
+    }
+    if(!rows.length) return
+
+    const { error } = await sb.from('sales_commissions').insert(rows)
+    if(error) { console.error('_commissionCaptureForSale insert', error); return }
+
+    try { await _checkAchievements(salesPersonId, earned_month, earned_year) } catch(e) { console.error('_checkAchievements', e) }
+  } catch(e) {
+    console.error('_commissionCaptureForSale', e)
+  }
+}
+
+/** Tier thresholds — tenant-configurable via tenants.config.commission_tiers
+    (same JSONB-blob pattern as books_lock_date/roles), defaults if unset. */
+function _scTiers() {
+  const cfg = (APP.tenant && APP.tenant.config && APP.tenant.config.commission_tiers) || {}
+  return {
+    bronze: Number(cfg.bronze != null ? cfg.bronze : 0),
+    silver: Number(cfg.silver != null ? cfg.silver : 500),
+    gold: Number(cfg.gold != null ? cfg.gold : 1500),
+    platinum: Number(cfg.platinum != null ? cfg.platinum : 3000),
+  }
+}
+function _scTierForTotal(total, tiers) {
+  if(total >= tiers.platinum) return 'platinum'
+  if(total >= tiers.gold) return 'gold'
+  if(total >= tiers.silver) return 'silver'
+  return 'bronze'
+}
+function _scTierLabel(tier, isBm) {
+  const labels = isBm
+    ? { bronze:'Gangsa', silver:'Perak', gold:'Emas', platinum:'Platinum' }
+    : { bronze:'Bronze', silver:'Silver', gold:'Gold', platinum:'Platinum' }
+  return labels[tier] || tier
+}
+function _scTierColor(tier) {
+  return { bronze:'#B45309', silver:'#64748B', gold:'#CA8A04', platinum:'#7C3AED' }[tier] || 'var(--text-3)'
+}
+function _scBadgeLabel(key, isBm) {
+  const labels = isBm ? {
+    bronze:'Gangsa bulan ini', silver:'Perak bulan ini', gold:'Emas bulan ini', platinum:'Platinum bulan ini',
+    first_sale_of_month:'Jualan pertama bulan ini', streak_gold_3mo:'3 bulan berturut-turut Emas+'
+  } : {
+    bronze:'Bronze this month', silver:'Silver this month', gold:'Gold this month', platinum:'Platinum this month',
+    first_sale_of_month:'First sale of the month', streak_gold_3mo:'3 months straight at Gold+'
+  }
+  return labels[key] || key
+}
+
+/** Sums this sales person's confirmed commission for a given payout period. */
+// periodField: 'payout' (default — Salary Disbursement, "money hits this
+// payslip period") or 'earned' (Leaderboard/Achievements — "sales activity
+// that happened in this calendar month", which is always one month BEHIND
+// its own payout period since capture always books to payout = earned+1).
+async function _scCommissionTotal(salesPersonId, month, year, periodField) {
+  periodField = periodField === 'earned' ? 'earned' : 'payout'
+  const { data } = await sb.from('sales_commissions')
+    .select('commission_amount,source_type,source_id')
+    .eq('tenant_id', APP.tenant.id).eq('sales_person_id', salesPersonId)
+    .eq(periodField+'_month', month).eq(periodField+'_year', year).eq('status', 'confirmed').is('deleted_at', null)
+  const rows = data || []
+  // saleCount = distinct sales (invoices/POS transactions), not commission
+  // rows — a single multi-line invoice produces multiple rows (one per
+  // line item) that must still count as ONE sale for "first sale" purposes.
+  const saleCount = new Set(rows.map(r => r.source_type + ':' + r.source_id)).size
+  return { total: rows.reduce((s,r)=>s+Number(r.commission_amount||0),0), count: rows.length, saleCount }
+}
+
+/** Non-blocking — called from _commissionCaptureForSale after a successful insert,
+    with the sale's EARNED month/year (gamification tracks live sales activity,
+    not the payout period — see _scCommissionTotal). */
+async function _checkAchievements(salesPersonId, month, year) {
+  try {
+    if(!APP.tenant?.id || !salesPersonId) return
+    const tiers = _scTiers()
+    const { total, saleCount } = await _scCommissionTotal(salesPersonId, month, year, 'earned')
+
+    const toUnlock = []
+    ;['bronze','silver','gold','platinum'].forEach(tier => { if(total >= tiers[tier]) toUnlock.push(tier) })
+    if(saleCount === 1) toUnlock.push('first_sale_of_month')
+    if(total >= tiers.gold) {
+      let streak = true
+      for(let i=1;i<=2;i++) {
+        let m = month - i, y = year
+        while(m < 1) { m += 12; y -= 1 }
+        const prior = await _scCommissionTotal(salesPersonId, m, y, 'earned')
+        if(prior.total < tiers.gold) { streak = false; break }
+      }
+      if(streak) toUnlock.push('streak_gold_3mo')
+    }
+
+    for(const badge of toUnlock) {
+      const { data: existing } = await sb.from('sales_achievements')
+        .select('id').eq('tenant_id', APP.tenant.id).eq('sales_person_id', salesPersonId)
+        .eq('badge_key', badge).eq('period_month', month).eq('period_year', year)
+        .is('deleted_at', null).maybeSingle()
+      if(existing) continue
+      await sb.from('sales_achievements').insert({
+        tenant_id: APP.tenant.id, sales_person_id: salesPersonId, badge_key: badge,
+        period_month: month, period_year: year
+      })
+    }
+  } catch(e) { console.error('_checkAchievements', e) }
+}
+
+async function _scLoadEmployees() {
+  const { data } = await sb.from('employees').select('id,name')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name')
+  return data || []
+}
+
+function renderSalesCommission(params={}) {
+  if(!canAccess('sales_commission')) { renderAccessDenied(); return }
+  const view = params.view || 'rules'
+  if(view === 'ledger') { _scRenderLedger(); return }
+  if(view === 'leaderboard') { _scRenderLeaderboard(); return }
+  if(view === 'achievements') { _scRenderAchievements(); return }
+  _scRenderRules()
+}
+
+function _scTabsHtml(active) {
+  const isBm = APP.language==='bm'
+  const tabs = [
+    { key:'rules', en:'Rules', bm:'Peraturan' },
+    { key:'ledger', en:'Ledger', bm:'Lejar' },
+    { key:'leaderboard', en:'Leaderboard', bm:'Papan Pendahulu' },
+    { key:'achievements', en:'Achievements', bm:'Pencapaian' },
+  ]
+  return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
+    ${tabs.map(t=>`<button class="btn btn-sm ${active===t.key?'btn-primary':'btn-outline'}" onclick="openPage('sales_commission',{view:'${t.key}'})">${isBm?t.bm:t.en}</button>`).join('')}
+  </div>`
+}
+
+async function _scRenderRules() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Komisyen Jualan', addRule:'Tambah Peraturan', salesPerson:'Sales Person', channel:'Saluran', product:'Produk',
+    rate:'Kadar %', all:'— Semua —', save:'Simpan', cancel:'Batal', edit:'Edit', del:'Padam', noData:'Tiada peraturan komisyen lagi.',
+    retail:'Retail', event:'Event', platform:'Platform'
+  } : {
+    title:'Sales Commission', addRule:'Add Rule', salesPerson:'Sales Person', channel:'Channel', product:'Product',
+    rate:'Rate %', all:'— All —', save:'Save', cancel:'Cancel', edit:'Edit', del:'Delete', noData:'No commission rules yet.',
+    retail:'Retail', event:'Event', platform:'Platform'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_scTabsHtml('rules')}
+  <div class="card" style="max-width:640px;padding:20px;margin-bottom:16px">
+    <div id="sc-rule-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
+    <input type="hidden" id="sc-rule-id" value="">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">${t.salesPerson}</label>
+        <select id="sc-rule-sp" class="form-select"><option value="">${t.all}</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.channel}</label>
+        <select id="sc-rule-channel" class="form-select">
+          <option value="retail">${t.retail}</option><option value="event">${t.event}</option><option value="platform">${t.platform}</option>
+        </select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.product}</label>
+        <select id="sc-rule-product" class="form-select"><option value="">${t.all}</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.rate}</label>
+        <input id="sc-rule-rate" type="number" step="0.01" min="0" max="100" class="form-input" value=""></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary btn-sm" onclick="_scSaveRule()"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline btn-sm" onclick="_scResetRuleForm()">${t.cancel}</button>
+    </div>
+  </div>
+  <div class="card"><div id="sc-rules-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const [emps, prods] = await Promise.all([
+    _scLoadEmployees(),
+    sb.from('products').select('id,name_en,name_bm').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en').then(r=>r.data||[])
+  ])
+  window._scEmployees = emps
+  window._scProducts = prods
+  const spSel = document.getElementById('sc-rule-sp')
+  if(spSel) spSel.innerHTML += emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')
+  const prodSel = document.getElementById('sc-rule-product')
+  if(prodSel) prodSel.innerHTML += prods.map(p=>`<option value="${p.id}">${_aiEscapeHtml(prodName(p))}</option>`).join('')
+
+  await _scLoadRulesList()
+}
+
+async function _scLoadRulesList() {
+  const isBm = APP.language==='bm'
+  const wrap = document.getElementById('sc-rules-wrap')
+  if(!wrap) return
+  const t = isBm ? { sp:'Sales Person', channel:'Saluran', product:'Produk', rate:'Kadar', all:'Semua', edit:'Edit', del:'Padam', noData:'Tiada peraturan komisyen lagi.' }
+                 : { sp:'Sales Person', channel:'Channel', product:'Product', rate:'Rate', all:'All', edit:'Edit', del:'Delete', noData:'No commission rules yet.' }
+  const { data, error } = await sb.from('sales_commission_rules')
+    .select('id,sales_person_id,channel,product_id,rate_percent,employees(name)')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('channel')
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p></div>`; return }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+  const prodName2 = (id) => { const p = (window._scProducts||[]).find(x=>String(x.id)===String(id)); return p ? prodName(p) : '' }
+  wrap.innerHTML = `<table><thead><tr><th>${t.sp}</th><th>${t.channel}</th><th>${t.product}</th><th style="text-align:right">${t.rate}</th><th></th></tr></thead>
+  <tbody>${data.map(r=>`<tr>
+    <td>${r.sales_person_id ? _aiEscapeHtml(r.employees?.name||'') : `<span style="color:var(--text-3)">${t.all}</span>`}</td>
+    <td style="text-transform:capitalize">${_aiEscapeHtml(r.channel)}</td>
+    <td>${r.product_id ? _aiEscapeHtml(prodName2(r.product_id)) : `<span style="color:var(--text-3)">${t.all}</span>`}</td>
+    <td style="text-align:right;font-weight:600">${Number(r.rate_percent).toFixed(2)}%</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_scEditRule('${r.id}')"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_scDeleteRule('${r.id}')"><i class="ti ti-trash"></i></button>
+    </td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+function _scResetRuleForm() {
+  document.getElementById('sc-rule-id').value = ''
+  document.getElementById('sc-rule-sp').value = ''
+  document.getElementById('sc-rule-channel').value = 'retail'
+  document.getElementById('sc-rule-product').value = ''
+  document.getElementById('sc-rule-rate').value = ''
+  const errEl = document.getElementById('sc-rule-form-err')
+  if(errEl) errEl.style.display = 'none'
+}
+
+async function _scEditRule(id) {
+  const { data } = await sb.from('sales_commission_rules').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!data) return
+  document.getElementById('sc-rule-id').value = data.id
+  document.getElementById('sc-rule-sp').value = data.sales_person_id || ''
+  document.getElementById('sc-rule-channel').value = data.channel
+  document.getElementById('sc-rule-product').value = data.product_id || ''
+  document.getElementById('sc-rule-rate').value = data.rate_percent
+  window.scrollTo({top:0, behavior:'smooth'})
+}
+
+async function _scSaveRule() {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('sc-rule-form-err')
+  errEl.style.display = 'none'
+  const id = document.getElementById('sc-rule-id').value || null
+  const salesPersonId = document.getElementById('sc-rule-sp').value || null
+  const channel = document.getElementById('sc-rule-channel').value
+  const productId = document.getElementById('sc-rule-product').value || null
+  const rate = Number(document.getElementById('sc-rule-rate').value)
+  if(!(rate >= 0 && rate <= 100)) {
+    errEl.textContent = isBm ? 'Kadar mesti antara 0-100%.' : 'Rate must be between 0-100%.'
+    errEl.style.display = 'block'
+    return
+  }
+  const payload = { tenant_id: APP.tenant.id, sales_person_id: salesPersonId, channel, product_id: productId, rate_percent: rate, updated_at: new Date().toISOString() }
+  let error
+  if(id) { ({error} = await sb.from('sales_commission_rules').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)) }
+  else { ({error} = await sb.from('sales_commission_rules').insert(payload)) }
+  if(error) {
+    errEl.textContent = 'Error: ' + error.message + (/duplicate|unique/i.test(error.message||'') ? (isBm?' — peraturan untuk kombinasi ni dah wujud.':' — a rule for this exact combination already exists.') : '')
+    errEl.style.display = 'block'
+    return
+  }
+  showToast(isBm?'Peraturan komisyen disimpan!':'Commission rule saved!', 'success')
+  _scResetRuleForm()
+  await _scLoadRulesList()
+}
+
+async function _scDeleteRule(id) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm?'Padam peraturan komisyen ini?':'Delete this commission rule?')) return
+  const { error } = await sb.from('sales_commission_rules').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  showToast(isBm?'Peraturan dipadam.':'Rule deleted.', 'success')
+  await _scLoadRulesList()
+}
+
+async function _scRenderLedger() {
+  const isBm = APP.language==='bm'
+  const now = new Date()
+  const t = isBm ? {
+    title:'Komisyen Jualan', sp:'Sales Person', month:'Bulan', year:'Tahun', apply:'Tapis',
+    date:'Tarikh', ref:'Rujukan', channel:'Saluran', product:'Produk', amount:'Jumlah Jualan',
+    rate:'Kadar', commission:'Komisyen', payout:'Tempoh Bayaran', status:'Status', noData:'Tiada rekod komisyen untuk penapis ini.'
+  } : {
+    title:'Sales Commission', sp:'Sales Person', month:'Month', year:'Year', apply:'Apply',
+    date:'Date', ref:'Ref', channel:'Channel', product:'Product', amount:'Sale Amount',
+    rate:'Rate', commission:'Commission', payout:'Payout Period', status:'Status', noData:'No commission records for this filter.'
+  }
+  const emps = await _scLoadEmployees()
+  window._scEmployees = emps
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_scTabsHtml('ledger')}
+  <div class="card" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.sp}</label>
+        <select id="sc-ledger-sp" class="form-select"><option value="">${isBm?'Semua':'All'}</option>${emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.month}</label>
+        <select id="sc-ledger-month" class="form-select">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===now.getMonth()+1?'selected':''}>${i+1}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.year}</label>
+        <input id="sc-ledger-year" type="number" class="form-input" style="width:100px" value="${now.getFullYear()}"></div>
+      <button class="btn btn-primary btn-sm" onclick="_scLoadLedger()">${t.apply}</button>
+    </div>
+  </div>
+  <div class="card"><div id="sc-ledger-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  await _scLoadLedger()
+}
+
+async function _scLoadLedger() {
+  const isBm = APP.language==='bm'
+  const wrap = document.getElementById('sc-ledger-wrap')
+  if(!wrap) return
+  const t = isBm ? { sp:'Sales Person', date:'Tarikh', channel:'Saluran', product:'Produk', amount:'Jumlah Jualan', rate:'Kadar', commission:'Komisyen', payout:'Bayaran', status:'Status', noData:'Tiada rekod komisyen untuk penapis ini.' }
+                 : { sp:'Sales Person', date:'Date', channel:'Channel', product:'Product', amount:'Sale Amount', rate:'Rate', commission:'Commission', payout:'Payout', status:'Status', noData:'No commission records for this filter.' }
+  const spId = document.getElementById('sc-ledger-sp')?.value || ''
+  const month = Number(document.getElementById('sc-ledger-month')?.value)
+  const year = Number(document.getElementById('sc-ledger-year')?.value)
+  let q = sb.from('sales_commissions').select('id,created_at,channel,product_id,sale_amount,rate_applied,commission_amount,payout_month,payout_year,sales_person_id,employees(name)')
+    .eq('tenant_id', APP.tenant.id).eq('payout_month', month).eq('payout_year', year).is('deleted_at', null)
+  if(spId) q = q.eq('sales_person_id', spId)
+  const { data, error } = await q.order('created_at', {ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p></div>`; return }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+  const prodName2 = (id) => { const p = (window._scProducts||[]).find(x=>String(x.id)===String(id)); return p ? prodName(p) : '-' }
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.sp}</th><th>${t.date}</th><th>${t.channel}</th><th>${t.product}</th>
+    <th style="text-align:right">${t.amount}</th><th style="text-align:right">${t.rate}</th>
+    <th style="text-align:right">${t.commission}</th><th>${t.payout}</th><th>${t.status}</th>
+  </tr></thead><tbody>${data.map(r=>`<tr>
+    <td>${_aiEscapeHtml(r.employees?.name||'-')}</td>
+    <td>${formatDate(r.created_at)}</td>
+    <td style="text-transform:capitalize">${_aiEscapeHtml(r.channel)}</td>
+    <td>${_aiEscapeHtml(prodName2(r.product_id))}</td>
+    <td style="text-align:right">${formatRM(r.sale_amount)}</td>
+    <td style="text-align:right">${Number(r.rate_applied).toFixed(2)}%</td>
+    <td style="text-align:right;font-weight:600;color:var(--success)">${formatRM(r.commission_amount)}</td>
+    <td>${String(r.payout_month).padStart(2,'0')}/${r.payout_year}</td>
+    <td style="text-transform:capitalize">${_aiEscapeHtml(r.status)}</td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function _scRenderLeaderboard() {
+  const isBm = APP.language==='bm'
+  const now = new Date()
+  const month = now.getMonth()+1, year = now.getFullYear()
+  const t = isBm ? { title:'Komisyen Jualan', sub:'Papan pendahulu bulan ini', noData:'Tiada komisyen direkod bulan ini lagi.', toNext:'ke tahap seterusnya' }
+                 : { title:'Sales Commission', sub:"This month's leaderboard", noData:'No commission recorded this month yet.', toNext:'to next tier' }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_scTabsHtml('leaderboard')}
+  <div class="card" style="padding:0"><div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600">${t.sub} — ${_pdocMonthYearLabel(month,year,isBm)}</div>
+  <div id="sc-leaderboard-wrap" style="padding:8px 0"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const emps = await _scLoadEmployees()
+  const tiers = _scTiers()
+  const rows = await Promise.all(emps.map(async e => {
+    const { total, count } = await _scCommissionTotal(e.id, month, year, 'earned')
+    return { id: e.id, name: e.name, total, count, tier: _scTierForTotal(total, tiers) }
+  }))
+  const ranked = rows.filter(r=>r.total>0).sort((a,b)=>b.total-a.total)
+  const wrap = document.getElementById('sc-leaderboard-wrap')
+  if(!wrap) return
+  if(!ranked.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+  const tierOrder = ['bronze','silver','gold','platinum']
+  wrap.innerHTML = ranked.map((r,i) => {
+    const nextTier = tierOrder[tierOrder.indexOf(r.tier)+1]
+    const nextThreshold = nextTier ? tiers[nextTier] : null
+    const progressPct = nextThreshold ? Math.min(100, Math.round((r.total / nextThreshold) * 100)) : 100
+    return `<div style="display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border)">
+      <div style="width:26px;text-align:center;font-weight:700;color:var(--text-3);font-family:'Space Grotesk',sans-serif">${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:600">${_aiEscapeHtml(r.name)}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;background:${_scTierColor(r.tier)}22;color:${_scTierColor(r.tier)}">${_scTierLabel(r.tier,isBm)}</span>
+        </div>
+        ${nextThreshold ? `<div style="height:5px;border-radius:3px;background:var(--bg);margin-top:6px;overflow:hidden"><div style="height:100%;width:${progressPct}%;background:${_scTierColor(nextTier)};border-radius:3px"></div></div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:3px">${formatRM(r.total)} — ${formatRM(Math.max(0,nextThreshold-r.total))} ${t.toNext} ${_scTierLabel(nextTier,isBm)}</div>` : ''}
+      </div>
+      <div style="font-weight:700;font-family:'Space Grotesk',sans-serif;font-size:15px;color:var(--primary)">${formatRM(r.total)}</div>
+    </div>`
+  }).join('')
+}
+
+async function _scRenderAchievements() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { title:'Komisyen Jualan', sub:'Lencana dibuka', noData:'Tiada lencana dibuka lagi.' }
+                 : { title:'Sales Commission', sub:'Unlocked badges', noData:'No badges unlocked yet.' }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  ${_scTabsHtml('achievements')}
+  <div class="card" style="padding:0"><div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600">${t.sub}</div>
+  <div id="sc-achievements-wrap" style="padding:16px 20px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const { data, error } = await sb.from('sales_achievements')
+    .select('sales_person_id,badge_key,period_month,period_year,unlocked_at,employees(name)')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('unlocked_at', {ascending:false})
+  const wrap = document.getElementById('sc-achievements-wrap')
+  if(!wrap) return
+  if(error) { wrap.innerHTML = `<p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p>`; return }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:24px"><p>${t.noData}</p></div>`; return }
+  const byPerson = {}
+  data.forEach(a => {
+    const name = a.employees?.name || '-'
+    if(!byPerson[name]) byPerson[name] = []
+    byPerson[name].push(a)
+  })
+  wrap.innerHTML = Object.keys(byPerson).map(name => `
+    <div style="margin-bottom:16px">
+      <div style="font-weight:600;margin-bottom:8px">${_aiEscapeHtml(name)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${byPerson[name].map(a => `<span style="font-size:12px;padding:6px 12px;border-radius:20px;font-weight:600;background:${_scTierColor(a.badge_key)}22;color:${_scTierColor(a.badge_key)};border:1px solid ${_scTierColor(a.badge_key)}44">
+          <i class="ti ti-award"></i> ${_scBadgeLabel(a.badge_key, isBm)} · ${String(a.period_month).padStart(2,'0')}/${a.period_year}
+        </span>`).join('')}
+      </div>
+    </div>`).join('')
 }
 
 async function renderMyPayslips(params={}) {
@@ -21847,6 +22370,16 @@ async function renderSalaryDisbursement(month, year) {
       r.zakat = calc.zakat
     }
   })
+  // Commission earned last month, payable this period — read-only line,
+  // separate from allowance_1/2/3 (see Sales Commission module). Snapshot
+  // into payroll_records.commission happens naturally via _sdSaveAll, which
+  // persists whatever _sdRowValues returns (now including this field).
+  try {
+    await Promise.all(data.map(async r => {
+      const { total } = await _scCommissionTotal(r.employee_id, month, year)
+      r.commission = total
+    }))
+  } catch(e) { console.warn('SD commission fetch', e); data.forEach(r => { r.commission = r.commission || 0 }) }
   _sdRecords = data
 
   const sumSalary = data.reduce((s,r)=>s+Number(r.basic_salary||0),0)
@@ -21863,13 +22396,14 @@ async function renderSalaryDisbursement(month, year) {
   const sumEIS = data.reduce((s,r)=>s+Number(r.eis_employee||0)+Number(r.eis_employer||0),0)
   const sumPCB = data.reduce((s,r)=>s+Number(r.pcb||0),0)
   const sumZakat = data.reduce((s,r)=>s+Number(r.zakat||0),0)
+  const sumCommission = data.reduce((s,r)=>s+Number(r.commission||0),0)
   const grandTotal = data.reduce((s,r) => {
     const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
     const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
-    return s + Number(r.basic_salary||0) + totalAllowance - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - Number(r.zakat||0) - totalDeduction
+    return s + Number(r.basic_salary||0) + totalAllowance + Number(r.commission||0) - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - Number(r.zakat||0) - totalDeduction
   }, 0)
-  // Company cost = gross earnings (basic+allow) + employer statutory contributions
-  const companyCost = sumSalary + sumAllow + sumEmployer
+  // Company cost = gross earnings (basic+allow+commission) + employer statutory contributions
+  const companyCost = sumSalary + sumAllow + sumCommission + sumEmployer
 
   // Budget Approval Summary (BOD): Net Pay + EPF + SOCSO + EIS + PCB
   // (employer+employee portions). Same value as Net + Employer + Employee
@@ -21937,6 +22471,7 @@ async function renderSalaryDisbursement(month, year) {
             <select class="form-select no-print" id="sd-atype3-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select>
             <input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a3-${r.id}" value="${r.allowance_3||0}" oninput="_sdRecalc()">
           </div>
+          ${Number(r.commission||0) > 0 ? `<div class="pdoc-sd-line"><label>${isBm?'Komisen':'Commission'}</label><span style="font-weight:600;color:var(--success,#16A34A)">${formatRM(r.commission)}</span></div>` : ''}
         </div>
         <span class="print-only" id="sd-print-a1-${r.id}" style="display:none"></span>
         <span class="print-only" id="sd-print-a2-${r.id}" style="display:none"></span>
@@ -22184,8 +22719,9 @@ function _sdRowValues(r) {
   const deduction_2 = Number(document.getElementById(`sd-d2-${r.id}`)?.value) || 0
   const totalAllowance = allowance_1 + allowance_2 + allowance_3
   const totalDeduction = advance + deduction_1 + deduction_2
-  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance - epf_employee - socso_employee - eis_employee - pcb - zakat - totalDeduction) * 100) / 100
-  return { epf_employee, socso_employee, eis_employee, pcb, zakat, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, net_pay }
+  const commission = Number(r.commission||0) // read-only — not an editable DOM field, unlike allowance_1/2/3
+  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance + commission - epf_employee - socso_employee - eis_employee - pcb - zakat - totalDeduction) * 100) / 100
+  return { epf_employee, socso_employee, eis_employee, pcb, zakat, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, commission, net_pay }
 }
 
 function _sdMarkAmended(inputId, originalValue) {
@@ -22197,12 +22733,13 @@ function _sdMarkAmended(inputId, originalValue) {
 }
 
 function _sdRecalc() {
-  let grand = 0, sumAllow = 0, sumStat = 0, sumOther = 0, sumSalary = 0, sumEmployer = 0
+  let grand = 0, sumAllow = 0, sumStat = 0, sumOther = 0, sumSalary = 0, sumEmployer = 0, sumCommission = 0
   let sumEPF = 0, sumSOCSO = 0, sumEIS = 0, sumPCB = 0, sumZakat = 0
   _sdRecords.forEach(r => {
     const v = _sdRowValues(r)
     grand += v.net_pay
     sumSalary += Number(r.basic_salary||0)
+    sumCommission += Number(v.commission||0)
     sumAllow += Number(v.allowance_1||0)+Number(v.allowance_2||0)+Number(v.allowance_3||0)
     // sumStat IS the "Total Employee Contrib. (EPF+SOCSO+EIS+PCB)" figure —
     // one definition, reused everywhere (footer line, summary bar, and the
@@ -22269,7 +22806,13 @@ async function _sdSaveAll() {
   let okCount = 0, errCount = 0
   for(const r of _sdRecords) {
     const payload = _sdRowValues(r)
-    const {error} = await sb.from('payroll_records').update(payload).eq('id', r.id).eq('tenant_id', APP.tenant.id)
+    let {error} = await sb.from('payroll_records').update(payload).eq('id', r.id).eq('tenant_id', APP.tenant.id)
+    if(error && /commission|column/i.test(error.message||'')) {
+      // sales_commission migration not applied yet — retry without the new
+      // field so existing allowance/deduction/statutory saves still work.
+      const {commission, ...rest} = payload
+      ;({error} = await sb.from('payroll_records').update(rest).eq('id', r.id).eq('tenant_id', APP.tenant.id))
+    }
     if(error) errCount++; else { okCount++; auditLog('update','payroll_records', r.id) }
   }
   if(result) result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} rekod disimpan`:`${okCount} record(s) saved`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
@@ -24885,6 +25428,7 @@ async function renderPOS(params={}) {
   const {data} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = data || []
   _posCart = []
+  const _posEmployees = await _scLoadEmployees()
 
   const isBm = APP.language==='bm'
   document.getElementById('main').innerHTML = `
@@ -24913,6 +25457,23 @@ async function renderPOS(params={}) {
         <button class="btn btn-outline btn-sm" onclick="_posCart=[];_posRenderCart();_posUpdateChange()">${t.clear}</button>
       </div>
       <div class="pos-cart-body" id="pos-cart-body"></div>
+      <div style="display:flex;gap:8px;padding:0 14px 10px">
+        <div class="form-group" style="margin:0;flex:1">
+          <label class="form-label" style="font-size:11px">${isBm?'Sales Person (pilihan)':'Sales Person (optional)'}</label>
+          <select id="pos-sales-person" class="form-select">
+            <option value="">${isBm?'— Tiada —':'— None —'}</option>
+            ${_posEmployees.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;width:110px">
+          <label class="form-label" style="font-size:11px">${isBm?'Saluran':'Channel'}</label>
+          <select id="pos-channel" class="form-select">
+            <option value="retail" selected>Retail</option>
+            <option value="event">Event</option>
+            <option value="platform">Platform</option>
+          </select>
+        </div>
+      </div>
       <div class="pos-cart-foot">
         <div class="pos-grand"><span class="pos-grand-label">${t.total}</span><span class="pos-grand-val" id="pos-total">RM 0.00</span></div>
         <div class="pos-pay-methods">
@@ -25843,7 +26404,9 @@ async function _posCheckout() {
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'POS'}).then(r=>r, ()=>({data:null}))
   const {data: trans, error} = await sb.from('pos_transactions').insert({
     tenant_id: APP.tenant.id, session_id: session.id, receipt_no: refData || await _genFallbackRefNo('pos_transactions','receipt_no','POS'),
-    total: total, payment_method: method, txn_type: 'sale', status: 'completed'
+    total: total, payment_method: method, txn_type: 'sale', status: 'completed',
+    sales_person_id: document.getElementById('pos-sales-person')?.value || null,
+    channel: document.getElementById('pos-channel')?.value || 'retail'
   }).select('id').single()
   if(error) { showToast('Error: '+error.message, 'error'); return }
 
@@ -25858,6 +26421,8 @@ async function _posCheckout() {
     showToast(APP.language==='bm'?'Ralat: gagal simpan item jualan. Jualan dibatalkan, sila cuba lagi.':'Error: failed to save sale items. Sale cancelled, please retry.', 'error')
     return
   }
+  // Fire-and-forget — must never slow down checkout (POS "kekal laju").
+  _commissionCaptureForSale('pos', trans.id)
 
   // Deduct stock for product-linked lines; warn already handled pre-checkout
   for(const c of _posCart) {
