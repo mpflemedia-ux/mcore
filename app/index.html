@@ -427,6 +427,8 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 body.dark .form-select{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.2);color:#E2E8F0}
 .form-select option{ background:var(--bg-card); color:var(--text); }
 body.dark .form-select option{ background:#1E293B; color:#E2E8F0; }
+.form-input option{ background:var(--bg-card); color:var(--text); }
+body.dark .form-input option{ background:#1E293B; color:#E2E8F0; }
 body.dark textarea.form-input{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.2)}
 .chart-placeholder{height:200px;background:var(--bg);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-3);flex-direction:column;gap:8px}
 table{width:100%;border-collapse:collapse}
@@ -559,6 +561,7 @@ html[data-skip-intro="1"] #intro-skip {
   background:var(--db-card,#0f172a);border:1px solid var(--db-border,rgba(148,163,184,.25));
   color:var(--db-text,#e2e8f0);border-radius:8px;padding:7px 10px;font-size:12px;min-width:130px;height:34px;
 }
+.db-range-pick-wrap select option{ background:var(--db-card,#0f172a); color:var(--db-text,#e2e8f0); }
 .db-kpi-value{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--db-text);letter-spacing:-.02em;line-height:1.15;margin-bottom:6px}
 
 .db-kpi-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--primary);opacity:.85;border-radius:14px 0 0 14px}
