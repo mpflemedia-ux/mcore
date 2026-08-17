@@ -27316,7 +27316,7 @@ async function _pnlLoad() {
 
   const periodLabel = (APP.language==='bm' ? 'Tempoh' : 'Period') + ': ' + formatDate(from) + ' — ' + formatDate(to)
   const coName = (APP.tenant && APP.tenant.name) || 'Company'
-  result.innerHTML = `<div class="card rep-print-card" style="max-width:700px;padding:20px;overflow-x:auto">
+  result.innerHTML = `<div class="card rep-print-card" style="padding:20px;overflow-x:auto">
     <div style="min-width:480px">
     <div class="print-only" style="display:none;font-weight:700;font-size:16px;margin-bottom:4px">${_aiEscapeHtml(coName)}</div>
     <div class="print-only" style="display:none;font-size:14px;margin-bottom:8px">${APP.language==='bm'?'Penyata Pendapatan':'Income Statement'}</div>
@@ -27410,7 +27410,7 @@ async function _bsLoad() {
 
   const section = (label, group) => `<div style="font-weight:700;margin:16px 0 8px">${label}</div>
     <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code?r.a.code+' - ':''}${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div></div>`
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div>`
 
   const negCash = assets.rows.some(r => r.amt < -0.01) || assets.total < -0.01
   const isBm = APP.language==='bm'
@@ -27425,14 +27425,16 @@ async function _bsLoad() {
       </button>
     </div>` : ''
 
-  result.innerHTML = `<div class="card" style="max-width:700px;padding:20px">
+  result.innerHTML = `<div class="card" style="padding:20px;overflow-x:auto">
+    <div style="min-width:480px">
     <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">${t.asOf}: ${formatDate(asOf)}</div>
     ${cashHint}
     ${section(t.assets, assets)}
-    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span>${formatRM(assets.total)}</span></div></div>
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span>${formatRM(assets.total)}</span></div>
     ${section(t.liabilities, liab)}
     ${section(t.equity, eq)}
-    <div style="overflow-x:auto"><div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span>${formatRM(liab.total+eq.total)}</span></div></div>
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span>${formatRM(liab.total+eq.total)}</span></div>
+    </div>
   </div>` + _repAiSummaryBlock('bs-ai-btn','bs-ai-out')
 
   _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity (incl. Retained Earnings RM${retainedEarnings.toFixed(2)}): RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
