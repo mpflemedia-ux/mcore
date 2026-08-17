@@ -16955,18 +16955,21 @@ function _invCopyReminder() {
 
 // ─── Invoices: Form ────────────────────────────────────────────────────────────
 async function renderInvForm(id=null) {
-  const t = APP.language==='bm' ? {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
     addTitle:'Invois Baru', editTitle:'Edit Invois', back:'Invois',
     customer:'Pelanggan *', date:'Tarikh *', due:'Tarikh Akhir', status:'Status', addLine:'Tambah Item',
     save:'Simpan', cancel:'Batal', required:'Pelanggan dan sekurang-kurangnya satu item diperlukan.',
     stUnpaid:'Belum dibayar', stPartial:'Separa', stPaid:'Lunas', stCancelled:'Dibatalkan',
-    salesPerson:'Sales Person', channel:'Saluran', none:'— Tiada —', retail:'Retail', event:'Event', platform:'Platform'
+    salesPerson:'Sales Person', channel:'Saluran', none:'— Tiada —', retail:'Retail', event:'Event', platform:'Platform',
+    statusLocked:'Diurus melalui bayaran — guna Rekod Bayaran/Batal di skrin Invois.'
   } : {
     addTitle:'New Invoice', editTitle:'Edit Invoice', back:'Invoices',
     customer:'Customer *', date:'Date *', due:'Due Date', status:'Status', addLine:'Add Item',
     save:'Save', cancel:'Cancel', required:'Customer and at least one item are required.',
     stUnpaid:'Unpaid', stPartial:'Partial', stPaid:'Paid', stCancelled:'Cancelled',
-    salesPerson:'Sales Person', channel:'Channel', none:'— None —', retail:'Retail', event:'Event', platform:'Platform'
+    salesPerson:'Sales Person', channel:'Channel', none:'— None —', retail:'Retail', event:'Event', platform:'Platform',
+    statusLocked:'Managed via payments — use Record Payment/Void on the Invoice screen.'
   }
   await _slLoadProducts()
   const customers = await _slLoadCustomers()
@@ -16995,12 +16998,25 @@ async function renderInvForm(id=null) {
       <div class="form-group"><label class="form-label">${t.date}</label><input id="if-date" type="date" class="form-input" value="${inv.issue_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.due}</label><input id="if-due" type="date" class="form-input" value="${inv.due_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.status}</label>
-        <select id="if-status" class="form-select">
-          <option value="unpaid" ${(inv.status||'unpaid')==='unpaid'?'selected':''}>${t.stUnpaid}</option>
-          <option value="partial" ${inv.status==='partial'?'selected':''}>${t.stPartial}</option>
-          <option value="paid" ${inv.status==='paid'?'selected':''}>${t.stPaid}</option>
-          <option value="cancelled" ${inv.status==='cancelled'?'selected':''}>${t.stCancelled}</option>
-        </select>
+        ${(() => {
+          const curStatus = inv.status || 'unpaid'
+          if(!id) {
+            // Brand new invoice — no payment exists yet, Unpaid is the only sensible status.
+            return `<select id="if-status" class="form-select" disabled><option value="unpaid" selected>${t.stUnpaid}</option></select>`
+          }
+          if(curStatus === 'partial' || curStatus === 'paid') {
+            // Only _paySave()/_payVoid() may set these — never hand-typed once real payments exist.
+            const label = curStatus === 'paid' ? t.stPaid : t.stPartial
+            return `<select id="if-status" class="form-select" disabled><option value="${curStatus}" selected>${label}</option></select>
+              <div style="font-size:11px;color:var(--text-3);margin-top:4px">${t.statusLocked}</div>`
+          }
+          // Existing invoice with no real payment recorded — Unpaid/Cancelled are the only
+          // legitimately hand-editable states; Partial/Paid must come from a recorded payment.
+          return `<select id="if-status" class="form-select">
+            <option value="unpaid" ${curStatus!=='cancelled'?'selected':''}>${t.stUnpaid}</option>
+            <option value="cancelled" ${curStatus==='cancelled'?'selected':''}>${t.stCancelled}</option>
+          </select>`
+        })()}
       </div>
       <div class="form-group"><label class="form-label">${t.salesPerson}</label>
         <select id="if-sales-person" class="form-select">
@@ -17467,13 +17483,21 @@ async function renderInvDetail(id) {
     items:'Item', qty:'Kuantiti', price:'Harga', amount:'Jumlah', total:'Jumlah Besar',
     paid:'Dibayar', balance:'Baki',
     unpaid:'Belum Dibayar', partial:'Separa', paidFull:'Selesai',
-    print:'Cetak'
+    print:'Cetak',
+    recordPayment:'Rekod Bayaran', payDate:'Tarikh Bayaran', payAmount:'Jumlah Bayaran', payMethod:'Kaedah', save:'Simpan',
+    history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi',
+    voidPay:'Batal', voidPayConfirm:'Batalkan bayaran ini? Baki invois akan dipulihkan dan jurnal berkaitan dibersihkan.',
+    methodCash:'Tunai', methodBank:'Pindahan Bank', methodOnline:'Perbankan Dalam Talian', methodCard:'Kad'
   } : {
     back:'Invoices', edit:'Edit', customer:'Customer', date:'Date', due:'Due Date',
     items:'Items', qty:'Qty', price:'Price', amount:'Amount', total:'Grand Total',
     paid:'Paid', balance:'Balance',
     unpaid:'Unpaid', partial:'Partial', paidFull:'Paid',
-    print:'Print'
+    print:'Print',
+    recordPayment:'Record Payment', payDate:'Payment Date', payAmount:'Amount', payMethod:'Method', save:'Save',
+    history:'Payment History', noPayments:'No payments yet',
+    voidPay:'Void', voidPayConfirm:'Void this payment? Invoice balance will be restored and related journals cleared.',
+    methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card'
   }
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
@@ -17489,6 +17513,25 @@ async function renderInvDetail(id) {
   const tn = await _pdocGetTenant()
   const companyAddr = _pdocAddressLine(tn)
   const isBm = APP.language==='bm'
+  const canRecordPayment = balance > 0.005 && inv.status !== 'cancelled'
+
+  // Payment history: payment_allocations -> payments, same manual-join style
+  // already used by _invClearPayments/_payVoid (no FK-embed guessing).
+  let paymentRows = []
+  try {
+    const {data: allocs} = await sb.from('payment_allocations').select('id,payment_id,amount')
+      .eq('invoice_id', id).eq('tenant_id', APP.tenant.id)
+    if(allocs && allocs.length) {
+      const paymentIds = [...new Set(allocs.map(a => a.payment_id).filter(Boolean))]
+      const {data: pays} = await sb.from('payments').select('id,payment_date,payment_method,ref_no')
+        .in('id', paymentIds).eq('tenant_id', APP.tenant.id)
+      paymentRows = allocs.map(a => {
+        const p = (pays||[]).find(x => String(x.id)===String(a.payment_id))
+        return { allocationId: a.id, paymentId: a.payment_id, amount: a.amount, payment_date: p?.payment_date, payment_method: p?.payment_method, ref_no: p?.ref_no }
+      }).sort((x,y) => new Date(y.payment_date||0) - new Date(x.payment_date||0))
+    }
+  } catch(e) { console.warn('invoice payment history', e) }
+  const methodLabel = m => ({cash:t.methodCash, bank_transfer:t.methodBank, online_banking:t.methodOnline, card:t.methodCard}[m]||m||'-')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
@@ -17501,6 +17544,7 @@ async function renderInvDetail(id) {
     <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     <button class="btn btn-outline btn-sm" onclick="_cnOpenForm('${id}')"><i class="ti ti-receipt-refund"></i> ${APP.language==='bm'?'Nota Kredit':'Credit Note'}</button>
+    ${canRecordPayment ? `<button class="btn btn-primary btn-sm" onclick="document.getElementById('inv-pay-section')?.scrollIntoView({behavior:'smooth',block:'start'})"><i class="ti ti-cash"></i> ${t.recordPayment}</button>` : ''}
   </div></div>
 
   <div class="pdoc" style="--pdoc-accent:#0E7490;max-width:820px;margin:0 auto 24px">
@@ -17559,6 +17603,42 @@ async function renderInvDetail(id) {
     </div>
     <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · NexERP</div>
+  </div>
+
+  ${canRecordPayment ? `
+  <div class="card no-print" id="inv-pay-section" style="max-width:820px;margin:0 auto 16px;padding:20px">
+    <div style="font-weight:600;margin-bottom:12px">${t.recordPayment}</div>
+    <div id="pay-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:flex-end">
+      <div class="form-group" style="margin:0"><label class="form-label">${t.payDate}</label><input id="pay-date" type="date" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.payAmount}</label><input id="pay-amount" type="number" step="0.01" class="form-input" value="${balance.toFixed(2)}"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.payMethod}</label>
+        <select id="pay-method" class="form-select">
+          <option value="cash">${t.methodCash}</option>
+          <option value="bank_transfer">${t.methodBank}</option>
+          <option value="online_banking">${t.methodOnline}</option>
+          <option value="card">${t.methodCard}</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="_paySave('${id}', ${balance})">${t.save}</button>
+    </div>
+  </div>` : ''}
+
+  <div class="card no-print" style="max-width:820px;margin:0 auto 16px">
+    <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
+    ${(!paymentRows||paymentRows.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
+    `<div style="overflow-x:auto"><table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th><th style="width:48px"></th></tr></thead>
+    <tbody>${paymentRows.map(p=>`<tr>
+      <td>${formatDate(p.payment_date)}</td>
+      <td style="text-align:right">${formatRM(p.amount)}</td>
+      <td>${methodLabel(p.payment_method)}</td>
+      <td style="text-align:center">
+        <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+          onclick="_payVoid('${id}','${p.allocationId}','${p.paymentId}',${Number(p.amount||0)})" title="${t.voidPay}">
+          <i class="ti ti-ban"></i>
+        </button>
+      </td>
+    </tr>`).join('')}</tbody></table></div>`}
   </div>`
 }
 
