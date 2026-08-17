@@ -20,7 +20,8 @@
 // to qwen/qwen3.6-27b) — kept out of code so it can be swapped without a
 // redeploy if Groq deprecates it, which has happened to every prior Groq
 // vision model on a roughly 3-4 month cadence. Every other action uses
-// CHAT_MODEL (text-only).
+// CHAT_MODEL (text-only), read from the GROQ_CHAT_MODEL secret the same
+// way (falls back to llama-3.3-70b-versatile).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -31,7 +32,8 @@ const CORS_HEADERS = {
 }
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const CHAT_MODEL = 'llama-3.3-70b-versatile'
+const DEFAULT_CHAT_MODEL = 'llama-3.3-70b-versatile'
+const CHAT_MODEL = Deno.env.get('GROQ_CHAT_MODEL') || DEFAULT_CHAT_MODEL
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -1772,6 +1774,7 @@ Deno.serve(async (req: Request) => {
       debug: {
         groq_api_key_set: !!Deno.env.get('GROQ_API_KEY'),
         groq_vision_model_secret: Deno.env.get('GROQ_VISION_MODEL') || `(not set — using default: ${DEFAULT_VISION_MODEL})`,
+        groq_chat_model_secret: Deno.env.get('GROQ_CHAT_MODEL') || `(not set — using default: ${DEFAULT_CHAT_MODEL})`,
       },
     }, 200)
   }
