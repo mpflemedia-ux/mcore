@@ -21795,9 +21795,42 @@ function _scTabsHtml(active) {
     { key:'leaderboard', en:'Leaderboard', bm:'Papan Pendahulu' },
     { key:'achievements', en:'Achievements', bm:'Pencapaian' },
   ]
-  return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
+  return `<div class="no-print" style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     ${tabs.map(t=>`<button class="btn btn-sm ${active===t.key?'btn-primary':'btn-outline'}" onclick="openPage('sales_commission',{view:'${t.key}'})">${isBm?t.bm:t.en}</button>`).join('')}
   </div>`
+}
+
+function _scToggleSort(tab, field) {
+  window._scSortState = window._scSortState || {}
+  const st = window._scSortState[tab] || (window._scSortState[tab] = { field:null, dir:'asc' })
+  if(st.field === field) st.dir = st.dir === 'asc' ? 'desc' : 'asc'
+  else { st.field = field; st.dir = 'asc' }
+  if(tab === 'rules') _scRenderRulesTable()
+  else if(tab === 'ledger') _scRenderLedgerTable()
+}
+
+function _scSortArrow(tab, field) {
+  const st = (window._scSortState && window._scSortState[tab]) || {}
+  if(st.field !== field) return ''
+  return st.dir === 'asc' ? ' ▲' : ' ▼'
+}
+
+function _scPrintTab(tab) {
+  const names = { rules:'SalesCommissionRules', ledger:'SalesCommissionLedger', leaderboard:'SalesCommissionLeaderboard', achievements:'SalesCommissionAchievements' }
+  const tenantSlug = _pdocSlug(APP.tenant?.name || '')
+  let periodSuffix = _pdocTimeStamp()
+  if(tab === 'ledger') {
+    const m = document.getElementById('sc-ledger-month')?.value, y = document.getElementById('sc-ledger-year')?.value
+    if(m && y) periodSuffix = `${y}${String(m).padStart(2,'0')}`
+  } else if(tab === 'leaderboard') {
+    const m = document.getElementById('sc-leaderboard-month')?.value, y = document.getElementById('sc-leaderboard-year')?.value
+    if(m && y) periodSuffix = `${y}${String(m).padStart(2,'0')}`
+  } else if(tab === 'achievements') {
+    const m = document.getElementById('sc-ach-month')?.value, y = document.getElementById('sc-ach-year')?.value
+    if(m || y) periodSuffix = `${y||'All'}${m?String(m).padStart(2,'0'):''}`
+  }
+  _pdocSetPrintFilename(`${names[tab]}_${tenantSlug}_${periodSuffix}`)
+  window.print()
 }
 
 async function _scRenderRules() {
@@ -21805,16 +21838,16 @@ async function _scRenderRules() {
   const t = isBm ? {
     title:'Komisyen Jualan', addRule:'Tambah Peraturan', salesPerson:'Sales Person', channel:'Saluran', product:'Produk',
     rate:'Kadar %', all:'— Semua —', save:'Simpan', cancel:'Batal', edit:'Edit', del:'Padam', noData:'Tiada peraturan komisyen lagi.',
-    retail:'Retail', event:'Event', platform:'Platform'
+    retail:'Retail', event:'Event', platform:'Platform', filter:'Tapis', apply:'Tapis', print:'Cetak'
   } : {
     title:'Sales Commission', addRule:'Add Rule', salesPerson:'Sales Person', channel:'Channel', product:'Product',
     rate:'Rate %', all:'— All —', save:'Save', cancel:'Cancel', edit:'Edit', del:'Delete', noData:'No commission rules yet.',
-    retail:'Retail', event:'Event', platform:'Platform'
+    retail:'Retail', event:'Event', platform:'Platform', filter:'Filter', apply:'Apply', print:'Print'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_scTabsHtml('rules')}
-  <div class="card" style="max-width:640px;padding:20px;margin-bottom:16px">
+  <div class="card no-print" style="max-width:640px;padding:20px;margin-bottom:16px">
     <div id="sc-rule-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
     <input type="hidden" id="sc-rule-id" value="">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
@@ -21834,6 +21867,20 @@ async function _scRenderRules() {
       <button class="btn btn-outline btn-sm" onclick="_scResetRuleForm()">${t.cancel}</button>
     </div>
   </div>
+  <div class="card no-print" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.salesPerson}</label>
+        <select id="sc-rules-filter-sp" class="form-select"><option value="">${t.all}</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.channel}</label>
+        <select id="sc-rules-filter-channel" class="form-select">
+          <option value="">${t.all}</option><option value="retail">${t.retail}</option><option value="event">${t.event}</option><option value="platform">${t.platform}</option>
+        </select></div>
+      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.product}</label>
+        <select id="sc-rules-filter-product" class="form-select"><option value="">${t.all}</option></select></div>
+      <button class="btn btn-primary btn-sm" onclick="_scLoadRulesList()">${t.apply}</button>
+      <button class="btn btn-outline btn-sm" onclick="_scPrintTab('rules')"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
+  </div>
   <div class="card"><div id="sc-rules-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const [emps, prods] = await Promise.all([
@@ -21842,33 +21889,69 @@ async function _scRenderRules() {
   ])
   window._scEmployees = emps
   window._scProducts = prods
+  const spOpts = emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')
+  const prodOpts = prods.map(p=>`<option value="${p.id}">${_aiEscapeHtml(prodName(p))}</option>`).join('')
   const spSel = document.getElementById('sc-rule-sp')
-  if(spSel) spSel.innerHTML += emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')
+  if(spSel) spSel.innerHTML += spOpts
   const prodSel = document.getElementById('sc-rule-product')
-  if(prodSel) prodSel.innerHTML += prods.map(p=>`<option value="${p.id}">${_aiEscapeHtml(prodName(p))}</option>`).join('')
+  if(prodSel) prodSel.innerHTML += prodOpts
+  const spFilterSel = document.getElementById('sc-rules-filter-sp')
+  if(spFilterSel) spFilterSel.innerHTML += spOpts
+  const prodFilterSel = document.getElementById('sc-rules-filter-product')
+  if(prodFilterSel) prodFilterSel.innerHTML += prodOpts
 
   await _scLoadRulesList()
 }
 
 async function _scLoadRulesList() {
-  const isBm = APP.language==='bm'
   const wrap = document.getElementById('sc-rules-wrap')
   if(!wrap) return
-  const t = isBm ? { sp:'Sales Person', channel:'Saluran', product:'Produk', rate:'Kadar', all:'Semua', edit:'Edit', del:'Padam', noData:'Tiada peraturan komisyen lagi.' }
-                 : { sp:'Sales Person', channel:'Channel', product:'Product', rate:'Rate', all:'All', edit:'Edit', del:'Delete', noData:'No commission rules yet.' }
-  const { data, error } = await sb.from('sales_commission_rules')
+  const isBm = APP.language==='bm'
+  const spId = document.getElementById('sc-rules-filter-sp')?.value || ''
+  const channel = document.getElementById('sc-rules-filter-channel')?.value || ''
+  const productId = document.getElementById('sc-rules-filter-product')?.value || ''
+  let q = sb.from('sales_commission_rules')
     .select('id,sales_person_id,channel,product_id,rate_percent,employees(name)')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('channel')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  if(spId) q = q.eq('sales_person_id', spId)
+  if(channel) q = q.eq('channel', channel)
+  if(productId) q = q.eq('product_id', productId)
+  const { data, error } = await q.order('channel')
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p></div>`; return }
-  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+  window._scRulesRaw = data || []
+  _scRenderRulesTable()
+}
+
+function _scRenderRulesTable() {
+  const wrap = document.getElementById('sc-rules-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const t = isBm ? { sp:'Sales Person', channel:'Saluran', product:'Produk', rate:'Kadar', all:'Semua', noData:'Tiada peraturan komisyen lagi.' }
+                 : { sp:'Sales Person', channel:'Channel', product:'Product', rate:'Rate', all:'All', noData:'No commission rules yet.' }
+  const data = (window._scRulesRaw || []).slice()
+  if(!data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   const prodName2 = (id) => { const p = (window._scProducts||[]).find(x=>String(x.id)===String(id)); return p ? prodName(p) : '' }
-  wrap.innerHTML = `<table><thead><tr><th>${t.sp}</th><th>${t.channel}</th><th>${t.product}</th><th style="text-align:right">${t.rate}</th><th></th></tr></thead>
+  const sortState = (window._scSortState && window._scSortState.rules) || {}
+  const sortKeyFn = { sp: r => r.sales_person_id ? (r.employees?.name||'') : '', channel: r => r.channel||'', rate: r => Number(r.rate_percent||0) }[sortState.field]
+  if(sortKeyFn) {
+    data.sort((a,b) => {
+      const av = sortKeyFn(a), bv = sortKeyFn(b)
+      const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv))
+      return sortState.dir === 'desc' ? -cmp : cmp
+    })
+  }
+  wrap.innerHTML = `<table><thead><tr>
+    <th style="cursor:pointer" onclick="_scToggleSort('rules','sp')">${t.sp}${_scSortArrow('rules','sp')}</th>
+    <th style="cursor:pointer" onclick="_scToggleSort('rules','channel')">${t.channel}${_scSortArrow('rules','channel')}</th>
+    <th>${t.product}</th>
+    <th style="text-align:right;cursor:pointer" onclick="_scToggleSort('rules','rate')">${t.rate}${_scSortArrow('rules','rate')}</th>
+    <th class="no-print"></th></tr></thead>
   <tbody>${data.map(r=>`<tr>
     <td>${r.sales_person_id ? _aiEscapeHtml(r.employees?.name||'') : `<span style="color:var(--text-3)">${t.all}</span>`}</td>
     <td style="text-transform:capitalize">${_aiEscapeHtml(r.channel)}</td>
     <td>${r.product_id ? _aiEscapeHtml(prodName2(r.product_id)) : `<span style="color:var(--text-3)">${t.all}</span>`}</td>
     <td style="text-align:right;font-weight:600">${Number(r.rate_percent).toFixed(2)}%</td>
-    <td style="white-space:nowrap">
+    <td class="no-print" style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_scEditRule('${r.id}')"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_scDeleteRule('${r.id}')"><i class="ti ti-trash"></i></button>
     </td>
@@ -21942,28 +22025,43 @@ async function _scRenderLedger() {
   // "this month" and the ledger would look empty right after a test sale.
   const defaultPeriod = _scNextPeriod(now.getMonth()+1, now.getFullYear())
   const t = isBm ? {
-    title:'Komisyen Jualan', sp:'Sales Person', month:'Bulan', year:'Tahun', apply:'Tapis',
-    date:'Tarikh', ref:'Rujukan', channel:'Saluran', product:'Produk', amount:'Jumlah Jualan',
-    rate:'Kadar', commission:'Komisyen', payout:'Tempoh Bayaran', status:'Status', noData:'Tiada rekod komisyen untuk penapis ini.'
+    title:'Komisyen Jualan', sp:'Sales Person', month:'Bulan', year:'Tahun', apply:'Tapis', print:'Cetak',
+    channel:'Saluran', product:'Produk', all:'Semua',
+    date:'Tarikh', ref:'Rujukan', amount:'Jumlah Jualan',
+    rate:'Kadar', commission:'Komisyen', payout:'Tempoh Bayaran', status:'Status', noData:'Tiada rekod komisyen untuk penapis ini.',
+    retail:'Retail', event:'Event', platform:'Platform'
   } : {
-    title:'Sales Commission', sp:'Sales Person', month:'Month', year:'Year', apply:'Apply',
-    date:'Date', ref:'Ref', channel:'Channel', product:'Product', amount:'Sale Amount',
-    rate:'Rate', commission:'Commission', payout:'Payout Period', status:'Status', noData:'No commission records for this filter.'
+    title:'Sales Commission', sp:'Sales Person', month:'Month', year:'Year', apply:'Apply', print:'Print',
+    channel:'Channel', product:'Product', all:'All',
+    date:'Date', ref:'Ref', amount:'Sale Amount',
+    rate:'Rate', commission:'Commission', payout:'Payout Period', status:'Status', noData:'No commission records for this filter.',
+    retail:'Retail', event:'Event', platform:'Platform'
   }
-  const emps = await _scLoadEmployees()
+  const [emps, prods] = await Promise.all([
+    _scLoadEmployees(),
+    sb.from('products').select('id,name_en,name_bm').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en').then(r=>r.data||[])
+  ])
   window._scEmployees = emps
+  window._scProducts = prods
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_scTabsHtml('ledger')}
-  <div class="card" style="padding:16px;margin-bottom:16px">
+  <div class="card no-print" style="padding:16px;margin-bottom:16px">
     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
       <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.sp}</label>
-        <select id="sc-ledger-sp" class="form-select"><option value="">${isBm?'Semua':'All'}</option>${emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}</select></div>
+        <select id="sc-ledger-sp" class="form-select"><option value="">${t.all}</option>${emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.channel}</label>
+        <select id="sc-ledger-channel" class="form-select">
+          <option value="">${t.all}</option><option value="retail">${t.retail}</option><option value="event">${t.event}</option><option value="platform">${t.platform}</option>
+        </select></div>
+      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.product}</label>
+        <select id="sc-ledger-product" class="form-select"><option value="">${t.all}</option>${prods.map(p=>`<option value="${p.id}">${_aiEscapeHtml(prodName(p))}</option>`).join('')}</select></div>
       <div class="form-group" style="margin:0"><label class="form-label">${t.month}</label>
         <select id="sc-ledger-month" class="form-select">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===defaultPeriod.month?'selected':''}>${i+1}</option>`).join('')}</select></div>
       <div class="form-group" style="margin:0"><label class="form-label">${t.year}</label>
         <input id="sc-ledger-year" type="number" class="form-input" style="width:100px" value="${defaultPeriod.year}"></div>
       <button class="btn btn-primary btn-sm" onclick="_scLoadLedger()">${t.apply}</button>
+      <button class="btn btn-outline btn-sm" onclick="_scPrintTab('ledger')"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
   <div class="card"><div id="sc-ledger-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
@@ -21971,25 +22069,55 @@ async function _scRenderLedger() {
 }
 
 async function _scLoadLedger() {
-  const isBm = APP.language==='bm'
   const wrap = document.getElementById('sc-ledger-wrap')
   if(!wrap) return
-  const t = isBm ? { sp:'Sales Person', date:'Tarikh', channel:'Saluran', product:'Produk', amount:'Jumlah Jualan', rate:'Kadar', commission:'Komisyen', payout:'Bayaran', status:'Status', noData:'Tiada rekod komisyen untuk penapis ini.' }
-                 : { sp:'Sales Person', date:'Date', channel:'Channel', product:'Product', amount:'Sale Amount', rate:'Rate', commission:'Commission', payout:'Payout', status:'Status', noData:'No commission records for this filter.' }
+  const isBm = APP.language==='bm'
   const spId = document.getElementById('sc-ledger-sp')?.value || ''
+  const channel = document.getElementById('sc-ledger-channel')?.value || ''
+  const productId = document.getElementById('sc-ledger-product')?.value || ''
   const month = Number(document.getElementById('sc-ledger-month')?.value)
   const year = Number(document.getElementById('sc-ledger-year')?.value)
   let q = sb.from('sales_commissions').select('id,created_at,channel,product_id,sale_amount,rate_applied,commission_amount,payout_month,payout_year,sales_person_id,employees(name)')
     .eq('tenant_id', APP.tenant.id).eq('payout_month', month).eq('payout_year', year).is('deleted_at', null)
   if(spId) q = q.eq('sales_person_id', spId)
+  if(channel) q = q.eq('channel', channel)
+  if(productId) q = q.eq('product_id', productId)
   const { data, error } = await q.order('created_at', {ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p></div>`; return }
-  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
+  window._scLedgerRaw = data || []
+  _scRenderLedgerTable()
+}
+
+function _scRenderLedgerTable() {
+  const wrap = document.getElementById('sc-ledger-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const t = isBm ? { sp:'Sales Person', date:'Tarikh', channel:'Saluran', product:'Produk', amount:'Jumlah Jualan', rate:'Kadar', commission:'Komisyen', payout:'Bayaran', status:'Status', noData:'Tiada rekod komisyen untuk penapis ini.' }
+                 : { sp:'Sales Person', date:'Date', channel:'Channel', product:'Product', amount:'Sale Amount', rate:'Rate', commission:'Commission', payout:'Payout', status:'Status', noData:'No commission records for this filter.' }
+  const data = (window._scLedgerRaw || []).slice()
+  if(!data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   const prodName2 = (id) => { const p = (window._scProducts||[]).find(x=>String(x.id)===String(id)); return p ? prodName(p) : '-' }
+  const sortState = (window._scSortState && window._scSortState.ledger) || {}
+  const sortKeyFn = {
+    date: r => new Date(r.created_at).getTime(),
+    amount: r => Number(r.sale_amount||0),
+    rate: r => Number(r.rate_applied||0),
+    commission: r => Number(r.commission_amount||0),
+  }[sortState.field]
+  if(sortKeyFn) {
+    data.sort((a,b) => {
+      const cmp = sortKeyFn(a) - sortKeyFn(b)
+      return sortState.dir === 'desc' ? -cmp : cmp
+    })
+  }
   wrap.innerHTML = `<table><thead><tr>
-    <th>${t.sp}</th><th>${t.date}</th><th>${t.channel}</th><th>${t.product}</th>
-    <th style="text-align:right">${t.amount}</th><th style="text-align:right">${t.rate}</th>
-    <th style="text-align:right">${t.commission}</th><th>${t.payout}</th><th>${t.status}</th>
+    <th>${t.sp}</th>
+    <th style="cursor:pointer" onclick="_scToggleSort('ledger','date')">${t.date}${_scSortArrow('ledger','date')}</th>
+    <th>${t.channel}</th><th>${t.product}</th>
+    <th style="text-align:right;cursor:pointer" onclick="_scToggleSort('ledger','amount')">${t.amount}${_scSortArrow('ledger','amount')}</th>
+    <th style="text-align:right;cursor:pointer" onclick="_scToggleSort('ledger','rate')">${t.rate}${_scSortArrow('ledger','rate')}</th>
+    <th style="text-align:right;cursor:pointer" onclick="_scToggleSort('ledger','commission')">${t.commission}${_scSortArrow('ledger','commission')}</th>
+    <th>${t.payout}</th><th>${t.status}</th>
   </tr></thead><tbody>${data.map(r=>`<tr>
     <td>${_aiEscapeHtml(r.employees?.name||'-')}</td>
     <td>${formatDate(r.created_at)}</td>
@@ -22006,26 +22134,71 @@ async function _scLoadLedger() {
 async function _scRenderLeaderboard() {
   const isBm = APP.language==='bm'
   const now = new Date()
-  const month = now.getMonth()+1, year = now.getFullYear()
-  const t = isBm ? { title:'Komisyen Jualan', sub:'Papan pendahulu bulan ini', noData:'Tiada komisyen direkod bulan ini lagi.', toNext:'ke tahap seterusnya' }
-                 : { title:'Sales Commission', sub:"This month's leaderboard", noData:'No commission recorded this month yet.', toNext:'to next tier' }
+  const t = isBm ? {
+    title:'Komisyen Jualan', sub:'Papan pendahulu', noData:'Tiada komisyen direkod untuk tempoh ini.', toNext:'ke tahap seterusnya',
+    month:'Bulan', year:'Tahun', apply:'Tapis', print:'Cetak', byCommission:'Jumlah Komisyen', bySales:'Jumlah Jualan'
+  } : {
+    title:'Sales Commission', sub:'Leaderboard', noData:'No commission recorded for this period.', toNext:'to next tier',
+    month:'Month', year:'Year', apply:'Apply', print:'Print', byCommission:'Commission Total', bySales:'Sale Count'
+  }
+  window._scSortState = window._scSortState || {}
+  if(!window._scSortState.leaderboard) window._scSortState.leaderboard = { field:'total' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_scTabsHtml('leaderboard')}
-  <div class="card" style="padding:0"><div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600">${t.sub} — ${_pdocMonthYearLabel(month,year,isBm)}</div>
+  <div class="card no-print" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0"><label class="form-label">${t.month}</label>
+        <select id="sc-leaderboard-month" class="form-select">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===now.getMonth()+1?'selected':''}>${i+1}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.year}</label>
+        <input id="sc-leaderboard-year" type="number" class="form-input" style="width:100px" value="${now.getFullYear()}"></div>
+      <button class="btn btn-primary btn-sm" onclick="_scLoadLeaderboard()">${t.apply}</button>
+      <div style="display:flex;gap:4px;margin-left:auto">
+        <button id="sc-lb-sort-total" class="btn btn-sm btn-primary" onclick="_scSetLeaderboardSort('total')">${t.byCommission}</button>
+        <button id="sc-lb-sort-count" class="btn btn-sm btn-outline" onclick="_scSetLeaderboardSort('count')">${t.bySales}</button>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="_scPrintTab('leaderboard')"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
+  </div>
+  <div class="card" style="padding:0"><div id="sc-leaderboard-header" style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600"></div>
   <div id="sc-leaderboard-wrap" style="padding:8px 0"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  await _scLoadLeaderboard()
+}
 
+function _scSetLeaderboardSort(field) {
+  window._scSortState = window._scSortState || {}
+  window._scSortState.leaderboard = { field }
+  _scRenderLeaderboardList()
+}
+
+async function _scLoadLeaderboard() {
+  const isBm = APP.language==='bm'
+  const month = Number(document.getElementById('sc-leaderboard-month')?.value)
+  const year = Number(document.getElementById('sc-leaderboard-year')?.value)
+  const headerEl = document.getElementById('sc-leaderboard-header')
+  if(headerEl) headerEl.textContent = (isBm?'Papan pendahulu':'Leaderboard') + ' — ' + _pdocMonthYearLabel(month, year, isBm)
   const emps = await _scLoadEmployees()
   const tiers = _scTiers()
   const rows = await Promise.all(emps.map(async e => {
-    const { total, count } = await _scCommissionTotal(e.id, month, year, 'earned')
-    return { id: e.id, name: e.name, total, count, tier: _scTierForTotal(total, tiers) }
+    const { total, count, saleCount } = await _scCommissionTotal(e.id, month, year, 'earned')
+    return { id: e.id, name: e.name, total, count, saleCount: saleCount != null ? saleCount : count, tier: _scTierForTotal(total, tiers) }
   }))
-  const ranked = rows.filter(r=>r.total>0).sort((a,b)=>b.total-a.total)
+  window._scLeaderboardRaw = rows.filter(r=>r.total>0)
+  _scRenderLeaderboardList()
+}
+
+function _scRenderLeaderboardList() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { noData:'Tiada komisyen direkod untuk tempoh ini.', toNext:'ke tahap seterusnya' }
+                 : { noData:'No commission recorded for this period.', toNext:'to next tier' }
   const wrap = document.getElementById('sc-leaderboard-wrap')
   if(!wrap) return
+  const sortState = (window._scSortState && window._scSortState.leaderboard) || { field:'total' }
+  const keyFn = sortState.field === 'count' ? (r=>r.saleCount) : (r=>r.total)
+  const ranked = (window._scLeaderboardRaw || []).slice().sort((a,b) => keyFn(b) - keyFn(a))
   if(!ranked.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   const tierOrder = ['bronze','silver','gold','platinum']
+  const tiers = _scTiers()
   wrap.innerHTML = ranked.map((r,i) => {
     const nextTier = tierOrder[tierOrder.indexOf(r.tier)+1]
     const nextThreshold = nextTier ? tiers[nextTier] : null
@@ -22043,32 +22216,90 @@ async function _scRenderLeaderboard() {
       <div style="font-weight:700;font-family:'Space Grotesk',sans-serif;font-size:15px;color:var(--primary)">${formatRM(r.total)}</div>
     </div>`
   }).join('')
+  const bTotal = document.getElementById('sc-lb-sort-total'), bCount = document.getElementById('sc-lb-sort-count')
+  if(bTotal) bTotal.className = 'btn btn-sm ' + (sortState.field==='total' ? 'btn-primary' : 'btn-outline')
+  if(bCount) bCount.className = 'btn btn-sm ' + (sortState.field==='count' ? 'btn-primary' : 'btn-outline')
 }
 
 async function _scRenderAchievements() {
   const isBm = APP.language==='bm'
-  const t = isBm ? { title:'Komisyen Jualan', sub:'Lencana dibuka', noData:'Tiada lencana dibuka lagi.' }
-                 : { title:'Sales Commission', sub:'Unlocked badges', noData:'No badges unlocked yet.' }
+  const t = isBm ? {
+    title:'Komisyen Jualan', sub:'Lencana dibuka', noData:'Tiada lencana dibuka lagi.', sp:'Sales Person', month:'Bulan', year:'Tahun', all:'Semua',
+    apply:'Tapis', print:'Cetak', byDate:'Tarikh Dibuka', byName:'Nama'
+  } : {
+    title:'Sales Commission', sub:'Unlocked badges', noData:'No badges unlocked yet.', sp:'Sales Person', month:'Month', year:'Year', all:'All',
+    apply:'Apply', print:'Print', byDate:'Unlock Date', byName:'Name'
+  }
+  const emps = await _scLoadEmployees()
+  window._scEmployees = emps
+  window._scSortState = window._scSortState || {}
+  if(!window._scSortState.achievements) window._scSortState.achievements = { field:'date' }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_scTabsHtml('achievements')}
+  <div class="card no-print" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.sp}</label>
+        <select id="sc-ach-sp" class="form-select"><option value="">${t.all}</option>${emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.month}</label>
+        <select id="sc-ach-month" class="form-select"><option value="">${t.all}</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.year}</label>
+        <input id="sc-ach-year" type="number" class="form-input" style="width:100px" placeholder="${t.all}"></div>
+      <button class="btn btn-primary btn-sm" onclick="_scLoadAchievements()">${t.apply}</button>
+      <div style="display:flex;gap:4px;margin-left:auto">
+        <button id="sc-ach-sort-date" class="btn btn-sm btn-primary" onclick="_scSetAchievementsSort('date')">${t.byDate}</button>
+        <button id="sc-ach-sort-name" class="btn btn-sm btn-outline" onclick="_scSetAchievementsSort('name')">${t.byName}</button>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="_scPrintTab('achievements')"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
+  </div>
   <div class="card" style="padding:0"><div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600">${t.sub}</div>
   <div id="sc-achievements-wrap" style="padding:16px 20px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  await _scLoadAchievements()
+}
 
-  const { data, error } = await sb.from('sales_achievements')
-    .select('sales_person_id,badge_key,period_month,period_year,unlocked_at,employees(name)')
-    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('unlocked_at', {ascending:false})
+function _scSetAchievementsSort(field) {
+  window._scSortState = window._scSortState || {}
+  window._scSortState.achievements = { field }
+  _scRenderAchievementsList()
+}
+
+async function _scLoadAchievements() {
   const wrap = document.getElementById('sc-achievements-wrap')
   if(!wrap) return
+  const spId = document.getElementById('sc-ach-sp')?.value || ''
+  const month = document.getElementById('sc-ach-month')?.value || ''
+  const year = document.getElementById('sc-ach-year')?.value || ''
+  let q = sb.from('sales_achievements')
+    .select('sales_person_id,badge_key,period_month,period_year,unlocked_at,employees(name)')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  if(spId) q = q.eq('sales_person_id', spId)
+  if(month) q = q.eq('period_month', Number(month))
+  if(year) q = q.eq('period_year', Number(year))
+  const { data, error } = await q.order('unlocked_at', {ascending:false})
   if(error) { wrap.innerHTML = `<p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p>`; return }
-  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:24px"><p>${t.noData}</p></div>`; return }
+  window._scAchievementsRaw = data || []
+  _scRenderAchievementsList()
+}
+
+function _scRenderAchievementsList() {
+  const isBm = APP.language==='bm'
+  const t = isBm ? { noData:'Tiada lencana dibuka lagi.' } : { noData:'No badges unlocked yet.' }
+  const wrap = document.getElementById('sc-achievements-wrap')
+  if(!wrap) return
+  const data = (window._scAchievementsRaw || []).slice()
+  if(!data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:24px"><p>${t.noData}</p></div>`; return }
+  const sortState = (window._scSortState && window._scSortState.achievements) || { field:'date' }
+  if(sortState.field === 'date') data.sort((a,b) => new Date(b.unlocked_at) - new Date(a.unlocked_at))
+  else data.sort((a,b) => (a.employees?.name||'').localeCompare(b.employees?.name||''))
   const byPerson = {}
+  const order = []
   data.forEach(a => {
     const name = a.employees?.name || '-'
-    if(!byPerson[name]) byPerson[name] = []
+    if(!byPerson[name]) { byPerson[name] = []; order.push(name) }
     byPerson[name].push(a)
   })
-  wrap.innerHTML = Object.keys(byPerson).map(name => `
+  wrap.innerHTML = order.map(name => `
     <div style="margin-bottom:16px">
       <div style="font-weight:600;margin-bottom:8px">${_aiEscapeHtml(name)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -22077,6 +22308,9 @@ async function _scRenderAchievements() {
         </span>`).join('')}
       </div>
     </div>`).join('')
+  const bDate = document.getElementById('sc-ach-sort-date'), bName = document.getElementById('sc-ach-sort-name')
+  if(bDate) bDate.className = 'btn btn-sm ' + (sortState.field==='date' ? 'btn-primary' : 'btn-outline')
+  if(bName) bName.className = 'btn btn-sm ' + (sortState.field==='name' ? 'btn-primary' : 'btn-outline')
 }
 
 async function renderMyPayslips(params={}) {
