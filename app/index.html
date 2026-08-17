@@ -532,13 +532,14 @@ html[data-skip-intro="1"] #intro-skip {
 .db-hero-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 @media (max-width:900px){.db-hero-row{grid-template-columns:1fr}}
 .db-ops-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
+.db-ops-row.db-ops-row-3{grid-template-columns:1fr 1fr 1fr}
 .db-ops-row > .db-card{display:flex;flex-direction:column;min-height:0}
 .db-ops-row .db-chart-slot{position:relative;flex:1;min-height:220px;width:100%}
 .db-ops-row .db-card-foot{font-size:11px;color:var(--db-text4);margin-top:6px;line-height:1.35}
 .db-ai-insight{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(14,116,144,.1);border:1px solid rgba(14,116,144,.28);font-size:11.5px;line-height:1.45;color:var(--db-text2,#cbd5e1)}
 .db-ai-insight strong{color:var(--primary,#0E7490);font-weight:700}
 .db-ai-insight .db-ai-tag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#5eead4;margin-bottom:4px}
-@media (max-width:900px){.db-ops-row{grid-template-columns:1fr}}
+@media (max-width:900px){.db-ops-row{grid-template-columns:1fr}.db-ops-row.db-ops-row-3{grid-template-columns:1fr}}
 .db-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .db-mini-table{width:100%;border-collapse:collapse;font-size:12px}
 .db-mini-table th{text-align:left;padding:8px 6px;color:var(--db-text4);font-weight:600;border-bottom:1px solid var(--db-border);white-space:nowrap}
@@ -4057,8 +4058,8 @@ function renderDashboard() {
       </div>
     </div>
 
-    <!-- P&L bars + Top customers -->
-    <div class="db-ops-row">
+    <!-- P&L bars + Top customers + Top sales person -->
+    <div class="db-ops-row db-ops-row-3">
       <div class="db-card db-card-glow" id="db-sec-pnl">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Hasil vs Perbelanjaan (6 bulan)':'Revenue vs Expenses (6 mo)'}</div>
         <div class="db-chart-slot">
@@ -4074,6 +4075,16 @@ function renderDashboard() {
         </div>
         <div id="db-top-customers" class="db-card-foot" style="display:none"></div>
         <div class="db-card-foot">${isBm?'Top 5 mengikut paid_amt tempoh semasa':'Top 5 by paid_amt this period'}</div>
+      </div>
+      <div class="db-card" id="db-sec-topsp">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-award"></i> ${isBm?'Sales Person Teratas':'Top Sales Person'}</div>
+        <div class="db-chart-slot">
+          <canvas id="db-topsp-chart"></canvas>
+        </div>
+        <div id="db-topsp-fallback" class="db-card-foot" style="display:none"></div>
+        <div id="db-topsp-move" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        <div class="db-card-foot">${isBm?'Top 5 mengikut komisyen tempoh semasa (earned)':'Top 5 by commission this period (earned)'}</div>
+        <div class="db-ai-insight" id="db-ai-topsp"><span class="db-ai-tag">AI</span> …</div>
       </div>
     </div>
 
@@ -4662,6 +4673,11 @@ async function loadDashboardData() {
       _attScore = { score: n ? _dbClampScore(sum / n) : 70, present, late, halfDay, onLeave, outstation, absent, total: n, employees: _aEmpList.length, worstEmployee: _worst }
     }
   } catch(e) { console.warn('att score', e) }
+
+  // Top Sales Person chart + ctx — awaited and run BEFORE the first
+  // _dbFillCardInsights() call below, so its ctx.topsp is never racing an
+  // earlier fill that would cache a stale "no data" fallback for the slot.
+  try { await _dbRenderTopSalesPerson() } catch(e) { console.warn('top sales person', e) }
 
   // Zone Power + Business Health scores (tenant-scoped, no extra schema)
   let _stockScore = 70
@@ -5890,6 +5906,18 @@ function _dbInsightFallbackBody(card, ctx, isBm) {
       ? `Hasil ${fmt(rev)}, belanja ${fmt(exp)}, net ${fmt(net)} — expenses ate. Review chunky expense lines + journal sales.`
       : `Revenue ${fmt(rev)}, expenses ${fmt(exp)}, net ${fmt(net)} — expenses ate. Review chunky expense lines + journal sales.`
   }
+  if(card === 'topsp') {
+    const sp = ctx.topsp
+    if(!sp || !sp.name) {
+      return isBm
+        ? 'Tiada komisyen direkod tempoh ini lagi. Rekod jualan dengan sales person supaya papan pendahulu ada data.'
+        : 'No commission recorded this period yet. Log a sale with a sales person attached to populate the leaderboard.'
+    }
+    const dirWord = sp.direction === 'up' ? (isBm?'naik':'up') : sp.direction === 'down' ? (isBm?'turun':'down') : sp.direction === 'new' ? (isBm?'entri baharu':'a new entry') : (isBm?'stabil':'steady')
+    return isBm
+      ? `${sp.name} ketua carta komisyen dengan ${fmt(sp.commission)} tempoh ni (${dirWord} berbanding tempoh lepas), unggul ${fmt(sp.gapToSecond)} depan #2. Kekalkan momentum — shoutout kecil pun boleh sambung streak.`
+      : `${sp.name} is topping the commission board with ${fmt(sp.commission)} this period (${dirWord} vs last period), leading #2 by ${fmt(sp.gapToSecond)}. Keep the momentum going — even a small shoutout can extend the streak.`
+  }
   return isBm ? 'Data masih loading…' : 'Still loading data…'
 }
 
@@ -5939,6 +5967,20 @@ function _dbInsightFacts(card, ctx) {
       flagged_employee: (w && w.name) ? { name: w.name, absent_days: w.absent, late_days: w.late } : null,
       impact: negative ? 'negative' : (((a.present||0)+(a.outstation||0)) > 0 ? 'positive' : 'neutral'),
       period: ctx.periodLabel || null
+    }
+  }
+  if(card === 'topsp') {
+    const sp = ctx.topsp
+    if(!sp) return { card: 'top_sales_person', has_data: false, period: ctx.periodLabel || null }
+    return {
+      card: 'top_sales_person',
+      has_data: true,
+      name: sp.name,
+      commission_this_period: Number(sp.commission||0),
+      commission_prior_period: Number(sp.prevCommission||0),
+      direction: sp.direction,
+      gap_to_second_place: Number(sp.gapToSecond||0),
+      period: sp.period || ctx.periodLabel || null
     }
   }
   return { card }
@@ -5996,7 +6038,8 @@ async function _dbFillCardInsights(ctx) {
     { id: 'db-ai-zone', key: 'zone', titleIdx: 3 },
     { id: 'db-ai-health', key: 'health', titleIdx: 4 },
     { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 },
-    { id: 'db-ai-attendance', key: 'attendance', titleIdx: 1 }
+    { id: 'db-ai-attendance', key: 'attendance', titleIdx: 1 },
+    { id: 'db-ai-topsp', key: 'topsp', titleIdx: 7 }
   ]
 
   const paint = (bodies) => {
@@ -6473,6 +6516,131 @@ function _dbRenderTopCustomers(eligibleMonth) {
   })
 }
 
+async function _dbRenderTopSalesPerson() {
+  // Top 5 by earned commission this period — horizontal bar chart (same
+  // Chart.js shape as _dbRenderTopCustomers, since this is a ranking
+  // snapshot, not a time trend). Also compares each top-5 person's rank
+  // against the previous period to show ▲/▼/– movement badges.
+  const isBm = APP.language === 'bm'
+  try {
+    const canvas = document.getElementById('db-topsp-chart')
+    const fallback = document.getElementById('db-topsp-fallback')
+    const moveWrap = document.getElementById('db-topsp-move')
+    if(moveWrap) moveWrap.innerHTML = ''
+    if(!canvas || typeof Chart === 'undefined') {
+      if(fallback) fallback.style.display = 'block'
+      return
+    }
+    const now = new Date()
+    const curMonth = now.getMonth() + 1, curYear = now.getFullYear()
+    const prevMonth = curMonth === 1 ? 12 : curMonth - 1
+    const prevYear = curMonth === 1 ? curYear - 1 : curYear
+
+    const emps = await _scLoadEmployees()
+    _dbDestroy('topSP', canvas)
+
+    const showEmpty = () => {
+      if(fallback) { fallback.style.display = 'block'; fallback.textContent = isBm ? 'Tiada komisyen direkod tempoh ini' : 'No commission recorded this period' }
+      window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, { topsp: null })
+    }
+    if(!emps || !emps.length) { showEmpty(); return }
+
+    const [curRows, prevRows] = await Promise.all([
+      Promise.all(emps.map(async e => { const r = await _scCommissionTotal(e.id, curMonth, curYear, 'earned'); return { id: e.id, name: e.name, total: r.total } })),
+      Promise.all(emps.map(async e => { const r = await _scCommissionTotal(e.id, prevMonth, prevYear, 'earned'); return { id: e.id, name: e.name, total: r.total } })),
+    ])
+    const curRanked = curRows.filter(r => r.total > 0).sort((a, b) => b.total - a.total)
+    if(!curRanked.length) { showEmpty(); return }
+    if(fallback) { fallback.style.display = 'none'; fallback.textContent = '' }
+
+    const prevRankById = {}, prevTotalById = {}
+    prevRows.filter(r => r.total > 0).sort((a, b) => b.total - a.total).forEach((r, i) => { prevRankById[r.id] = i })
+    prevRows.forEach(r => { prevTotalById[r.id] = r.total })
+
+    const top = curRanked.slice(0, 5)
+    const labels = top.map(r => (r.name.length > 18 ? r.name.slice(0, 16) + '…' : r.name)).reverse()
+    const data = top.map(r => Math.round(Number(r.total) * 100) / 100).reverse()
+    const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+    const tick = _dbChartTickColor()
+    window._dbCharts = window._dbCharts || {}
+    window._dbCharts.topSP = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: isBm ? 'Komisyen' : 'Commission',
+          data,
+          backgroundColor: primary,
+          borderRadius: 6,
+          maxBarThickness: 22
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (x) => {
+                const v = Number(x.raw || 0)
+                return (isBm ? 'Komisyen: ' : 'Commission: ') + (typeof formatRM === 'function' ? formatRM(v) : ('RM ' + v.toFixed(2)))
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: tick,
+              font: { size: 10 },
+              callback: (v) => (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v)
+            },
+            grid: { color: 'rgba(148,163,184,.12)' }
+          },
+          y: {
+            ticks: { color: tick, font: { size: 11, weight: '600' } },
+            grid: { display: false }
+          }
+        }
+      }
+    })
+
+    // Rank-movement badges vs previous period — NEW if no previous data at all.
+    if(moveWrap) {
+      moveWrap.innerHTML = top.map((r, curRank) => {
+        const hasPrev = Object.prototype.hasOwnProperty.call(prevRankById, r.id)
+        const prevRank = hasPrev ? prevRankById[r.id] : null
+        let cls, icon, label
+        if(!hasPrev) { cls = 'neutral'; icon = 'ti-sparkles'; label = isBm ? 'BAHARU' : 'NEW' }
+        else if(curRank < prevRank) { cls = 'up'; icon = 'ti-trending-up'; label = '+' + (prevRank - curRank) }
+        else if(curRank > prevRank) { cls = 'down'; icon = 'ti-trending-down'; label = '-' + (curRank - prevRank) }
+        else { cls = 'neutral'; icon = 'ti-minus'; label = isBm ? 'Sama' : 'Same' }
+        const shortName = r.name.length > 12 ? r.name.slice(0, 10) + '…' : r.name
+        return `<span class="db-kpi-pill ${cls}" style="font-size:10px"><i class="ti ${icon}"></i> ${_aiEscapeHtml(shortName)} ${label}</span>`
+      }).join('')
+    }
+
+    // AI insight context: leader's own commission trend vs their prior period + gap to #2.
+    const leader = top[0]
+    const leaderPrevTotal = Number(prevTotalById[leader.id] || 0)
+    const direction = leaderPrevTotal === 0 ? 'new' : (leader.total > leaderPrevTotal ? 'up' : (leader.total < leaderPrevTotal ? 'down' : 'same'))
+    const gapToSecond = top.length > 1 ? Math.max(0, leader.total - top[1].total) : leader.total
+    window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
+      topsp: {
+        name: leader.name,
+        commission: leader.total,
+        prevCommission: leaderPrevTotal,
+        direction,
+        gapToSecond,
+        period: isBm ? 'bulan ini' : 'this month'
+      }
+    })
+  } catch(e) {
+    console.warn('top sales person', e)
+  }
+}
 
 function _dbRenderOverdueTable(list) {
   const isBm = APP.language==='bm'
