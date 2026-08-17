@@ -3815,6 +3815,20 @@ async function loadUserSession(user, opts={}) {
         }
       } catch(e) { console.warn('tenant fetch', e) }
     }
+    // Suspended tenant (platform_admin -> suspend_tenant RPC, sets is_active
+    // false) — block entry before the shell ever shows, don't just hide
+    // features once inside. Checked here (not earlier) so it only fires
+    // once profile.tenants is actually populated from one of the two
+    // branches above; is_active===false specifically (not falsy) since a
+    // legacy/missing value on this column must not be treated as suspended.
+    if(profile.tenants && profile.tenants.is_active === false) {
+      await sb.auth.signOut()
+      _sessionLoadPromise = null
+      _sessionLoadUserId = null
+      showAuthPage()
+      showToast(APP.language==='bm' ? 'Akaun anda digantung. Sila hubungi sokongan.' : 'Your account is suspended, contact support.', 'error')
+      return
+    }
     if(APP.tenant.id) {
       try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
     }
@@ -6963,6 +6977,7 @@ function renderAdmin(params={}) {
   }
   if(params.view==='tenant' && params.id) { renderAdminTenantDetail(params.id); return }
   if(params.view==='clients' && isPlatformAdmin()) { renderAdminClients(); return }
+  if(params.view==='audit' && isPlatformAdmin()) { renderAdminAuditLog(); return }
   renderAdminTeam()
 }
 
@@ -6972,7 +6987,59 @@ function _adminTabs(active) {
   return `<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='team'?'btn-primary':'btn-outline'}" onclick="openPage('admin')"><i class="ti ti-users"></i> ${isBm?'Pasukan':'Team'}</button>
     ${platform ? `<button class="btn btn-sm ${active==='clients'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'clients'})"><i class="ti ti-building-skyscraper"></i> ${isBm?'Semua Client':'All Clients'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='audit'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'audit'})"><i class="ti ti-history"></i> ${isBm?'Log Audit':'Audit Log'}</button>` : ''}
   </div>`
+}
+
+async function renderAdminAuditLog() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Admin — Log Audit', sub:'Tindakan platform_admin ke atas tenant (gantung/aktifkan semula)',
+    actor:'Pelaku', action:'Tindakan', target:'Tenant Sasaran', when:'Bila', noData:'Tiada log lagi.',
+    suspend:'Gantung', reactivate:'Aktifkan Semula',
+  } : {
+    title:'Admin — Audit Log', sub:'platform_admin actions on tenants (suspend/reactivate)',
+    actor:'Actor', action:'Action', target:'Target Tenant', when:'When', noData:'No audit entries yet.',
+    suspend:'Suspend', reactivate:'Reactivate',
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('audit')}
+  <div class="card"><div id="admin-audit-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  const wrap = document.getElementById('admin-audit-wrap')
+  const { data, error } = await sb.from('platform_admin_audit')
+    .select('id,actor_email,action,target_tenant_name,created_at')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if(error) {
+    wrap.innerHTML = `<div style="padding:24px"><p style="color:var(--danger)"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p></div>`
+    return
+  }
+  if(!data || !data.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
+    return
+  }
+
+  const actionLabel = a => a==='suspend_tenant' ? t.suspend : a==='reactivate_tenant' ? t.reactivate : a
+  const actionColor = a => a==='suspend_tenant' ? 'var(--danger)' : 'var(--success)'
+
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.actor}</th><th>${t.action}</th><th>${t.target}</th><th>${t.when}</th>
+  </tr></thead><tbody>
+  ${data.map(r => `<tr>
+    <td>${_aiEscapeHtml(r.actor_email||'-')}</td>
+    <td style="color:${actionColor(r.action)}">${_aiEscapeHtml(actionLabel(r.action))}</td>
+    <td>${_aiEscapeHtml(r.target_tenant_name||'-')}</td>
+    <td style="font-size:12px;color:var(--text-3)">${r.created_at?new Date(r.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
+  </tr>`).join('')}
+  </tbody></table>`
 }
 
 async function renderAdminTeam() {
@@ -7350,31 +7417,24 @@ async function renderAdminClients() {
 
   const wrap = document.getElementById('admin-clients-wrap')
   const {data, error} = await sb.from('tenants')
-    .select('id,code,name,plan,status,onboarding_completed,created_at')
+    .select('id,code,name,plan,is_active,onboarding_completed,created_at')
     .order('created_at', {ascending:false})
 
   if(error) {
     wrap.innerHTML = `<div style="padding:24px">
       <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
       <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
-        ? 'Supabase RLS mungkin menyekat baca semua tenants. Tambah policy untuk platform admin, atau set <code>localStorage.nexerp_platform_admin=1</code> selepas policy siap.'
-        : 'Supabase RLS may block reading all tenants. Add a platform-admin policy, or set <code>localStorage.nexerp_platform_admin=1</code> after the policy is ready.'}</p>
-      <pre style="background:var(--bg);padding:12px;border-radius:8px;font-size:11px;overflow:auto;margin-top:12px">-- Example policy (run in Supabase SQL)
-CREATE POLICY "platform read tenants" ON tenants
-FOR SELECT USING (
-  EXISTS (
-    SELECT 1 FROM user_profiles up
-    WHERE up.id = auth.uid()
-    AND (up.role = 'platform_admin' OR up.full_name ILIKE '%platform%')
-  )
-);</pre>
+        ? 'Supabase RLS mungkin menyekat baca semua tenants. Hubungi pemilik platform untuk tetapkan peranan anda kepada platform_admin.'
+        : 'Supabase RLS may block reading all tenants. Contact the platform owner to have your role set to platform_admin.'}</p>
     </div>`
     return
   }
   if(!data || !data.length) {
+    _adminClientsData = []
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
     return
   }
+  _adminClientsData = data
 
   // Enrich with user counts (best-effort)
   const ids = data.map(d=>d.id)
@@ -7396,18 +7456,48 @@ FOR SELECT USING (
     </div>
   </div>
   <div style="overflow-x:auto"><table><thead><tr>
-    <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.users}</th><th>${t.created}</th>
+    <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.users}</th><th>${t.created}</th><th></th>
   </tr></thead><tbody>
   ${data.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
     <td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
     <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
     <td>${_aiEscapeHtml(d.plan||'—')}</td>
-    <td>${_aiEscapeHtml(d.status||'—')}</td>
+    <td style="color:${d.is_active===false?'var(--danger)':'var(--success)'}">${d.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</td>
     <td style="color:${d.onboarding_completed?'var(--success)':'var(--warning)'}">${d.onboarding_completed?(isBm?'Siap':'Done'):(isBm?'Belum':'Pending')}</td>
     <td>${countMap[d.id]||'—'}</td>
     <td style="font-size:12px">${d.created_at?formatDate(String(d.created_at).slice(0,10)):'—'}</td>
+    <td><button type="button" class="btn btn-sm ${d.is_active===false?'btn-primary':'btn-outline'}" onclick="event.stopPropagation();${d.is_active===false?'doReactivateTenant':'doSuspendTenant'}('${d.id}')">${d.is_active===false?(isBm?'Aktifkan semula':'Reactivate'):(isBm?'Gantung':'Suspend')}</button></td>
   </tr>`).join('')}
   </tbody></table></div>`
+}
+
+// Populated by renderAdminClients() so doSuspendTenant()/doReactivateTenant()
+// (fired from an inline onclick, not a closure) can look up the tenant's
+// display name without embedding untrusted text inside an HTML attribute.
+let _adminClientsData = []
+
+async function doSuspendTenant(tenantId) {
+  const tenant = _adminClientsData.find(d => d.id === tenantId)
+  const name = tenant?.name || tenantId
+  const isBm = APP.language==='bm'
+  const confirmMsg = isBm
+    ? `Gantung akses untuk "${name}"? Semua pengguna tenant ini akan disekat log masuk serta-merta.`
+    : `Suspend access for "${name}"? All users of this tenant will be blocked from logging in immediately.`
+  if(!confirm(confirmMsg)) return
+  const { error } = await sb.rpc('suspend_tenant', { p_tenant_id: tenantId })
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm ? `${name} telah digantung.` : `${name} has been suspended.`, 'success')
+  renderAdminClients()
+}
+
+async function doReactivateTenant(tenantId) {
+  const tenant = _adminClientsData.find(d => d.id === tenantId)
+  const name = tenant?.name || tenantId
+  const isBm = APP.language==='bm'
+  const { error } = await sb.rpc('reactivate_tenant', { p_tenant_id: tenantId })
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm ? `${name} telah diaktifkan semula.` : `${name} has been reactivated.`, 'success')
+  renderAdminClients()
 }
 
 async function renderAdminTenantDetail(tenantId) {
@@ -7435,7 +7525,7 @@ async function renderAdminTenantDetail(tenantId) {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
       <div><div style="font-size:11px;color:var(--text-3)">Code</div><strong>${_aiEscapeHtml(tenant.code||'-')}</strong></div>
       <div><div style="font-size:11px;color:var(--text-3)">Plan</div><strong>${_aiEscapeHtml(tenant.plan||'-')}</strong></div>
-      <div><div style="font-size:11px;color:var(--text-3)">Status</div><strong>${_aiEscapeHtml(tenant.status||'-')}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Status</div><strong style="color:${tenant.is_active===false?'var(--danger)':'var(--success)'}">${tenant.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</strong></div>
       <div><div style="font-size:11px;color:var(--text-3)">Onboarding</div><strong style="color:${tenant.onboarding_completed?'var(--success)':'var(--warning)'}">${tenant.onboarding_completed?'Done':'Pending'}</strong></div>
     </div>
   </div>
