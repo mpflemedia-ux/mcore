@@ -1322,6 +1322,49 @@ html[data-skip-intro="1"] #intro-skip {
       </div>
     </div>
 
+    <!-- RESET PASSWORD via OTP code (email code entry — the link-click flow
+         below (#form-reset) kept failing with otp_expired even on freshly
+         sent emails, suspected email-client link prescanning consuming the
+         single-use recovery token before the user's own click. This panel
+         is additive: #form-reset stays untouched as a fallback for anyone
+         whose recovery link still works. -->
+    <div id="form-reset-otp" style="display:none">
+      <div class="auth-form">
+        <div style="text-align:center;margin-bottom:16px">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;margin:0 auto 10px">
+            <i class="ti ti-shield-lock" style="color:var(--on-primary);font-size:22px"></i>
+          </div>
+          <div style="color:#fff;font-weight:700;font-size:16px">Enter Reset Code</div>
+          <div style="color:rgba(255,255,255,.4);font-size:12px;margin-top:4px">Enter the 6-digit code we emailed you, then choose a new password</div>
+        </div>
+        <div id="reset-otp-msg" class="auth-error"></div>
+        <div id="reset-otp-success" class="auth-success"></div>
+        <div class="form-group">
+          <label class="form-label">6-Digit Code</label>
+          <input type="text" id="reset-otp-code" class="form-input" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code">
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <div class="input-group" style="position:relative">
+            <i class="ti ti-lock input-icon"></i>
+            <input type="password" id="reset-otp-password" class="form-input" placeholder="Min 8 characters">
+            <i class="ti ti-eye eye-toggle" onclick="togglePw('reset-otp-password',this)"></i>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password</label>
+          <div class="input-group" style="position:relative">
+            <i class="ti ti-lock input-icon"></i>
+            <input type="password" id="reset-otp-password-confirm" class="form-input" placeholder="Repeat password">
+            <i class="ti ti-eye eye-toggle" onclick="togglePw('reset-otp-password-confirm',this)"></i>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block" id="btn-reset-otp" onclick="doVerifyResetOtp()">Update Password</button>
+        <div class="auth-link"><a onclick="doForgotPassword()">Didn't get a code? Resend</a></div>
+        <div class="auth-link"><a onclick="switchAuthTab('login')">← Back to Sign In</a></div>
+      </div>
+    </div>
+
     <!-- RESET PASSWORD (dari email link) -->
     <div id="form-reset" style="display:none">
       <div class="auth-form">
@@ -2801,11 +2844,12 @@ function switchAuthTab(tab) {
   document.getElementById('form-register').style.display = tab==='register' ?'block':'none'
   document.getElementById('form-forgot').style.display   = tab==='forgot'   ?'block':'none'
   document.getElementById('form-reset').style.display    = tab==='reset'    ?'block':'none'
+  const froEl = document.getElementById('form-reset-otp'); if(froEl) froEl.style.display = tab==='reset-otp' ? 'block' : 'none'
   document.getElementById('tab-login').classList.toggle('active',tab==='login')
   document.getElementById('tab-register').classList.toggle('active',tab==='register')
   // Hide tabs row bila tunjuk forgot/reset
   const tabsEl = document.querySelector('.auth-tabs')
-  if(tabsEl) tabsEl.style.display = (tab==='forgot'||tab==='reset') ? 'none' : ''
+  if(tabsEl) tabsEl.style.display = (tab==='forgot'||tab==='reset'||tab==='reset-otp') ? 'none' : ''
 }
 
 function showForgotPassword() {
@@ -2908,6 +2952,7 @@ async function _requirePinGate(user) {
   document.getElementById('form-register').style.display = 'none'
   const ff = document.getElementById('form-forgot'); if(ff) ff.style.display = 'none'
   const fr = document.getElementById('form-reset'); if(fr) fr.style.display = 'none'
+  const fro = document.getElementById('form-reset-otp'); if(fro) fro.style.display = 'none'
   const tabs = document.querySelector('.auth-tabs'); if(tabs) tabs.style.display = 'none'
   const fp = document.getElementById('form-pin')
   if(fp) fp.style.display = 'block'
@@ -3454,13 +3499,88 @@ async function doRegister() {
   btn.disabled=false
 }
 
+// Set by doForgotPassword() so doVerifyResetOtp() (a separate, later click)
+// knows which address the code was sent to — #forgot-email itself stays
+// intact in the DOM (its panel is only hidden, not removed) so this is
+// mostly a defensive/explicit copy rather than the only source of truth.
+let _pwResetEmail = ''
+
 async function doForgotPassword() {
   const email=document.getElementById('forgot-email').value.trim()
   if(!email)return
   const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:`https://mpflemedia-ux.github.io/nexerp/app/`})
   if(error){showToast(error.message,'error');return}
-  document.getElementById('forgot-msg').textContent='✓ Reset link sent to your email.'
-  document.getElementById('forgot-msg').classList.add('show')
+  _pwResetEmail = email
+  switchAuthTab('reset-otp')
+  document.getElementById('reset-otp-code').value = ''
+  const msgEl = document.getElementById('reset-otp-msg'); if(msgEl) msgEl.classList.remove('show')
+  const sucEl = document.getElementById('reset-otp-success')
+  if(sucEl) { sucEl.textContent = '✓ A 6-digit code has been sent to ' + email; sucEl.classList.add('show') }
+}
+
+async function doVerifyResetOtp() {
+  const code = (document.getElementById('reset-otp-code').value || '').trim()
+  const pwd = document.getElementById('reset-otp-password').value
+  const pwd2 = document.getElementById('reset-otp-password-confirm').value
+  const msgEl = document.getElementById('reset-otp-msg')
+  const sucEl = document.getElementById('reset-otp-success')
+  const btn = document.getElementById('btn-reset-otp')
+
+  msgEl.classList.remove('show')
+  sucEl.classList.remove('show')
+
+  if(!code) {
+    msgEl.textContent = 'Please enter the 6-digit code from your email.'
+    msgEl.classList.add('show')
+    return
+  }
+  if(pwd.length < 8) {
+    msgEl.textContent = 'Password must be at least 8 characters.'
+    msgEl.classList.add('show')
+    return
+  }
+  if(pwd !== pwd2) {
+    msgEl.textContent = 'Passwords do not match.'
+    msgEl.classList.add('show')
+    return
+  }
+  if(!_pwResetEmail) {
+    msgEl.textContent = 'Session expired — please request a new code.'
+    msgEl.classList.add('show')
+    return
+  }
+
+  btn.disabled = true
+  btn.textContent = 'Verifying...'
+
+  const { error: verifyError } = await sb.auth.verifyOtp({ email: _pwResetEmail, token: code, type: 'recovery' })
+
+  if(verifyError) {
+    msgEl.textContent = verifyError.message
+    msgEl.classList.add('show')
+    btn.disabled = false
+    btn.textContent = 'Update Password'
+    return
+  }
+
+  const { error: updateError } = await sb.auth.updateUser({ password: pwd })
+
+  if(updateError) {
+    msgEl.textContent = updateError.message
+    msgEl.classList.add('show')
+    btn.disabled = false
+    btn.textContent = 'Update Password'
+    return
+  }
+
+  sucEl.textContent = '✓ Password updated! Redirecting...'
+  sucEl.classList.add('show')
+  setTimeout(async () => {
+    await sb.auth.signOut()
+    _pwResetEmail = ''
+    switchAuthTab('login')
+    showToast('Password updated. Please sign in.', 'success')
+  }, 2000)
 }
 
 async function doLogout() {
