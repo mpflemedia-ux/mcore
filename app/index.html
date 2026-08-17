@@ -21711,31 +21711,42 @@ function _scBadgeLabel(key, isBm) {
 }
 
 /** Sums this sales person's confirmed commission for a given payout period. */
-async function _scCommissionTotal(salesPersonId, month, year) {
+// periodField: 'payout' (default — Salary Disbursement, "money hits this
+// payslip period") or 'earned' (Leaderboard/Achievements — "sales activity
+// that happened in this calendar month", which is always one month BEHIND
+// its own payout period since capture always books to payout = earned+1).
+async function _scCommissionTotal(salesPersonId, month, year, periodField) {
+  periodField = periodField === 'earned' ? 'earned' : 'payout'
   const { data } = await sb.from('sales_commissions')
-    .select('commission_amount')
+    .select('commission_amount,source_type,source_id')
     .eq('tenant_id', APP.tenant.id).eq('sales_person_id', salesPersonId)
-    .eq('payout_month', month).eq('payout_year', year).eq('status', 'confirmed').is('deleted_at', null)
+    .eq(periodField+'_month', month).eq(periodField+'_year', year).eq('status', 'confirmed').is('deleted_at', null)
   const rows = data || []
-  return { total: rows.reduce((s,r)=>s+Number(r.commission_amount||0),0), count: rows.length }
+  // saleCount = distinct sales (invoices/POS transactions), not commission
+  // rows — a single multi-line invoice produces multiple rows (one per
+  // line item) that must still count as ONE sale for "first sale" purposes.
+  const saleCount = new Set(rows.map(r => r.source_type + ':' + r.source_id)).size
+  return { total: rows.reduce((s,r)=>s+Number(r.commission_amount||0),0), count: rows.length, saleCount }
 }
 
-/** Non-blocking — called from _commissionCaptureForSale after a successful insert. */
+/** Non-blocking — called from _commissionCaptureForSale after a successful insert,
+    with the sale's EARNED month/year (gamification tracks live sales activity,
+    not the payout period — see _scCommissionTotal). */
 async function _checkAchievements(salesPersonId, month, year) {
   try {
     if(!APP.tenant?.id || !salesPersonId) return
     const tiers = _scTiers()
-    const { total, count } = await _scCommissionTotal(salesPersonId, month, year)
+    const { total, saleCount } = await _scCommissionTotal(salesPersonId, month, year, 'earned')
 
     const toUnlock = []
     ;['bronze','silver','gold','platinum'].forEach(tier => { if(total >= tiers[tier]) toUnlock.push(tier) })
-    if(count === 1) toUnlock.push('first_sale_of_month')
+    if(saleCount === 1) toUnlock.push('first_sale_of_month')
     if(total >= tiers.gold) {
       let streak = true
       for(let i=1;i<=2;i++) {
         let m = month - i, y = year
         while(m < 1) { m += 12; y -= 1 }
-        const prior = await _scCommissionTotal(salesPersonId, m, y)
+        const prior = await _scCommissionTotal(salesPersonId, m, y, 'earned')
         if(prior.total < tiers.gold) { streak = false; break }
       }
       if(streak) toUnlock.push('streak_gold_3mo')
@@ -21996,7 +22007,7 @@ async function _scRenderLeaderboard() {
   const emps = await _scLoadEmployees()
   const tiers = _scTiers()
   const rows = await Promise.all(emps.map(async e => {
-    const { total, count } = await _scCommissionTotal(e.id, month, year)
+    const { total, count } = await _scCommissionTotal(e.id, month, year, 'earned')
     return { id: e.id, name: e.name, total, count, tier: _scTierForTotal(total, tiers) }
   }))
   const ranked = rows.filter(r=>r.total>0).sort((a,b)=>b.total-a.total)
