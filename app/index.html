@@ -375,12 +375,15 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .toast.info .toast-icon{color:var(--primary)}
 @keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 @keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(20px)}}
-#ai-chat-fab,#scroll-top-btn,#dash-home-fab{position:fixed;right:24px;width:48px;height:48px;border-radius:50%;background:var(--primary);color:var(--on-primary);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:var(--shadow-lg);cursor:pointer;z-index:1000;border:none;padding:0}
+#ai-chat-fab,#scroll-top-btn,#dash-home-fab{position:fixed;right:24px;width:48px;height:48px;border-radius:50%;background:color-mix(in srgb, var(--bg-card) 55%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;z-index:1000;border:1.5px solid color-mix(in srgb, var(--primary) 45%, transparent);padding:0;box-shadow:0 0 0 1px color-mix(in srgb, var(--primary) 15%, transparent),0 4px 16px color-mix(in srgb, var(--primary) 20%, transparent);transition:border-color .2s ease,box-shadow .2s ease,color .2s ease,transform .2s ease}
 #ai-chat-fab{bottom:24px}
 #dash-home-fab{bottom:84px;z-index:999}
-#scroll-top-btn{bottom:144px;z-index:999;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease,background .15s ease}
+#scroll-top-btn{bottom:144px;z-index:999;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease,border-color .2s ease,box-shadow .2s ease,color .2s ease}
 #scroll-top-btn.visible{opacity:1;pointer-events:auto;transform:translateY(0)}
-#ai-chat-fab:hover,#scroll-top-btn:hover,#dash-home-fab:hover{background:var(--primary-dark)}
+#ai-chat-fab:hover,#scroll-top-btn:hover,#dash-home-fab:hover{border-color:color-mix(in srgb, var(--primary) 90%, transparent);box-shadow:0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent),0 6px 24px color-mix(in srgb, var(--primary) 35%, transparent);color:var(--primary);transform:scale(1.06)}
+#scroll-top-btn.visible:hover{transform:translateY(0) scale(1.06)}
+#ai-chat-fab:active,#scroll-top-btn:active,#dash-home-fab:active{transform:scale(0.96)}
+#scroll-top-btn.visible:active{transform:translateY(0) scale(0.96)}
 #ai-chat-panel{position:fixed;right:24px;bottom:204px;width:340px;height:460px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);z-index:1000;display:none;flex-direction:column;overflow:hidden}
 #ai-chat-panel.active{display:flex}
 /* scroll-top styles unified with #ai-chat-fab stack */
