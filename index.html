@@ -58,6 +58,8 @@
   html[data-theme="light"] .btn-primary{ color: var(--btn-primary-fg); }
   html[data-theme="light"] .btn-primary{ background: var(--cyan); border-color: var(--cyan); color: #fff; }
   html[data-theme="light"] .btn-primary:hover{ filter: brightness(1.05); color:#fff; }
+  html[data-theme="light"] .pt-btn.active{ color: var(--btn-primary-fg); }
+  html[data-theme="light"] .pricing-ribbon{ color: var(--btn-primary-fg); }
   html[data-theme="light"] .theme-toggle .icon-sun{ display:none; }
   html[data-theme="light"] .theme-toggle .icon-moon{ display:inline; }
   html[data-theme="dark"] .theme-toggle .icon-sun{ display:inline; }
@@ -342,6 +344,54 @@
   }
   .edge-card h4{ font-size:16px; font-weight:600; }
 
+  /* ================= PRICING ================= */
+  .pricing-toggle-wrap{ display:flex; justify-content:center; margin:44px 0 8px; }
+  .pricing-toggle{
+    display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:4px; gap:4px;
+    background:var(--panel);
+  }
+  .pt-btn{
+    font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:.05em;
+    color:var(--muted); background:transparent; border:none; border-radius:999px;
+    padding:9px 22px; cursor:pointer; transition:.25s;
+  }
+  .pt-btn.active{ background:var(--cyan); color:#05080D; font-weight:600; }
+  .pt-btn:not(.active):hover{ color:var(--cyan); }
+
+  .pricing-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:40px; align-items:stretch; }
+  @media (max-width:960px){ .pricing-grid{ grid-template-columns:repeat(2,1fr); } }
+  @media (max-width:560px){ .pricing-grid{ grid-template-columns:1fr; } }
+
+  .pricing-card{
+    position:relative; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:34px 26px; display:flex; flex-direction:column; transition:.3s;
+  }
+  .pricing-card:hover{ border-color:var(--cyan-dim); transform:translateY(-4px); box-shadow:0 20px 40px -20px rgba(0,0,0,.6); }
+  .pricing-card.popular{ border-color:var(--cyan); box-shadow:0 0 30px -10px var(--cyan-glow); }
+  .pricing-ribbon{
+    position:absolute; top:-13px; left:26px; background:var(--cyan); color:#05080D;
+    font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:600; letter-spacing:.08em;
+    text-transform:uppercase; padding:6px 14px; border-radius:999px;
+  }
+  .pricing-plan-name{ font-size:22px; font-weight:700; font-family:'Space Grotesk', sans-serif; margin-bottom:8px; }
+  .pricing-audience{ color:var(--muted); font-size:13.5px; line-height:1.55; margin-bottom:24px; min-height:40px; }
+  .pricing-price-block{ transition: opacity .22s ease; margin-bottom:26px; padding-bottom:26px; border-bottom:1px solid var(--line); }
+  .pricing-price-block.fading{ opacity:0; }
+  .price-amount{ font-family:'Space Grotesk', sans-serif; font-size:34px; font-weight:700; color:var(--heading); }
+  .price-amount .price-suffix{ font-size:14px; font-weight:500; color:var(--muted); margin-left:2px; }
+  .price-setup{ margin-top:8px; font-size:12.5px; color:var(--cyan-dim); font-family:'JetBrains Mono', monospace; }
+  .pricing-features{ list-style:none; flex:1; }
+  .pricing-features li{
+    display:flex; align-items:flex-start; gap:10px; padding:9px 0; font-size:13.5px; color:var(--white);
+    border-bottom:1px solid var(--line);
+  }
+  .pricing-features li:last-child{ border-bottom:none; }
+  .pricing-features li::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--cyan); margin-top:6px; flex-shrink:0; }
+
+  .pricing-footnote{ margin-top:36px; text-align:center; color:var(--muted); font-size:14px; }
+  .pricing-footnote a{ color:var(--cyan); text-decoration:underline; text-underline-offset:3px; }
+  .pricing-footnote a:hover{ color:var(--white); }
+
   /* ================= PROCESS ================= */
   .process-track{ position:relative; margin-top:70px; padding:0 10px; }
   .process-line{ position:absolute; top:29px; left:0; right:0; height:1px; background:var(--line); }
@@ -408,6 +458,7 @@
   <a href="#offer" data-label="Services"></a>
   <a href="#deepdive" data-label="Deep Dive"></a>
   <a href="#edge" data-label="Edge"></a>
+  <a href="#pricing" data-label="Pricing"></a>
   <a href="#process" data-label="Process"></a>
   <a href="#contact" data-label="Contact"></a>
 </nav>
@@ -538,6 +589,21 @@
     <div class="edge-card reveal"><div class="ring">03</div><h4 data-i18n="edge_3">Clean Reports</h4></div>
     <div class="edge-card reveal"><div class="ring">04</div><h4 data-i18n="edge_4">End-to-End Support</h4></div>
   </div>
+</section>
+
+<!-- ================= PRICING ================= -->
+<section id="pricing">
+  <div class="eyebrow reveal" data-i18n="pricing_eyebrow">Pricing</div>
+  <h2 class="title reveal" data-i18n="pricing_title">NexERP software, bundled with your Phion service</h2>
+  <p class="lede reveal" data-i18n="pricing_lede">Every plan includes unlimited users — add as many staff as you need at no extra cost.</p>
+  <div class="pricing-toggle-wrap reveal">
+    <div class="pricing-toggle" id="pricingToggle">
+      <button type="button" class="pt-btn active" data-period="monthly" data-i18n="pricing_toggle_monthly" onclick="setPricingPeriod('monthly')">Monthly</button>
+      <button type="button" class="pt-btn" data-period="annual" data-i18n="pricing_toggle_annual" onclick="setPricingPeriod('annual')">Annual</button>
+    </div>
+  </div>
+  <div class="pricing-grid" id="pricingGrid"></div>
+  <p class="pricing-footnote reveal" data-i18n="pricing_footnote">Need more branches or unlimited AI usage? Enterprise pricing available — <a href="#contact">talk to us</a>.</p>
 </section>
 
 <!-- ================= PROCESS ================= -->
@@ -716,6 +782,75 @@ function renderTabs(){
 renderOfferGrid();
 renderTabs();
 
+// ---------- pricing ----------
+const pricingPlans = [
+  { id:'starter', popular:false,
+    name:{en:'Starter', ms:'Starter'},
+    audience:{en:'For single-location businesses just getting started.', ms:'Untuk perniagaan satu lokasi yang baru bermula.'},
+    monthly:99, monthlySetup:300, annual:990,
+    features:{
+      en:['1 branch','Invoicing, POS &amp; single-location inventory','100 AI queries/day','5GB storage'],
+      ms:['1 cawangan','Invois, POS &amp; inventori satu lokasi','100 pertanyaan AI/hari','Storan 5GB']}},
+  { id:'business', popular:true,
+    name:{en:'Business', ms:'Business'},
+    audience:{en:'For growing teams managing more than one branch.', ms:'Untuk pasukan berkembang yang menguruskan lebih daripada satu cawangan.'},
+    monthly:199, monthlySetup:500, annual:1990,
+    features:{
+      en:['Everything in Starter, plus:','Up to 2 branches','Full accounting &amp; bank reconciliation','500 AI queries/day','20GB storage'],
+      ms:['Semua dalam Starter, ditambah:','Sehingga 2 cawangan','Perakaunan penuh &amp; penyesuaian bank','500 pertanyaan AI/hari','Storan 20GB']}},
+  { id:'pro', popular:false,
+    name:{en:'Pro', ms:'Pro'},
+    audience:{en:'For established SMEs running HR, payroll, and multi-currency operations.', ms:'Untuk PKS mantap yang menguruskan HR, gaji, dan operasi multi-mata wang.'},
+    monthly:349, monthlySetup:800, annual:3490,
+    features:{
+      en:['Everything in Business, plus:','Up to 5 branches &amp; multi-location inventory','HR &amp; Payroll, multi-currency','2,000 AI queries/day','50GB storage'],
+      ms:['Semua dalam Business, ditambah:','Sehingga 5 cawangan &amp; inventori pelbagai lokasi','HR &amp; Gaji, multi-mata wang','2,000 pertanyaan AI/hari','Storan 50GB']}},
+];
+let pricingPeriod = 'monthly';
+const pricingGrid = document.getElementById('pricingGrid');
+function fmtRM(n){ return 'RM' + n.toLocaleString('en-US'); }
+function priceBlockHtml(plan){
+  const t = I18N[currentLang];
+  if(pricingPeriod === 'monthly'){
+    return `<div class="price-amount">${fmtRM(plan.monthly)}<span class="price-suffix">${t.pricing_per_month_suffix}</span></div>
+      <div class="price-setup">(+ ${t.pricing_setup_label}: ${fmtRM(plan.monthlySetup)}, ${t.pricing_onetime_label})</div>`;
+  }
+  return `<div class="price-amount">${fmtRM(plan.annual)}<span class="price-suffix">${t.pricing_per_year_suffix}</span></div>
+    <div class="price-setup">(${t.pricing_annual_note})</div>`;
+}
+function renderPricingGrid(){
+  if(!pricingGrid) return;
+  pricingGrid.innerHTML = '';
+  pricingPlans.forEach(p=>{
+    const el = document.createElement('div');
+    el.className = 'pricing-card reveal in' + (p.popular ? ' popular' : '');
+    el.innerHTML = `
+      ${p.popular ? `<div class="pricing-ribbon">${I18N[currentLang].pricing_ribbon}</div>` : ''}
+      <h3 class="pricing-plan-name">${p.name[currentLang]}</h3>
+      <p class="pricing-audience">${p.audience[currentLang]}</p>
+      <div class="pricing-price-block" data-plan="${p.id}">${priceBlockHtml(p)}</div>
+      <ul class="pricing-features">${p.features[currentLang].map(f=>`<li>${f}</li>`).join('')}</ul>
+    `;
+    pricingGrid.appendChild(el);
+  });
+}
+function setPricingPeriod(period){
+  if(period === pricingPeriod) return;
+  pricingPeriod = period;
+  document.querySelectorAll('.pt-btn').forEach(b=> b.classList.toggle('active', b.dataset.period === period));
+  document.querySelectorAll('.pricing-price-block').forEach(block=>{
+    block.classList.add('fading');
+    setTimeout(()=>{
+      const plan = pricingPlans.find(p=> p.id === block.dataset.plan);
+      block.innerHTML = priceBlockHtml(plan);
+      block.classList.remove('fading');
+    }, 220);
+  });
+}
+// Rendered later via applyLang(currentLang) at the bottom of this script —
+// not called here directly, since I18N (used by priceBlockHtml) is a
+// const declared further down and isn't initialized yet at this point.
+
 function activateTab(i){
   _activeTabIndex = i;
   document.querySelectorAll('.tab-btn').forEach(b=> b.classList.toggle('active', +b.dataset.index === i));
@@ -838,6 +973,18 @@ const I18N = {
     edge_2: 'SME-Focused',
     edge_3: 'Clean Reports',
     edge_4: 'End-to-End Support',
+    pricing_eyebrow: 'Pricing',
+    pricing_title: 'NexERP software, bundled with your Phion service',
+    pricing_lede: 'Every plan includes unlimited users — add as many staff as you need at no extra cost.',
+    pricing_toggle_monthly: 'Monthly',
+    pricing_toggle_annual: 'Annual',
+    pricing_ribbon: 'Most Popular',
+    pricing_setup_label: 'Setup Fee',
+    pricing_onetime_label: 'one-time',
+    pricing_annual_note: 'Save 2 months + Setup Fee waived',
+    pricing_per_month_suffix: '/mo',
+    pricing_per_year_suffix: '/yr',
+    pricing_footnote: 'Need more branches or unlimited AI usage? Enterprise pricing available — <a href="#contact">talk to us</a>.',
     process_eyebrow: 'Our Process',
     process_title: 'How we work with you',
     process_1: 'Onboarding',
@@ -890,6 +1037,18 @@ const I18N = {
     edge_2: 'Fokus Kepada PKS',
     edge_3: 'Laporan Kemas',
     edge_4: 'Sokongan Menyeluruh',
+    pricing_eyebrow: 'Harga',
+    pricing_title: 'Perisian NexERP, disertakan dengan perkhidmatan Phion',
+    pricing_lede: 'Setiap pelan termasuk pengguna tanpa had — tambah seramai staf yang perlu tanpa kos tambahan.',
+    pricing_toggle_monthly: 'Bulanan',
+    pricing_toggle_annual: 'Tahunan',
+    pricing_ribbon: 'Paling Popular',
+    pricing_setup_label: 'Yuran Persediaan',
+    pricing_onetime_label: 'sekali sahaja',
+    pricing_annual_note: 'Jimat 2 bulan + Yuran Persediaan diketepikan',
+    pricing_per_month_suffix: '/bulan',
+    pricing_per_year_suffix: '/tahun',
+    pricing_footnote: 'Perlukan lebih cawangan atau kuota AI tanpa had? Harga Enterprise boleh dirunding — <a href="#contact">hubungi kami</a>.',
     process_eyebrow: 'Proses Kami',
     process_title: 'Bagaimana kami bekerja dengan anda',
     process_1: 'Penyertaan Masuk',
@@ -940,6 +1099,7 @@ function applyLang(lang){
   });
   renderOfferGrid();
   renderTabs();
+  renderPricingGrid();
   const btn = document.getElementById('langToggleBtn');
   if(btn) btn.setAttribute('aria-label', lang === 'en' ? 'Switch language' : 'Tukar bahasa');
 }
