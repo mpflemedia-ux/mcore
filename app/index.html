@@ -9464,6 +9464,7 @@ const DEFAULT_COA_SEED = [
   { code:'4000', name_en:'Sales Revenue',     account_type:'revenue' },
   { code:'5000', name_en:'General Expense',   account_type:'expense' },
   { code:'5100', name_en:'Salary Expense',    account_type:'expense' },
+  { code:'5200', name_en:'Commission Expense', account_type:'expense' },
 ]
 
 // Maps each DEFAULT_COA_SEED code to the Default Account Mappings key it
@@ -9477,6 +9478,7 @@ const COA_SEED_MAPPING_BY_CODE = {
   '1000': 'cash', '1010': 'petty_cash', '4000': 'sales_revenue', '2100': 'accounts_payable',
   '5000': 'general_expense', '5100': 'salary_expense',
   '2200': 'epf_payable', '2210': 'socso_payable', '2220': 'eis_payable', '2230': 'pcb_payable',
+  '5200': 'commission_expense',
 }
 
 // Populates whichever Default Account Mappings the tenant hasn't already
