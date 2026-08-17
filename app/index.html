@@ -25540,6 +25540,14 @@ async function renderPOS(params={}) {
   _posRenderGrid()
   _posRenderCart()
   await _posCheckSession()
+  // Default the sales-person select to whoever clocked in for this shift —
+  // once only, at render time. Never do this inside _posRenderCart() (fires
+  // on every add/remove item) or it would silently overwrite a cashier's
+  // manual override mid-sale. Select stays fully editable either way.
+  if(_posCurrentSession?.employee_id) {
+    const spEl = document.getElementById('pos-sales-person')
+    if(spEl) spEl.value = _posCurrentSession.employee_id
+  }
   _posRenderShiftStatus()
   await _posLoadOtherOpenSessions()
   _posRenderOtherShifts()
@@ -26043,6 +26051,13 @@ async function _posStartShift() {
     if(error) throw error
 
     _posCurrentSession = data
+    // Cart is already on screen behind the shift modal — default the
+    // sales-person select now too, same as the page-render path, so it
+    // doesn't stay unset until the next full page reload.
+    {
+      const spEl = document.getElementById('pos-sales-person')
+      if(spEl) spEl.value = data.employee_id || ''
+    }
     _posRenderShiftStatus()
     _posCloseShiftModal()
     showToast(t.started, 'success')
