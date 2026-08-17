@@ -2479,7 +2479,8 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
   ;[[rec.allowance_type_1, rec.allowance_1], [rec.allowance_type_2, rec.allowance_2], [rec.allowance_type_3, rec.allowance_3]].forEach(([type, amt]) => {
     if(Number(amt) > 0) earnRows.push({ label: _sdTypeLabel(SD_ALLOWANCE_TYPES, type), amount: amt, positive: true })
   })
-  const totalEarnings = Number(rec.basic_salary||0) + Number(rec.allowance_1||0) + Number(rec.allowance_2||0) + Number(rec.allowance_3||0)
+  if(Number(rec.commission) > 0) earnRows.push({ label: isBm?'Komisen Jualan':'Sales Commission', amount: rec.commission, positive: true })
+  const totalEarnings = Number(rec.basic_salary||0) + Number(rec.allowance_1||0) + Number(rec.allowance_2||0) + Number(rec.allowance_3||0) + Number(rec.commission||0)
 
   const dedRows = []
   if(Number(rec.epf_employee) > 0) dedRows.push({ label: isBm?'KWSP (Pekerja)':'KWSP (Employee)', amount: rec.epf_employee })
