@@ -21932,6 +21932,11 @@ async function _scDeleteRule(id) {
 async function _scRenderLedger() {
   const isBm = APP.language==='bm'
   const now = new Date()
+  // Default filter to the PAYOUT period, not the current calendar month —
+  // _commissionCaptureForSale always books payout_month/year as next month
+  // (see _scNextPeriod), so a sale captured today would never show up under
+  // "this month" and the ledger would look empty right after a test sale.
+  const defaultPeriod = _scNextPeriod(now.getMonth()+1, now.getFullYear())
   const t = isBm ? {
     title:'Komisyen Jualan', sp:'Sales Person', month:'Bulan', year:'Tahun', apply:'Tapis',
     date:'Tarikh', ref:'Rujukan', channel:'Saluran', product:'Produk', amount:'Jumlah Jualan',
@@ -21951,9 +21956,9 @@ async function _scRenderLedger() {
       <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.sp}</label>
         <select id="sc-ledger-sp" class="form-select"><option value="">${isBm?'Semua':'All'}</option>${emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')}</select></div>
       <div class="form-group" style="margin:0"><label class="form-label">${t.month}</label>
-        <select id="sc-ledger-month" class="form-select">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===now.getMonth()+1?'selected':''}>${i+1}</option>`).join('')}</select></div>
+        <select id="sc-ledger-month" class="form-select">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===defaultPeriod.month?'selected':''}>${i+1}</option>`).join('')}</select></div>
       <div class="form-group" style="margin:0"><label class="form-label">${t.year}</label>
-        <input id="sc-ledger-year" type="number" class="form-input" style="width:100px" value="${now.getFullYear()}"></div>
+        <input id="sc-ledger-year" type="number" class="form-input" style="width:100px" value="${defaultPeriod.year}"></div>
       <button class="btn btn-primary btn-sm" onclick="_scLoadLedger()">${t.apply}</button>
     </div>
   </div>
