@@ -21633,15 +21633,18 @@ async function _commissionCaptureForSale(sourceType, sourceId) {
       .select('sales_person_id,channel,product_id,rate_percent')
       .eq('tenant_id', APP.tenant.id).eq('channel', channel).is('deleted_at', null)
     const ruleList = rules || []
-    // Priority: (a) this person + this product > (b) any person + this product
-    // > (c) any person + any product (channel-wide) > (d) no match → skip line
     const findRate = (productId) => {
+      // Priority: (a) this person + this product > (b) this person + any
+      // product > (c) any person + this product > (d) channel-wide default
+      // (any person + any product) > (e) no match.
       const a = ruleList.find(r => String(r.sales_person_id||'')===String(salesPersonId) && r.product_id && String(r.product_id)===String(productId))
       if(a) return a.rate_percent
-      const b = ruleList.find(r => !r.sales_person_id && r.product_id && String(r.product_id)===String(productId))
+      const b = ruleList.find(r => String(r.sales_person_id||'')===String(salesPersonId) && !r.product_id)
       if(b) return b.rate_percent
-      const c = ruleList.find(r => !r.sales_person_id && !r.product_id)
+      const c = ruleList.find(r => !r.sales_person_id && r.product_id && String(r.product_id)===String(productId))
       if(c) return c.rate_percent
+      const d = ruleList.find(r => !r.sales_person_id && !r.product_id)
+      if(d) return d.rate_percent
       return null
     }
 
