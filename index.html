@@ -358,8 +358,15 @@
   .pt-btn.active{ background:var(--cyan); color:#05080D; font-weight:600; }
   .pt-btn:not(.active):hover{ color:var(--cyan); }
 
-  .pricing-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:40px; align-items:stretch; }
-  @media (max-width:960px){ .pricing-grid{ grid-template-columns:repeat(2,1fr); } }
+  .pricing-paid-note{
+    color:var(--white); font-size:15px; line-height:1.6; max-width:760px;
+    background:color-mix(in srgb, var(--cyan) 8%, transparent);
+    border:1px solid color-mix(in srgb, var(--cyan) 30%, transparent);
+    border-radius:8px; padding:14px 18px; margin-top:20px;
+  }
+
+  .pricing-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:24px; margin-top:40px; align-items:stretch; }
+  @media (max-width:1100px){ .pricing-grid{ grid-template-columns:repeat(2,1fr); } }
   @media (max-width:560px){ .pricing-grid{ grid-template-columns:1fr; } }
 
   .pricing-card{
@@ -387,6 +394,15 @@
   }
   .pricing-features li:last-child{ border-bottom:none; }
   .pricing-features li::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--cyan); margin-top:6px; flex-shrink:0; }
+
+  .pricing-onboarding{ max-width:760px; margin-top:32px; }
+  .pricing-onboarding h3{ font-size:19px; font-weight:600; margin-bottom:8px; }
+  .pricing-onboarding-intro{ color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:14px; }
+  .pricing-onboarding-list{ list-style:none; margin-bottom:14px; }
+  .pricing-onboarding-list li{ display:flex; align-items:flex-start; gap:10px; padding:8px 0; font-size:14px; color:var(--white); border-bottom:1px solid var(--line); }
+  .pricing-onboarding-list li:last-child{ border-bottom:none; }
+  .pricing-onboarding-list li::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--cyan); margin-top:7px; flex-shrink:0; }
+  .pricing-onboarding-closing{ color:var(--cyan); font-weight:600; font-size:14.5px; }
 
   .pricing-footnote{ margin-top:36px; text-align:center; color:var(--muted); font-size:14px; }
   .pricing-footnote a{ color:var(--cyan); text-decoration:underline; text-underline-offset:3px; }
@@ -596,6 +612,7 @@
   <div class="eyebrow reveal" data-i18n="pricing_eyebrow">Pricing</div>
   <h2 class="title reveal" data-i18n="pricing_title">NexERP software, bundled with your Phion service</h2>
   <p class="lede reveal" data-i18n="pricing_lede">Every plan includes unlimited users — add as many staff as you need at no extra cost.</p>
+  <p class="pricing-paid-note reveal" data-i18n="pricing_paid_note">Upgrade to any paid plan to unlock All Access to every NexERP feature: full accounting (P&amp;L, Balance Sheet), AI-powered bank reconciliation, HR &amp; payroll, multi-currency, and technical support.</p>
   <div class="pricing-toggle-wrap reveal">
     <div class="pricing-toggle" id="pricingToggle">
       <button type="button" class="pt-btn active" data-period="monthly" data-i18n="pricing_toggle_monthly" onclick="setPricingPeriod('monthly')">Monthly</button>
@@ -603,6 +620,17 @@
     </div>
   </div>
   <div class="pricing-grid" id="pricingGrid"></div>
+  <div class="card pricing-onboarding reveal">
+    <h3 data-i18n="pricing_onboarding_heading">What the Setup Fee covers (White-Glove Onboarding)</h3>
+    <p class="pricing-onboarding-intro" data-i18n="pricing_onboarding_intro">For monthly plans, the Setup Fee covers technical work completed by the NexERP team for you. Just hand over your Excel files, and we will:</p>
+    <ul class="pricing-onboarding-list" data-i18n="pricing_onboarding_bullets">
+      <li>Set up your logo, letterhead, and bank details</li>
+      <li>Upload your customer, supplier, and stock catalogue lists</li>
+      <li>Enter your Chart of Accounts (COA) and opening balances</li>
+      <li>Register all your staff accounts</li>
+    </ul>
+    <p class="pricing-onboarding-closing" data-i18n="pricing_onboarding_closing">Choose the Annual Plan and we'll do all of this 100% FREE!</p>
+  </div>
   <p class="pricing-footnote reveal" data-i18n="pricing_footnote">Need more branches or unlimited AI usage? Enterprise pricing available — <a href="#contact">talk to us</a>.</p>
 </section>
 
@@ -784,33 +812,42 @@ renderTabs();
 
 // ---------- pricing ----------
 const pricingPlans = [
+  { id:'free', popular:false, isFree:true,
+    name:{en:'Free', ms:'Percuma'},
+    audience:{en:'For micro businesses, freelancers, or hawkers starting to record sales digitally.', ms:'Untuk perniagaan mikro, freelancer, atau penjaja yang baru nak merekod jualan secara digital.'},
+    features:{
+      en:['POS (fast sales entry)','Invoicing &amp; billing','Basic inventory management','Sales reports','1 branch','Community/email support only'],
+      ms:['Sistem POS (kemasukan jualan pantas)','Invois &amp; bil','Pengurusan inventori (asas)','Laporan jualan','1 cawangan','Sokongan komuniti/emel sahaja']}},
   { id:'starter', popular:false,
     name:{en:'Starter', ms:'Starter'},
-    audience:{en:'For single-location businesses just getting started.', ms:'Untuk perniagaan satu lokasi yang baru bermula.'},
+    audience:{en:'For agencies or service companies.', ms:'Sesuai untuk agensi atau syarikat servis.'},
     monthly:99, monthlySetup:300, annual:990,
     features:{
-      en:['1 branch','Invoicing, POS &amp; single-location inventory','100 AI queries/day','5GB storage'],
-      ms:['1 cawangan','Invois, POS &amp; inventori satu lokasi','100 pertanyaan AI/hari','Storan 5GB']}},
+      en:['Full access to all modules','500 transactions/month','1 branch','100 AI queries/day (bank recon/receipts)'],
+      ms:['Akses penuh semua modul','500 transaksi/bulan','1 cawangan','100 proses AI/hari (bank recon/resit)']}},
   { id:'business', popular:true,
     name:{en:'Business', ms:'Business'},
-    audience:{en:'For growing teams managing more than one branch.', ms:'Untuk pasukan berkembang yang menguruskan lebih daripada satu cawangan.'},
+    audience:{en:'For active wholesalers or SMEs.', ms:'Sesuai untuk pemborong atau SME yang aktif.'},
     monthly:199, monthlySetup:500, annual:1990,
     features:{
-      en:['Everything in Starter, plus:','Up to 2 branches','Full accounting &amp; bank reconciliation','500 AI queries/day','20GB storage'],
-      ms:['Semua dalam Starter, ditambah:','Sehingga 2 cawangan','Perakaunan penuh &amp; penyesuaian bank','500 pertanyaan AI/hari','Storan 20GB']}},
+      en:['Full access to all modules','2,500 transactions/month','Up to 3 branches/warehouses','500 AI queries/day (bank recon/receipts)'],
+      ms:['Akses penuh semua modul','2,500 transaksi/bulan','Sehingga 3 cawangan/gudang','500 proses AI/hari (bank recon/resit)']}},
   { id:'pro', popular:false,
     name:{en:'Pro', ms:'Pro'},
-    audience:{en:'For established SMEs running HR, payroll, and multi-currency operations.', ms:'Untuk PKS mantap yang menguruskan HR, gaji, dan operasi multi-mata wang.'},
+    audience:{en:'For growing retail networks and fast-scaling companies.', ms:'Sesuai untuk rangkaian runcit dan syarikat yang berkembang pesat.'},
     monthly:349, monthlySetup:800, annual:3490,
     features:{
-      en:['Everything in Business, plus:','Up to 5 branches &amp; multi-location inventory','HR &amp; Payroll, multi-currency','2,000 AI queries/day','50GB storage'],
-      ms:['Semua dalam Business, ditambah:','Sehingga 5 cawangan &amp; inventori pelbagai lokasi','HR &amp; Gaji, multi-mata wang','2,000 pertanyaan AI/hari','Storan 50GB']}},
+      en:['Full access to all modules','Unlimited transactions','Up to 10 branches/warehouses','2,000 AI queries/day (bank recon/receipts)'],
+      ms:['Akses penuh semua modul','Transaksi tanpa had','Sehingga 10 cawangan/gudang','2,000 proses AI/hari (bank recon/resit)']}},
 ];
 let pricingPeriod = 'monthly';
 const pricingGrid = document.getElementById('pricingGrid');
 function fmtRM(n){ return 'RM' + n.toLocaleString('en-US'); }
 function priceBlockHtml(plan){
   const t = I18N[currentLang];
+  if(plan.isFree){
+    return `<div class="price-amount">${fmtRM(0)}<span class="price-suffix">${t.pricing_free_forever}</span></div>`;
+  }
   if(pricingPeriod === 'monthly'){
     return `<div class="price-amount">${fmtRM(plan.monthly)}<span class="price-suffix">${t.pricing_per_month_suffix}</span></div>
       <div class="price-setup">(+ ${t.pricing_setup_label}: ${fmtRM(plan.monthlySetup)}, ${t.pricing_onetime_label})</div>`;
@@ -984,6 +1021,12 @@ const I18N = {
     pricing_annual_note: 'Save 2 months + Setup Fee waived',
     pricing_per_month_suffix: '/mo',
     pricing_per_year_suffix: '/yr',
+    pricing_free_forever: 'Forever',
+    pricing_paid_note: 'Upgrade to any paid plan to unlock All Access to every NexERP feature: full accounting (P&amp;L, Balance Sheet), AI-powered bank reconciliation, HR &amp; payroll, multi-currency, and technical support.',
+    pricing_onboarding_heading: 'What the Setup Fee covers (White-Glove Onboarding)',
+    pricing_onboarding_intro: 'For monthly plans, the Setup Fee covers technical work completed by the NexERP team for you. Just hand over your Excel files, and we will:',
+    pricing_onboarding_bullets: '<li>Set up your logo, letterhead, and bank details</li><li>Upload your customer, supplier, and stock catalogue lists</li><li>Enter your Chart of Accounts (COA) and opening balances</li><li>Register all your staff accounts</li>',
+    pricing_onboarding_closing: "Choose the Annual Plan and we'll do all of this 100% FREE!",
     pricing_footnote: 'Need more branches or unlimited AI usage? Enterprise pricing available — <a href="#contact">talk to us</a>.',
     process_eyebrow: 'Our Process',
     process_title: 'How we work with you',
@@ -1048,6 +1091,12 @@ const I18N = {
     pricing_annual_note: 'Jimat 2 bulan + Yuran Persediaan diketepikan',
     pricing_per_month_suffix: '/bulan',
     pricing_per_year_suffix: '/tahun',
+    pricing_free_forever: 'Selamanya',
+    pricing_paid_note: 'Naik taraf ke mana-mana pelan berbayar untuk membuka Akses Penuh Ke Semua Ciri NexERP: Perakaunan Penuh (P&amp;L, Kunci Kira-kira), Penyelarasan Bank AI, HR &amp; Slip Gaji, Pelbagai Mata Wang, dan Sokongan Teknikal.',
+    pricing_onboarding_heading: 'Apa Yang Termasuk Dalam Yuran Pasang (Layan Penuh)',
+    pricing_onboarding_intro: 'Untuk pelan bulanan, Yuran Pasang merangkumi kerja-kerja teknikal yang diselesaikan oleh pasukan NexERP untuk anda. Anda hanya serahkan Excel, dan kami akan:',
+    pricing_onboarding_bullets: '<li>Menetapkan logo, letterhead, dan maklumat bank</li><li>Memuat naik senarai pelanggan, pembekal, dan katalog stok</li><li>Memasukkan Carta Akaun (COA) dan baki awal kewangan</li><li>Mendaftarkan akaun semua staf anda</li>',
+    pricing_onboarding_closing: 'Pilih Pelan Tahunan dan kami akan siapkan semua kerja di atas secara 100% PERCUMA!',
     pricing_footnote: 'Perlukan lebih cawangan atau kuota AI tanpa had? Harga Enterprise boleh dirunding — <a href="#contact">hubungi kami</a>.',
     process_eyebrow: 'Proses Kami',
     process_title: 'Bagaimana kami bekerja dengan anda',
