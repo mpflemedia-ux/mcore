@@ -1758,6 +1758,18 @@ Deno.serve(async (req: Request) => {
         }, 400)
     }
 
+    // Plan/Billing usage tracking (soft-warning only — see
+    // 20260818000000_plan_billing_module.sql). Uses the CALLER's own JWT
+    // (userClient, not a service-role client), so increment_ai_daily_usage
+    // derives the tenant server-side from auth.uid() and can never be
+    // pointed at a different tenant. Best-effort: a tracking failure must
+    // never turn a successful AI response into an error for the user.
+    try {
+      await userClient.rpc('increment_ai_daily_usage')
+    } catch (usageErr) {
+      console.warn('increment_ai_daily_usage failed:', usageErr)
+    }
+
     return jsonResponse({ success: true, data })
   } catch (err) {
     console.error('ai-proxy error:', err)
