@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-16-osstaff">
+<meta name="nexerp-build" content="2026-08-20-plan-select-w">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7751,7 +7751,7 @@ async function renderAdminClients() {
     <td onclick="event.stopPropagation()"><input type="checkbox" class="admin-tenant-chk" data-tenant-id="${d.id}" onchange="_onTenantCheckChange()"></td>
     <td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
     <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
-    <td onclick="event.stopPropagation()"><select class="form-select" style="font-size:12px;padding:4px 6px" data-tenant-id="${d.id}" data-prev="${d.plan_id||''}" onchange="_onPlanChange(this)">${planOptions(d)}</select></td>
+    <td onclick="event.stopPropagation()" style="min-width:12rem"><select class="form-select admin-plan-select" style="font-size:12px;padding:4px 8px;min-width:11.5rem;width:auto;max-width:16rem" data-tenant-id="${d.id}" data-prev="${d.plan_id||''}" onchange="_onPlanChange(this)">${planOptions(d)}</select></td>
     <td style="color:${d.is_active===false?'var(--danger)':'var(--success)'}">${d.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</td>
     ${onboardCell(d)}
     ${d.is_trial ? expiryCell(d.trial_ends_at) : `<td style="color:var(--text-3)">—</td>`}
