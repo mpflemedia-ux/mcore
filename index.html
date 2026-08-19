@@ -146,10 +146,17 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 
 .hero {
   padding: 56px 0 40px;
-  display: grid; grid-template-columns: 1fr 1.05fr; gap: 36px; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 40px; align-items: start;
+}
+.hero-copy { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.hero .mock {
+  width: 100%; max-width: 520px; margin-left: auto; margin-right: 0;
+  align-self: start;
 }
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 40px; }
+  .hero .mock { max-width: none; margin-left: 0; }
 }
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
@@ -339,6 +346,13 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 .svc-price {
   padding: 22px; border-radius: var(--r);
   border: 1px solid var(--border); background: var(--panel);
+  display: flex; flex-direction: column; min-height: 100%;
+}
+.svc-price .svc-cta {
+  margin-top: auto; padding-top: 16px;
+}
+.svc-price .svc-cta .btn {
+  width: 100%;
 }
 .svc-price .tag {
   font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -396,6 +410,51 @@ html[data-theme="light"] .scroll-top {
   color: var(--cyan);
 }
 .scroll-top svg { width: 14px; height: 14px; display: block; }
+
+/* Mock KPI / chart animation */
+.mock-kpi .v[data-target] { font-variant-numeric: tabular-nums; }
+.mock-chart .draw-line {
+  stroke-dasharray: 400;
+  stroke-dashoffset: 400;
+  transition: none;
+}
+.mock.animating .mock-chart .draw-line {
+  transition: stroke-dashoffset 1s ease-out;
+  stroke-dashoffset: 0;
+}
+.mock-chart .draw-area {
+  opacity: 0;
+  transition: none;
+}
+.mock.animating .mock-chart .draw-area {
+  transition: opacity .6s ease-out .35s;
+  opacity: 1;
+}
+.mock-chart .draw-dot {
+  opacity: 0;
+  transition: none;
+}
+.mock.animating .mock-chart .draw-dot {
+  transition: opacity .3s ease-out .9s;
+  opacity: 1;
+}
+.mock-radar .radar-fill {
+  opacity: 0;
+  transform: scale(0.92);
+  transform-origin: center;
+  transition: none;
+}
+.mock.animating .mock-radar .radar-fill {
+  transition: opacity .7s ease-out .2s, transform .7s ease-out .2s;
+  opacity: 1;
+  transform: scale(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mock-chart .draw-line { stroke-dashoffset: 0 !important; transition: none !important; }
+  .mock-chart .draw-area, .mock-chart .draw-dot, .mock-radar .radar-fill {
+    opacity: 1 !important; transform: none !important; transition: none !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -420,7 +479,7 @@ html[data-theme="light"] .scroll-top {
   <!-- HERO + MOCK -->
   <section class="hero" id="hero">
     <div class="hero-wash" aria-hidden="true"></div>
-    <div>
+    <div class="hero-copy">
       <div class="hero-badge"><i></i><span data-i18n="hero_badge">Built for Malaysian SMEs</span></div>
       <h1 data-i18n="hero_title">One workspace for books, payroll, stock &amp; sales.<br><em>That’s M-Core.</em></h1>
       <p class="sub" data-i18n="hero_sub">Stop juggling Excel, WhatsApp, and three apps. Run your business OS in one place — DIY or with MPFLE beside you.</p>
@@ -430,15 +489,15 @@ html[data-theme="light"] .scroll-top {
         <a class="btn btn-ghost" href="mailto:hello@mpflemedia.my" data-i18n="hero_cta_talk">Talk to us</a>
       </div>
     </div>
-    <aside class="mock" aria-label="M-Core dashboard preview">
+    <aside class="mock" id="mockPanel" aria-label="M-Core dashboard preview">
       <div class="mock-top">
         <span class="cap" data-i18n="mock_cap">M-Core preview</span>
         <span class="dot" aria-hidden="true"></span>
       </div>
       <div class="mock-kpis">
-        <div class="mock-kpi"><div class="l" data-i18n="mock_kpi1_l">Sales</div><div class="v">RM 48.2k</div><div class="d">+12% MoM</div></div>
-        <div class="mock-kpi"><div class="l" data-i18n="mock_kpi2_l">Collected</div><div class="v">RM 41.6k</div><div class="d">86% rate</div></div>
-        <div class="mock-kpi"><div class="l" data-i18n="mock_kpi3_l">Payroll</div><div class="v">RM 18.4k</div><div class="d">12 staff</div></div>
+        <div class="mock-kpi"><div class="l" data-i18n="mock_kpi1_l">Sales</div><div class="v" data-prefix="RM " data-target="48.2" data-suffix="k" data-decimals="1">RM 0.0k</div><div class="d">+12% MoM</div></div>
+        <div class="mock-kpi"><div class="l" data-i18n="mock_kpi2_l">Collected</div><div class="v" data-prefix="RM " data-target="41.6" data-suffix="k" data-decimals="1">RM 0.0k</div><div class="d">86% rate</div></div>
+        <div class="mock-kpi"><div class="l" data-i18n="mock_kpi3_l">Payroll</div><div class="v" data-prefix="RM " data-target="18.4" data-suffix="k" data-decimals="1">RM 0.0k</div><div class="d">12 staff</div></div>
       </div>
       <div class="mock-body">
         <div class="mock-chart">
@@ -453,9 +512,9 @@ html[data-theme="light"] .scroll-top {
             <line x1="8" y1="100" x2="272" y2="100" stroke="rgba(231,233,235,0.12)" stroke-width="1"/>
             <line x1="8" y1="70" x2="272" y2="70" stroke="rgba(231,233,235,0.06)" stroke-width="1"/>
             <line x1="8" y1="40" x2="272" y2="40" stroke="rgba(231,233,235,0.06)" stroke-width="1"/>
-            <path d="M8,88 L52,78 L96,82 L140,58 L184,62 L228,38 L272,28 L272,100 L8,100 Z" fill="url(#areaG)"/>
-            <path d="M8,88 L52,78 L96,82 L140,58 L184,62 L228,38 L272,28" fill="none" stroke="#22D3EE" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="272" cy="28" r="3.5" fill="#14B8A6"/>
+            <path class="draw-area" d="M8,88 L52,78 L96,82 L140,58 L184,62 L228,38 L272,28 L272,100 L8,100 Z" fill="url(#areaG)"/>
+            <path class="draw-line" d="M8,88 L52,78 L96,82 L140,58 L184,62 L228,38 L272,28" fill="none" stroke="#22D3EE" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle class="draw-dot" cx="272" cy="28" r="3.5" fill="#14B8A6"/>
           </svg>
         </div>
         <div class="mock-radar">
@@ -469,7 +528,7 @@ html[data-theme="light"] .scroll-top {
               <line x1="0" y1="0" x2="41" y2="24"/><line x1="0" y1="0" x2="0" y2="48"/>
               <line x1="0" y1="0" x2="-41" y2="24"/><line x1="0" y1="0" x2="-41" y2="-24"/>
             </g>
-            <polygon transform="translate(70,68)" points="0,-40 34,-18 30,16 0,36 -28,18 -36,-14"
+            <polygon class="radar-fill" transform="translate(70,68)" points="0,-40 34,-18 30,16 0,36 -28,18 -36,-14"
               fill="rgba(34,211,238,0.18)" stroke="#22D3EE" stroke-width="1.6"/>
             <g fill="#9AA0A6" font-size="7" font-family="Inter,sans-serif" text-anchor="middle">
               <text x="70" y="12">Sales</text>
@@ -811,7 +870,7 @@ function renderSvcPriceGrid() {
   grid.innerHTML = cards.map(c =>
     '<article class="svc-price reveal"><div class="tag">'+c.tag+'</div><h3>'+c.title+'</h3><p class="blurb">'+c.blurb+'</p>'+
     c.tiers.map(x => '<div class="tier"><strong>'+x.k+'</strong><span class="rm">'+x.v+'</span><br><span>'+x.d+'</span></div>').join('')+
-    '<div style="margin-top:12px"><a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my">'+(isBm?'Hubungi kami':'Talk to us')+'</a></div></article>'
+    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my">'+(isBm?'Hubungi kami':'Talk to us')+'</a></div></article>'
   ).join('');
   observeReveals();
 }
@@ -859,6 +918,58 @@ function observeReveals() {
   } catch (e) { forceVisible(); }
 }
 
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+function animateMockOnce(panel) {
+  if (!panel || panel.dataset.animated === '1') return;
+  panel.dataset.animated = '1';
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const kpis = panel.querySelectorAll('.mock-kpi .v[data-target]');
+  if (reduce) {
+    kpis.forEach(el => {
+      const t = parseFloat(el.dataset.target || '0');
+      const dec = parseInt(el.dataset.decimals || '0', 10);
+      el.textContent = (el.dataset.prefix || '') + t.toFixed(dec) + (el.dataset.suffix || '');
+    });
+    panel.classList.add('animating');
+    return;
+  }
+  panel.classList.add('animating');
+  const duration = 1000;
+  const start = performance.now();
+  function frame(now) {
+    const p = Math.min(1, (now - start) / duration);
+    const e = easeOutCubic(p);
+    kpis.forEach(el => {
+      const target = parseFloat(el.dataset.target || '0');
+      const dec = parseInt(el.dataset.decimals || '0', 10);
+      const val = target * e;
+      el.textContent = (el.dataset.prefix || '') + val.toFixed(dec) + (el.dataset.suffix || '');
+    });
+    if (p < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function bindMockAnimation() {
+  const panel = document.getElementById('mockPanel');
+  if (!panel) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    animateMockOnce(panel);
+    return;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        animateMockOnce(e.target);
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.35 });
+  io.observe(panel);
+}
+
 function boot() {
   try {
     const saved = localStorage.getItem('mcore_theme');
@@ -880,6 +991,7 @@ function boot() {
       }
     }
     observeReveals();
+    bindMockAnimation();
   } catch (err) {
     console.error(err);
     forceVisible();
