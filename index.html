@@ -756,7 +756,6 @@ function renderPricingGrid() {
       '<div class="setup">'+b.setup[currentLang]+'</div>'+
       '<ul>'+p.features[currentLang].map(f=>'<li>'+f+'</li>').join('')+'</ul>'+
       '<a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my?subject=M-Core%20'+encodeURIComponent(p.name.en)+'">'+t.talk+'</a>'+
-      (p.id==='free' ? ' <a class="btn btn-ghost btn-sm" href="https://mpflemedia-ux.github.io/nexerp/app/">'+t.open_app+'</a>' : '')+
       '</article>';
   }).join('');
   const sc = document.getElementById('setupCard');
