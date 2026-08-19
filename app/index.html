@@ -1478,6 +1478,7 @@ html[data-skip-intro="1"] #intro-skip {
         </div>
       </div>
     </header>
+    <div id="broadcast-banner-wrap"></div>
     <main id="main">
       <div class="page-loading"><div class="spinner dark"></div></div>
     </main>
@@ -3471,7 +3472,7 @@ async function doRegister() {
         p_full_name:   name,
         p_entity_type: 'sdn_bhd',
         p_industry:    'general',
-        p_plan_code:   'starter'
+        p_plan_code:   'free' // Free-plan-as-the-hook — new signups land on Free, not silently on a paid tier
       })
       if(rpcError) {
         console.error('register_tenant error:', rpcError)
@@ -3882,6 +3883,44 @@ function showAuthPage() {
   }
 }
 
+// Broadcast Announcements (platform_admin -> create_announcement RPC) —
+// shown to ALL logged-in users of ALL tenants, not just platform_admin.
+// Dismiss-persistence choice (flagged per the task spec): dismissing an
+// announcement is PERMANENT per announcement id (stored in localStorage) —
+// it will not reappear on refresh. A newly-broadcast announcement always
+// shows regardless, since it carries a different id.
+function _dismissedAnnouncementIds() {
+  try { return JSON.parse(localStorage.getItem('nexerp_dismissed_announcements') || '[]') } catch(e) { return [] }
+}
+async function _loadBroadcastAnnouncements() {
+  try {
+    const host = document.getElementById('broadcast-banner-wrap')
+    if(!host) return
+    const { data, error } = await sb.from('platform_announcements')
+      .select('id,message_en,message_bm,severity')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    if(error || !data) return
+    const dismissed = new Set(_dismissedAnnouncementIds())
+    const visible = data.filter(a => !dismissed.has(a.id))
+    const isBm = APP.language==='bm'
+    host.innerHTML = visible.map(a => {
+      const warn = a.severity === 'warning'
+      return `<div class="broadcast-banner" style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:${warn?'rgba(217,119,6,.12)':'rgba(37,99,235,.10)'};border-bottom:1px solid ${warn?'rgba(217,119,6,.35)':'rgba(37,99,235,.3)'}">
+        <div style="font-size:13px;color:var(--text)"><i class="ti ${warn?'ti-alert-triangle':'ti-speakerphone'}" style="color:${warn?'var(--warning)':'var(--primary)'}"></i> ${_aiEscapeHtml(isBm ? a.message_bm : a.message_en)}</div>
+        <button class="header-btn" style="flex-shrink:0" onclick="_dismissAnnouncement('${a.id}')" title="Dismiss"><i class="ti ti-x"></i></button>
+      </div>`
+    }).join('')
+  } catch(e) { console.warn('_loadBroadcastAnnouncements', e) }
+}
+function _dismissAnnouncement(id) {
+  const ids = _dismissedAnnouncementIds()
+  if(!ids.includes(id)) ids.push(id)
+  try { localStorage.setItem('nexerp_dismissed_announcements', JSON.stringify(ids)) } catch(e) {}
+  const host = document.getElementById('broadcast-banner-wrap')
+  if(host) { const el = host.querySelector(`[onclick*="${id}"]`); (el && el.closest('.broadcast-banner'))?.remove() }
+}
+
 function showShell() {
   try { localStorage.setItem('nexerp_intro_done', '1') } catch(e) {}
   document.documentElement.setAttribute('data-skip-intro', '1')
@@ -3900,6 +3939,7 @@ function showShell() {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
     buildSidebar()
     updateUserUI()
+    _loadBroadcastAnnouncements()
     let lastParams = {}
     try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
     openPage(localStorage.getItem('nexerp_last_page') || 'dashboard', lastParams)
@@ -4392,6 +4432,57 @@ async function _dbMonthPnL(fromDate, toDateInclusive) {
   }
 }
 
+// Soft-warning only (no blocking anywhere): shown to a tenant's own users
+// when this month's transaction count or today's AI query count crosses
+// 90% of their plan's limit. A null limit (unlimited/Free/legacy) never
+// triggers this — Math.min/percentage math is skipped entirely for a null
+// limit rather than treated as "0% of infinity".
+// Dismiss-persistence choice (flagged per the task spec): dismissing hides
+// the banner for the REST OF TODAY only (localStorage key includes today's
+// date) — it reappears on a later day if still over 90%, rather than being
+// silenced forever after one dismiss. This errs toward "still visible
+// enough to prompt an upgrade conversation" over "never nags again".
+async function _dbUsageWarningCheck() {
+  try {
+    if(!APP.tenant?.id) return
+    const today = new Date().toISOString().slice(0,10)
+    const dismissKey = 'nexerp_usage_dismiss_' + APP.tenant.id + '_' + today
+    if(localStorage.getItem(dismissKey) === '1') return
+
+    const { data: trow } = await sb.from('tenants').select('plan_id').eq('id', APP.tenant.id).maybeSingle()
+    if(!trow?.plan_id) return
+    const plans = await _loadPlansCache()
+    const plan = plans.find(p => p.id === trow.plan_id)
+    if(!plan) return
+
+    const now = new Date()
+    const [{ data: monthUsage }, { data: dayUsage }] = await Promise.all([
+      sb.from('tenant_usage_monthly').select('transaction_count').eq('tenant_id', APP.tenant.id).eq('year', now.getFullYear()).eq('month', now.getMonth()+1).maybeSingle(),
+      sb.from('tenant_usage_daily').select('ai_queries_count').eq('tenant_id', APP.tenant.id).eq('usage_date', today).maybeSingle(),
+    ])
+    const txCount = monthUsage?.transaction_count || 0
+    const aiCount = dayUsage?.ai_queries_count || 0
+    const overTx = plan.monthly_transaction_limit != null && txCount >= plan.monthly_transaction_limit * 0.9
+    const overAi = plan.ai_daily_quota != null && aiCount >= plan.ai_daily_quota * 0.9
+    if(!overTx && !overAi) return
+
+    setTimeout(() => {
+      const host = document.getElementById('page-content') || document.querySelector('main')
+      if(!host || document.getElementById('ob-usage-warn-banner')) return
+      const bm = APP.language==='bm'
+      const bar = document.createElement('div')
+      bar.id = 'ob-usage-warn-banner'
+      bar.style.cssText = 'margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(217,119,6,.12);border:1px solid rgba(217,119,6,.35);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'
+      const msg = bm
+        ? 'Menghampiri had bulanan pelan anda — hubungi kami untuk naik taraf.'
+        : "Approaching your plan's monthly limit — contact us to upgrade."
+      bar.innerHTML = `<div style="font-size:13px;color:var(--text)"><i class="ti ti-alert-triangle" style="color:var(--warning)"></i> <strong>${msg}</strong></div>
+        <button class="btn btn-outline btn-sm" onclick="localStorage.setItem('${dismissKey}','1');document.getElementById('ob-usage-warn-banner')?.remove()">Dismiss</button>`
+      host.insertBefore(bar, host.firstChild)
+    }, 600)
+  } catch(e) { console.warn('_dbUsageWarningCheck', e) }
+}
+
 async function loadDashboardData() {
   try {
     if(!APP.tenant || !APP.tenant.id) {
@@ -4415,6 +4506,8 @@ async function loadDashboardData() {
       }, 600)
     }
   } catch(e) {}
+
+  _dbUsageWarningCheck() // fire-and-forget, never blocks dashboard load
 
   if(!APP.tenant?.id) {
     // Session may still be hydrating after login — retry once
@@ -6978,6 +7071,7 @@ function renderAdmin(params={}) {
   if(params.view==='tenant' && params.id) { renderAdminTenantDetail(params.id); return }
   if(params.view==='clients' && isPlatformAdmin()) { renderAdminClients(); return }
   if(params.view==='audit' && isPlatformAdmin()) { renderAdminAuditLog(); return }
+  if(params.view==='announcements' && isPlatformAdmin()) { renderAdminAnnouncements(); return }
   renderAdminTeam()
 }
 
@@ -6988,6 +7082,7 @@ function _adminTabs(active) {
     <button class="btn btn-sm ${active==='team'?'btn-primary':'btn-outline'}" onclick="openPage('admin')"><i class="ti ti-users"></i> ${isBm?'Pasukan':'Team'}</button>
     ${platform ? `<button class="btn btn-sm ${active==='clients'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'clients'})"><i class="ti ti-building-skyscraper"></i> ${isBm?'Semua Client':'All Clients'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='audit'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'audit'})"><i class="ti ti-history"></i> ${isBm?'Log Audit':'Audit Log'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
   </div>`
 }
 
@@ -7038,6 +7133,91 @@ async function renderAdminAuditLog() {
     <td style="color:${actionColor(r.action)}">${_aiEscapeHtml(actionLabel(r.action))}</td>
     <td>${_aiEscapeHtml(r.target_tenant_name||'-')}</td>
     <td style="font-size:12px;color:var(--text-3)">${r.created_at?new Date(r.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
+  </tr>`).join('')}
+  </tbody></table>`
+}
+
+async function renderAdminAnnouncements() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Admin — Pengumuman', sub:'Siar pengumuman kepada SEMUA pengguna di semua tenant',
+    msgEn:'Mesej (EN)', msgBm:'Mesej (BM)', severity:'Tahap', info:'Info', warning:'Amaran',
+    send:'Siarkan Pengumuman', sent:'Pengumuman disiarkan!', both:'Kedua-dua mesej EN dan BM diperlukan.',
+    history:'Sejarah Pengumuman', noData:'Tiada pengumuman lagi.', active:'Aktif', when:'Bila',
+  } : {
+    title:'Admin — Announcements', sub:'Broadcast an announcement to ALL users across ALL tenants',
+    msgEn:'Message (EN)', msgBm:'Message (BM)', severity:'Severity', info:'Info', warning:'Warning',
+    send:'Broadcast Announcement', sent:'Announcement broadcast!', both:'Both EN and BM message are required.',
+    history:'Announcement History', noData:'No announcements yet.', active:'Active', when:'When',
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('announcements')}
+  <div class="card" style="padding:20px;max-width:640px;margin-bottom:16px">
+    <div class="form-group">
+      <label class="form-label">${t.msgEn}</label>
+      <textarea id="ann-msg-en" class="form-input" rows="2"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">${t.msgBm}</label>
+      <textarea id="ann-msg-bm" class="form-input" rows="2"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">${t.severity}</label>
+      <select id="ann-severity" class="form-select">
+        <option value="info">${t.info}</option>
+        <option value="warning">${t.warning}</option>
+      </select>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="doCreateAnnouncement()"><i class="ti ti-speakerphone"></i> ${t.send}</button>
+  </div>
+  <div class="card"><div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600">${t.history}</div>
+    <div id="admin-ann-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>`
+
+  window._adminAnnT = t
+  _loadAdminAnnouncementsHistory()
+}
+
+async function doCreateAnnouncement() {
+  const isBm = APP.language==='bm'
+  const t = window._adminAnnT || {}
+  const msgEn = (document.getElementById('ann-msg-en')?.value || '').trim()
+  const msgBm = (document.getElementById('ann-msg-bm')?.value || '').trim()
+  const severity = document.getElementById('ann-severity')?.value || 'info'
+  if(!msgEn || !msgBm) { showToast(t.both || 'Both EN and BM message are required.', 'error'); return }
+  const { error } = await sb.rpc('create_announcement', { p_message_en: msgEn, p_message_bm: msgBm, p_severity: severity })
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(t.sent || 'Announcement broadcast!', 'success')
+  document.getElementById('ann-msg-en').value = ''
+  document.getElementById('ann-msg-bm').value = ''
+  _loadAdminAnnouncementsHistory()
+}
+
+async function _loadAdminAnnouncementsHistory() {
+  const isBm = APP.language==='bm'
+  const t = window._adminAnnT || {}
+  const wrap = document.getElementById('admin-ann-wrap')
+  if(!wrap) return
+  const { data, error } = await sb.from('platform_announcements')
+    .select('id,message_en,message_bm,severity,created_at,expires_at,is_active')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  if(error) { wrap.innerHTML = `<div style="padding:24px;color:var(--danger)">${_aiEscapeHtml(error.message)}</div>`; return }
+  if(!data || !data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData||'No announcements yet.'}</p></div>`; return }
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${isBm?'Mesej':'Message'}</th><th>${t.severity||'Severity'}</th><th>${t.active||'Active'}</th><th>${t.when||'When'}</th>
+  </tr></thead><tbody>
+  ${data.map(a => `<tr>
+    <td style="max-width:420px">${_aiEscapeHtml(isBm ? a.message_bm : a.message_en)}</td>
+    <td style="color:${a.severity==='warning'?'var(--warning)':'var(--text-2)'}">${_aiEscapeHtml(a.severity)}</td>
+    <td style="color:${a.is_active?'var(--success)':'var(--text-3)'}">${a.is_active?(isBm?'Ya':'Yes'):(isBm?'Tidak':'No')}</td>
+    <td style="font-size:12px;color:var(--text-3)">${a.created_at?new Date(a.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
   </tr>`).join('')}
   </tbody></table>`
 }
@@ -7394,17 +7574,35 @@ async function _adminDeleteMember(btnOrId) {
   renderAdminTeam()
 }
 
+// Cached plans list (id/code/name_en/name_bm) — reference data, shared by
+// the plan-assignment dropdown and the CSV export. Fetched once per page
+// load; cheap enough (5 rows) that a hard refresh is the only way to see a
+// newly-added plan, which is fine since plans are seeded by migration, not
+// created through the UI.
+let _plansCache = null
+const _PLAN_CODE_ORDER = ['free','starter','business','pro','unlimited']
+async function _loadPlansCache() {
+  if(_plansCache) return _plansCache
+  const { data } = await sb.from('plans').select('id,code,name_en,name_bm')
+  const list = data || []
+  list.sort((a,b) => _PLAN_CODE_ORDER.indexOf(a.code) - _PLAN_CODE_ORDER.indexOf(b.code))
+  _plansCache = list
+  return _plansCache
+}
+
 async function renderAdminClients() {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Admin — Semua Client', sub:'Platform overview (memerlukan RLS policy platform)',
     name:'Syarikat', code:'Kod', plan:'Pelan', status:'Status', onboard:'Onboarding',
-    created:'Dicipta', noData:'Tiada tenant / akses ditolak RLS.', users:'Users', open:'Buka'
+    created:'Dicipta', noData:'Tiada tenant / akses ditolak RLS.', users:'Users', open:'Buka',
+    bulkSuspend:'Gantung Pukal', exportCsv:'Eksport CSV'
   } : {
     title:'Admin — All Clients', sub:'Platform overview (requires platform RLS policy)',
     name:'Company', code:'Code', plan:'Plan', status:'Status', onboard:'Onboarding',
-    created:'Created', noData:'No tenants / RLS blocked access.', users:'Users', open:'Open'
+    created:'Created', noData:'No tenants / RLS blocked access.', users:'Users', open:'Open',
+    bulkSuspend:'Bulk Suspend', exportCsv:'Export CSV'
   }
 
   document.getElementById('main').innerHTML = `
@@ -7413,12 +7611,24 @@ async function renderAdminClients() {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
   </div></div>
   ${_adminTabs('clients')}
-  <div class="card"><div id="admin-clients-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button type="button" id="admin-bulk-suspend-btn" class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" disabled onclick="doBulkSuspendTenants()"><i class="ti ti-ban"></i> ${t.bulkSuspend} (<span id="admin-bulk-suspend-count">0</span>)</button>
+    <button type="button" class="btn btn-sm btn-outline" onclick="doExportTenantsCsv()"><i class="ti ti-download"></i> ${t.exportCsv}</button>
+  </div>
+  <div class="card"><div id="admin-clients-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+  <div class="modal-overlay" id="admin-bulk-suspend-modal-overlay">
+    <div class="modal-box" style="max-width:480px">
+      <div class="modal-box-header" style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${isBm?'Gantung Tenant Secara Pukal':'Bulk Suspend Tenants'}</div>
+      <div class="modal-box-body" id="admin-bulk-suspend-body"></div>
+      <div class="modal-box-footer" id="admin-bulk-suspend-footer"></div>
+    </div>
+  </div>`
 
   const wrap = document.getElementById('admin-clients-wrap')
-  const {data, error} = await sb.from('tenants')
-    .select('id,code,name,plan,is_active,onboarding_completed,created_at')
-    .order('created_at', {ascending:false})
+  const [{data, error}] = await Promise.all([
+    sb.from('tenants').select('id,code,name,plan,plan_id,is_active,onboarding_completed,created_at').order('created_at', {ascending:false}),
+    _loadPlansCache(),
+  ])
 
   if(error) {
     wrap.innerHTML = `<div style="padding:24px">
@@ -7443,6 +7653,10 @@ async function renderAdminClients() {
     const {data: profiles} = await sb.from('user_profiles').select('tenant_id').in('tenant_id', ids).is('deleted_at',null)
     ;(profiles||[]).forEach(p => { countMap[p.tenant_id] = (countMap[p.tenant_id]||0)+1 })
   } catch(e) {}
+  _adminClientsUserCounts = countMap
+
+  const plans = _plansCache || []
+  const planOptions = d => plans.map(p => `<option value="${p.id}" ${String(p.id)===String(d.plan_id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')
 
   wrap.innerHTML = `
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:12px 8px 20px">
@@ -7456,12 +7670,14 @@ async function renderAdminClients() {
     </div>
   </div>
   <div style="overflow-x:auto"><table><thead><tr>
+    <th style="width:32px"><input type="checkbox" id="admin-select-all" onchange="_toggleSelectAllTenants(this)"></th>
     <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.users}</th><th>${t.created}</th><th></th>
   </tr></thead><tbody>
   ${data.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
+    <td onclick="event.stopPropagation()"><input type="checkbox" class="admin-tenant-chk" data-tenant-id="${d.id}" onchange="_onTenantCheckChange()"></td>
     <td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
     <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
-    <td>${_aiEscapeHtml(d.plan||'—')}</td>
+    <td onclick="event.stopPropagation()"><select class="form-select" style="font-size:12px;padding:4px 6px" data-tenant-id="${d.id}" data-prev="${d.plan_id||''}" onchange="_onPlanChange(this)">${planOptions(d)}</select></td>
     <td style="color:${d.is_active===false?'var(--danger)':'var(--success)'}">${d.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</td>
     <td style="color:${d.onboarding_completed?'var(--success)':'var(--warning)'}">${d.onboarding_completed?(isBm?'Siap':'Done'):(isBm?'Belum':'Pending')}</td>
     <td>${countMap[d.id]||'—'}</td>
@@ -7469,12 +7685,123 @@ async function renderAdminClients() {
     <td><button type="button" class="btn btn-sm ${d.is_active===false?'btn-primary':'btn-outline'}" onclick="event.stopPropagation();${d.is_active===false?'doReactivateTenant':'doSuspendTenant'}('${d.id}')">${d.is_active===false?(isBm?'Aktifkan semula':'Reactivate'):(isBm?'Gantung':'Suspend')}</button></td>
   </tr>`).join('')}
   </tbody></table></div>`
+  _onTenantCheckChange()
 }
 
 // Populated by renderAdminClients() so doSuspendTenant()/doReactivateTenant()
 // (fired from an inline onclick, not a closure) can look up the tenant's
 // display name without embedding untrusted text inside an HTML attribute.
 let _adminClientsData = []
+let _adminClientsUserCounts = {}
+
+async function _onPlanChange(selectEl) {
+  const isBm = APP.language==='bm'
+  const tenantId = selectEl.dataset.tenantId
+  const prevId = selectEl.dataset.prev
+  const newId = selectEl.value
+  if(newId === prevId) return
+  const tenant = _adminClientsData.find(d => d.id === tenantId)
+  const plan = (_plansCache||[]).find(p => p.id === newId)
+  const planName = plan ? (isBm?plan.name_bm:plan.name_en) : newId
+  const confirmMsg = isBm
+    ? `Tukar pelan "${tenant?.name||tenantId}" kepada "${planName}"? Ini akan ubah had transaksi/AI/cawangan tenant ini.`
+    : `Change "${tenant?.name||tenantId}"'s plan to "${planName}"? This changes this tenant's transaction/AI/branch limits.`
+  if(!confirm(confirmMsg)) { selectEl.value = prevId; return }
+  const { error } = await sb.rpc('set_tenant_plan', { p_tenant_id: tenantId, p_plan_id: newId })
+  if(error) { showToast(error.message, 'error'); selectEl.value = prevId; return }
+  selectEl.dataset.prev = newId
+  if(tenant) tenant.plan_id = newId
+  showToast(isBm ? `Pelan dikemaskini kepada ${planName}.` : `Plan updated to ${planName}.`, 'success')
+}
+
+function _toggleSelectAllTenants(cb) {
+  document.querySelectorAll('.admin-tenant-chk').forEach(el => { el.checked = cb.checked })
+  _onTenantCheckChange()
+}
+
+function _onTenantCheckChange() {
+  const n = document.querySelectorAll('.admin-tenant-chk:checked').length
+  const btn = document.getElementById('admin-bulk-suspend-btn')
+  if(btn) btn.disabled = n === 0
+  const label = document.getElementById('admin-bulk-suspend-count')
+  if(label) label.textContent = String(n)
+}
+
+// Two-step confirm (list names, THEN a separate explicit "yes, suspend N"
+// step) via the shared in-app .modal-overlay pattern — deliberately not
+// window.confirm(): this can suspend several tenants in one go, and mobile
+// Chrome silently suppresses repeated native dialogs in a page session (see
+// reco-delete-all-modal-overlay's own comment on this), which would make a
+// bulk action on a phone look like it silently did nothing.
+let _adminBulkSuspendIds = []
+function doBulkSuspendTenants() {
+  const isBm = APP.language==='bm'
+  const ids = Array.from(document.querySelectorAll('.admin-tenant-chk:checked')).map(el => el.dataset.tenantId)
+  if(!ids.length) return
+  _adminBulkSuspendIds = ids
+  const names = ids.map(id => (_adminClientsData.find(d=>d.id===id)||{}).name || id)
+  document.getElementById('admin-bulk-suspend-body').innerHTML = `
+    <p style="font-size:13px;color:var(--text-2);margin:0 0 10px">${isBm
+      ? `Anda akan menggantung akses untuk ${ids.length} tenant berikut. Semua pengguna tenant ini akan disekat log masuk serta-merta:`
+      : `You are about to suspend access for these ${ids.length} tenants. All users of these tenants will be blocked from logging in immediately:`}</p>
+    <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;max-height:200px;overflow-y:auto">${names.map(n=>`<li>${_aiEscapeHtml(n)}</li>`).join('')}</ul>`
+  document.getElementById('admin-bulk-suspend-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="document.getElementById('admin-bulk-suspend-modal-overlay').classList.remove('active')">${isBm?'Batal':'Cancel'}</button>
+    <button type="button" class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" onclick="_adminBulkSuspendStep2()">${isBm?'Teruskan':'Continue'}</button>`
+  document.getElementById('admin-bulk-suspend-modal-overlay').classList.add('active')
+}
+
+function _adminBulkSuspendStep2() {
+  const isBm = APP.language==='bm'
+  const n = _adminBulkSuspendIds.length
+  document.getElementById('admin-bulk-suspend-body').innerHTML = `
+    <p style="font-size:13px;color:var(--text)"><strong>${isBm?`Sahkan: gantung ${n} tenant ini?`:`Confirm: suspend these ${n} tenants?`}</strong></p>
+    <p style="font-size:12px;color:var(--text-3);margin-top:6px">${isBm?'Tindakan ini akan direkod dalam Log Audit bagi setiap tenant secara berasingan.':'This will be logged in the Audit Log separately for each tenant.'}</p>`
+  document.getElementById('admin-bulk-suspend-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="document.getElementById('admin-bulk-suspend-modal-overlay').classList.remove('active')">${isBm?'Batal':'Cancel'}</button>
+    <button type="button" class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" onclick="_adminBulkSuspendConfirm()">${isBm?`Ya, gantung ${n} tenant`:`Yes, suspend ${n} tenants`}</button>`
+}
+
+async function _adminBulkSuspendConfirm() {
+  const isBm = APP.language==='bm'
+  const ids = _adminBulkSuspendIds || []
+  document.getElementById('admin-bulk-suspend-modal-overlay').classList.remove('active')
+  let okCount = 0, failCount = 0
+  for(const id of ids) {
+    const { error } = await sb.rpc('suspend_tenant', { p_tenant_id: id })
+    if(error) failCount++; else okCount++
+  }
+  showToast(isBm
+    ? `${okCount} tenant digantung.${failCount?` ${failCount} gagal.`:''}`
+    : `${okCount} tenant(s) suspended.${failCount?` ${failCount} failed.`:''}`, failCount?'error':'success')
+  renderAdminClients()
+}
+
+function doExportTenantsCsv() {
+  const isBm = APP.language==='bm'
+  const columns = [
+    {key:'name', label: isBm?'Syarikat':'Company'},
+    {key:'code', label: isBm?'Kod':'Code'},
+    {key:'plan', label: isBm?'Pelan':'Plan'},
+    {key:'status', label:'Status'},
+    {key:'onboarding', label:'Onboarding'},
+    {key:'users', label: isBm?'Pengguna':'Users'},
+    {key:'created', label: isBm?'Dicipta':'Created'},
+  ]
+  const planNameById = {}
+  ;(_plansCache||[]).forEach(p => { planNameById[p.id] = isBm?p.name_bm:p.name_en })
+  const rows = (_adminClientsData||[]).map(d => ({
+    name: d.name||'', code: d.code||'',
+    plan: planNameById[d.plan_id] || d.plan || '',
+    status: d.is_active===false ? (isBm?'Digantung':'Suspended') : (isBm?'Aktif':'Active'),
+    onboarding: d.onboarding_completed ? (isBm?'Siap':'Done') : (isBm?'Belum':'Pending'),
+    users: _adminClientsUserCounts[d.id] || 0,
+    created: d.created_at ? formatDate(String(d.created_at).slice(0,10)) : '',
+  }))
+  const dNow = new Date()
+  const dd = String(dNow.getDate()).padStart(2,'0'), mm = String(dNow.getMonth()+1).padStart(2,'0'), yyyy = dNow.getFullYear()
+  _exportTableToCsv(rows, columns, `Tenants-${dd}${mm}${yyyy}.csv`)
+}
 
 async function doSuspendTenant(tenantId) {
   const tenant = _adminClientsData.find(d => d.id === tenantId)
@@ -7505,15 +7832,33 @@ async function renderAdminTenantDetail(tenantId) {
   const isBm = APP.language==='bm'
   document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>`
 
-  const [{data: tenant}, {data: users}] = await Promise.all([
+  const now = new Date()
+  const y = now.getFullYear(), m = now.getMonth()+1
+  const today = now.toISOString().slice(0,10)
+  const [{data: tenant}, {data: users}, plans, {data: monthUsage}, {data: dayUsage}] = await Promise.all([
     sb.from('tenants').select('*').eq('id', tenantId).single(),
-    sb.from('user_profiles').select('id,full_name,role,is_active,last_login').eq('tenant_id', tenantId).is('deleted_at',null).order('full_name')
+    sb.from('user_profiles').select('id,full_name,role,is_active,last_login').eq('tenant_id', tenantId).is('deleted_at',null).order('full_name'),
+    _loadPlansCache(),
+    sb.from('tenant_usage_monthly').select('transaction_count').eq('tenant_id', tenantId).eq('year', y).eq('month', m).maybeSingle(),
+    sb.from('tenant_usage_daily').select('ai_queries_count').eq('tenant_id', tenantId).eq('usage_date', today).maybeSingle(),
   ])
 
   if(!tenant) {
     document.getElementById('main').innerHTML = `<div class="empty-state"><p>Tenant not found / no access</p>
       <button class="btn btn-outline btn-sm" onclick="openPage('admin',{view:'clients'})">← Back</button></div>`
     return
+  }
+
+  const plan = (plans||[]).find(p => p.id === tenant.plan_id)
+  const planName = plan ? (isBm?plan.name_bm:plan.name_en) : (tenant.plan || '-')
+  const txCount = monthUsage?.transaction_count || 0
+  const txLimit = plan?.monthly_transaction_limit
+  const aiCount = dayUsage?.ai_queries_count || 0
+  const aiQuota = plan?.ai_daily_quota
+  const usageBar = (count, limit) => {
+    if(limit == null) return null
+    const pct = Math.min(100, Math.round((count/limit)*100))
+    return `<div style="height:6px;border-radius:3px;background:var(--border);margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct>=90?'var(--danger)':pct>=70?'var(--warning)':'var(--success)'}"></div></div>`
   }
 
   document.getElementById('main').innerHTML = `
@@ -7524,10 +7869,28 @@ async function renderAdminTenantDetail(tenantId) {
   <div class="card" style="padding:20px;max-width:900px;margin-bottom:16px">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
       <div><div style="font-size:11px;color:var(--text-3)">Code</div><strong>${_aiEscapeHtml(tenant.code||'-')}</strong></div>
-      <div><div style="font-size:11px;color:var(--text-3)">Plan</div><strong>${_aiEscapeHtml(tenant.plan||'-')}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Plan</div><strong>${_aiEscapeHtml(planName)}</strong></div>
       <div><div style="font-size:11px;color:var(--text-3)">Status</div><strong style="color:${tenant.is_active===false?'var(--danger)':'var(--success)'}">${tenant.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</strong></div>
       <div><div style="font-size:11px;color:var(--text-3)">Onboarding</div><strong style="color:${tenant.onboarding_completed?'var(--success)':'var(--warning)'}">${tenant.onboarding_completed?'Done':'Pending'}</strong></div>
     </div>
+  </div>
+  <div class="card" style="padding:20px;max-width:900px;margin-bottom:16px">
+    <div style="font-weight:600;margin-bottom:14px">${isBm?'Penggunaan (baca sahaja)':'Usage (read-only)'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+      <div>
+        <div style="font-size:11px;color:var(--text-3)">${isBm?'Transaksi bulan ini':'Transactions this month'}</div>
+        <strong>${txCount} / ${txLimit == null ? '∞' : txLimit}</strong>
+        ${usageBar(txCount, txLimit) || ''}
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-3)">${isBm?'Proses AI hari ini':'AI queries today'}</div>
+        <strong>${aiCount} / ${aiQuota == null ? '∞' : aiQuota}</strong>
+        ${usageBar(aiCount, aiQuota) || ''}
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:12px">${isBm
+      ? 'Penggunaan hanya untuk makluman — tiada sekatan automatik dikenakan.'
+      : 'Usage is informational only — no automatic limit is enforced.'}</div>
   </div>
   <div class="card" style="max-width:900px">
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600">${isBm?'Pengguna':'Users'} (${(users||[]).length})</div>
@@ -17411,7 +17774,7 @@ async function _invSave(id) {
   // Fire-and-forget — commission capture must never block/slow the invoice
   // save flow (it already guards itself against non-'paid' invoices and
   // any internal failure; see _commissionCaptureForSale).
-  if(status === 'paid') _commissionCaptureForSale('invoice', invId)
+  if(status === 'paid') { _commissionCaptureForSale('invoice', invId); _usageCaptureForSale() }
   showToast(APP.language==='bm'?'Invois disimpan!':'Invoice saved!', 'success')
   openPage('sales',{view:'inv-detail',id:invId})
 }
@@ -17956,7 +18319,7 @@ async function _paySave(invoiceId, balance) {
   const newPaid = Number(inv.paid_amt||0) + amount
   const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
   await sb.from('invoices').update({paid_amt:newPaid, status:newStatus}).eq('id',invoiceId).eq('tenant_id',APP.tenant.id)
-  if(newStatus === 'paid') _commissionCaptureForSale('invoice', invoiceId) // fire-and-forget, never blocks payment save
+  if(newStatus === 'paid') { _commissionCaptureForSale('invoice', invoiceId); _usageCaptureForSale() } // fire-and-forget, never blocks payment save
 
   try {
     const cogs = (newStatus==='paid' && inv.status!=='paid') ? await _calcCOGS('invoice_items','invoice_id',invoiceId) : 0
@@ -22063,6 +22426,16 @@ function _scNextPeriod(month, year) {
   let m = Number(month) + 1, y = Number(year)
   if(m > 12) { m = 1; y += 1 }
   return { month: m, year: y }
+}
+
+/** Fire-and-forget: increments this tenant's monthly transaction usage
+    counter (Plan/Billing soft-warning tracking, see 20260818000000_plan_billing_module.sql).
+    Never throws — must never block the sale flow, same contract as
+    _commissionCaptureForSale below. Soft-warning only: nothing here ever
+    enforces a limit, it purely records a count for the 90% warning banner
+    (see _dbUsageWarningCheck) and the read-only Vendor Admin usage display. */
+async function _usageCaptureForSale() {
+  try { await sb.rpc('increment_monthly_transaction_usage') } catch(e) { console.warn('_usageCaptureForSale', e) }
 }
 
 /** Called right after an invoice's status becomes 'paid' or a POS sale completes.
@@ -27155,6 +27528,7 @@ async function _posCheckout() {
   }
   // Fire-and-forget — must never slow down checkout (POS "kekal laju").
   _commissionCaptureForSale('pos', trans.id)
+  _usageCaptureForSale()
 
   // Deduct stock for product-linked lines; warn already handled pre-checkout
   for(const c of _posCart) {
@@ -28615,7 +28989,7 @@ async function obFinish() {
         p_full_name: APP.user.name || user.email || 'Owner',
         p_entity_type: OB.data.entity_type || 'sdn_bhd',
         p_industry: OB.data.industry || 'general',
-        p_plan_code: 'starter'
+        p_plan_code: 'free' // Free-plan-as-the-hook — new signups land on Free, not silently on a paid tier
       })
       if(!rpcError) {
         APP.tenant.id = (rpcData && (rpcData.tenant_id || rpcData.id)) || null
