@@ -84,14 +84,14 @@ html[data-theme="light"] .ambient {
 }
 /* Single static cyan wash — hero band only, no motion */
 .hero-wash {
-  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  position: absolute !important; inset: 0; pointer-events: none; z-index: 0;
   background: radial-gradient(ellipse 70% 55% at 92% 8%, rgba(34, 211, 238, 0.07), transparent 62%);
 }
 html[data-theme="light"] .hero-wash {
   background: radial-gradient(ellipse 70% 55% at 92% 8%, rgba(13, 148, 136, 0.05), transparent 62%);
 }
 .hero { position: relative; }
-.hero > * { position: relative; z-index: 1; }
+.hero > *:not(.hero-wash) { position: relative; z-index: 1; }
 .page { position: relative; z-index: 1; }
 
 .nav {
@@ -146,17 +146,30 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 
 .hero {
   padding: 56px 0 40px;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  gap: 40px; align-items: start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
 }
-.hero-copy { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.hero-copy {
+  display: flex; flex-direction: column; justify-content: center;
+  min-width: 0;
+}
 .hero .mock {
-  width: 100%; max-width: 520px; margin-left: auto; margin-right: 0;
-  align-self: start;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  align-self: center;
+  min-width: 0;
 }
 @media (max-width: 900px) {
-  .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 40px; }
-  .hero .mock { max-width: none; margin-left: 0; }
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding-top: 40px;
+    align-items: stretch;
+  }
+  .hero .mock { align-self: stretch; }
 }
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
@@ -394,12 +407,12 @@ footer a:hover { color: var(--cyan); }
 /* Mock KPI / chart animation */
 .mock-kpi .v[data-target] { font-variant-numeric: tabular-nums; }
 .mock-chart .draw-line {
-  stroke-dasharray: 400;
-  stroke-dashoffset: 400;
+  stroke-dasharray: 420;
+  stroke-dashoffset: 420;
   transition: none;
 }
 .mock.animating .mock-chart .draw-line {
-  transition: stroke-dashoffset 1s ease-out;
+  transition: stroke-dashoffset 2s ease-in-out;
   stroke-dashoffset: 0;
 }
 .mock-chart .draw-area {
@@ -407,7 +420,7 @@ footer a:hover { color: var(--cyan); }
   transition: none;
 }
 .mock.animating .mock-chart .draw-area {
-  transition: opacity .6s ease-out .35s;
+  transition: opacity 1s ease-out 0.5s;
   opacity: 1;
 }
 .mock-chart .draw-dot {
@@ -415,17 +428,39 @@ footer a:hover { color: var(--cyan); }
   transition: none;
 }
 .mock.animating .mock-chart .draw-dot {
-  transition: opacity .3s ease-out .9s;
+  transition: opacity 0.4s ease-out 1.7s;
   opacity: 1;
+}
+/* Radar contained: overflow hidden + scaled plot */
+.mock-radar {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.mock-radar .radar-plot {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+.mock-radar .radar-plot svg {
+  width: 88%;
+  height: auto;
+  max-height: 140px;
+  display: block;
+  overflow: visible;
 }
 .mock-radar .radar-fill {
   opacity: 0;
-  transform: scale(0.92);
-  transform-origin: center;
+  transform: scale(0.94);
+  transform-origin: 70px 68px;
   transition: none;
 }
 .mock.animating .mock-radar .radar-fill {
-  transition: opacity .7s ease-out .2s, transform .7s ease-out .2s;
+  transition: opacity 1.4s ease-out 0.25s, transform 1.4s ease-out 0.25s;
   opacity: 1;
   transform: scale(1);
 }
@@ -513,6 +548,7 @@ footer a:hover { color: var(--cyan); }
         </div>
         <div class="mock-radar">
           <div class="t" data-i18n="mock_radar_t">Business health</div>
+          <div class="radar-plot">
           <svg viewBox="0 0 140 130" role="img" aria-label="Business health radar">
             <g transform="translate(70,68)" fill="none" stroke="rgba(231,233,235,0.12)" stroke-width="1">
               <polygon points="0,-48 41,-24 41,24 0,48 -41,24 -41,-24"/>
@@ -533,6 +569,7 @@ footer a:hover { color: var(--cyan); }
               <text x="18" y="42">AP</text>
             </g>
           </svg>
+          </div>
         </div>
       </div>
     </aside>
@@ -932,18 +969,22 @@ function animateMockOnce(panel) {
     return;
   }
   panel.classList.add('animating');
-  const duration = 1000;
+  const duration = 1800;
+  const stagger = 150;
   const start = performance.now();
+  const kpiList = Array.from(kpis);
   function frame(now) {
-    const p = Math.min(1, (now - start) / duration);
-    const e = easeOutCubic(p);
-    kpis.forEach(el => {
+    let done = true;
+    kpiList.forEach((el, i) => {
+      const delay = i * stagger;
+      const local = Math.min(1, Math.max(0, (now - start - delay) / duration));
+      if (local < 1) done = false;
+      const e = easeOutCubic(local);
       const target = parseFloat(el.dataset.target || '0');
       const dec = parseInt(el.dataset.decimals || '0', 10);
-      const val = target * e;
-      el.textContent = (el.dataset.prefix || '') + val.toFixed(dec) + (el.dataset.suffix || '');
+      el.textContent = (el.dataset.prefix || '') + (target * e).toFixed(dec) + (el.dataset.suffix || '');
     });
-    if (p < 1) requestAnimationFrame(frame);
+    if (!done) requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }
