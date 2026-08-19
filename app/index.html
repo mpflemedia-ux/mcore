@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-pos-checkout-fix">
+<meta name="nexerp-build" content="2026-08-20-pos-equal-panels">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -806,10 +806,25 @@ html[data-skip-intro="1"] #intro-skip {
 /* Signature block — compact */
 
 /* ── POS Counter ── */
-.pos-wrap{display:grid;grid-template-columns:1fr minmax(320px,380px);gap:16px;align-items:start}
+.pos-wrap{display:grid;grid-template-columns:1fr minmax(320px,380px);gap:16px;align-items:stretch}
 @media(max-width:900px){.pos-wrap{grid-template-columns:1fr}}
-.pos-products{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:420px}
-.pos-cart{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:0;position:sticky;top:12px;display:flex;flex-direction:column;max-height:calc(100vh - 100px);overflow:hidden}
+/* Menu + cart same height (match checkout panel) */
+.pos-products,.pos-cart{
+  height:calc(100vh - 160px);
+  max-height:calc(100vh - 160px);
+  min-height:420px;
+  box-sizing:border-box;
+}
+.pos-products{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.pos-products #pos-grid{flex:1 1 auto;min-height:0;max-height:none !important;overflow-y:auto}
+.pos-cart{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:0;position:sticky;top:12px;display:flex;flex-direction:column;overflow:hidden}
+@media(max-width:900px){
+  .pos-products,.pos-cart{height:auto;max-height:none;min-height:320px}
+  .pos-cart{max-height:none}
+}
 .pos-cart-head{padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .pos-cart-body{flex:1 1 auto;overflow-y:auto;padding:8px 12px;min-height:60px;min-width:0}
 .pos-cart-meta{flex-shrink:0;display:flex;gap:8px;padding:0 14px 10px}
@@ -27230,7 +27245,7 @@ async function renderPOS(params={}) {
         </div>
         <button class="btn btn-outline" onclick="_posScanBarcode()" title="${t.scan}"><i class="ti ti-barcode"></i> ${t.scan}</button>
       </div>
-      <div id="pos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:calc(100vh - 220px);overflow-y:auto;padding-bottom:8px"></div>
+      <div id="pos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding-bottom:8px"></div>
     </div>
     <div class="pos-cart">
       <div class="pos-cart-head">
