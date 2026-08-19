@@ -253,7 +253,7 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 .mock-chart .t, .mock-radar .t {
   font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 8px;
 }
-.mock-chart svg, .mock-radar svg { width: 100%; height: auto; display: block; }
+.mock-chart svg { width: 100%; height: auto; display: block; }
 
 /* Proof strip */
 .proof {
@@ -431,38 +431,39 @@ footer a:hover { color: var(--cyan); }
   transition: opacity 0.4s ease-out 1.7s;
   opacity: 1;
 }
-/* Radar contained: overflow hidden + scaled plot */
+/* Radar: hard clip — no paint outside tile */
 .mock-radar {
-  overflow: hidden;
+  overflow: hidden !important;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .mock-radar .radar-plot {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: hidden !important;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  padding: 2px 4px 6px;
 }
 .mock-radar .radar-plot svg {
-  width: 88%;
+  width: 100%;
+  max-width: 120px;
   height: auto;
-  max-height: 140px;
+  max-height: 112px;
   display: block;
-  overflow: visible;
+  overflow: hidden;
 }
+/* Opacity only — no scale (scale caused vertex spill) */
 .mock-radar .radar-fill {
   opacity: 0;
-  transform: scale(0.94);
-  transform-origin: 70px 68px;
   transition: none;
 }
 .mock.animating .mock-radar .radar-fill {
-  transition: opacity 1.4s ease-out 0.25s, transform 1.4s ease-out 0.25s;
+  transition: opacity 1.6s ease-out 0.3s;
   opacity: 1;
-  transform: scale(1);
 }
 @media (prefers-reduced-motion: reduce) {
   .mock-chart .draw-line { stroke-dashoffset: 0 !important; transition: none !important; }
@@ -550,23 +551,26 @@ footer a:hover { color: var(--cyan); }
           <div class="t" data-i18n="mock_radar_t">Business health</div>
           <div class="radar-plot">
           <svg viewBox="0 0 140 130" role="img" aria-label="Business health radar">
-            <g transform="translate(70,68)" fill="none" stroke="rgba(231,233,235,0.12)" stroke-width="1">
-              <polygon points="0,-48 41,-24 41,24 0,48 -41,24 -41,-24"/>
-              <polygon points="0,-32 28,-16 28,16 0,32 -28,16 -28,-16"/>
-              <polygon points="0,-16 14,-8 14,8 0,16 -14,8 -14,-8"/>
-              <line x1="0" y1="0" x2="0" y2="-48"/><line x1="0" y1="0" x2="41" y2="-24"/>
-              <line x1="0" y1="0" x2="41" y2="24"/><line x1="0" y1="0" x2="0" y2="48"/>
-              <line x1="0" y1="0" x2="-41" y2="24"/><line x1="0" y1="0" x2="-41" y2="-24"/>
+            <!-- content inset so labels never touch edges -->
+            <g transform="translate(70,65) scale(0.78)">
+              <g fill="none" stroke="rgba(231,233,235,0.12)" stroke-width="1.2">
+                <polygon points="0,-48 41,-24 41,24 0,48 -41,24 -41,-24"/>
+                <polygon points="0,-32 28,-16 28,16 0,32 -28,16 -28,-16"/>
+                <polygon points="0,-16 14,-8 14,8 0,16 -14,8 -14,-8"/>
+                <line x1="0" y1="0" x2="0" y2="-48"/><line x1="0" y1="0" x2="41" y2="-24"/>
+                <line x1="0" y1="0" x2="41" y2="24"/><line x1="0" y1="0" x2="0" y2="48"/>
+                <line x1="0" y1="0" x2="-41" y2="24"/><line x1="0" y1="0" x2="-41" y2="-24"/>
+              </g>
+              <polygon class="radar-fill" points="0,-40 34,-18 30,16 0,36 -28,18 -36,-14"
+                fill="rgba(34,211,238,0.18)" stroke="#22D3EE" stroke-width="1.8"/>
             </g>
-            <polygon class="radar-fill" transform="translate(70,68)" points="0,-40 34,-18 30,16 0,36 -28,18 -36,-14"
-              fill="rgba(34,211,238,0.18)" stroke="#22D3EE" stroke-width="1.6"/>
             <g fill="#9AA0A6" font-size="7" font-family="Inter,sans-serif" text-anchor="middle">
-              <text x="70" y="12">Sales</text>
-              <text x="122" y="42">Cash</text>
-              <text x="122" y="98">Stock</text>
-              <text x="70" y="126">Payroll</text>
-              <text x="18" y="98">AR</text>
-              <text x="18" y="42">AP</text>
+              <text x="70" y="14">Sales</text>
+              <text x="118" y="44">Cash</text>
+              <text x="118" y="96">Stock</text>
+              <text x="70" y="122">Payroll</text>
+              <text x="22" y="96">AR</text>
+              <text x="22" y="44">AP</text>
             </g>
           </svg>
           </div>
