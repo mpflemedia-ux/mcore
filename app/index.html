@@ -3472,7 +3472,7 @@ async function doRegister() {
         p_full_name:   name,
         p_entity_type: 'sdn_bhd',
         p_industry:    'general',
-        p_plan_code:   'starter'
+        p_plan_code:   'free' // Free-plan-as-the-hook — new signups land on Free, not silently on a paid tier
       })
       if(rpcError) {
         console.error('register_tenant error:', rpcError)
@@ -28989,7 +28989,7 @@ async function obFinish() {
         p_full_name: APP.user.name || user.email || 'Owner',
         p_entity_type: OB.data.entity_type || 'sdn_bhd',
         p_industry: OB.data.industry || 'general',
-        p_plan_code: 'starter'
+        p_plan_code: 'free' // Free-plan-as-the-hook — new signups land on Free, not silently on a paid tier
       })
       if(!rpcError) {
         APP.tenant.id = (rpcData && (rpcData.tenant_id || rpcData.id)) || null

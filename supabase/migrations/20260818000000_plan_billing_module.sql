@@ -14,9 +14,42 @@
 -- card, unlike Starter/Business/Pro which list both). Both are left null
 -- (=unlimited) below rather than guessed — flag back before relying on
 -- either number for the Free tier.
+--
+-- RECONCILIATION (2026-08-19, before this migration was ever run): a
+-- `plans` table + `register_tenant()` RPC have existed live in this
+-- Supabase project since 2026-05-26, entirely outside migrations/ — never
+-- tracked in this repo. Every signup hardcodes p_plan_code:'starter', and
+-- register_tenant() assigns that plan_id at tenant creation. That legacy
+-- `plans` table had a DIFFERENT schema (price_monthly, max_users, modules
+-- jsonb, features jsonb, is_active) — none of which match the
+-- monthly_price/monthly_transaction_limit/ai_daily_quota design below, so
+-- the original `create table if not exists` here silently no-op'd against
+-- it, and the original `where plan_id is null` backfill did nothing
+-- (plan_id was never null — every tenant has pointed at the legacy
+-- 'starter' row since day one). grep confirmed zero app-code/edge-function
+-- reads of plans.modules/max_users/is_active outside this feature's own new
+-- admin UI, so replacing it outright (not patching around it) is safe.
+-- Section 1 below now: drops and rebuilds `plans` with today's schema PLUS
+-- `is_active` (register_tenant() reads `WHERE code = p_plan_code AND
+-- is_active = TRUE` — every seeded row below is explicitly is_active=true,
+-- not left to the column default, so that predicate keeps working), then
+-- re-adds the FK and grandfathers all tenants unconditionally (every
+-- tenant's plan_id currently points at the about-to-be-deleted legacy
+-- 'starter' row, not at null).
 
--- ---------- 1) plans ----------
-create table if not exists public.plans (
+-- ---------- 1) plans: drop the pre-existing (out-of-repo, mismatched-schema)
+-- table and rebuild with today's schema ----------
+-- Safety note on ordering: `drop table ... cascade` only drops the FK
+-- constraint OBJECT on tenants.plan_id (a dependent-object cascade at the
+-- DDL level) — it does NOT touch the DATA in tenants.plan_id. Those rows
+-- keep holding their old (now-dangling) uuid values throughout steps 1-2
+-- below, so plan_id is never actually null at any point and a not-null
+-- violation isn't reachable in this sequence. tenants.plan_id is left
+-- NOT NULL the entire time (never dropped/re-added) for exactly that
+-- reason — nothing here ever needs to put a null through it.
+drop table if exists public.plans cascade;
+
+create table public.plans (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
   name_en text not null,
@@ -27,48 +60,43 @@ create table if not exists public.plans (
   max_branches int null, -- null = unlimited
   monthly_transaction_limit int null, -- null = unlimited
   ai_daily_quota int null, -- null = unlimited
+  is_active boolean not null default true, -- register_tenant() filters on this
   created_at timestamptz not null default now()
 );
 
-insert into public.plans (code, name_en, name_bm, monthly_price, annual_price, setup_fee, max_branches, monthly_transaction_limit, ai_daily_quota)
+-- is_active listed explicitly (= true) for all 5 rows, not left to the
+-- column default — confirmed, not assumed, since register_tenant()'s
+-- `WHERE code = p_plan_code AND is_active = TRUE` predicate depends on it.
+insert into public.plans (code, name_en, name_bm, monthly_price, annual_price, setup_fee, max_branches, monthly_transaction_limit, ai_daily_quota, is_active)
 values
-  ('free', 'Free', 'Percuma', 0, 0, 0, 1, null, null),
-  ('starter', 'Starter', 'Starter', 99, 990, 300, 1, 500, 100),
-  ('business', 'Business', 'Business', 199, 1990, 500, 3, 2500, 500),
-  ('pro', 'Pro', 'Pro', 349, 3490, 800, 10, null, 2000),
-  ('unlimited', 'Unlimited (Legacy)', 'Tanpa Had (Legasi)', null, null, null, null, null, null)
-on conflict (code) do nothing;
+  ('free', 'Free', 'Percuma', 0, 0, 0, 1, null, null, true),
+  ('starter', 'Starter', 'Starter', 99, 990, 300, 1, 500, 100, true),
+  ('business', 'Business', 'Business', 199, 1990, 500, 3, 2500, 500, true),
+  ('pro', 'Pro', 'Pro', 349, 3490, 800, 10, null, 2000, true),
+  ('unlimited', 'Unlimited (Legacy)', 'Tanpa Had (Legasi)', null, null, null, null, null, null, true);
 
 -- Reference data — every authenticated user can read the plan catalog
 -- (needed client-side to render plan names/limits), nobody writes it via
 -- the API (seeded above; future plan changes are a manual migration).
+-- Policy was dropped along with the old table by CASCADE above, recreated fresh here.
 alter table public.plans enable row level security;
-drop policy if exists plans_select_all on public.plans;
 create policy plans_select_all on public.plans for select to authenticated using (true);
 
--- ---------- 2) tenants.plan_id — reuse existing column, add FK ----------
--- tenants.plan_id (uuid) already exists in the live DB (flagged as an
--- orphaned/dead column in an earlier verification pass — zero references
--- anywhere in app code or migrations up to now). This is the column that
--- orphaned status ends here: it becomes the real FK to plans(id).
-do $$
-begin
-  if not exists (
-    select 1 from information_schema.table_constraints
-    where constraint_name = 'tenants_plan_id_fkey' and table_name = 'tenants'
-  ) then
-    alter table public.tenants
-      add constraint tenants_plan_id_fkey foreign key (plan_id) references public.plans(id);
-  end if;
-end $$;
-
--- ---------- 3) backfill: grandfather every existing tenant to Unlimited ----------
--- Covers all tenants currently in the system (24 at time of writing) —
--- anyone with a null plan_id gets the no-limits legacy plan, never a capped
--- one, so this migration cannot newly restrict an existing tenant.
+-- ---------- 2) backfill BEFORE re-adding the FK ----------
+-- Must run before step 3: every tenant's plan_id currently points at the
+-- legacy 'starter' row that step 1 just deleted (dangling, not null) — the
+-- FK below would reject those rows on creation if added first. This is
+-- UNCONDITIONAL (every tenant, not `where plan_id is null` like the
+-- original draft) because plan_id was never null for anyone — all 24
+-- existing tenants have pointed at the now-gone legacy 'starter' row since
+-- day one via register_tenant(), so an IS NULL filter would have silently
+-- updated zero rows, same failure mode as the original migration draft.
 update public.tenants
-set plan_id = (select id from public.plans where code = 'unlimited')
-where plan_id is null;
+set plan_id = (select id from public.plans where code = 'unlimited');
+
+-- ---------- 3) tenants.plan_id — re-add the FK now that data is valid ----------
+alter table public.tenants
+  add constraint tenants_plan_id_fkey foreign key (plan_id) references public.plans(id);
 
 -- ---------- 4) tenant_usage_monthly ----------
 create table if not exists public.tenant_usage_monthly (
