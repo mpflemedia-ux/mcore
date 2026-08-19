@@ -122,22 +122,29 @@ html[data-theme="light"] .mesh .orb { opacity: .14; }
 .logo .mpfle { font-weight: 800; font-size: 1.28rem; letter-spacing: -0.03em; color: var(--text); }
 .logo .media { font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; color: var(--cyan); margin-left: 0.25em; }
 .nav-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.nav-link {
-  font-size: 13px; font-weight: 600; color: var(--muted);
-  padding: 10px 12px; min-height: 44px; display: inline-flex; align-items: center;
+.nav-link, .nav-btn, .nav-cta {
+  font-size: 12px; font-weight: 600;
+  height: 36px; min-height: 36px; padding: 0 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9px; line-height: 1; white-space: nowrap;
 }
+.nav-link { color: var(--muted); font-weight: 600; }
 .nav-link:hover { color: var(--cyan); }
 .nav-btn {
-  font-size: 12px; font-weight: 600; padding: 10px 12px; min-height: 44px;
-  border-radius: 10px; border: 1px solid var(--border); color: var(--muted);
+  border: 1px solid var(--border); color: var(--muted); gap: 6px;
 }
 .nav-btn:hover { color: var(--cyan); border-color: var(--border-hi); }
 .nav-cta {
-  font-size: 13px; font-weight: 700; padding: 10px 16px; min-height: 44px;
-  border-radius: 10px; background: var(--cyan); color: var(--ink);
-  display: inline-flex; align-items: center;
+  font-weight: 700; background: var(--cyan); color: var(--ink); padding: 0 14px;
 }
 .nav-cta:hover { filter: brightness(1.05); }
+.theme-toggle {
+  width: 36px; padding: 0; position: relative;
+}
+.theme-toggle .icon-sun, .theme-toggle .icon-moon { display: none; font-size: 14px; line-height: 1; }
+html[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
+html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
+.theme-toggle:hover { color: var(--cyan); border-color: var(--border-hi); }
 
 .shell { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
 section.block { padding: 64px 0; }
@@ -249,6 +256,12 @@ section.block { padding: 64px 0; }
   padding: 14px 12px; border-radius: 12px;
   border: 1px solid var(--border); background: var(--surface);
   display: flex; flex-direction: column; gap: 4px;
+  cursor: pointer; transition: border-color .15s, background .15s;
+  text-decoration: none; color: inherit;
+}
+.core-item:hover {
+  border-color: var(--border-hi);
+  background: color-mix(in srgb, var(--cyan) 8%, var(--surface));
 }
 .core-item .num {
   font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
@@ -448,6 +461,21 @@ footer a:hover { color: var(--cyan); }
   grid-column: 1 / -1; margin-top: 8px; padding-top: 16px;
   border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;
 }
+
+/* Scroll to top */
+.scroll-top {
+  position: fixed; right: 20px; bottom: 24px; z-index: 70;
+  width: 44px; height: 44px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--glass);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: var(--text); font-size: 18px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transform: translateY(8px);
+  transition: opacity .2s, transform .2s, border-color .15s, color .15s;
+  box-shadow: 0 8px 24px -12px rgba(0,0,0,.4);
+}
+.scroll-top.show { opacity: 1; pointer-events: auto; transform: none; }
+.scroll-top:hover { border-color: var(--border-hi); color: var(--cyan); }
 </style>
 </head>
 <body>
@@ -460,7 +488,7 @@ footer a:hover { color: var(--cyan); }
     <div class="nav-actions">
       <a class="nav-link" href="#pricing" data-i18n="nav_software">Software</a>
       <a class="nav-link" href="#service-pricing" data-i18n="nav_services">Services</a>
-      <button type="button" class="nav-btn" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Toggle theme">Theme</button>
+      <button type="button" class="nav-btn theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Toggle day and dark mode" title="Day / Dark"><span class="icon-sun" aria-hidden="true">☀</span><span class="icon-moon" aria-hidden="true">☾</span></button>
       <button type="button" class="nav-btn" id="langToggleBtn" onclick="toggleLang()" aria-label="Toggle language">EN | BM</button>
       <a href="https://mpflemedia-ux.github.io/nexerp/app/" class="nav-cta" data-i18n="cta_mini">Client login</a>
     </div>
@@ -705,15 +733,26 @@ function renderCoreGrid() {
   const g = document.getElementById('coreGrid');
   if (!g) return;
   g.innerHTML = services.map(s =>
-    '<div class="core-item"><span class="num">'+s.n+'</span><span class="label">'+s.name[currentLang]+'</span></div>'
+    '<a class="core-item" href="#deep" data-core="'+s.key+'" onclick="return goCore(\''+s.key+'\')"><span class="num">'+s.n+'</span><span class="label">'+s.name[currentLang]+'</span></a>'
   ).join('');
+}
+function goCore(key) {
+  try {
+    switchTab(key);
+    const el = document.getElementById('deep');
+    if (el) {
+      el.querySelectorAll('.reveal').forEach(r => r.classList.add('in'));
+      setTimeout(function(){ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 10);
+    }
+  } catch (e) {}
+  return false;
 }
 
 function renderOfferGrid() {
   const grid = document.getElementById('offerGrid');
   if (!grid) return;
   grid.innerHTML = services.map(s =>
-    '<article class="panel svc reveal"><div class="ico">'+s.n+'</div><h3>'+s.name[currentLang]+'</h3><div class="alt">'+s.name[currentLang==='en'?'ms':'en']+'</div><p>'+s.blurb[currentLang]+'</p></article>'
+    '<article class="panel svc reveal"><div class="ico">'+s.n+'</div><h3>'+s.name[currentLang]+'</h3><p>'+s.blurb[currentLang]+'</p></article>'
   ).join('');
 }
 
@@ -884,8 +923,10 @@ function boot() {
     else applyTheme('dark');
     applyLang(currentLang);
     const nav = document.getElementById('nav');
+    const scrollBtn = document.getElementById('scrollTopBtn');
     window.addEventListener('scroll', () => {
       if (nav) nav.classList.toggle('scrolled', window.scrollY > 12);
+      if (scrollBtn) scrollBtn.classList.toggle('show', window.scrollY > 400);
     }, { passive: true });
     if (location.hash) {
       const el = document.querySelector(location.hash);
@@ -903,5 +944,7 @@ function boot() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();
 </script>
+
+<button type="button" class="scroll-top" id="scrollTopBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to top" title="Back to top">↑</button>
 </body>
 </html>
