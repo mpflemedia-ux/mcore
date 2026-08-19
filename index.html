@@ -390,26 +390,6 @@ footer a:hover { color: var(--cyan); }
   grid-column: 1 / -1; margin-top: 6px; padding-top: 18px;
   border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;
 }
-.scroll-top {
-  position: fixed; right: 18px; bottom: 20px; z-index: 60;
-  width: 36px; height: 36px; border-radius: 8px;
-  border: 1px solid rgba(231, 233, 235, 0.13);
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  color: var(--muted);
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0; pointer-events: none;
-  transition: opacity .2s ease, border-color .15s ease, color .15s ease;
-}
-html[data-theme="light"] .scroll-top {
-  border-color: rgba(36, 36, 36, 0.12);
-}
-.scroll-top.show { opacity: 1; pointer-events: auto; }
-.scroll-top:hover {
-  border-color: rgba(34, 211, 238, 0.4);
-  color: var(--cyan);
-}
-.scroll-top svg { width: 14px; height: 14px; display: block; }
 
 /* Mock KPI / chart animation */
 .mock-kpi .v[data-target] { font-variant-numeric: tabular-nums; }
@@ -454,6 +434,20 @@ html[data-theme="light"] .scroll-top {
   .mock-chart .draw-area, .mock-chart .draw-dot, .mock-radar .radar-fill {
     opacity: 1 !important; transform: none !important; transition: none !important;
   }
+}
+
+.foot-top {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 500;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  background: none; border: 0; padding: 0; cursor: pointer;
+  margin-top: 4px;
+  transition: color .15s ease;
+}
+.foot-top:hover { color: var(--cyan); }
+.foot-top svg {
+  width: 12px; height: 12px; flex-shrink: 0;
+  opacity: 0.85;
 }
 </style>
 </head>
@@ -633,12 +627,12 @@ html[data-theme="light"] .scroll-top {
     <a href="https://mpflemedia-ux.github.io/nexerp/app/">M-Core login</a>
     <a href="#pricing" data-i18n="footer_pricing">Pricing</a>
     <a href="#service-pricing" data-i18n="footer_svc">Services</a>
+    <button type="button" class="foot-top" id="backToTop" onclick="scrollToTop()" aria-label="Back to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 14 12 8 18 14"/></svg><span data-i18n="footer_top">Back to top</span></button>
   </div>
   <div class="foot-copy" data-i18n="footer_copyright">© 2026 MPFLE Media</div>
 </footer>
 </div>
 
-<button type="button" class="scroll-top" id="scrollTopBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to top" title="Back to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 14 12 8 18 14"/></svg></button>
 
 <script>
 document.documentElement.classList.add('js');
@@ -725,7 +719,8 @@ const I18N = {
     cta_app:'Open M-Core', cta_email:'hello@mpflemedia.my', cta_web:'mpflemedia.my',
     footer_tag:'M-Core · books · payroll · stock · sales',
     footer_contact:'Contact', footer_product:'Product', footer_pricing:'Pricing', footer_svc:'Services',
-    footer_copyright:'© 2026 MPFLE Media'
+    footer_copyright:'© 2026 MPFLE Media',
+    footer_top:'Back to top'
   },
   ms: {
     nav_modules:'Modul', nav_pricing:'Harga', nav_services:'Perkhidmatan', cta_mini:'Log masuk klien',
@@ -768,7 +763,8 @@ const I18N = {
     cta_app:'Buka M-Core', cta_email:'hello@mpflemedia.my', cta_web:'mpflemedia.my',
     footer_tag:'M-Core · lejar · gaji · stok · jualan',
     footer_contact:'Hubungi', footer_product:'Produk', footer_pricing:'Harga', footer_svc:'Perkhidmatan',
-    footer_copyright:'© 2026 MPFLE Media'
+    footer_copyright:'© 2026 MPFLE Media',
+    footer_top:'Kembali ke atas'
   }
 };
 
@@ -970,6 +966,12 @@ function bindMockAnimation() {
   io.observe(panel);
 }
 
+
+function scrollToTop() {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+}
+
 function boot() {
   try {
     const saved = localStorage.getItem('mcore_theme');
@@ -978,10 +980,8 @@ function boot() {
     else applyTheme('dark');
     applyLang(currentLang);
     const nav = document.getElementById('nav');
-    const scrollBtn = document.getElementById('scrollTopBtn');
     window.addEventListener('scroll', () => {
       if (nav) nav.classList.toggle('scrolled', window.scrollY > 12);
-      if (scrollBtn) scrollBtn.classList.toggle('show', window.scrollY > (window.innerHeight * 0.8));
     }, { passive: true });
     if (location.hash) {
       const el = document.querySelector(location.hash);
