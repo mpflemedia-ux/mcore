@@ -16,27 +16,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #242424;
-  --bg-2: #2A2A2A;
-  --elev: #303030;
-  --panel: #2E2E2E;
+  --bg: #1E2226;
+  --bg-2: #22262B;
+  --elev: #2A2E33;
+  --panel: #262A2F;
   --border: rgba(231, 233, 235, 0.10);
   --border-hi: rgba(34, 211, 238, 0.38);
   --text: #E7E9EB;
   --muted: #9AA0A6;
   --cyan: #22D3EE;
   --teal: #14B8A6;
-  --ink: #1C1C1C;
+  --ink: #1A1D21;
   --max: 1080px;
   --font: 'Inter', system-ui, -apple-system, sans-serif;
   --ease: cubic-bezier(.22, 1, .36, 1);
   --r: 14px;
 }
 html[data-theme="light"] {
-  --bg: #E7E9EB;
-  --bg-2: #DEE1E4;
-  --elev: #F4F5F6;
-  --panel: #F7F8F9;
+  --bg: #E2E5E8;
+  --bg-2: #D8DCE0;
+  --elev: #EEF0F2;
+  --panel: #F0F2F4;
   --border: rgba(36, 36, 36, 0.10);
   --border-hi: rgba(13, 148, 136, 0.42);
   --text: #242424;
@@ -68,17 +68,30 @@ button { font: inherit; cursor: pointer; border: 0; background: none; color: inh
 
 .ambient {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background:
-    radial-gradient(900px 480px at 10% -8%, rgba(34, 211, 238, 0.08), transparent 58%),
-    radial-gradient(700px 400px at 90% 20%, rgba(20, 184, 166, 0.06), transparent 55%),
-    var(--bg);
+  background-color: var(--bg);
+  /* Fine terminal-style grid — ~5% opacity */
+  background-image:
+    linear-gradient(rgba(231, 233, 235, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(231, 233, 235, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 html[data-theme="light"] .ambient {
-  background:
-    radial-gradient(900px 480px at 10% -8%, rgba(13, 148, 136, 0.05), transparent 58%),
-    radial-gradient(700px 400px at 90% 20%, rgba(15, 118, 110, 0.04), transparent 55%),
-    var(--bg);
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(36, 36, 36, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 36, 36, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
+/* Single static cyan wash — hero band only, no motion */
+.hero-wash {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse 70% 55% at 92% 8%, rgba(34, 211, 238, 0.07), transparent 62%);
+}
+html[data-theme="light"] .hero-wash {
+  background: radial-gradient(ellipse 70% 55% at 92% 8%, rgba(13, 148, 136, 0.05), transparent 62%);
+}
+.hero { position: relative; }
+.hero > * { position: relative; z-index: 1; }
 .page { position: relative; z-index: 1; }
 
 .nav {
@@ -364,16 +377,25 @@ footer a:hover { color: var(--cyan); }
   border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;
 }
 .scroll-top {
-  position: fixed; right: 20px; bottom: 24px; z-index: 60;
-  width: 44px; height: 44px; border-radius: 10px;
-  border: 1px solid var(--border); background: var(--panel);
-  color: var(--text); font-size: 16px;
+  position: fixed; right: 18px; bottom: 20px; z-index: 60;
+  width: 36px; height: 36px; border-radius: 8px;
+  border: 1px solid rgba(231, 233, 235, 0.13);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: var(--muted);
   display: flex; align-items: center; justify-content: center;
-  opacity: 0; pointer-events: none; transform: translateY(6px);
-  transition: opacity .2s, transform .2s, border-color .15s, color .15s;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s ease, border-color .15s ease, color .15s ease;
 }
-.scroll-top.show { opacity: 1; pointer-events: auto; transform: none; }
-.scroll-top:hover { border-color: var(--border-hi); color: var(--cyan); }
+html[data-theme="light"] .scroll-top {
+  border-color: rgba(36, 36, 36, 0.12);
+}
+.scroll-top.show { opacity: 1; pointer-events: auto; }
+.scroll-top:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  color: var(--cyan);
+}
+.scroll-top svg { width: 14px; height: 14px; display: block; }
 </style>
 </head>
 <body>
@@ -397,6 +419,7 @@ footer a:hover { color: var(--cyan); }
 <div class="shell">
   <!-- HERO + MOCK -->
   <section class="hero" id="hero">
+    <div class="hero-wash" aria-hidden="true"></div>
     <div>
       <div class="hero-badge"><i></i><span data-i18n="hero_badge">Built for Malaysian SMEs</span></div>
       <h1 data-i18n="hero_title">One workspace for books, payroll, stock &amp; sales.<br><em>That’s M-Core.</em></h1>
@@ -556,7 +579,7 @@ footer a:hover { color: var(--cyan); }
 </footer>
 </div>
 
-<button type="button" class="scroll-top" id="scrollTopBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to top" title="Back to top">↑</button>
+<button type="button" class="scroll-top" id="scrollTopBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to top" title="Back to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 14 12 8 18 14"/></svg></button>
 
 <script>
 document.documentElement.classList.add('js');
@@ -847,7 +870,7 @@ function boot() {
     const scrollBtn = document.getElementById('scrollTopBtn');
     window.addEventListener('scroll', () => {
       if (nav) nav.classList.toggle('scrolled', window.scrollY > 12);
-      if (scrollBtn) scrollBtn.classList.toggle('show', window.scrollY > 400);
+      if (scrollBtn) scrollBtn.classList.toggle('show', window.scrollY > (window.innerHeight * 0.8));
     }, { passive: true });
     if (location.hash) {
       const el = document.querySelector(location.hash);
