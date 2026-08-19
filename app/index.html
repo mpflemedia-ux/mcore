@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-soft-del-tenant">
+<meta name="nexerp-build" content="2026-08-20-invite-auth">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3431,8 +3431,34 @@ async function doRegister() {
     if(!data.user) throw new Error('User creation failed.')
 
     if(inviteToken) {
-      // Join existing tenant instead of creating a new company
+      // Join existing tenant — must run ONLY after session exists (auth.uid()).
+      // join_tenant_by_invite raises "Not authenticated" when JWT not attached yet.
       localStorage.setItem('nexerp_invite_token', inviteToken)
+      try { localStorage.removeItem('nexerp_pending_tenant_id') } catch(e) {}
+      const isBm = (localStorage.getItem('nexerp_lang') === 'bm') || (typeof APP !== 'undefined' && APP.language === 'bm')
+
+      // Attach session from signUp/signIn response when present
+      if(data.session?.access_token && data.session?.refresh_token) {
+        try {
+          await sb.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token
+          })
+        } catch(e) { console.warn('setSession after signUp', e) }
+      }
+
+      let session = await _waitForAuthSession(6000)
+      if(!session) {
+        // Email confirmation required (or slow session attach): keep token for post-login join
+        sucEl.textContent = isBm
+          ? '✓ Akaun dicipta. Sahkan emel (jika diminta), kemudian Sign In — jemputan akan diguna automatik.'
+          : '✓ Account created. Confirm email if required, then Sign In — invite applies automatically.'
+        sucEl.classList.add('show')
+        btn.innerHTML='Create Account'; btn.disabled=false
+        try { switchAuthTab('login') } catch(e) {}
+        return
+      }
+
       const {data: joinData, error: joinErr} = await sb.rpc('join_tenant_by_invite', {
         p_token: inviteToken,
         p_full_name: name
@@ -3440,8 +3466,12 @@ async function doRegister() {
       if(joinErr) {
         console.error('join_tenant_by_invite', joinErr)
         const msg = (joinErr.message || '')
-        const isBm = (localStorage.getItem('nexerp_lang') === 'bm') || (typeof APP !== 'undefined' && APP.language === 'bm')
-        if(/already belongs to a tenant/i.test(msg)) {
+        if(/not authenticated/i.test(msg)) {
+          // Keep invite token; user can Sign In and _tryJoinInvite will retry
+          errEl.textContent = isBm
+            ? 'Sesi belum sedia. Sign In dengan emel/kata laluan yang sama — jemputan akan diproses automatik.'
+            : 'Session not ready. Sign In with the same email/password — invite will apply automatically.'
+        } else if(/already belongs to a tenant/i.test(msg)) {
           errEl.textContent = isBm
             ? 'Emel ni sudah ada dalam sistem. Cuba Sign In. Kalau admin dah padam anda dari team, minta admin run SQL revive invite atau soft-delete profile dulu.'
             : 'This email is already registered. Try Sign In. If admin removed you from the team, ask them to re-invite after profile cleanup — or run the join_invite revive SQL.'
@@ -3456,8 +3486,21 @@ async function doRegister() {
         btn.innerHTML='Create Account'; btn.disabled=false
         return
       }
+      localStorage.removeItem('nexerp_invite_token')
+      try { localStorage.removeItem('nexerp_pending_tenant_id') } catch(e) {}
       _clearInviteAuthUI()
-      sucEl.textContent='✓ Joined team successfully! You can now sign in.'
+      // Prefer entering app when session already exists
+      if(data.user) {
+        sucEl.textContent = isBm ? '✓ Berjaya sertai team!' : '✓ Joined team successfully!'
+        sucEl.classList.add('show')
+        btn.innerHTML='Create Account'; btn.disabled=false
+        try {
+          _resetSessionLoadGuard()
+          await loadUserSession(data.user)
+          return
+        } catch(e) { console.warn(e) }
+      }
+      sucEl.textContent= isBm ? '✓ Berjaya sertai team! Sila Sign In.' : '✓ Joined team successfully! You can now sign in.'
       sucEl.classList.add('show')
       try { switchAuthTab('login') } catch(e) {}
     } else {
@@ -3628,6 +3671,7 @@ function _captureInviteFromUrl() {
     const inv = params.get('invite')
     if(inv) {
       localStorage.setItem('nexerp_invite_token', inv.trim())
+      try { localStorage.removeItem('nexerp_pending_tenant_id') } catch(e) {}
       params.delete('invite')
       const qs = params.toString()
       const clean = location.pathname + (qs ? '?' + qs : '') + location.hash
@@ -3718,18 +3762,56 @@ setTimeout(() => {
   if(el && tok) el.value = tok
 }, 0)
 
+// Wait until supabase client has a real session (auth.uid() available for RPCs).
+// signUp can return user before the client finishes attaching the JWT.
+async function _waitForAuthSession(timeoutMs=6000) {
+  const start = Date.now()
+  while(Date.now() - start < timeoutMs) {
+    try {
+      const { data: { session } } = await sb.auth.getSession()
+      if(session?.access_token && session?.user) return session
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 150))
+  }
+  return null
+}
+
 async function _tryJoinInvite(user, token, fullName) {
   try {
+    // Ensure JWT is present before SECURITY DEFINER RPC checks auth.uid()
+    let session = null
+    try {
+      const gs = await sb.auth.getSession()
+      session = gs?.data?.session || null
+    } catch(e) {}
+    if(!session) session = await _waitForAuthSession(4000)
+    if(!session) {
+      showToast((APP.language==='bm'
+        ? 'Sesi belum sedia. Sign In dulu — jemputan akan diproses automatik.'
+        : 'Session not ready. Sign In first — invite will apply automatically.'), 'error')
+      return false
+    }
     const {data, error} = await sb.rpc('join_tenant_by_invite', {
       p_token: token,
       p_full_name: fullName || (user.email||'').split('@')[0]
     })
     if(error) {
       console.error('join_tenant_by_invite', error)
-      showToast((APP.language==='bm'?'Jemputan gagal: ':'Invite failed: ') + error.message, 'error')
+      const msg = error.message || ''
+      const isBm = APP.language==='bm'
+      if(/not authenticated/i.test(msg)) {
+        showToast(isBm
+          ? 'Sesi belum disahkan. Sign In semula; jemputan kekal sehingga berjaya.'
+          : 'Session not confirmed. Sign In again; invite is kept until join succeeds.', 'error')
+      } else if(/invalid|expired|fully used/i.test(msg)) {
+        showToast(isBm ? 'Kod jemputan tidak sah atau sudah luput.' : 'Invite code is invalid or expired.', 'error')
+      } else {
+        showToast((isBm?'Jemputan gagal: ':'Invite failed: ') + msg, 'error')
+      }
       return false
     }
     localStorage.removeItem('nexerp_invite_token')
+    try { localStorage.removeItem('nexerp_pending_tenant_id') } catch(e) {}
     showToast(APP.language==='bm'?'Berjaya sertai team!':'Successfully joined the team!', 'success')
     _resetSessionLoadGuard()
     await loadUserSession(user)
