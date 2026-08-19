@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-plan-select-w">
+<meta name="nexerp-build" content="2026-08-20-admin-clients-page">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7718,6 +7718,155 @@ async function renderAdminClients() {
   } catch(e) {}
   _adminClientsUserCounts = countMap
 
+  if(!_adminClientsState) {
+    _adminClientsState = { q:'', status:'all', onboard:'all', planId:'all', sortKey:'created', sortDir:'desc', page:1 }
+  }
+  const st = _adminClientsState
+  const plans = _plansCache || []
+  const planFilterOpts = plans.map(p => `<option value="${p.id}" ${String(st.planId)===String(p.id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')
+
+  wrap.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:12px 8px 16px">
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${isBm?'Jumlah tenant':'Total tenants'}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.length}</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${isBm?'Onboarding siap':'Onboarding done'}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.filter(d=>d.onboarding_completed).length}</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:0 8px 12px">
+    <div class="form-group" style="margin:0;min-width:180px;flex:1">
+      <label class="form-label">${isBm?'Cari':'Search'}</label>
+      <input id="admin-cl-q" class="form-input" type="search" placeholder="${isBm?'Nama atau kod':'Name or code'}" value="${_aiEscapeHtml(st.q||'')}" oninput="_adminClientsFilterChanged()">
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">${isBm?'Status':'Status'}</label>
+      <select id="admin-cl-status" class="form-select" onchange="_adminClientsFilterChanged()">
+        <option value="all" ${st.status==='all'?'selected':''}>${isBm?'Semua':'All'}</option>
+        <option value="active" ${st.status==='active'?'selected':''}>${isBm?'Aktif':'Active'}</option>
+        <option value="suspended" ${st.status==='suspended'?'selected':''}>${isBm?'Digantung':'Suspended'}</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">${isBm?'Onboarding':'Onboarding'}</label>
+      <select id="admin-cl-onboard" class="form-select" onchange="_adminClientsFilterChanged()">
+        <option value="all" ${st.onboard==='all'?'selected':''}>${isBm?'Semua':'All'}</option>
+        <option value="done" ${st.onboard==='done'?'selected':''}>${isBm?'Siap':'Done'}</option>
+        <option value="pending" ${st.onboard==='pending'?'selected':''}>${isBm?'Belum mula':'Pending'}</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">${isBm?'Pelan':'Plan'}</label>
+      <select id="admin-cl-plan" class="form-select" onchange="_adminClientsFilterChanged()">
+        <option value="all" ${!st.planId||st.planId==='all'?'selected':''}>${isBm?'Semua':'All'}</option>
+        ${planFilterOpts}
+      </select>
+    </div>
+  </div>
+  <div id="admin-clients-table-host"></div>`
+  _adminClientsRenderTable()
+}
+
+// Populated by renderAdminClients() so doSuspendTenant()/doReactivateTenant()
+// (fired from an inline onclick, not a closure) can look up the tenant's
+// display name without embedding untrusted text inside an HTML attribute.
+let _adminClientsData = []
+let _adminClientsUserCounts = {}
+let _adminClientsState = { q:'', status:'all', onboard:'all', planId:'all', sortKey:'created', sortDir:'desc', page:1 }
+const _ADMIN_CLIENTS_PAGE_SIZE = 10
+
+function _adminClientsPlanName(d, isBm) {
+  const p = (_plansCache||[]).find(x => String(x.id)===String(d.plan_id))
+  return p ? (isBm ? p.name_bm : p.name_en) : (d.plan || '')
+}
+function _adminClientsOnboardRank(d) {
+  if(d.onboarding_completed) return 2
+  return Number(d.onboarding_step||0) > 0 ? 1 : 0
+}
+function _adminClientsFiltered() {
+  const st = _adminClientsState || {}
+  const isBm = APP.language==='bm'
+  const q = String(st.q||'').trim().toLowerCase()
+  let rows = (_adminClientsData||[]).slice()
+  if(q) rows = rows.filter(d => (d.name||'').toLowerCase().includes(q) || (d.code||'').toLowerCase().includes(q))
+  if(st.status === 'active') rows = rows.filter(d => d.is_active !== false)
+  else if(st.status === 'suspended') rows = rows.filter(d => d.is_active === false)
+  if(st.onboard === 'done') rows = rows.filter(d => !!d.onboarding_completed)
+  else if(st.onboard === 'pending') rows = rows.filter(d => !d.onboarding_completed)
+  if(st.planId && st.planId !== 'all') rows = rows.filter(d => String(d.plan_id)===String(st.planId))
+  const dir = st.sortDir === 'asc' ? 1 : -1
+  const key = st.sortKey || 'created'
+  const dateVal = v => v ? (Date.parse(v) || 0) : 0
+  rows.sort((a,b) => {
+    let av, bv
+    switch(key) {
+      case 'name': av = (a.name||'').toLowerCase(); bv = (b.name||'').toLowerCase(); break
+      case 'code': av = (a.code||'').toLowerCase(); bv = (b.code||'').toLowerCase(); break
+      case 'plan': av = _adminClientsPlanName(a,isBm).toLowerCase(); bv = _adminClientsPlanName(b,isBm).toLowerCase(); break
+      case 'status': av = a.is_active===false?1:0; bv = b.is_active===false?1:0; break
+      case 'onboard': av = _adminClientsOnboardRank(a); bv = _adminClientsOnboardRank(b); break
+      case 'trialEnds': av = dateVal(a.trial_ends_at); bv = dateVal(b.trial_ends_at); break
+      case 'planExpires': av = dateVal(a.plan_expires_at); bv = dateVal(b.plan_expires_at); break
+      case 'users': av = Number(_adminClientsUserCounts[a.id]||0); bv = Number(_adminClientsUserCounts[b.id]||0); break
+      default: av = dateVal(a.created_at); bv = dateVal(b.created_at)
+    }
+    if(av < bv) return -1*dir
+    if(av > bv) return 1*dir
+    return 0
+  })
+  return rows
+}
+function _adminClientsFilterChanged() {
+  if(!_adminClientsState) _adminClientsState = {}
+  _adminClientsState.q = document.getElementById('admin-cl-q')?.value || ''
+  _adminClientsState.status = document.getElementById('admin-cl-status')?.value || 'all'
+  _adminClientsState.onboard = document.getElementById('admin-cl-onboard')?.value || 'all'
+  _adminClientsState.planId = document.getElementById('admin-cl-plan')?.value || 'all'
+  _adminClientsState.page = 1
+  _adminClientsRenderTable()
+}
+function _adminClientsSort(key) {
+  if(!_adminClientsState) _adminClientsState = {}
+  if(_adminClientsState.sortKey === key) {
+    _adminClientsState.sortDir = _adminClientsState.sortDir === 'asc' ? 'desc' : 'asc'
+  } else {
+    _adminClientsState.sortKey = key
+    _adminClientsState.sortDir = (key==='created'||key==='users'||key==='trialEnds'||key==='planExpires') ? 'desc' : 'asc'
+  }
+  _adminClientsState.page = 1
+  _adminClientsRenderTable()
+}
+function _adminClientsGoPage(delta) {
+  const total = _adminClientsFiltered().length
+  const pages = Math.max(1, Math.ceil(total / _ADMIN_CLIENTS_PAGE_SIZE))
+  const next = Number(_adminClientsState.page||1) + delta
+  _adminClientsState.page = Math.min(pages, Math.max(1, next))
+  _adminClientsRenderTable()
+}
+function _adminClientsSortMark(key) {
+  const st = _adminClientsState || {}
+  if(st.sortKey !== key) return ''
+  return st.sortDir === 'asc' ? ' ▲' : ' ▼'
+}
+function _adminClientsRenderTable() {
+  const host = document.getElementById('admin-clients-table-host')
+  if(!host) return
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    name:'Syarikat', code:'Kod', plan:'Pelan', status:'Status', onboard:'Onboarding',
+    created:'Dicipta', users:'Users', pending:'Belum mula', step:'Langkah',
+    trialEnds:'Tamat Percubaan', planExpires:'Pelan Tamat', recordPayment:'Rekod Bayaran',
+    noMatch:'Tiada tenant sepadan dengan tapisan.',
+    prev:'Sebelum', next:'Seterusnya', pageOf:'Halaman', of:'daripada', showing:'Memaparkan'
+  } : {
+    name:'Company', code:'Code', plan:'Plan', status:'Status', onboard:'Onboarding',
+    created:'Created', users:'Users', pending:'Pending', step:'Step',
+    trialEnds:'Trial Ends', planExpires:'Plan Expires', recordPayment:'Record Payment',
+    noMatch:'No tenants match the current filters.',
+    prev:'Prev', next:'Next', pageOf:'Page', of:'of', showing:'Showing'
+  }
   const plans = _plansCache || []
   const planOptions = d => plans.map(p => `<option value="${p.id}" ${String(p.id)===String(d.plan_id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')
   const onboardCell = d => {
@@ -7731,23 +7880,41 @@ async function renderAdminClients() {
     if(!info) return `<td style="color:var(--text-3)">—</td>`
     return `<td style="color:${info.color};font-size:12px">${info.dateFmt} (${info.label})</td>`
   }
+  const th = (key, label) => `<th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="_adminClientsSort('${key}')">${label}${_adminClientsSortMark(key)}</th>`
+  const filtered = _adminClientsFiltered()
+  const pageSize = _ADMIN_CLIENTS_PAGE_SIZE
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  let page = Number(_adminClientsState.page||1)
+  if(page > pages) page = pages
+  if(page < 1) page = 1
+  _adminClientsState.page = page
+  const start = (page-1) * pageSize
+  const slice = filtered.slice(start, start + pageSize)
+  const fromN = filtered.length ? start+1 : 0
+  const toN = start + slice.length
+  const countMap = _adminClientsUserCounts || {}
 
-  wrap.innerHTML = `
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:12px 8px 20px">
-    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
-      <div style="font-size:11px;color:var(--text-3)">${isBm?'Jumlah tenant':'Total tenants'}</div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.length}</div>
+  const pager = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 8px 4px;font-size:12px;color:var(--text-3)">
+    <div>${t.showing} ${fromN}–${toN} ${t.of} ${filtered.length}</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button type="button" class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="_adminClientsGoPage(-1)">${t.prev}</button>
+      <span>${t.pageOf} ${page} ${t.of} ${pages}</span>
+      <button type="button" class="btn btn-sm btn-outline" ${page>=pages?'disabled':''} onclick="_adminClientsGoPage(1)">${t.next}</button>
     </div>
-    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
-      <div style="font-size:11px;color:var(--text-3)">${isBm?'Onboarding siap':'Onboarding done'}</div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${data.filter(d=>d.onboarding_completed).length}</div>
-    </div>
-  </div>
+  </div>`
+
+  if(!filtered.length) {
+    host.innerHTML = `${pager}<div class="empty-state" style="padding:40px"><p>${t.noMatch}</p></div>`
+    _onTenantCheckChange()
+    return
+  }
+
+  host.innerHTML = `
   <div style="overflow-x:auto"><table><thead><tr>
     <th style="width:32px"><input type="checkbox" id="admin-select-all" onchange="_toggleSelectAllTenants(this)"></th>
-    <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.trialEnds}</th><th>${t.planExpires}</th><th>${t.users}</th><th>${t.created}</th><th></th>
+    ${th('name', t.name)}${th('code', t.code)}${th('plan', t.plan)}${th('status', t.status)}${th('onboard', t.onboard)}${th('trialEnds', t.trialEnds)}${th('planExpires', t.planExpires)}${th('users', t.users)}${th('created', t.created)}<th></th>
   </tr></thead><tbody>
-  ${data.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
+  ${slice.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
     <td onclick="event.stopPropagation()"><input type="checkbox" class="admin-tenant-chk" data-tenant-id="${d.id}" onchange="_onTenantCheckChange()"></td>
     <td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
     <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
@@ -7763,15 +7930,11 @@ async function renderAdminClients() {
       <button type="button" class="btn btn-sm btn-outline" onclick="openRecordPaymentModal('${d.id}')"><i class="ti ti-receipt"></i> ${t.recordPayment}</button>
     </td>
   </tr>`).join('')}
-  </tbody></table></div>`
+  </tbody></table></div>
+  ${pager}`
   _onTenantCheckChange()
 }
 
-// Populated by renderAdminClients() so doSuspendTenant()/doReactivateTenant()
-// (fired from an inline onclick, not a closure) can look up the tenant's
-// display name without embedding untrusted text inside an HTML attribute.
-let _adminClientsData = []
-let _adminClientsUserCounts = {}
 
 async function _onPlanChange(selectEl) {
   const isBm = APP.language==='bm'
@@ -7869,7 +8032,8 @@ function doExportTenantsCsv() {
   ]
   const planNameById = {}
   ;(_plansCache||[]).forEach(p => { planNameById[p.id] = isBm?p.name_bm:p.name_en })
-  const rows = (_adminClientsData||[]).map(d => ({
+  const exportSrc = (typeof _adminClientsFiltered==='function') ? _adminClientsFiltered() : (_adminClientsData||[])
+  const rows = exportSrc.map(d => ({
     name: d.name||'', code: d.code||'',
     plan: planNameById[d.plan_id] || d.plan || '',
     status: d.is_active===false ? (isBm?'Digantung':'Suspended') : (isBm?'Aktif':'Active'),
