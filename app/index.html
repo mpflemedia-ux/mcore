@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-mcore-logo-text">
+<meta name="nexerp-build" content="2026-08-20-wordmark-only">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -82,12 +82,22 @@ input,select,textarea{font-family:inherit}
 .sidebar-logo .logo-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;color:var(--on-primary);font-size:16px;font-weight:700;flex-shrink:0}
 .sidebar-logo .logo-text{font-size:16px;font-weight:700;color:#fff;transition:opacity var(--transition)}
 .sidebar-logo .logo-sub{font-size:9px;color:rgba(255,255,255,.4);letter-spacing:.5px;text-transform:uppercase}
-#sidebar.collapsed .sidebar-logo-img{display:none}
-#sidebar.collapsed .sidebar-logo-icon-only{display:block !important}
-#sidebar.collapsed .sidebar-logo-text{display:none !important}
-.auth-logo{border:0 !important;box-shadow:none !important}
-.auth-logo img{border:0;outline:none;box-shadow:none}
-.sidebar-logo img{border:0;outline:none;box-shadow:none}
+/* M-Core wordmark only — no image mark */
+.brand-wordmark{
+  font-family:'Space Grotesk',Inter,sans-serif;
+  font-weight:800;
+  letter-spacing:-0.03em;
+  color:#14B8A6;
+  line-height:1;
+  border:0;
+  background:none;
+}
+.auth-logo .brand-wordmark{font-size:2rem}
+.sidebar-logo .brand-wordmark{font-size:1.2rem}
+#sidebar.collapsed .sidebar-logo .brand-wordmark-full{display:none !important}
+#sidebar.collapsed .sidebar-logo .brand-wordmark-short{display:block !important}
+.sidebar-logo .brand-wordmark-short{display:none;font-size:1.25rem}
+.auth-logo{border:0 !important;box-shadow:none !important;gap:6px}
 
 .sidebar-nav{flex:1;overflow-y:auto;padding:8px 0}
 .sidebar-nav::-webkit-scrollbar{width:4px}
@@ -1228,10 +1238,9 @@ html[data-skip-intro="1"] #intro-skip {
 <!-- AUTH PAGE -->
 <div id="auth-page">
   <div class="auth-card">
-    <div class="auth-logo" style="justify-content:center;margin-bottom:20px;flex-direction:column;align-items:center;gap:8px;border:0;box-shadow:none">
-      <img src="assets/m-core-mark.png" alt="M-Core" style="height:56px;width:56px;object-fit:contain;display:block;border:0">
-      <div style="font-size:18px;font-weight:800;letter-spacing:0.08em;color:#E7E9EB;line-height:1">M-CORE</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(231,233,235,.45)">MPFLE Media</div>
+    <div class="auth-logo" style="justify-content:center;margin-bottom:20px;flex-direction:column;align-items:center;border:0">
+      <div class="brand-wordmark" aria-label="M-Core">M-Core</div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(231,233,235,.45);margin-top:6px">MPFLE Media</div>
     </div>
     <div style="text-align:center;margin-bottom:20px;margin-top:-16px">
       <div id="auth-tagline" style="color:rgba(255,255,255,.4);font-size:10px;letter-spacing:.5px">Business OS for books, payroll, stock &amp; sales</div>
@@ -1423,7 +1432,7 @@ html[data-skip-intro="1"] #intro-skip {
 <div id="onboarding-page">
   <div class="ob-wrap">
     <div class="ob-header">
-      <img class="ob-logo" src="assets/m-core-mark.png" id="ob-logo" alt="M-Core">
+      <div class="brand-wordmark ob-logo" id="ob-logo" style="font-size:1.6rem;margin-bottom:12px">M-Core</div>
       <div class="ob-title" id="ob-title">Welcome to M-Core</div>
       <div class="ob-sub" id="ob-sub">Let's set up your company in just a few steps</div>
     </div>
@@ -1439,12 +1448,9 @@ html[data-skip-intro="1"] #intro-skip {
 <!-- APP SHELL -->
 <div id="shell">
   <nav id="sidebar">
-    <div class="sidebar-logo" style="padding:12px 14px;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)">
-      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-img" style="height:32px;width:32px;object-fit:contain;flex-shrink:0;display:block;border:0">
-      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-icon-only" style="height:28px;width:28px;object-fit:contain;display:none;border:0">
-      <div class="sidebar-logo-text" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.15">
-        <span class="logo-text" style="font-size:15px;font-weight:800;letter-spacing:0.06em;color:#E7E9EB">M-CORE</span>
-      </div>
+    <div class="sidebar-logo" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)">
+      <span class="brand-wordmark brand-wordmark-full" aria-label="M-Core">M-Core</span>
+      <span class="brand-wordmark brand-wordmark-short" aria-label="M-Core">M</span>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-user">
@@ -29360,8 +29366,12 @@ function showOnboarding() {
   document.getElementById('shell').classList.remove('active')
   const obPage = document.getElementById('onboarding-page')
   obPage.classList.add('active')
-  const logoImgs = document.querySelectorAll('.sidebar-logo-img')
-  if(logoImgs.length && document.getElementById('ob-logo')) document.getElementById('ob-logo').src = logoImgs[0].src
+  // Wordmark-only chrome: no image logo to copy into onboarding
+  const obLogo = document.getElementById('ob-logo')
+  if(obLogo && obLogo.tagName === 'IMG') {
+    const logoImgs = document.querySelectorAll('.sidebar-logo-img')
+    if(logoImgs.length) obLogo.src = logoImgs[0].src
+  }
   // Prefill from session / metadata
   try {
     const meta = (sb?.auth?.user?.()?.user_metadata) || {}
