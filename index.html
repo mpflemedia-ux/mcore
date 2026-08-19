@@ -9,376 +9,204 @@
 <title>MPFLE Media — M-Core</title>
 <meta name="description" content="MPFLE Media. Bookkeeping, financials, payroll & tax, web systems — powered by M-Core.">
 <meta property="og:title" content="MPFLE Media — M-Core">
-<meta property="og:description" content="Sharp ops for Malaysian SMEs. Ledgers, payroll, and systems that actually ship.">
-<meta property="og:type" content="website">
+<meta property="og:description" content="Sharp ops for Malaysian SMEs. Software plans + done-with-you services.">
 <meta property="og:url" content="https://mpflemedia.my">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #05070B;
-  --bg-elev: #0A0F14;
-  --glass: rgba(12, 18, 28, 0.62);
-  --glass-2: rgba(18, 26, 40, 0.72);
-  --border: rgba(255,255,255,0.10);
-  --border-hi: rgba(34, 211, 238, 0.35);
-  --text: #F1F5F9;
-  --muted: #94A3B8;
-  --cyan: #22D3EE;
-  --violet: #A78BFA;
-  --ink: #031016;
-  --radius: 20px;
-  --max: 1180px;
-  --font: 'Inter', system-ui, sans-serif;
-  --display: 'Syne', system-ui, sans-serif;
-  --ease: cubic-bezier(.22,1,.36,1);
+  --bg:#05070B; --bg-elev:#0A0F14; --glass:rgba(12,18,28,.62); --glass-2:rgba(18,26,40,.72);
+  --border:rgba(255,255,255,.10); --border-hi:rgba(34,211,238,.35);
+  --text:#F1F5F9; --muted:#94A3B8; --cyan:#22D3EE; --violet:#A78BFA; --ink:#031016;
+  --radius:20px; --max:1180px;
+  --font:'Inter',system-ui,sans-serif; --display:'Syne',system-ui,sans-serif;
+  --ease:cubic-bezier(.22,1,.36,1);
 }
 html[data-theme="light"] {
-  --bg: #F5F8FC;
-  --bg-elev: #FFFFFF;
-  --glass: rgba(255,255,255,0.72);
-  --glass-2: rgba(255,255,255,0.88);
-  --border: rgba(15,23,42,0.08);
-  --border-hi: rgba(8,145,178,0.4);
-  --text: #0F172A;
-  --muted: #64748B;
-  --cyan: #0891B2;
-  --violet: #7C3AED;
-  --ink: #FFFFFF;
+  --bg:#F5F8FC; --bg-elev:#fff; --glass:rgba(255,255,255,.72); --glass-2:rgba(255,255,255,.88);
+  --border:rgba(15,23,42,.08); --border-hi:rgba(8,145,178,.4);
+  --text:#0F172A; --muted:#64748B; --cyan:#0891B2; --violet:#7C3AED; --ink:#fff;
 }
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
-body {
-  font-family: var(--font);
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.6;
-  overflow-x: hidden;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-}
-a { color: inherit; text-decoration: none; }
-button { font: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden;min-height:100vh;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
 
-/* Aurora mesh */
-.mesh {
-  position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
-  background: var(--bg);
+/* Progressive enhancement: content VISIBLE by default.
+   Only .js enables hide-until-reveal animation. */
+.reveal{opacity:1;transform:none}
+.js .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.js .reveal.in{opacity:1;transform:none}
+.js .hero-anim .hero-badge,
+.js .hero-anim h1,
+.js .hero-anim .sub,
+.js .hero-anim .btn-row,
+.js .hero-anim .trust,
+.js .hero-anim .hero-card{
+  opacity:0;transform:translateY(16px);animation:rise .8s var(--ease) forwards;
 }
-.mesh .orb {
-  position: absolute; border-radius: 50%; filter: blur(80px); opacity: .35;
-  will-change: transform;
-}
-.mesh .o1 { width: 48vw; height: 48vw; top: -18%; left: -12%; background: radial-gradient(circle, rgba(34,211,238,.55), transparent 70%); }
-.mesh .o2 { width: 40vw; height: 40vw; top: 8%; right: -14%; background: radial-gradient(circle, rgba(167,139,250,.4), transparent 70%); }
-.mesh .o3 { width: 36vw; height: 36vw; bottom: -10%; left: 30%; background: radial-gradient(circle, rgba(34,211,238,.25), transparent 70%); }
-html[data-theme="light"] .mesh .orb { opacity: .22; }
-
-.page { position: relative; z-index: 1; }
-
-/* Nav */
-.nav {
-  position: sticky; top: 0; z-index: 60;
-  transition: background .3s var(--ease), box-shadow .3s var(--ease), border-color .3s var(--ease);
-  border-bottom: 1px solid transparent;
-  background: transparent;
-}
-.nav.scrolled {
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  border-bottom-color: var(--border);
-  box-shadow: 0 10px 40px -24px rgba(0,0,0,.55);
-}
-.nav-inner {
-  max-width: var(--max); margin: 0 auto;
-  padding: 14px 24px;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-}
-.logo {
-  display: inline-flex; align-items: baseline; gap: 0;
-  font-family: var(--display); line-height: 1; position: relative;
-  padding-bottom: 4px;
-}
-.logo .mpfle {
-  font-weight: 800; font-size: 1.35rem; letter-spacing: -0.04em; color: var(--text);
-}
-.logo .media {
-  font-weight: 600; font-size: 1.05rem; letter-spacing: -0.02em; color: var(--cyan);
-  margin-left: 0.28em;
-}
-.logo::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--cyan), var(--violet), transparent 90%);
-  opacity: .55; transform: scaleX(.55); transform-origin: left;
-  transition: transform .35s var(--ease), opacity .35s var(--ease);
-}
-.logo:hover::after { transform: scaleX(1); opacity: 1; }
-
-.nav-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.chip {
-  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--muted); padding: 7px 11px; border-radius: 999px; border: 1px solid var(--border);
-}
-.nav-btn {
-  font-size: 12px; font-weight: 600; padding: 9px 12px; border-radius: 12px;
-  border: 1px solid var(--border); color: var(--muted);
-  transition: color .2s, border-color .2s, background .2s, box-shadow .2s, transform .2s;
-}
-.nav-btn:hover { color: var(--cyan); border-color: var(--border-hi); }
-.nav-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.nav-cta {
-  font-size: 12px; font-weight: 700; padding: 9px 14px; border-radius: 12px;
-  background: var(--cyan); color: var(--ink); border: 1px solid transparent;
-  box-shadow: 0 0 0 0 rgba(34,211,238,0);
-  transition: filter .2s, transform .2s, box-shadow .25s;
-}
-.nav-cta:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 8px 28px -8px rgba(34,211,238,.55); }
-.nav-cta:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
-
-/* Sections */
-.shell { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-section.block { padding: 80px 0; }
-.eyebrow {
-  font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--cyan); margin-bottom: 14px;
-}
-.h2 {
-  font-family: var(--display); font-weight: 700; letter-spacing: -0.03em;
-  font-size: clamp(1.75rem, 3.6vw, 2.55rem); line-height: 1.12; margin-bottom: 12px;
-}
-.lede { color: var(--muted); max-width: 36rem; font-size: 1.02rem; margin-bottom: 32px; }
-
-.glass {
-  background: var(--glass);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 24px 60px -36px rgba(0,0,0,.65);
-}
-
-/* Hero */
-.hero {
-  padding: 48px 0 32px;
-  display: grid; grid-template-columns: 1.15fr .85fr; gap: 36px; align-items: center;
-}
-@media (max-width: 920px) { .hero { grid-template-columns: 1fr; gap: 28px; } }
-.hero-badge {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--muted); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
-  margin-bottom: 18px; background: rgba(34,211,238,.04);
-}
-.hero-badge i {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
-  box-shadow: 0 0 12px var(--cyan); display: inline-block;
-}
-.hero h1 {
-  font-family: var(--display); font-weight: 800; letter-spacing: -0.045em;
-  font-size: clamp(2.35rem, 5.5vw, 3.6rem); line-height: 1.02; margin-bottom: 16px;
-}
-.hero h1 .grad {
-  background: linear-gradient(105deg, var(--cyan) 0%, #67E8F9 40%, var(--violet) 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.hero .sub { color: var(--muted); font-size: 1.08rem; max-width: 32rem; margin-bottom: 28px; }
-.btn-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 13px 20px; border-radius: 14px; font-weight: 700; font-size: 14px;
-  transition: transform .2s var(--ease), box-shadow .25s, filter .2s, border-color .2s, background .2s;
-}
-.btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
-.btn-primary {
-  background: var(--cyan); color: var(--ink);
-  box-shadow: 0 10px 30px -12px rgba(34,211,238,.55);
-}
-.btn-primary:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 16px 36px -12px rgba(34,211,238,.65); }
-.btn-ghost {
-  border: 1px solid var(--border); background: var(--glass); color: var(--text);
-  backdrop-filter: blur(12px);
-}
-.btn-ghost:hover { transform: translateY(-2px); border-color: var(--border-hi); box-shadow: 0 12px 28px -16px rgba(34,211,238,.35); }
-
-.trust {
-  display: grid; grid-template-columns: repeat(3, auto); gap: 10px 22px;
-  padding-top: 8px; border-top: 1px solid var(--border); max-width: 28rem;
-}
-.trust div b {
-  display: block; font-family: var(--display); font-weight: 700; font-size: 1.25rem;
-  letter-spacing: -0.02em; color: var(--text);
-}
-.trust div span { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
-
-.hero-card {
-  padding: 28px; min-height: 300px;
-  display: flex; flex-direction: column; justify-content: space-between;
-  position: relative; overflow: hidden;
-  background: linear-gradient(160deg, var(--glass-2), var(--glass));
-}
-.hero-card::before {
-  content: ''; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
-  background: linear-gradient(135deg, rgba(34,211,238,.35), transparent 40%, rgba(167,139,250,.25));
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude; -webkit-mask-composite: xor; padding: 1px; opacity: .7;
-}
-.hero-card .kicker { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
-.hero-card .pt { font-family: var(--display); font-size: 1.45rem; font-weight: 700; letter-spacing: -0.03em; margin: 10px 0 8px; }
-.hero-card .pd { color: var(--muted); font-size: 14px; max-width: 28ch; }
-.pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
-.pill {
-  font-size: 12px; font-weight: 600; padding: 8px 12px; border-radius: 999px;
-  border: 1px solid var(--border); color: var(--muted); background: rgba(255,255,255,.03);
-  transition: transform .2s var(--ease), border-color .2s, color .2s, background .2s;
-}
-.pill:hover { transform: scale(1.04); border-color: var(--border-hi); color: var(--cyan); background: rgba(34,211,238,.08); }
-
-/* Challenge */
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-@media (max-width: 800px) { .grid-3 { grid-template-columns: 1fr; } }
-.card { padding: 24px; transition: transform .25s var(--ease), border-color .25s; }
-.card:hover { transform: translateY(-3px); border-color: var(--border-hi); }
-.card .n { font-family: var(--display); font-size: 12px; font-weight: 700; color: var(--violet); letter-spacing: .1em; margin-bottom: 12px; }
-.card h3 { font-family: var(--display); font-size: 1.1rem; letter-spacing: -0.02em; margin-bottom: 8px; }
-.card p { color: var(--muted); font-size: 14px; }
-
-/* Bento */
-.bento {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-  grid-auto-rows: minmax(150px, auto);
-}
-.svc {
-  padding: 24px; transition: transform .25s var(--ease), border-color .25s, box-shadow .25s;
-}
-.svc:hover { transform: translateY(-3px); border-color: var(--border-hi); box-shadow: 0 20px 40px -28px rgba(34,211,238,.35); }
-.svc.wide { grid-column: span 2; }
-.svc.tall { grid-row: span 2; }
-@media (max-width: 900px) {
-  .bento { grid-template-columns: 1fr 1fr; }
-  .svc.wide, .svc.tall { grid-column: span 1; grid-row: span 1; }
-}
-@media (max-width: 560px) { .bento { grid-template-columns: 1fr; } }
-.svc .ico {
-  width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
-  font-family: var(--display); font-weight: 700; font-size: 13px; color: var(--cyan);
-  background: linear-gradient(145deg, rgba(34,211,238,.14), rgba(167,139,250,.08));
-  border: 1px solid var(--border); margin-bottom: 16px;
-}
-.svc h3 { font-family: var(--display); font-size: 1.15rem; letter-spacing: -0.02em; margin-bottom: 4px; }
-.svc .alt { color: var(--cyan); font-size: 12px; font-weight: 600; margin-bottom: 10px; }
-.svc p { color: var(--muted); font-size: 14px; }
-
-/* Tabs */
-.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.tab {
-  padding: 10px 14px; border-radius: 12px; font-size: 13px; font-weight: 600;
-  border: 1px solid var(--border); color: var(--muted);
-  transition: color .2s, border-color .2s, background .2s, transform .2s;
-}
-.tab:hover { color: var(--text); border-color: var(--border-hi); }
-.tab.active { color: var(--cyan); border-color: var(--cyan); background: rgba(34,211,238,.08); }
-.tab:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.panel { display: none; padding: 28px; grid-template-columns: 1fr 1fr; gap: 28px; }
-.panel.active { display: grid; }
-@media (max-width: 720px) { .panel.active { grid-template-columns: 1fr; } }
-.panel .k { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin-bottom: 8px; }
-.panel h3 { font-family: var(--display); font-size: 1.4rem; letter-spacing: -0.03em; margin-bottom: 8px; }
-.panel p { color: var(--muted); font-size: 14px; }
-.panel ul { list-style: none; }
-.panel li {
-  font-size: 14px; padding: 10px 0 10px 16px; border-bottom: 1px solid var(--border);
-  position: relative;
-}
-.panel li::before {
-  content: ''; position: absolute; left: 0; top: 17px; width: 6px; height: 6px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--cyan), var(--violet));
-}
-
-/* Pricing */
-.pricing { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 800px) { .pricing { grid-template-columns: 1fr; } }
-.price {
-  padding: 28px; position: relative; overflow: hidden;
-  transition: transform .25s var(--ease), border-color .25s;
-}
-.price:hover { transform: translateY(-3px); }
-.price.hot { border-color: var(--border-hi); }
-.price.hot::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(600px 200px at 100% 0%, rgba(34,211,238,.12), transparent 55%);
-}
-.ribbon {
-  position: absolute; top: 16px; right: 16px; z-index: 1;
-  font-size: 10px; font-weight: 800; letter-spacing: .1em;
-  padding: 6px 10px; border-radius: 999px; background: var(--cyan); color: var(--ink);
-}
-.price h3 { font-family: var(--display); font-size: 1.3rem; letter-spacing: -0.02em; margin-bottom: 6px; }
-.price .for { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
-.price .amt { font-family: var(--display); font-size: 2.1rem; font-weight: 800; letter-spacing: -0.03em; color: var(--cyan); }
-.price .alt { color: var(--muted); font-size: 13px; margin: 6px 0 18px; }
-.price ul { list-style: none; margin-bottom: 22px; }
-.price li { font-size: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); }
-.price li::before { content: '\2713  '; color: var(--cyan); font-weight: 700; }
-
-.note {
-  margin-top: 18px; padding: 16px 20px; text-align: center; color: var(--muted); font-size: 14px;
-}
-.note a { color: var(--cyan); font-weight: 600; }
-
-/* CTA */
-.cta {
-  text-align: center; padding: 52px 28px; max-width: 820px; margin: 0 auto 48px;
-}
-.cta h2 { font-family: var(--display); font-size: clamp(1.55rem, 3vw, 2.1rem); letter-spacing: -0.03em; margin-bottom: 10px; }
-.cta p { color: var(--muted); margin-bottom: 22px; }
-.cta .btn-row { justify-content: center; margin-bottom: 0; }
-
-footer {
-  border-top: 1px solid var(--border);
-  max-width: var(--max); margin: 0 auto; padding: 36px 24px 56px;
-  display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 24px;
-}
-@media (max-width: 720px) { footer { grid-template-columns: 1fr; } }
-footer h4 { font-family: var(--display); font-size: 13px; margin-bottom: 12px; letter-spacing: -0.01em; }
-footer a, footer p { color: var(--muted); font-size: 13px; display: block; margin-bottom: 7px; }
-footer a:hover { color: var(--cyan); }
-.foot-copy {
-  grid-column: 1 / -1; margin-top: 8px; padding-top: 18px;
-  border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;
-}
-
-/* Motion */
-.reveal {
-  opacity: 0; transform: translateY(18px);
-  transition: opacity .7s var(--ease), transform .7s var(--ease);
-}
-.reveal.in { opacity: 1; transform: none; }
-.hero-anim .hero-badge,
-.hero-anim h1,
-.hero-anim .sub,
-.hero-anim .btn-row,
-.hero-anim .trust,
-.hero-anim .hero-card {
-  opacity: 0; transform: translateY(16px);
-  animation: rise .8s var(--ease) forwards;
-}
-.hero-anim h1 { animation-delay: .08s; }
-.hero-anim .sub { animation-delay: .16s; }
-.hero-anim .btn-row { animation-delay: .24s; }
-.hero-anim .trust { animation-delay: .32s; }
-.hero-anim .hero-card { animation-delay: .2s; }
-@keyframes rise {
-  to { opacity: 1; transform: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .reveal, .hero-anim .hero-badge, .hero-anim h1, .hero-anim .sub,
-  .hero-anim .btn-row, .hero-anim .trust, .hero-anim .hero-card {
-    opacity: 1 !important; transform: none !important; animation: none !important; transition: none !important;
+.js .hero-anim h1{animation-delay:.08s}
+.js .hero-anim .sub{animation-delay:.16s}
+.js .hero-anim .btn-row{animation-delay:.24s}
+.js .hero-anim .trust{animation-delay:.32s}
+.js .hero-anim .hero-card{animation-delay:.2s}
+@keyframes rise{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .js .reveal,.js .hero-anim .hero-badge,.js .hero-anim h1,.js .hero-anim .sub,
+  .js .hero-anim .btn-row,.js .hero-anim .trust,.js .hero-anim .hero-card{
+    opacity:1!important;transform:none!important;animation:none!important;transition:none!important
   }
-  .svc:hover, .card:hover, .price:hover, .btn:hover, .nav-cta:hover, .pill:hover { transform: none !important; }
 }
+
+.mesh{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:var(--bg)}
+.mesh .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.35}
+.mesh .o1{width:48vw;height:48vw;top:-18%;left:-12%;background:radial-gradient(circle,rgba(34,211,238,.55),transparent 70%)}
+.mesh .o2{width:40vw;height:40vw;top:8%;right:-14%;background:radial-gradient(circle,rgba(167,139,250,.4),transparent 70%)}
+.mesh .o3{width:36vw;height:36vw;bottom:-10%;left:30%;background:radial-gradient(circle,rgba(34,211,238,.25),transparent 70%)}
+html[data-theme="light"] .mesh .orb{opacity:.22}
+.page{position:relative;z-index:1}
+
+.nav{position:sticky;top:0;z-index:60;transition:background .3s var(--ease),box-shadow .3s,border-color .3s;border-bottom:1px solid transparent;background:transparent}
+.nav.scrolled{background:color-mix(in srgb,var(--bg) 78%,transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom-color:var(--border);box-shadow:0 10px 40px -24px rgba(0,0,0,.55)}
+.nav-inner{max-width:var(--max);margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logo{display:inline-flex;align-items:baseline;font-family:var(--display);line-height:1;position:relative;padding-bottom:4px}
+.logo .mpfle{font-weight:800;font-size:1.35rem;letter-spacing:-.04em;color:var(--text)}
+.logo .media{font-weight:600;font-size:1.05rem;letter-spacing:-.02em;color:var(--cyan);margin-left:.28em}
+.logo::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--cyan),var(--violet),transparent 90%);opacity:.55;transform:scaleX(.55);transform-origin:left;transition:transform .35s var(--ease),opacity .35s}
+.logo:hover::after{transform:scaleX(1);opacity:1}
+.nav-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:7px 11px;border-radius:999px;border:1px solid var(--border)}
+.nav-btn{font-size:12px;font-weight:600;padding:9px 12px;border-radius:12px;border:1px solid var(--border);color:var(--muted);transition:color .2s,border-color .2s}
+.nav-btn:hover{color:var(--cyan);border-color:var(--border-hi)}
+.nav-btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.nav-cta{font-size:12px;font-weight:700;padding:9px 14px;border-radius:12px;background:var(--cyan);color:var(--ink);transition:filter .2s,transform .2s,box-shadow .25s}
+.nav-cta:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 8px 28px -8px rgba(34,211,238,.55)}
+.nav-link{font-size:12px;font-weight:600;color:var(--muted);padding:8px 10px}
+.nav-link:hover{color:var(--cyan)}
+
+.shell{max-width:var(--max);margin:0 auto;padding:0 24px}
+section.block{padding:72px 0}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan);margin-bottom:14px}
+.h2{font-family:var(--display);font-weight:700;letter-spacing:-.03em;font-size:clamp(1.7rem,3.6vw,2.45rem);line-height:1.12;margin-bottom:12px}
+.lede{color:var(--muted);max-width:36rem;font-size:1.02rem;margin-bottom:28px}
+.glass{background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 24px 60px -36px rgba(0,0,0,.65)}
+
+.hero{padding:48px 0 28px;display:grid;grid-template-columns:1.15fr .85fr;gap:36px;align-items:center}
+@media (max-width:920px){.hero{grid-template-columns:1fr;gap:28px}}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:6px 12px;border-radius:999px;border:1px solid var(--border);margin-bottom:18px;background:rgba(34,211,238,.04)}
+.hero-badge i{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan);display:inline-block}
+.hero h1{font-family:var(--display);font-weight:800;letter-spacing:-.045em;font-size:clamp(2.2rem,5.2vw,3.5rem);line-height:1.02;margin-bottom:16px}
+.hero h1 .grad{background:linear-gradient(105deg,var(--cyan) 0%,#67E8F9 40%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .sub{color:var(--muted);font-size:1.05rem;max-width:32rem;margin-bottom:28px}
+.btn-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:28px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 20px;border-radius:14px;font-weight:700;font-size:14px;transition:transform .2s var(--ease),box-shadow .25s,filter .2s,border-color .2s}
+.btn:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.btn-primary{background:var(--cyan);color:var(--ink);box-shadow:0 10px 30px -12px rgba(34,211,238,.55)}
+.btn-primary:hover{transform:translateY(-2px);filter:brightness(1.05)}
+.btn-ghost{border:1px solid var(--border);background:var(--glass);color:var(--text)}
+.btn-ghost:hover{transform:translateY(-2px);border-color:var(--border-hi)}
+.btn-sm{padding:10px 16px;font-size:13px}
+.trust{display:grid;grid-template-columns:repeat(3,auto);gap:10px 22px;padding-top:8px;border-top:1px solid var(--border);max-width:28rem}
+.trust b{display:block;font-family:var(--display);font-weight:700;font-size:1.25rem;letter-spacing:-.02em}
+.trust span{font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.hero-card{padding:28px;min-height:280px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(160deg,var(--glass-2),var(--glass))}
+.hero-card .kicker{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.hero-card .pt{font-family:var(--display);font-size:1.4rem;font-weight:700;letter-spacing:-.03em;margin:10px 0 8px}
+.hero-card .pd{color:var(--muted);font-size:14px}
+.pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.pill{font-size:12px;font-weight:600;padding:8px 12px;border-radius:999px;border:1px solid var(--border);color:var(--muted);transition:transform .2s,border-color .2s,color .2s}
+.pill:hover{transform:scale(1.04);border-color:var(--border-hi);color:var(--cyan)}
+
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:800px){.grid-3{grid-template-columns:1fr}}
+.card{padding:24px;transition:transform .25s var(--ease),border-color .25s}
+.card:hover{transform:translateY(-3px);border-color:var(--border-hi)}
+.card .n{font-family:var(--display);font-size:12px;font-weight:700;color:var(--violet);letter-spacing:.1em;margin-bottom:12px}
+.card h3{font-family:var(--display);font-size:1.1rem;letter-spacing:-.02em;margin-bottom:8px}
+.card p{color:var(--muted);font-size:14px}
+
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;grid-auto-rows:minmax(140px,auto)}
+.svc{padding:24px;transition:transform .25s var(--ease),border-color .25s}
+.svc:hover{transform:translateY(-3px);border-color:var(--border-hi)}
+.svc.wide{grid-column:span 2}
+.svc.tall{grid-row:span 2}
+@media (max-width:900px){.bento{grid-template-columns:1fr 1fr}.svc.wide,.svc.tall{grid-column:span 1;grid-row:span 1}}
+@media (max-width:560px){.bento{grid-template-columns:1fr}}
+.svc .ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:13px;color:var(--cyan);background:linear-gradient(145deg,rgba(34,211,238,.14),rgba(167,139,250,.08));border:1px solid var(--border);margin-bottom:16px}
+.svc h3{font-family:var(--display);font-size:1.12rem;letter-spacing:-.02em;margin-bottom:4px}
+.svc .alt{color:var(--cyan);font-size:12px;font-weight:600;margin-bottom:10px}
+.svc p{color:var(--muted);font-size:14px}
+
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.tab{padding:10px 14px;border-radius:12px;font-size:13px;font-weight:600;border:1px solid var(--border);color:var(--muted)}
+.tab.active,.tab:hover{color:var(--cyan);border-color:var(--cyan);background:rgba(34,211,238,.08)}
+.panel{display:none;padding:28px;grid-template-columns:1fr 1fr;gap:28px}
+.panel.active{display:grid}
+@media (max-width:720px){.panel.active{grid-template-columns:1fr}}
+.panel .k{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin-bottom:8px}
+.panel h3{font-family:var(--display);font-size:1.35rem;letter-spacing:-.03em;margin-bottom:8px}
+.panel p{color:var(--muted);font-size:14px}
+.panel ul{list-style:none}
+.panel li{font-size:14px;padding:10px 0 10px 16px;border-bottom:1px solid var(--border);position:relative}
+.panel li::before{content:'';position:absolute;left:0;top:17px;width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),var(--violet))}
+
+/* Billing toggle */
+.bill-toggle{display:inline-flex;padding:4px;border-radius:14px;border:1px solid var(--border);background:rgba(255,255,255,.03);margin-bottom:22px;gap:4px}
+.bill-toggle button{padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;color:var(--muted)}
+.bill-toggle button.active{background:var(--cyan);color:var(--ink)}
+.bill-hint{font-size:12px;color:var(--muted);margin:-12px 0 20px}
+
+.plan-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media (max-width:1100px){.plan-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.plan-grid{grid-template-columns:1fr}}
+.plan{padding:24px;position:relative;display:flex;flex-direction:column;min-height:100%}
+.plan.hot{border-color:var(--border-hi)}
+.plan.hot::after{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(500px 180px at 100% 0%,rgba(34,211,238,.12),transparent 55%);border-radius:inherit}
+.ribbon{position:absolute;top:14px;right:14px;z-index:1;font-size:9px;font-weight:800;letter-spacing:.1em;padding:5px 9px;border-radius:999px;background:var(--cyan);color:var(--ink)}
+.plan h3{font-family:var(--display);font-size:1.2rem;letter-spacing:-.02em;margin-bottom:6px}
+.plan .for{color:var(--muted);font-size:13px;margin-bottom:14px;min-height:2.6em}
+.plan .amt{font-family:var(--display);font-size:1.75rem;font-weight:800;letter-spacing:-.03em;color:var(--cyan)}
+.plan .period{font-size:13px;color:var(--muted);font-weight:600}
+.plan .setup{font-size:12px;color:var(--muted);margin:6px 0 14px;min-height:2.4em}
+.plan ul{list-style:none;margin-bottom:18px;flex:1}
+.plan li{font-size:13px;padding:7px 0;border-bottom:1px solid var(--border)}
+.plan li::before{content:'\2713  ';color:var(--cyan);font-weight:700}
+
+.setup-card{margin-top:18px;padding:24px 26px}
+.setup-card h3{font-family:var(--display);font-size:1.15rem;margin-bottom:8px}
+.setup-card p{color:var(--muted);font-size:14px;margin-bottom:12px}
+.setup-card ul{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
+@media (max-width:640px){.setup-card ul{grid-template-columns:1fr}}
+.setup-card li{font-size:13px;color:var(--text);padding-left:14px;position:relative}
+.setup-card li::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--cyan)}
+.setup-card .free-note{margin-top:14px;font-size:13px;color:var(--cyan);font-weight:600}
+
+.svc-price-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:900px){.svc-price-grid{grid-template-columns:1fr}}
+.svc-price{padding:24px}
+.svc-price h3{font-family:var(--display);font-size:1.15rem;margin-bottom:6px}
+.svc-price .tag{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--violet);margin-bottom:10px}
+.svc-price .blurb{color:var(--muted);font-size:14px;margin-bottom:14px}
+.svc-price .tier{padding:10px 0;border-top:1px solid var(--border)}
+.svc-price .tier strong{display:block;font-size:14px;margin-bottom:2px}
+.svc-price .tier span{font-size:13px;color:var(--muted)}
+.svc-price .tier .rm{color:var(--cyan);font-weight:700}
+
+.note{margin-top:16px;padding:14px 18px;text-align:center;color:var(--muted);font-size:14px}
+.note a{color:var(--cyan);font-weight:600}
+.cta{text-align:center;padding:48px 28px;max-width:820px;margin:0 auto 48px}
+.cta h2{font-family:var(--display);font-size:clamp(1.5rem,3vw,2.05rem);letter-spacing:-.03em;margin-bottom:10px}
+.cta p{color:var(--muted);margin-bottom:22px}
+.cta .btn-row{justify-content:center;margin-bottom:0}
+footer{border-top:1px solid var(--border);max-width:var(--max);margin:0 auto;padding:36px 24px 56px;display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:24px}
+@media (max-width:720px){footer{grid-template-columns:1fr}}
+footer h4{font-family:var(--display);font-size:13px;margin-bottom:12px}
+footer a,footer p{color:var(--muted);font-size:13px;display:block;margin-bottom:7px}
+footer a:hover{color:var(--cyan)}
+.foot-copy{grid-column:1/-1;margin-top:8px;padding-top:18px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
@@ -387,11 +215,10 @@ footer a:hover { color: var(--cyan); }
 
 <header class="nav" id="nav">
   <div class="nav-inner">
-    <a href="#hero" class="logo" aria-label="MPFLE Media">
-      <span class="mpfle">MPFLE</span><span class="media">Media</span>
-    </a>
+    <a href="#hero" class="logo" aria-label="MPFLE Media"><span class="mpfle">MPFLE</span><span class="media">Media</span></a>
     <div class="nav-actions">
-      <span class="chip" data-i18n="topbar_tag">Ops systems</span>
+      <a class="nav-link" href="#pricing" data-i18n="nav_software">Software</a>
+      <a class="nav-link" href="#service-pricing" data-i18n="nav_services">Services</a>
       <button type="button" class="nav-btn" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Toggle theme">Theme</button>
       <button type="button" class="nav-btn" id="langToggleBtn" onclick="toggleLang()" aria-label="Toggle language">EN | BM</button>
       <a href="https://mpflemedia-ux.github.io/nexerp/app/" class="nav-cta" data-i18n="cta_mini">Client login</a>
@@ -406,8 +233,8 @@ footer a:hover { color: var(--cyan); }
       <h1 data-i18n="hero_title">Ship clean books.<br><span class="grad">Scale on M-Core.</span></h1>
       <p class="sub" data-i18n="hero_sub">MPFLE Media runs the ops stack founders skip: ledgers, statements, payroll &amp; tax — plus web systems that plug into M-Core.</p>
       <div class="btn-row">
-        <a class="btn btn-primary" href="#pricing" data-i18n="hero_cta_primary">See pricing</a>
-        <a class="btn btn-ghost" href="https://mpflemedia-ux.github.io/nexerp/app/" data-i18n="hero_cta_login">Open M-Core</a>
+        <a class="btn btn-primary" href="#pricing" data-i18n="hero_cta_primary">See software plans</a>
+        <a class="btn btn-ghost" href="#service-pricing" data-i18n="hero_cta_svc">Service packages</a>
       </div>
       <div class="trust">
         <div><b>4</b><span data-i18n="stat_1">Core services</span></div>
@@ -419,7 +246,7 @@ footer a:hover { color: var(--cyan); }
       <div>
         <div class="kicker" data-i18n="hero_panel_kicker">Platform</div>
         <div class="pt" data-i18n="hero_panel_title">One stack. Zero chaos.</div>
-        <p class="pd" data-i18n="hero_panel_desc">DIY software or done-for-you ops. Same engine. Your call.</p>
+        <p class="pd" data-i18n="hero_panel_desc">DIY software or done-with-you services. Same engine. Your call.</p>
       </div>
       <div class="pills">
         <span class="pill" data-i18n="pill_1">Bookkeeping</span>
@@ -456,11 +283,23 @@ footer a:hover { color: var(--cyan); }
   </section>
 
   <section class="block" id="pricing">
-    <div class="eyebrow reveal" data-i18n="pricing_eyebrow">Pricing</div>
-    <h2 class="h2 reveal" data-i18n="pricing_title">Two paths. Clear numbers.</h2>
-    <p class="lede reveal" data-i18n="pricing_lede">Run it yourself — or let MPFLE own the ops.</p>
-    <div class="pricing" id="pricingGrid"></div>
-    <div class="glass note reveal" data-i18n="pricing_web_note">Need a custom site or e-commerce build? Web starts from RM2,500.</div>
+    <div class="eyebrow reveal" data-i18n="pricing_eyebrow">M-Core software</div>
+    <h2 class="h2 reveal" data-i18n="pricing_title">Four tiers. Pick your scale.</h2>
+    <p class="lede reveal" data-i18n="pricing_lede">From free POS-ready to unlimited Pro. Annual saves two months and waives setup.</p>
+    <div class="bill-toggle reveal" role="group" aria-label="Billing period">
+      <button type="button" id="bill-monthly" class="active" onclick="setBilling('monthly')" data-i18n="bill_monthly">Monthly</button>
+      <button type="button" id="bill-yearly" onclick="setBilling('yearly')" data-i18n="bill_yearly">Yearly</button>
+    </div>
+    <p class="bill-hint reveal" id="billHint"></p>
+    <div class="plan-grid" id="pricingGrid"></div>
+    <div class="glass setup-card reveal" id="setupCard"></div>
+  </section>
+
+  <section class="block" id="service-pricing">
+    <div class="eyebrow reveal" data-i18n="svcprice_eyebrow">Done-with-you services</div>
+    <h2 class="h2 reveal" data-i18n="svcprice_title">Service packages</h2>
+    <p class="lede reveal" data-i18n="svcprice_lede">MPFLE runs the work. You keep selling.</p>
+    <div class="svc-price-grid" id="svcPriceGrid"></div>
   </section>
 
   <section class="glass cta reveal" id="contact">
@@ -476,9 +315,7 @@ footer a:hover { color: var(--cyan); }
 
 <footer>
   <div>
-    <a href="#hero" class="logo" style="margin-bottom:12px;display:inline-flex">
-      <span class="mpfle">MPFLE</span><span class="media">Media</span>
-    </a>
+    <a href="#hero" class="logo" style="margin-bottom:12px;display:inline-flex"><span class="mpfle">MPFLE</span><span class="media">Media</span></a>
     <p data-i18n="footer_tag">Bookkeeping · Financials · Payroll &amp; Tax · Web</p>
   </div>
   <div>
@@ -489,197 +326,299 @@ footer a:hover { color: var(--cyan); }
   <div>
     <h4 data-i18n="footer_product">Product</h4>
     <a href="https://mpflemedia-ux.github.io/nexerp/app/">M-Core login</a>
-    <a href="#pricing" data-i18n="footer_pricing">Pricing</a>
+    <a href="#pricing" data-i18n="footer_pricing">Software</a>
+    <a href="#service-pricing" data-i18n="footer_svc">Services</a>
   </div>
   <div class="foot-copy" data-i18n="footer_copyright">© 2026 MPFLE Media</div>
 </footer>
-
 </div>
 
 <script>
+document.documentElement.classList.add('js');
+
 const services = [
+  {key:'bookkeeping',n:'01',wide:true,
+    name:{en:'Bookkeeping',ms:'Pengurusan Lejar Bulanan'},
+    blurb:{en:'Data entry, bank reconciliation, cloud ledger — kept current.',ms:'Kemasukan data, penyesuaian bank, lejar awan — sentiasa kemas.'},
+    detail:{en:['Sales, purchases & expense entry','Bank reconciliation','Cloud ledger maintenance','Monthly close checks'],ms:['Kemasukan jualan, belian & belanja','Penyesuaian bank','Penyelenggaraan lejar awan','Semakan penutupan bulanan']}},
+  {key:'financials',n:'02',
+    name:{en:'Financials',ms:'Laporan Kewangan Penuh'},
+    blurb:{en:'P&L, balance sheet, cash flow — readable, on time.',ms:'P&L, kunci kira-kira, aliran tunai — jelas, tepat masa.'},
+    detail:{en:['Profit & Loss','Balance Sheet','Cash flow monitoring','Period comparisons'],ms:['Untung & Rugi','Kunci kira-kira','Pemantauan aliran tunai','Perbandingan tempoh']}},
+  {key:'payroll',n:'03',
+    name:{en:'Payroll & Tax',ms:'Pengurusan Gaji & Pematuhan Cukai'},
+    blurb:{en:'Payslips, EPF/SOCSO/PCB, tax-ready ledgers.',ms:'Payslip, EPF/SOCSO/PCB, lejar sedia cukai.'},
+    detail:{en:['Automated payslips','EPF / SOCSO / PCB','Tax-ready ledgers','Headcount cost clarity'],ms:['Payslip automatik','EPF / SOCSO / PCB','Lejar sedia cukai','Ketampakan kos staf']}},
+  {key:'web',n:'04',tall:true,
+    name:{en:'Website & System Development',ms:'Pembangunan Web & Sistem'},
+    blurb:{en:'Landing pages, e-commerce, custom M-Core integrations.',ms:'Landing page, e-dagang, integrasi M-Core tersuai.'},
+    detail:{en:['High-performance landings','E-commerce builds','M-Core integrations','Web projects from RM2,500'],ms:['Landing berprestasi tinggi','Pembinaan e-dagang','Integrasi M-Core','Projek web dari RM2,500']}}
+];
+
+const softwarePlans = [
   {
-    key: 'bookkeeping', n: '01', wide: true,
-    name: { en: 'Bookkeeping', ms: 'Pengurusan Lejar Bulanan' },
-    blurb: {
-      en: 'Data entry, bank reconciliation, cloud ledger — kept current.',
-      ms: 'Kemasukan data, penyesuaian bank, lejar awan — sentiasa kemas.'
-    },
-    detail: {
-      en: ['Sales, purchases & expense entry', 'Bank reconciliation', 'Cloud ledger maintenance', 'Monthly close checks'],
-      ms: ['Kemasukan jualan, belian & belanja', 'Penyesuaian bank', 'Penyelenggaraan lejar awan', 'Semakan penutupan bulanan']
+    id:'free', popular:false,
+    name:{en:'Free',ms:'Percuma'},
+    for:{en:'Micro / hawker: POS, invoicing, basic inventory.',ms:'Mikro / peniaga kecil: POS, invois, inventori asas.'},
+    monthly:{price:'RM 0', period:{en:'Forever',ms:'Selamanya'}, setup:{en:'No setup fee',ms:'Tiada yuran setup'}},
+    yearly:{price:'RM 0', period:{en:'Forever',ms:'Selamanya'}, setup:{en:'No setup fee',ms:'Tiada yuran setup'}},
+    features:{
+      en:['POS + invoicing','Basic inventory','Sales reports','1 branch','Community support'],
+      ms:['POS + invois','Inventori asas','Laporan jualan','1 cawangan','Sokongan komuniti']
     }
   },
   {
-    key: 'financials', n: '02',
-    name: { en: 'Financials', ms: 'Laporan Kewangan Penuh' },
-    blurb: {
-      en: 'P&L, balance sheet, cash flow — readable, on time.',
-      ms: 'P&L, kunci kira-kira, aliran tunai — jelas, tepat masa.'
-    },
-    detail: {
-      en: ['Profit & Loss', 'Balance Sheet', 'Cash flow monitoring', 'Period comparisons'],
-      ms: ['Untung & Rugi', 'Kunci kira-kira', 'Pemantauan aliran tunai', 'Perbandingan tempoh']
+    id:'starter', popular:false,
+    name:{en:'Starter',ms:'Starter'},
+    for:{en:'Growing shops that need full modules.',ms:'Kedai berkembang yang perlukan modul penuh.'},
+    monthly:{price:'RM 99', period:{en:'/ month',ms:'/ bulan'}, setup:{en:'+ Setup RM 300',ms:'+ Setup RM 300'}},
+    yearly:{price:'RM 990', period:{en:'/ year',ms:'/ tahun'}, setup:{en:'Save 2 months · setup waived',ms:'Jimat 2 bulan · setup digugurkan'}},
+    features:{
+      en:['Full modules','500 txn / month','1 branch','100 AI queries / day'],
+      ms:['Modul penuh','500 transaksi / bulan','1 cawangan','100 pertanyaan AI / hari']
     }
   },
   {
-    key: 'payroll', n: '03',
-    name: { en: 'Payroll & Tax', ms: 'Pengurusan Gaji & Pematuhan Cukai' },
-    blurb: {
-      en: 'Payslips, EPF/SOCSO/PCB, tax-ready ledgers.',
-      ms: 'Payslip, EPF/SOCSO/PCB, lejar sedia cukai.'
-    },
-    detail: {
-      en: ['Automated payslips', 'EPF / SOCSO / PCB', 'Tax-ready ledgers', 'Headcount cost clarity'],
-      ms: ['Payslip automatik', 'EPF / SOCSO / PCB', 'Lejar sedia cukai', 'Ketampakan kos staf']
+    id:'business', popular:true,
+    name:{en:'Business',ms:'Business'},
+    for:{en:'Multi-branch teams shipping volume.',ms:'Pasukan multi-cawangan dengan volum tinggi.'},
+    monthly:{price:'RM 199', period:{en:'/ month',ms:'/ bulan'}, setup:{en:'+ Setup RM 500',ms:'+ Setup RM 500'}},
+    yearly:{price:'RM 1,990', period:{en:'/ year',ms:'/ tahun'}, setup:{en:'Save 2 months · setup waived',ms:'Jimat 2 bulan · setup digugurkan'}},
+    features:{
+      en:['Full modules','2,500 txn / month','Up to 3 branches','500 AI queries / day'],
+      ms:['Modul penuh','2,500 transaksi / bulan','Sehingga 3 cawangan','500 pertanyaan AI / hari']
     }
   },
   {
-    key: 'web', n: '04', tall: true,
-    name: { en: 'Website & System Development', ms: 'Pembangunan Web & Sistem' },
-    blurb: {
-      en: 'Landing pages, e-commerce, custom M-Core integrations.',
-      ms: 'Landing page, e-dagang, integrasi M-Core tersuai.'
-    },
-    detail: {
-      en: ['High-performance landings', 'E-commerce builds', 'M-Core integrations', 'Web projects from RM2,500'],
-      ms: ['Landing berprestasi tinggi', 'Pembinaan e-dagang', 'Integrasi M-Core', 'Projek web dari RM2,500']
+    id:'pro', popular:false,
+    name:{en:'Pro',ms:'Pro'},
+    for:{en:'Scale without transaction ceilings.',ms:'Skala tanpa had transaksi.'},
+    monthly:{price:'RM 349', period:{en:'/ month',ms:'/ bulan'}, setup:{en:'+ Setup RM 800',ms:'+ Setup RM 800'}},
+    yearly:{price:'RM 3,490', period:{en:'/ year',ms:'/ tahun'}, setup:{en:'Save 2 months · setup waived',ms:'Jimat 2 bulan · setup digugurkan'}},
+    features:{
+      en:['Unlimited transactions','Up to 10 branches','2,000 AI queries / day','Priority support'],
+      ms:['Transaksi tanpa had','Sehingga 10 cawangan','2,000 pertanyaan AI / hari','Sokongan keutamaan']
     }
   }
 ];
-
-const pricingPlans = [
-  {
-    id: 'diy', popular: false,
-    name: { en: 'M-Core System (DIY)', ms: 'Sistem M-Core (DIY)' },
-    for: {
-      en: 'You have an accountant or clerk. We give you the system.',
-      ms: 'Anda ada akauntan/kerani. Kami beri sistem.'
-    },
-    priceMain: { en: 'RM 199 / month', ms: 'RM 199 / bulan' },
-    priceAlt: {
-      en: '+ RM 500 setup · or RM 1,990 / year (setup FREE)',
-      ms: '+ RM 500 setup · atau RM 1,990 / tahun (setup PERCUMA)'
-    },
-    features: {
-      en: ['Full M-Core access', 'Unlimited staff users', 'System training included'],
-      ms: ['Akses penuh M-Core', 'Staf tanpa had', 'Latihan sistem disertakan']
-    }
-  },
-  {
-    id: 'ops', popular: true,
-    name: { en: 'M-Core Ops (Done-For-You)', ms: 'M-Core Ops (Kami Uruskan)' },
-    for: {
-      en: 'You sell. We run the books and payroll.',
-      ms: 'Anda jual. Kami urus lejar dan gaji.'
-    },
-    priceMain: { en: 'From RM 1,200 / month', ms: 'Dari RM 1,200 / bulan' },
-    priceAlt: { en: '12-month contract', ms: 'Kontrak 12 bulan' },
-    features: {
-      en: ['M-Core subscription free', 'MPFLE runs ledger (up to 300 txns)', 'MPFLE runs payroll/tax (up to 10 staff)'],
-      ms: ['Langganan M-Core percuma', 'MPFLE urus lejar (hingga 300 transaksi)', 'MPFLE urus gaji/cukai (hingga 10 staf)']
-    }
-  }
-];
-
-const I18N = {
-  en: {
-    topbar_tag: 'Ops systems', cta_mini: 'Client login',
-    hero_badge: 'Built for Malaysian SMEs',
-    hero_title: 'Ship clean books.<br><span class="grad">Scale on M-Core.</span>',
-    hero_sub: 'MPFLE Media runs the ops stack founders skip: ledgers, statements, payroll &amp; tax — plus web systems that plug into M-Core.',
-    hero_cta_primary: 'See pricing', hero_cta_login: 'Open M-Core',
-    stat_1: 'Core services', stat_2: 'Cloud system', stat_3: 'Local compliance',
-    hero_panel_kicker: 'Platform', hero_panel_title: 'One stack. Zero chaos.',
-    hero_panel_desc: 'DIY software or done-for-you ops. Same engine. Your call.',
-    pill_1: 'Bookkeeping', pill_2: 'Financials', pill_3: 'Payroll &amp; Tax', pill_4: 'Web &amp; Systems',
-    challenge_eyebrow: 'Why teams stall', challenge_title: 'Messy ops kill momentum',
-    challenge_lede: 'If the numbers lag, the business guesses. We fix that.',
-    challenge_1_title: 'Blind decisions', challenge_1_desc: 'No monthly P&amp;L. No cash truth. Growth on vibes is expensive.',
-    challenge_2_title: 'Compliance drag', challenge_2_desc: 'EPF, SOCSO, PCB, tax-ready ledgers — structure beats late-night sheets.',
-    challenge_3_title: 'Tool sprawl', challenge_3_desc: 'Finance, HR, and site data in five tabs. M-Core consolidates the stack.',
-    services_eyebrow: 'Services', services_title: 'Four cores. No bloat.', services_lede: 'Only the work that moves the business.',
-    deep_eyebrow: 'Deep dive', deep_title: 'What you actually get',
-    pricing_eyebrow: 'Pricing', pricing_title: 'Two paths. Clear numbers.',
-    pricing_lede: 'Run it yourself — or let MPFLE own the ops.', pricing_ribbon: 'MOST POPULAR',
-    pricing_web_note: 'Need a custom site or e-commerce build? Web starts from RM2,500. <a href="mailto:hello@mpflemedia.my">Talk to us</a> · <a href="https://mpflemedia.my" target="_blank" rel="noopener">mpflemedia.my</a>',
-    cta_h2: 'Ready when you are.', cta_p: 'Talk to MPFLE Media — or jump straight into M-Core.',
-    cta_email: 'hello@mpflemedia.my', cta_web: 'mpflemedia.my', cta_app: 'Open M-Core',
-    footer_tag: 'Bookkeeping · Financials · Payroll &amp; Tax · Web',
-    footer_contact: 'Contact', footer_product: 'Product', footer_pricing: 'Pricing',
-    footer_copyright: '© 2026 MPFLE Media'
-  },
-  ms: {
-    topbar_tag: 'Sistem operasi', cta_mini: 'Log masuk klien',
-    hero_badge: 'Untuk PKS Malaysia',
-    hero_title: 'Akaun kemas.<br><span class="grad">Scale atas M-Core.</span>',
-    hero_sub: 'MPFLE Media urus stack ops yang pengasas elak: lejar, penyata, gaji &amp; cukai — plus sistem web yang plug ke M-Core.',
-    hero_cta_primary: 'Lihat harga', hero_cta_login: 'Buka M-Core',
-    stat_1: 'Perkhidmatan teras', stat_2: 'Sistem awan', stat_3: 'Pematuhan tempatan',
-    hero_panel_kicker: 'Platform', hero_panel_title: 'Satu stack. Zero chaos.',
-    hero_panel_desc: 'Perisian DIY atau ops kami uruskan. Enjin sama. Pilihan anda.',
-    pill_1: 'Lejar', pill_2: 'Kewangan', pill_3: 'Gaji &amp; Cukai', pill_4: 'Web &amp; Sistem',
-    challenge_eyebrow: 'Kenapa team tersekat', challenge_title: 'Ops bersepah bunuh momentum',
-    challenge_lede: 'Kalau nombor lambat, perniagaan teka. Kami betulkan itu.',
-    challenge_1_title: 'Keputusan buta', challenge_1_desc: 'Tiada P&amp;L bulanan. Tiada kebenaran tunai. Tumbuh ikut vibe mahal.',
-    challenge_2_title: 'Seret pematuhan', challenge_2_desc: 'EPF, SOCSO, PCB, lejar sedia cukai — struktur menang lawan hamparan malam.',
-    challenge_3_title: 'Alat berselerak', challenge_3_desc: 'Kewangan, HR, laman web di lima tab. M-Core satukan stack.',
-    services_eyebrow: 'Perkhidmatan', services_title: 'Empat teras. Tiada bloat.', services_lede: 'Hanya kerja yang gerakkan perniagaan.',
-    deep_eyebrow: 'Terperinci', deep_title: 'Apa yang anda benar-benar dapat',
-    pricing_eyebrow: 'Harga', pricing_title: 'Dua laluan. Nombor jelas.',
-    pricing_lede: 'Anda urus sendiri — atau MPFLE urus ops.', pricing_ribbon: 'PALING POPULAR',
-    pricing_web_note: 'Perlukan laman atau e-dagang tersuai? Web bermula RM2,500. <a href="mailto:hello@mpflemedia.my">Hubungi kami</a> · <a href="https://mpflemedia.my" target="_blank" rel="noopener">mpflemedia.my</a>',
-    cta_h2: 'Sedia bila anda sedia.', cta_p: 'Hubungi MPFLE Media — atau terus masuk M-Core.',
-    cta_email: 'hello@mpflemedia.my', cta_web: 'mpflemedia.my', cta_app: 'Buka M-Core',
-    footer_tag: 'Lejar · Kewangan · Gaji &amp; Cukai · Web',
-    footer_contact: 'Hubungi', footer_product: 'Produk', footer_pricing: 'Harga',
-    footer_copyright: '© 2026 MPFLE Media'
-  }
-};
 
 let currentLang = localStorage.getItem('mcore_lang') || localStorage.getItem('phion_lang') || 'en';
 if (currentLang !== 'en' && currentLang !== 'ms') currentLang = 'en';
+let billing = 'monthly';
+
+const I18N = {
+  en: {
+    nav_software:'Software', nav_services:'Services', cta_mini:'Client login',
+    hero_badge:'Built for Malaysian SMEs',
+    hero_title:'Ship clean books.<br><span class="grad">Scale on M-Core.</span>',
+    hero_sub:'MPFLE Media runs the ops stack founders skip: ledgers, statements, payroll &amp; tax — plus web systems that plug into M-Core.',
+    hero_cta_primary:'See software plans', hero_cta_svc:'Service packages',
+    stat_1:'Core services', stat_2:'Cloud system', stat_3:'Local compliance',
+    hero_panel_kicker:'Platform', hero_panel_title:'One stack. Zero chaos.',
+    hero_panel_desc:'DIY software or done-with-you services. Same engine. Your call.',
+    pill_1:'Bookkeeping', pill_2:'Financials', pill_3:'Payroll &amp; Tax', pill_4:'Web &amp; Systems',
+    challenge_eyebrow:'Why teams stall', challenge_title:'Messy ops kill momentum',
+    challenge_lede:'If the numbers lag, the business guesses. We fix that.',
+    challenge_1_title:'Blind decisions', challenge_1_desc:'No monthly P&amp;L. No cash truth. Growth on vibes is expensive.',
+    challenge_2_title:'Compliance drag', challenge_2_desc:'EPF, SOCSO, PCB, tax-ready ledgers — structure beats late-night sheets.',
+    challenge_3_title:'Tool sprawl', challenge_3_desc:'Finance, HR, and site data in five tabs. M-Core consolidates the stack.',
+    services_eyebrow:'Services', services_title:'Four cores. No bloat.', services_lede:'Only the work that moves the business.',
+    deep_eyebrow:'Deep dive', deep_title:'What you actually get',
+    pricing_eyebrow:'M-Core software', pricing_title:'Four tiers. Pick your scale.',
+    pricing_lede:'From free POS-ready to unlimited Pro. Annual saves two months and waives setup.',
+    bill_monthly:'Monthly', bill_yearly:'Yearly',
+    bill_hint_m:'Monthly: setup fee applies on paid plans.',
+    bill_hint_y:'Yearly: save 2 months · setup fee waived on paid plans.',
+    pricing_ribbon:'MOST POPULAR',
+    setup_title:'What the Setup Fee covers (White-Glove Onboarding)',
+    setup_p:'For monthly plans, setup is technical work by the MPFLE team. You hand over Excel — we configure M-Core:',
+    setup_1:'Logo, letterhead, bank details',
+    setup_2:'Customer, supplier, stock lists',
+    setup_3:'Chart of accounts + opening balances',
+    setup_4:'Staff user accounts',
+    setup_free:'Choose an Annual plan → this onboarding is 100% FREE.',
+    talk:'Talk to us', open_app:'Open M-Core',
+    svcprice_eyebrow:'Done-with-you services', svcprice_title:'Service packages',
+    svcprice_lede:'MPFLE runs the work. You keep selling.',
+    cta_h2:'Ready when you are.', cta_p:'Talk to MPFLE Media — or jump straight into M-Core.',
+    cta_email:'hello@mpflemedia.my', cta_web:'mpflemedia.my', cta_app:'Open M-Core',
+    footer_tag:'Bookkeeping · Financials · Payroll &amp; Tax · Web',
+    footer_contact:'Contact', footer_product:'Product', footer_pricing:'Software', footer_svc:'Services',
+    footer_copyright:'© 2026 MPFLE Media'
+  },
+  ms: {
+    nav_software:'Perisian', nav_services:'Perkhidmatan', cta_mini:'Log masuk klien',
+    hero_badge:'Untuk PKS Malaysia',
+    hero_title:'Akaun kemas.<br><span class="grad">Scale atas M-Core.</span>',
+    hero_sub:'MPFLE Media urus stack ops yang pengasas elak: lejar, penyata, gaji &amp; cukai — plus sistem web yang plug ke M-Core.',
+    hero_cta_primary:'Lihat pelan perisian', hero_cta_svc:'Pakej perkhidmatan',
+    stat_1:'Perkhidmatan teras', stat_2:'Sistem awan', stat_3:'Pematuhan tempatan',
+    hero_panel_kicker:'Platform', hero_panel_title:'Satu stack. Zero chaos.',
+    hero_panel_desc:'Perisian DIY atau perkhidmatan bersama kami. Enjin sama. Pilihan anda.',
+    pill_1:'Lejar', pill_2:'Kewangan', pill_3:'Gaji &amp; Cukai', pill_4:'Web &amp; Sistem',
+    challenge_eyebrow:'Kenapa team tersekat', challenge_title:'Ops bersepah bunuh momentum',
+    challenge_lede:'Kalau nombor lambat, perniagaan teka. Kami betulkan itu.',
+    challenge_1_title:'Keputusan buta', challenge_1_desc:'Tiada P&amp;L bulanan. Tiada kebenaran tunai. Tumbuh ikut vibe mahal.',
+    challenge_2_title:'Seret pematuhan', challenge_2_desc:'EPF, SOCSO, PCB, lejar sedia cukai — struktur menang lawan hamparan malam.',
+    challenge_3_title:'Alat berselerak', challenge_3_desc:'Kewangan, HR, laman web di lima tab. M-Core satukan stack.',
+    services_eyebrow:'Perkhidmatan', services_title:'Empat teras. Tiada bloat.', services_lede:'Hanya kerja yang gerakkan perniagaan.',
+    deep_eyebrow:'Terperinci', deep_title:'Apa yang anda benar-benar dapat',
+    pricing_eyebrow:'Perisian M-Core', pricing_title:'Empat peringkat. Pilih skala anda.',
+    pricing_lede:'Dari percuma sedia POS hingga Pro tanpa had. Tahunan jimat 2 bulan dan gugurkan setup.',
+    bill_monthly:'Bulanan', bill_yearly:'Tahunan',
+    bill_hint_m:'Bulanan: yuran setup dikenakan pada pelan berbayar.',
+    bill_hint_y:'Tahunan: jimat 2 bulan · yuran setup digugurkan pada pelan berbayar.',
+    pricing_ribbon:'PALING POPULAR',
+    setup_title:'Apa yang diliputi Yuran Setup (Onboarding White-Glove)',
+    setup_p:'Untuk pelan bulanan, setup ialah kerja teknikal pasukan MPFLE. Anda serah Excel — kami konfigurasi M-Core:',
+    setup_1:'Logo, kepala surat, butiran bank',
+    setup_2:'Senarai pelanggan, pembekal, stok',
+    setup_3:'Carta akaun + baki pembukaan',
+    setup_4:'Akaun pengguna staf',
+    setup_free:'Pilih pelan Tahunan → onboarding ini 100% PERCUMA.',
+    talk:'Hubungi kami', open_app:'Buka M-Core',
+    svcprice_eyebrow:'Perkhidmatan bersama kami', svcprice_title:'Pakej perkhidmatan',
+    svcprice_lede:'MPFLE urus kerja. Anda terus jual.',
+    cta_h2:'Sedia bila anda sedia.', cta_p:'Hubungi MPFLE Media — atau terus masuk M-Core.',
+    cta_email:'hello@mpflemedia.my', cta_web:'mpflemedia.my', cta_app:'Buka M-Core',
+    footer_tag:'Lejar · Kewangan · Gaji &amp; Cukai · Web',
+    footer_contact:'Hubungi', footer_product:'Produk', footer_pricing:'Perisian', footer_svc:'Perkhidmatan',
+    footer_copyright:'© 2026 MPFLE Media'
+  }
+};
+
+function forceVisible() {
+  document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+  document.querySelectorAll('.hero-anim *').forEach(el => {
+    el.style.opacity = '1';
+    el.style.transform = 'none';
+    el.style.animation = 'none';
+  });
+}
 
 function renderOfferGrid() {
   const grid = document.getElementById('offerGrid');
   if (!grid) return;
   grid.innerHTML = services.map(s => {
-    const cls = ['glass', 'svc', 'reveal'];
+    const cls = ['glass','svc','reveal'];
     if (s.wide) cls.push('wide');
     if (s.tall) cls.push('tall');
-    return '<article class="' + cls.join(' ') + '"><div class="ico">' + s.n + '</div><h3>' + s.name[currentLang] + '</h3><div class="alt">' + s.name[currentLang === 'en' ? 'ms' : 'en'] + '</div><p>' + s.blurb[currentLang] + '</p></article>';
+    return '<article class="'+cls.join(' ')+'"><div class="ico">'+s.n+'</div><h3>'+s.name[currentLang]+'</h3><div class="alt">'+s.name[currentLang==='en'?'ms':'en']+'</div><p>'+s.blurb[currentLang]+'</p></article>';
   }).join('');
-  observeReveals();
 }
 
 function renderTabs() {
   const bar = document.getElementById('tabBar');
   const panels = document.getElementById('tabPanels');
   if (!bar || !panels) return;
-  bar.innerHTML = services.map((s, i) =>
-    '<button type="button" class="tab' + (i === 0 ? ' active' : '') + '" data-tab="' + s.key + '" onclick="switchTab(\'' + s.key + '\')">' + s.name[currentLang] + '</button>'
+  bar.innerHTML = services.map((s,i) =>
+    '<button type="button" class="tab'+(i===0?' active':'')+'" data-tab="'+s.key+'" onclick="switchTab(\''+s.key+'\')">'+s.name[currentLang]+'</button>'
   ).join('');
-  panels.innerHTML = services.map((s, i) =>
-    '<div class="glass panel' + (i === 0 ? ' active' : '') + '" id="panel-' + s.key + '"><div><div class="k">' + s.n + ' · ' + s.name[currentLang] + '</div><h3>' + s.name[currentLang] + '</h3><p>' + s.blurb[currentLang] + '</p></div><ul>' + s.detail[currentLang].map(x => '<li>' + x + '</li>').join('') + '</ul></div>'
+  panels.innerHTML = services.map((s,i) =>
+    '<div class="glass panel'+(i===0?' active':'')+'" id="panel-'+s.key+'"><div><div class="k">'+s.n+' · '+s.name[currentLang]+'</div><h3>'+s.name[currentLang]+'</h3><p>'+s.blurb[currentLang]+'</p></div><ul>'+s.detail[currentLang].map(x=>'<li>'+x+'</li>').join('')+'</ul></div>'
   ).join('');
 }
 
 function switchTab(key) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
-  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + key));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-'+key));
+}
+
+function setBilling(mode) {
+  billing = mode === 'yearly' ? 'yearly' : 'monthly';
+  document.getElementById('bill-monthly')?.classList.toggle('active', billing === 'monthly');
+  document.getElementById('bill-yearly')?.classList.toggle('active', billing === 'yearly');
+  renderPricingGrid();
+  const hint = document.getElementById('billHint');
+  if (hint) hint.textContent = billing === 'yearly' ? I18N[currentLang].bill_hint_y : I18N[currentLang].bill_hint_m;
 }
 
 function renderPricingGrid() {
   const grid = document.getElementById('pricingGrid');
   if (!grid) return;
-  const ribbon = I18N[currentLang].pricing_ribbon;
-  grid.innerHTML = pricingPlans.map(p =>
-    '<article class="glass price' + (p.popular ? ' hot' : '') + ' reveal">' +
-    (p.popular ? '<div class="ribbon">' + ribbon + '</div>' : '') +
-    '<h3>' + p.name[currentLang] + '</h3><p class="for">' + p.for[currentLang] + '</p>' +
-    '<div class="amt">' + p.priceMain[currentLang] + '</div><div class="alt">' + p.priceAlt[currentLang] + '</div>' +
-    '<ul>' + p.features[currentLang].map(f => '<li>' + f + '</li>').join('') + '</ul>' +
-    '<a class="btn btn-primary" href="mailto:hello@mpflemedia.my">' + (currentLang === 'ms' ? 'Hubungi kami' : 'Talk to us') + '</a></article>'
+  const t = I18N[currentLang];
+  const ribbon = t.pricing_ribbon;
+  grid.innerHTML = softwarePlans.map(p => {
+    const b = billing === 'yearly' ? p.yearly : p.monthly;
+    return '<article class="glass plan'+(p.popular?' hot':'')+' reveal">'+
+      (p.popular ? '<div class="ribbon">'+ribbon+'</div>' : '')+
+      '<h3>'+p.name[currentLang]+'</h3>'+
+      '<p class="for">'+p.for[currentLang]+'</p>'+
+      '<div class="amt">'+b.price+' <span class="period">'+b.period[currentLang]+'</span></div>'+
+      '<div class="setup">'+b.setup[currentLang]+'</div>'+
+      '<ul>'+p.features[currentLang].map(f=>'<li>'+f+'</li>').join('')+'</ul>'+
+      '<a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my?subject=M-Core%20'+encodeURIComponent(p.name.en)+'">'+t.talk+'</a>'+
+      (p.id==='free' ? ' <a class="btn btn-ghost btn-sm" href="https://mpflemedia-ux.github.io/nexerp/app/">'+t.open_app+'</a>' : '')+
+      '</article>';
+  }).join('');
+
+  const sc = document.getElementById('setupCard');
+  if (sc) {
+    sc.innerHTML = '<h3>'+t.setup_title+'</h3><p>'+t.setup_p+'</p><ul>'+
+      '<li>'+t.setup_1+'</li><li>'+t.setup_2+'</li><li>'+t.setup_3+'</li><li>'+t.setup_4+'</li></ul>'+
+      '<p class="free-note">'+t.setup_free+'</p>';
+  }
+  observeReveals();
+}
+
+function renderSvcPriceGrid() {
+  const grid = document.getElementById('svcPriceGrid');
+  if (!grid) return;
+  const isBm = currentLang === 'ms';
+  const cards = [
+    {
+      tag: isBm ? 'Virtual CFO & Lejar' : 'Virtual CFO & Bookkeeping',
+      title: isBm ? 'Bookkeeping & Kewangan' : 'Bookkeeping & Financials',
+      blurb: isBm
+        ? 'Bukan sekadar key-in — laporan kesihatan perniagaan bulanan. Sentiasa dijual bersama.'
+        : 'Not key-in only — monthly business health reports. Always sold together.',
+      tiers: isBm ? [
+        {k:'Mikro (<100 transaksi/bln)', v:'RM 300–600 / bln', d:'Freelancer, ejen, runcit kecil'},
+        {k:'SME sederhana (100–500 transaksi)', v:'RM 800–1,500 / bln', d:'Pemborong, agensi, kafe'},
+        {k:'Tinggi / kompleks (500+, multi-cawangan)', v:'RM 2,000–4,000+ / bln', d:'Operasi kompleks'}
+      ] : [
+        {k:'Micro (<100 txn/mo)', v:'RM 300–600 / mo', d:'Freelancer, agent, small retail'},
+        {k:'Mid SME (100–500 txn/mo)', v:'RM 800–1,500 / mo', d:'Wholesaler, agency, cafe'},
+        {k:'High / complex (500+, multi-branch)', v:'RM 2,000–4,000+ / mo', d:'Complex operations'}
+      ]
+    },
+    {
+      tag: isBm ? 'Pematuhan' : 'Compliance',
+      title: isBm ? 'Gaji & Cukai' : 'Payroll & Tax',
+      blurb: isBm
+        ? 'Kiraan gaji, EPF/SOCSO/PCB, payslip, dan penyata cukai tahunan.'
+        : 'Payroll calc, EPF/SOCSO/PCB, payslips, and annual tax filings.',
+      tiers: isBm ? [
+        {k:'Payroll asas', v:'RM 150–300 / bln', d:'Asas bulanan'},
+        {k:'Per staf', v:'+ RM 30–50 / staf / bln', d:'Kiraan + payslip'},
+        {k:'Cukai (Borang C / PT)', v:'RM 1,200–3,000 / tahun', d:'Pemfailan tahunan'}
+      ] : [
+        {k:'Payroll base', v:'RM 150–300 / mo', d:'Monthly base'},
+        {k:'Per staff', v:'+ RM 30–50 / staff / mo', d:'Calc + payslips'},
+        {k:'Tax (Borang C / PT)', v:'RM 1,200–3,000 / year', d:'Annual filing'}
+      ]
+    },
+    {
+      tag: isBm ? 'Projek' : 'Projects',
+      title: isBm ? 'Web & Sistem' : 'Website & Systems',
+      blurb: isBm
+        ? 'Landing, e-dagang, atau sistem tersuai — sekali bayar.'
+        : 'Landings, e-commerce, or custom systems — one-off builds.',
+      tiers: isBm ? [
+        {k:'Korporat / landing', v:'RM 2,500–5,000', d:'2–4 minggu, WA + borang'},
+        {k:'E-dagang', v:'RM 5,000–12,000+', d:'Kedai online'},
+        {k:'Sistem tersuai', v:'RM 15,000–50,000+', d:'Integrasi M-Core'}
+      ] : [
+        {k:'Corporate / landing', v:'RM 2,500–5,000', d:'2–4 weeks, WA + forms'},
+        {k:'E-commerce', v:'RM 5,000–12,000+', d:'Online store'},
+        {k:'Custom system', v:'RM 15,000–50,000+', d:'M-Core integrations'}
+      ]
+    }
+  ];
+  grid.innerHTML = cards.map(c =>
+    '<article class="glass svc-price reveal"><div class="tag">'+c.tag+'</div><h3>'+c.title+'</h3><p class="blurb">'+c.blurb+'</p>'+
+    c.tiers.map(x => '<div class="tier"><strong>'+x.k+'</strong><span class="rm">'+x.v+'</span><br><span>'+x.d+'</span></div>').join('')+
+    '<div style="margin-top:16px"><a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my">'+(isBm?'Hubungi kami':'Talk to us')+'</a></div></article>'
   ).join('');
   observeReveals();
 }
@@ -694,9 +633,11 @@ function applyLang(lang) {
   });
   renderOfferGrid();
   renderTabs();
-  renderPricingGrid();
+  setBilling(billing);
+  renderSvcPriceGrid();
   const btn = document.getElementById('langToggleBtn');
   if (btn) btn.textContent = lang === 'en' ? 'EN | BM' : 'BM | EN';
+  observeReveals();
 }
 function toggleLang() { applyLang(currentLang === 'en' ? 'ms' : 'en'); }
 
@@ -709,40 +650,63 @@ function toggleTheme() {
   const cur = document.documentElement.getAttribute('data-theme') || 'dark';
   applyTheme(cur === 'light' ? 'dark' : 'light');
 }
-(function initTheme() {
-  const saved = localStorage.getItem('mcore_theme') || localStorage.getItem('phion_theme');
-  if (saved === 'light' || saved === 'dark') applyTheme(saved);
-  else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) applyTheme('light');
-  else applyTheme('dark');
-})();
-
-applyLang(currentLang);
-
-const nav = document.getElementById('nav');
-window.addEventListener('scroll', () => {
-  if (!nav) return;
-  nav.classList.toggle('scrolled', window.scrollY > 12);
-}, { passive: true });
 
 let io;
 function observeReveals() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
-    return;
+  try {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      forceVisible();
+      return;
+    }
+    if (!io) {
+      io = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            e.target.classList.add('in');
+            io.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+    }
+    document.querySelectorAll('.reveal:not(.in)').forEach(el => io.observe(el));
+    // Always show pricing/service grids even if observer is late
+    document.querySelectorAll('#pricing .reveal, #service-pricing .reveal, #pricingGrid .reveal, #svcPriceGrid .reveal').forEach(el => el.classList.add('in'));
+  } catch (e) {
+    forceVisible();
   }
-  if (!io) {
-    io = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) {
-          e.target.classList.add('in');
-          io.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-  }
-  document.querySelectorAll('.reveal:not(.in)').forEach(el => io.observe(el));
 }
-observeReveals();
+
+function boot() {
+  try {
+    const saved = localStorage.getItem('mcore_theme') || localStorage.getItem('phion_theme');
+    if (saved === 'light' || saved === 'dark') applyTheme(saved);
+    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) applyTheme('light');
+    else applyTheme('dark');
+
+    applyLang(currentLang);
+
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      if (nav) nav.classList.toggle('scrolled', window.scrollY > 12);
+    }, { passive: true });
+
+    // Hash deep-link after render
+    if (location.hash) {
+      const el = document.querySelector(location.hash);
+      if (el) {
+        el.querySelectorAll('.reveal').forEach(r => r.classList.add('in'));
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      }
+    }
+    observeReveals();
+  } catch (err) {
+    console.error(err);
+    forceVisible();
+  }
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 </script>
 </body>
 </html>
