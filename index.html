@@ -522,7 +522,7 @@ footer a:hover { color: var(--cyan); }
       <div class="btn-row">
         <a class="btn btn-primary" href="https://mpflemedia-ux.github.io/nexerp/app/" data-i18n="hero_cta_primary">Open M-Core</a>
         <a class="btn btn-ghost" href="#pricing" data-i18n="hero_cta_plans">See plans</a>
-        <a class="btn btn-ghost" href="mailto:hello@mpflemedia.my" data-i18n="hero_cta_talk">Talk to us</a>
+        <a class="btn btn-ghost" href="https://wa.me/601169980433?text=Saya%20berminat%20hendak%20tahu%20lebih%20lanjut%20tentang%20M-Core" target="_blank" rel="noopener" data-i18n="hero_cta_talk">Talk to us</a>
       </div>
     </div>
     <aside class="mock" id="mockPanel" aria-label="M-Core dashboard preview">
@@ -684,6 +684,8 @@ footer a:hover { color: var(--cyan); }
 
 <script>
 document.documentElement.classList.add('js');
+
+const WA_TALK = 'https://wa.me/601169980433?text=Saya%20berminat%20hendak%20tahu%20lebih%20lanjut%20tentang%20M-Core';
 
 const modules = [
   {en:{n:'Sales & invoicing',d:'Quotes, invoices, payments, credit notes.'},ms:{n:'Jualan & invois',d:'Sebut harga, invois, bayaran, nota kredit.'}},
@@ -850,7 +852,7 @@ function renderPricingGrid() {
       '<div class="amt">'+b.price+' <span class="period">'+b.period[currentLang]+'</span></div>'+
       '<div class="setup">'+b.setup[currentLang]+'</div>'+
       '<ul>'+p.features[currentLang].map(f=>'<li>'+f+'</li>').join('')+'</ul>'+
-      '<a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my?subject=M-Core%20'+encodeURIComponent(p.name.en)+'">'+t.talk+'</a></article>';
+      '<a class="btn btn-primary btn-sm" href="'+WA_TALK+'" target="_blank" rel="noopener">'+t.talk+'</a></article>';
   }).join('');
   const sc = document.getElementById('setupCard');
   if (sc) {
@@ -914,7 +916,7 @@ function renderSvcPriceGrid() {
   grid.innerHTML = cards.map(c =>
     '<article class="svc-price reveal"><div class="tag">'+c.tag+'</div><h3>'+c.title+'</h3><p class="blurb">'+c.blurb+'</p>'+
     c.tiers.map(x => '<div class="tier"><strong>'+x.k+'</strong><span class="rm">'+x.v+'</span><br><span>'+x.d+'</span></div>').join('')+
-    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="mailto:hello@mpflemedia.my">'+(isBm?'Hubungi kami':'Talk to us')+'</a></div></article>'
+    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="'+WA_TALK+'" target="_blank" rel="noopener">'+(isBm?'Hubungi kami':'Talk to us')+'</a></div></article>'
   ).join('');
   observeReveals();
 }
