@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-admin-clients-page">
+<meta name="nexerp-build" content="2026-08-20-soft-del-tenant">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7114,11 +7114,11 @@ async function renderAdminAuditLog() {
   const t = isBm ? {
     title:'Admin — Log Audit', sub:'Tindakan platform_admin ke atas tenant',
     actor:'Pelaku', action:'Tindakan', target:'Tenant Sasaran', details:'Butiran', when:'Bila', noData:'Tiada log lagi.',
-    suspend:'Gantung', reactivate:'Aktifkan Semula', setPlan:'Tukar Pelan', announce:'Pengumuman', recordPay:'Rekod Bayaran',
+    suspend:'Gantung', reactivate:'Aktifkan Semula', setPlan:'Tukar Pelan', announce:'Pengumuman', recordPay:'Rekod Bayaran', softDelete:'Padam (lembut)',
   } : {
     title:'Admin — Audit Log', sub:'platform_admin actions on tenants',
     actor:'Actor', action:'Action', target:'Target Tenant', details:'Details', when:'When', noData:'No audit entries yet.',
-    suspend:'Suspend', reactivate:'Reactivate', setPlan:'Plan Change', announce:'Announcement', recordPay:'Payment Recorded',
+    suspend:'Suspend', reactivate:'Reactivate', setPlan:'Plan Change', announce:'Announcement', recordPay:'Payment Recorded', softDelete:'Soft-delete',
   }
 
   document.getElementById('main').innerHTML = `
@@ -7144,8 +7144,8 @@ async function renderAdminAuditLog() {
     return
   }
 
-  const actionLabels = { suspend_tenant: t.suspend, reactivate_tenant: t.reactivate, set_tenant_plan: t.setPlan, create_announcement: t.announce, record_tenant_payment: t.recordPay }
-  const actionColors = { suspend_tenant: 'var(--danger)', reactivate_tenant: 'var(--success)', set_tenant_plan: 'var(--primary)', create_announcement: 'var(--primary)', record_tenant_payment: 'var(--success)' }
+  const actionLabels = { suspend_tenant: t.suspend, reactivate_tenant: t.reactivate, set_tenant_plan: t.setPlan, create_announcement: t.announce, record_tenant_payment: t.recordPay, soft_delete_tenant: t.softDelete }
+  const actionColors = { suspend_tenant: 'var(--danger)', reactivate_tenant: 'var(--success)', set_tenant_plan: 'var(--primary)', create_announcement: 'var(--primary)', record_tenant_payment: 'var(--success)', soft_delete_tenant: 'var(--danger)' }
   const actionLabel = a => actionLabels[a] || a
   const actionColor = a => actionColors[a] || 'var(--text)'
   // details is jsonb — a plain string (set_tenant_plan/create_announcement,
@@ -7680,28 +7680,44 @@ async function renderAdminClients() {
         <button type="button" class="btn btn-primary" onclick="doRecordPayment()">${isBm?'Simpan Bayaran':'Save Payment'}</button>
       </div>
     </div>
+  </div>
+  <div class="modal-overlay" id="admin-soft-delete-modal-overlay">
+    <div class="modal-box" style="max-width:480px">
+      <div class="modal-box-header" style="color:var(--danger)"><i class="ti ti-trash"></i> <span id="admin-soft-delete-title">${isBm?'Padam Tenant (lembut)':'Soft-delete Tenant'}</span></div>
+      <div class="modal-box-body" id="admin-soft-delete-body"></div>
+      <div class="modal-box-footer" id="admin-soft-delete-footer"></div>
+    </div>
   </div>`
 
   const wrap = document.getElementById('admin-clients-wrap')
-  const [{data, error}] = await Promise.all([
-    sb.from('tenants').select('id,code,name,plan,plan_id,is_active,onboarding_completed,onboarding_step,is_trial,trial_ends_at,plan_expires_at,created_at').order('created_at', {ascending:false}),
+  let [{data: tenantsRows, error: tenantsErr}] = await Promise.all([
+    sb.from('tenants').select('id,code,name,plan,plan_id,is_active,onboarding_completed,onboarding_step,is_trial,trial_ends_at,plan_expires_at,created_at,deleted_at').is('deleted_at', null).order('created_at', {ascending:false}),
     _loadPlansCache(),
   ])
 
-  if(error) {
+  // Fallback if deleted_at column not migrated yet
+  if(tenantsErr && /deleted_at/i.test(tenantsErr.message||'')) {
+    const retry = await sb.from('tenants').select('id,code,name,plan,plan_id,is_active,onboarding_completed,onboarding_step,is_trial,trial_ends_at,plan_expires_at,created_at').order('created_at', {ascending:false})
+    tenantsRows = retry.data
+    tenantsErr = retry.error
+  }
+  if(tenantsErr) {
     wrap.innerHTML = `<div style="padding:24px">
-      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(tenantsErr.message)}</p>
       <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
         ? 'Supabase RLS mungkin menyekat baca semua tenants. Hubungi pemilik platform untuk tetapkan peranan anda kepada platform_admin.'
         : 'Supabase RLS may block reading all tenants. Contact the platform owner to have your role set to platform_admin.'}</p>
     </div>`
     return
   }
-  if(!data || !data.length) {
+  // Exclude soft-deleted if column present but filter not applied
+  tenantsRows = (tenantsRows||[]).filter(d => !d.deleted_at)
+  if(!tenantsRows.length) {
     _adminClientsData = []
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
     return
   }
+  const data = tenantsRows
   _adminClientsData = data
 
   // Reuse this already-fetched list for the nav badge instead of firing the
@@ -7928,6 +7944,7 @@ function _adminClientsRenderTable() {
     <td onclick="event.stopPropagation()" style="white-space:nowrap">
       <button type="button" class="btn btn-sm ${d.is_active===false?'btn-primary':'btn-outline'}" onclick="${d.is_active===false?'doReactivateTenant':'doSuspendTenant'}('${d.id}')">${d.is_active===false?(isBm?'Aktifkan semula':'Reactivate'):(isBm?'Gantung':'Suspend')}</button>
       <button type="button" class="btn btn-sm btn-outline" onclick="openRecordPaymentModal('${d.id}')"><i class="ti ti-receipt"></i> ${t.recordPayment}</button>
+      <button type="button" class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="openSoftDeleteTenantModal('${d.id}')"><i class="ti ti-trash"></i> ${isBm?'Padam':'Delete'}</button>
     </td>
   </tr>`).join('')}
   </tbody></table></div>
@@ -8186,6 +8203,84 @@ async function doReactivateTenant(tenantId) {
   showToast(isBm ? `${name} telah diaktifkan semula.` : `${name} has been reactivated.`, 'success')
   renderAdminClients()
 }
+
+// Soft-delete tenant (platform_admin). Requires typing tenant CODE.
+// Never hard-deletes rows; sets tenants.deleted_at + is_active=false via RPC.
+let _adminSoftDeleteTenantId = null
+function openSoftDeleteTenantModal(tenantId) {
+  const isBm = APP.language==='bm'
+  const tenant = _adminClientsData.find(d => d.id === tenantId)
+  if(!tenant) return
+
+  // Client-side guards (server RPC re-checks)
+  if(String(tenantId) === String(APP.tenant?.id||'')) {
+    showToast(isBm
+      ? 'Tidak boleh padam tenant rumah anda sendiri.'
+      : 'Cannot delete your own home tenant.', 'error')
+    return
+  }
+  const codeUp = String(tenant.code||'').toUpperCase()
+  const nameLow = String(tenant.name||'').toLowerCase()
+  if(codeUp === 'MPWORK24' || codeUp === 'MPWORK' || nameLow === 'mp workspace' || nameLow === 'mpworkspace') {
+    showToast(isBm
+      ? 'Tidak boleh padam tenant platform (MP Workspace).'
+      : 'Cannot delete the platform home tenant (MP Workspace).', 'error')
+    return
+  }
+
+  _adminSoftDeleteTenantId = tenantId
+  const code = tenant.code || ''
+  document.getElementById('admin-soft-delete-body').innerHTML = `
+    <p style="font-size:13px;color:var(--text-2);margin:0 0 10px">${isBm
+      ? `Anda akan <strong>padam lembut</strong> tenant <strong>${_aiEscapeHtml(tenant.name||'')}</strong> (kod <code>${_aiEscapeHtml(code)}</code>). Tenant hilang dari senarai All Clients; data dalaman tidak dipadam keras.`
+      : `You will <strong>soft-delete</strong> tenant <strong>${_aiEscapeHtml(tenant.name||'')}</strong> (code <code>${_aiEscapeHtml(code)}</code>). It disappears from All Clients; internal data is not hard-deleted.`}</p>
+    <p style="font-size:12px;color:var(--text-3);margin:0 0 12px">${isBm
+      ? 'Taip kod tenant di bawah untuk aktifkan butang Padam.'
+      : 'Type the tenant code below to enable the Delete button.'}</p>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">${isBm?'Kod tenant':'Tenant code'}</label>
+      <input type="text" id="admin-soft-delete-code" class="form-input" autocomplete="off" placeholder="${_aiEscapeHtml(code)}" oninput="_adminSoftDeleteCodeTyped()">
+    </div>`
+  document.getElementById('admin-soft-delete-footer').innerHTML = `
+    <button type="button" class="btn btn-outline" onclick="document.getElementById('admin-soft-delete-modal-overlay').classList.remove('active');_adminSoftDeleteTenantId=null">${isBm?'Batal':'Cancel'}</button>
+    <button type="button" id="admin-soft-delete-confirm-btn" class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" disabled onclick="doSoftDeleteTenant()">${isBm?'Padam':'Delete'}</button>`
+  document.getElementById('admin-soft-delete-modal-overlay').classList.add('active')
+  setTimeout(() => document.getElementById('admin-soft-delete-code')?.focus(), 50)
+}
+function _adminSoftDeleteCodeTyped() {
+  const tenant = _adminClientsData.find(d => d.id === _adminSoftDeleteTenantId)
+  const expected = String(tenant?.code||'').trim()
+  const typed = String(document.getElementById('admin-soft-delete-code')?.value||'').trim()
+  const btn = document.getElementById('admin-soft-delete-confirm-btn')
+  if(btn) btn.disabled = !expected || typed.toUpperCase() !== expected.toUpperCase()
+}
+async function doSoftDeleteTenant() {
+  const isBm = APP.language==='bm'
+  const tenantId = _adminSoftDeleteTenantId
+  if(!tenantId) return
+  const tenant = _adminClientsData.find(d => d.id === tenantId)
+  const typed = String(document.getElementById('admin-soft-delete-code')?.value||'').trim()
+  if(!tenant || typed.toUpperCase() !== String(tenant.code||'').trim().toUpperCase()) {
+    showToast(isBm?'Kod tenant tidak sepadan.':'Tenant code does not match.', 'error')
+    return
+  }
+  if(String(tenantId) === String(APP.tenant?.id||'')) {
+    showToast(isBm?'Tidak boleh padam tenant rumah anda sendiri.':'Cannot delete your own home tenant.', 'error')
+    return
+  }
+  const { error } = await sb.rpc('soft_delete_tenant', { p_tenant_id: tenantId })
+  document.getElementById('admin-soft-delete-modal-overlay')?.classList.remove('active')
+  _adminSoftDeleteTenantId = null
+  if(error) {
+    showToast(error.message, 'error')
+    return
+  }
+  showToast(isBm
+    ? `Tenant "${tenant.name||tenantId}" telah dipadam (lembut).`
+    : `Tenant "${tenant.name||tenantId}" has been soft-deleted.`, 'success')
+  renderAdminClients()
+}
+
 
 async function renderAdminTenantDetail(tenantId) {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
