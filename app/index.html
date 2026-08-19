@@ -3940,11 +3940,33 @@ function showShell() {
     buildSidebar()
     updateUserUI()
     _loadBroadcastAnnouncements()
+    _loadAdminSignupBadge()
     let lastParams = {}
     try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
     openPage(localStorage.getItem('nexerp_last_page') || 'dashboard', lastParams)
     setTimeout(() => { try { loadNotifications() } catch(e) {} }, 800)
   }
+}
+
+// Admin nav badge: count of tenants that registered TODAY. A lightweight
+// separate count query — the sidebar badge must be correct on every page,
+// not just when All Clients happens to be loaded, so it can't rely on that
+// page's already-fetched list alone (see _setAdminSignupBadge, which
+// renderAdminClients calls with data it already has instead of firing this
+// query redundantly when that page IS open).
+function _setAdminSignupBadge(count) {
+  const badge = document.getElementById('nav-admin-badge')
+  if(!badge) return
+  if(count > 0) { badge.textContent = String(count); badge.style.display = 'inline-block' }
+  else { badge.style.display = 'none' }
+}
+async function _loadAdminSignupBadge() {
+  try {
+    if(!isPlatformAdmin()) return
+    const startOfDay = new Date(); startOfDay.setHours(0,0,0,0)
+    const { count } = await sb.from('tenants').select('id', { count: 'exact', head: true }).gte('created_at', startOfDay.toISOString())
+    _setAdminSignupBadge(count || 0)
+  } catch(e) { console.warn('_loadAdminSignupBadge', e) }
 }
 
 function buildSidebar() {
@@ -3975,7 +3997,7 @@ function buildSidebar() {
     el.className='nav-item'
     el.dataset.page=item.id
     el.dataset.label=label
-    el.innerHTML=`<i class="ti ${item.icon} nav-icon"></i><span class="nav-label">${label}</span>`
+    el.innerHTML=`<i class="ti ${item.icon} nav-icon"></i><span class="nav-label">${label}</span>${item.id==='admin'?'<span id="nav-admin-badge" style="display:none;margin-left:auto;padding:1px 6px;border-radius:9px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;line-height:1.4"></span>':''}`
     el.onclick=()=>openPage(item.id)
     nav.appendChild(el)
   })
@@ -7090,13 +7112,13 @@ async function renderAdminAuditLog() {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Admin — Log Audit', sub:'Tindakan platform_admin ke atas tenant (gantung/aktifkan semula)',
-    actor:'Pelaku', action:'Tindakan', target:'Tenant Sasaran', when:'Bila', noData:'Tiada log lagi.',
-    suspend:'Gantung', reactivate:'Aktifkan Semula',
+    title:'Admin — Log Audit', sub:'Tindakan platform_admin ke atas tenant',
+    actor:'Pelaku', action:'Tindakan', target:'Tenant Sasaran', details:'Butiran', when:'Bila', noData:'Tiada log lagi.',
+    suspend:'Gantung', reactivate:'Aktifkan Semula', setPlan:'Tukar Pelan', announce:'Pengumuman', recordPay:'Rekod Bayaran',
   } : {
-    title:'Admin — Audit Log', sub:'platform_admin actions on tenants (suspend/reactivate)',
-    actor:'Actor', action:'Action', target:'Target Tenant', when:'When', noData:'No audit entries yet.',
-    suspend:'Suspend', reactivate:'Reactivate',
+    title:'Admin — Audit Log', sub:'platform_admin actions on tenants',
+    actor:'Actor', action:'Action', target:'Target Tenant', details:'Details', when:'When', noData:'No audit entries yet.',
+    suspend:'Suspend', reactivate:'Reactivate', setPlan:'Plan Change', announce:'Announcement', recordPay:'Payment Recorded',
   }
 
   document.getElementById('main').innerHTML = `
@@ -7109,7 +7131,7 @@ async function renderAdminAuditLog() {
 
   const wrap = document.getElementById('admin-audit-wrap')
   const { data, error } = await sb.from('platform_admin_audit')
-    .select('id,actor_email,action,target_tenant_name,created_at')
+    .select('id,actor_email,action,target_tenant_name,details,created_at')
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -7122,16 +7144,29 @@ async function renderAdminAuditLog() {
     return
   }
 
-  const actionLabel = a => a==='suspend_tenant' ? t.suspend : a==='reactivate_tenant' ? t.reactivate : a
-  const actionColor = a => a==='suspend_tenant' ? 'var(--danger)' : 'var(--success)'
+  const actionLabels = { suspend_tenant: t.suspend, reactivate_tenant: t.reactivate, set_tenant_plan: t.setPlan, create_announcement: t.announce, record_tenant_payment: t.recordPay }
+  const actionColors = { suspend_tenant: 'var(--danger)', reactivate_tenant: 'var(--success)', set_tenant_plan: 'var(--primary)', create_announcement: 'var(--primary)', record_tenant_payment: 'var(--success)' }
+  const actionLabel = a => actionLabels[a] || a
+  const actionColor = a => actionColors[a] || 'var(--text)'
+  // details is jsonb — a plain string (set_tenant_plan/create_announcement,
+  // via to_jsonb()) or a structured object (record_tenant_payment, via
+  // jsonb_build_object). Render either as one readable line rather than
+  // raw JSON.
+  const detailsText = d => {
+    if(d == null) return '—'
+    if(typeof d === 'string') return d
+    if(typeof d === 'object') return Object.entries(d).map(([k,v]) => `${k}: ${v==null?'—':v}`).join(', ')
+    return String(d)
+  }
 
   wrap.innerHTML = `<table><thead><tr>
-    <th>${t.actor}</th><th>${t.action}</th><th>${t.target}</th><th>${t.when}</th>
+    <th>${t.actor}</th><th>${t.action}</th><th>${t.target}</th><th>${t.details}</th><th>${t.when}</th>
   </tr></thead><tbody>
   ${data.map(r => `<tr>
     <td>${_aiEscapeHtml(r.actor_email||'-')}</td>
     <td style="color:${actionColor(r.action)}">${_aiEscapeHtml(actionLabel(r.action))}</td>
     <td>${_aiEscapeHtml(r.target_tenant_name||'-')}</td>
+    <td style="font-size:12px;color:var(--text-2);max-width:320px">${_aiEscapeHtml(detailsText(r.details))}</td>
     <td style="font-size:12px;color:var(--text-3)">${r.created_at?new Date(r.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
   </tr>`).join('')}
   </tbody></table>`
@@ -7581,6 +7616,17 @@ async function _adminDeleteMember(btnOrId) {
 // created through the UI.
 let _plansCache = null
 const _PLAN_CODE_ORDER = ['free','starter','business','pro','unlimited']
+// Shared color-coding convention for any expiry-ish date (trial end, plan
+// expiry) — green >7 days, orange 1-7, red/expired <0. One source of truth
+// so All Clients (Phase 3) and the My Plan widget (Phase 4) can't drift.
+function _expiryDaysInfo(dateStr, isBm) {
+  if(!dateStr) return null
+  const days = Math.ceil((new Date(dateStr) - new Date()) / 86400000)
+  const color = days < 0 ? 'var(--danger)' : days <= 7 ? 'var(--warning)' : 'var(--success)'
+  const label = days < 0 ? (isBm?'tamat':'expired') : `${days}${isBm?'h':'d'}`
+  return { days, color, label, dateFmt: formatDate(String(dateStr).slice(0,10)) }
+}
+
 async function _loadPlansCache() {
   if(_plansCache) return _plansCache
   const { data } = await sb.from('plans').select('id,code,name_en,name_bm')
@@ -7597,12 +7643,14 @@ async function renderAdminClients() {
     title:'Admin — Semua Client', sub:'Platform overview (memerlukan RLS policy platform)',
     name:'Syarikat', code:'Kod', plan:'Pelan', status:'Status', onboard:'Onboarding',
     created:'Dicipta', noData:'Tiada tenant / akses ditolak RLS.', users:'Users', open:'Buka',
-    bulkSuspend:'Gantung Pukal', exportCsv:'Eksport CSV'
+    bulkSuspend:'Gantung Pukal', exportCsv:'Eksport CSV', trialEnds:'Tamat Percubaan', planExpires:'Pelan Tamat',
+    recordPayment:'Rekod Bayaran', pending:'Belum mula', step:'Langkah'
   } : {
     title:'Admin — All Clients', sub:'Platform overview (requires platform RLS policy)',
     name:'Company', code:'Code', plan:'Plan', status:'Status', onboard:'Onboarding',
     created:'Created', noData:'No tenants / RLS blocked access.', users:'Users', open:'Open',
-    bulkSuspend:'Bulk Suspend', exportCsv:'Export CSV'
+    bulkSuspend:'Bulk Suspend', exportCsv:'Export CSV', trialEnds:'Trial Ends', planExpires:'Plan Expires',
+    recordPayment:'Record Payment', pending:'Pending', step:'Step'
   }
 
   document.getElementById('main').innerHTML = `
@@ -7622,11 +7670,21 @@ async function renderAdminClients() {
       <div class="modal-box-body" id="admin-bulk-suspend-body"></div>
       <div class="modal-box-footer" id="admin-bulk-suspend-footer"></div>
     </div>
+  </div>
+  <div class="modal-overlay" id="admin-payment-modal-overlay">
+    <div class="modal-box" style="max-width:560px">
+      <div class="modal-box-header"><i class="ti ti-receipt"></i> <span id="admin-payment-title">${t.recordPayment}</span></div>
+      <div class="modal-box-body" id="admin-payment-body"></div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('admin-payment-modal-overlay').classList.remove('active')">${isBm?'Tutup':'Close'}</button>
+        <button type="button" class="btn btn-primary" onclick="doRecordPayment()">${isBm?'Simpan Bayaran':'Save Payment'}</button>
+      </div>
+    </div>
   </div>`
 
   const wrap = document.getElementById('admin-clients-wrap')
   const [{data, error}] = await Promise.all([
-    sb.from('tenants').select('id,code,name,plan,plan_id,is_active,onboarding_completed,created_at').order('created_at', {ascending:false}),
+    sb.from('tenants').select('id,code,name,plan,plan_id,is_active,onboarding_completed,onboarding_step,is_trial,trial_ends_at,plan_expires_at,created_at').order('created_at', {ascending:false}),
     _loadPlansCache(),
   ])
 
@@ -7646,6 +7704,11 @@ async function renderAdminClients() {
   }
   _adminClientsData = data
 
+  // Reuse this already-fetched list for the nav badge instead of firing the
+  // separate _loadAdminSignupBadge() count query again.
+  const _todayStr = new Date().toISOString().slice(0,10)
+  _setAdminSignupBadge(data.filter(d => d.created_at && String(d.created_at).slice(0,10) === _todayStr).length)
+
   // Enrich with user counts (best-effort)
   const ids = data.map(d=>d.id)
   let countMap = {}
@@ -7657,6 +7720,17 @@ async function renderAdminClients() {
 
   const plans = _plansCache || []
   const planOptions = d => plans.map(p => `<option value="${p.id}" ${String(p.id)===String(d.plan_id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')
+  const onboardCell = d => {
+    if(d.onboarding_completed) return `<td style="color:var(--success)">${isBm?'Siap':'Done'}</td>`
+    const step = Number(d.onboarding_step||0)
+    if(step > 0 && step < 5) return `<td style="color:var(--warning)">${t.step} ${step}/5</td>`
+    return `<td style="color:var(--text-3)">${t.pending}</td>`
+  }
+  const expiryCell = dateStr => {
+    const info = _expiryDaysInfo(dateStr, isBm)
+    if(!info) return `<td style="color:var(--text-3)">—</td>`
+    return `<td style="color:${info.color};font-size:12px">${info.dateFmt} (${info.label})</td>`
+  }
 
   wrap.innerHTML = `
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:12px 8px 20px">
@@ -7671,7 +7745,7 @@ async function renderAdminClients() {
   </div>
   <div style="overflow-x:auto"><table><thead><tr>
     <th style="width:32px"><input type="checkbox" id="admin-select-all" onchange="_toggleSelectAllTenants(this)"></th>
-    <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.users}</th><th>${t.created}</th><th></th>
+    <th>${t.name}</th><th>${t.code}</th><th>${t.plan}</th><th>${t.status}</th><th>${t.onboard}</th><th>${t.trialEnds}</th><th>${t.planExpires}</th><th>${t.users}</th><th>${t.created}</th><th></th>
   </tr></thead><tbody>
   ${data.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
     <td onclick="event.stopPropagation()"><input type="checkbox" class="admin-tenant-chk" data-tenant-id="${d.id}" onchange="_onTenantCheckChange()"></td>
@@ -7679,10 +7753,15 @@ async function renderAdminClients() {
     <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
     <td onclick="event.stopPropagation()"><select class="form-select" style="font-size:12px;padding:4px 6px" data-tenant-id="${d.id}" data-prev="${d.plan_id||''}" onchange="_onPlanChange(this)">${planOptions(d)}</select></td>
     <td style="color:${d.is_active===false?'var(--danger)':'var(--success)'}">${d.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</td>
-    <td style="color:${d.onboarding_completed?'var(--success)':'var(--warning)'}">${d.onboarding_completed?(isBm?'Siap':'Done'):(isBm?'Belum':'Pending')}</td>
+    ${onboardCell(d)}
+    ${d.is_trial ? expiryCell(d.trial_ends_at) : `<td style="color:var(--text-3)">—</td>`}
+    ${expiryCell(d.plan_expires_at)}
     <td>${countMap[d.id]||'—'}</td>
     <td style="font-size:12px">${d.created_at?formatDate(String(d.created_at).slice(0,10)):'—'}</td>
-    <td><button type="button" class="btn btn-sm ${d.is_active===false?'btn-primary':'btn-outline'}" onclick="event.stopPropagation();${d.is_active===false?'doReactivateTenant':'doSuspendTenant'}('${d.id}')">${d.is_active===false?(isBm?'Aktifkan semula':'Reactivate'):(isBm?'Gantung':'Suspend')}</button></td>
+    <td onclick="event.stopPropagation()" style="white-space:nowrap">
+      <button type="button" class="btn btn-sm ${d.is_active===false?'btn-primary':'btn-outline'}" onclick="${d.is_active===false?'doReactivateTenant':'doSuspendTenant'}('${d.id}')">${d.is_active===false?(isBm?'Aktifkan semula':'Reactivate'):(isBm?'Gantung':'Suspend')}</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="openRecordPaymentModal('${d.id}')"><i class="ti ti-receipt"></i> ${t.recordPayment}</button>
+    </td>
   </tr>`).join('')}
   </tbody></table></div>`
   _onTenantCheckChange()
@@ -7803,6 +7882,123 @@ function doExportTenantsCsv() {
   _exportTableToCsv(rows, columns, `Tenants-${dd}${mm}${yyyy}.csv`)
 }
 
+// Record Payment (manual — bank transfer + admin confirms, no gateway).
+// The modal is a single shared overlay (see admin-payment-modal-overlay in
+// renderAdminClients' own markup) repopulated per tenant on open, same
+// approach as admin-bulk-suspend-modal-overlay above.
+async function openRecordPaymentModal(tenantId) {
+  const isBm = APP.language==='bm'
+  const tenant = _adminClientsData.find(d => d.id === tenantId)
+  if(!tenant) return
+  const plans = _plansCache || []
+  const overlay = document.getElementById('admin-payment-modal-overlay')
+  overlay.dataset.tenantId = tenantId
+  overlay.dataset.oldExpiry = tenant.plan_expires_at || ''
+  document.getElementById('admin-payment-title').textContent = (isBm?'Rekod Bayaran — ':'Record Payment — ') + (tenant.name||tenantId)
+  document.getElementById('admin-payment-body').innerHTML = `
+    <div class="form-group">
+      <label class="form-label">${isBm?'Pelan':'Plan'}</label>
+      <select id="pay-plan-id" class="form-select">${plans.map(p=>`<option value="${p.id}" ${String(p.id)===String(tenant.plan_id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')}</select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${isBm?'Jumlah (RM)':'Amount (RM)'}</label><input type="number" id="pay-amount-admin" class="form-input" step="0.01" min="0"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Tarikh Bayaran':'Payment Date'}</label><input type="date" id="pay-date-admin" class="form-input" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${isBm?'Kaedah Bayaran':'Payment Method'}</label>
+        <select id="pay-method-admin" class="form-select">
+          <option value="cash">${isBm?'Tunai':'Cash'}</option>
+          <option value="bank_transfer" selected>${isBm?'Pindahan Bank':'Bank Transfer'}</option>
+          <option value="online_banking">${isBm?'Perbankan Online':'Online Banking'}</option>
+          <option value="card">${isBm?'Kad':'Card'}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${isBm?'Tempoh':'Period'}</label>
+        <select id="pay-period" class="form-select" onchange="_paySuggestExpiry()">
+          <option value="1">${isBm?'Bulanan (1 bulan)':'Monthly (1 month)'}</option>
+          <option value="12">${isBm?'Tahunan (12 bulan)':'Annual (12 months)'}</option>
+        </select>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--primary);margin:-4px 0 12px;font-weight:600" id="pay-suggested-expiry"></div>
+    <div class="form-group">
+      <label class="form-label">${isBm?'Tindih Tarikh Tamat (pilihan)':'Override Expiry Date (optional)'}</label>
+      <input type="date" id="pay-override" class="form-input" oninput="_paySuggestExpiry()">
+    </div>
+    <div class="card" style="margin-top:6px">
+      <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px">${isBm?'Sejarah Bayaran':'Payment History'}</div>
+      <div id="admin-payment-history" style="padding:8px"><div class="empty-state" style="padding:20px"><div class="spinner"></div></div></div>
+    </div>`
+  _paySuggestExpiry()
+  overlay.classList.add('active')
+  _loadTenantPaymentHistory(tenantId)
+}
+
+// Live preview only — the RPC (record_tenant_payment) recomputes this
+// exact GREATEST(old_expiry, now()) + period server-side as the source of
+// truth; this is just so the admin sees roughly what will happen before
+// saving.
+function _paySuggestExpiry() {
+  const isBm = APP.language==='bm'
+  const out = document.getElementById('pay-suggested-expiry')
+  if(!out) return
+  const overrideVal = document.getElementById('pay-override')?.value
+  if(overrideVal) {
+    out.textContent = (isBm?'Tarikh tamat baru (manual): ':'New expiry (manual override): ') + formatDate(overrideVal)
+    return
+  }
+  const overlay = document.getElementById('admin-payment-modal-overlay')
+  const oldExpiry = overlay?.dataset.oldExpiry || ''
+  const months = Number(document.getElementById('pay-period')?.value || 1)
+  const base = (oldExpiry && new Date(oldExpiry) > new Date()) ? new Date(oldExpiry) : new Date()
+  const suggested = new Date(base)
+  suggested.setMonth(suggested.getMonth() + months)
+  out.textContent = (isBm?'Tarikh tamat baru (auto-kira): ':'New expiry (auto-calculated): ') + formatDate(suggested.toISOString().slice(0,10))
+}
+
+async function _loadTenantPaymentHistory(tenantId) {
+  const isBm = APP.language==='bm'
+  const host = document.getElementById('admin-payment-history')
+  if(!host) return
+  const { data, error } = await sb.from('tenant_plan_payments')
+    .select('id,amount,payment_date,payment_method,period_months,period_start,period_end')
+    .eq('tenant_id', tenantId).order('payment_date', { ascending: false })
+  if(error) { host.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">${_aiEscapeHtml(error.message)}</div>`; return }
+  if(!data || !data.length) { host.innerHTML = `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${isBm?'Tiada bayaran lagi':'No payments yet'}</p></div>`; return }
+  const methodLabel = m => ({ cash: isBm?'Tunai':'Cash', bank_transfer: isBm?'Pindahan Bank':'Bank Transfer', online_banking: isBm?'Perbankan Online':'Online Banking', card: isBm?'Kad':'Card' }[m] || m || '-')
+  host.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>${isBm?'Tarikh':'Date'}</th><th style="text-align:right">${isBm?'Jumlah':'Amount'}</th><th>${isBm?'Kaedah':'Method'}</th><th>${isBm?'Tempoh Liputan':'Coverage'}</th></tr></thead>
+    <tbody>${data.map(p=>`<tr>
+      <td style="font-size:12px">${formatDate(p.payment_date)}</td>
+      <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
+      <td style="font-size:12px">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
+      <td style="font-size:12px">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
+    </tr>`).join('')}</tbody></table></div>`
+}
+
+async function doRecordPayment() {
+  const isBm = APP.language==='bm'
+  const overlay = document.getElementById('admin-payment-modal-overlay')
+  const tenantId = overlay?.dataset.tenantId
+  if(!tenantId) return
+  const planId = document.getElementById('pay-plan-id')?.value
+  const amount = Number(document.getElementById('pay-amount-admin')?.value || 0)
+  const paymentDate = document.getElementById('pay-date-admin')?.value
+  const method = document.getElementById('pay-method-admin')?.value
+  const periodMonths = Number(document.getElementById('pay-period')?.value || 1)
+  const override = document.getElementById('pay-override')?.value || null
+  if(!planId || !paymentDate || !method || !(amount > 0)) {
+    showToast(isBm?'Sila lengkapkan semua medan.':'Please fill in all fields.', 'error'); return
+  }
+  const { error } = await sb.rpc('record_tenant_payment', {
+    p_tenant_id: tenantId, p_plan_id: planId, p_amount: amount, p_payment_date: paymentDate,
+    p_payment_method: method, p_period_months: periodMonths, p_period_end_override: override
+  })
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
+  overlay.classList.remove('active')
+  renderAdminClients()
+}
+
 async function doSuspendTenant(tenantId) {
   const tenant = _adminClientsData.find(d => d.id === tenantId)
   const name = tenant?.name || tenantId
@@ -7908,6 +8104,10 @@ async function renderAdminTenantDetail(tenantId) {
 
 const MY_STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','Kuala Lumpur','Labuan','Putrajaya']
 
+function openMyPlanUpgradeInfo() {
+  document.getElementById('my-plan-upgrade-modal-overlay')?.classList.add('active')
+}
+
 async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
   _obcMarkChecklist('profile_reviewed')
@@ -7952,9 +8152,29 @@ async function renderSettings(params={}) {
   let coaAccounts = []
   let acctMappings = {}
   let glCheck = { coa:0, maps:0, mapsNeed:9, employees:0, customers:0, products:0, opening:false, invoice:false, payroll:false }
+  let myPlan = null
+  let myPlanUsage = { tx: 0, ai: 0 }
+  let myPlanPayments = []
   if(isAdmin) {
     const {data} = await sb.from('tenants').select('*').eq('id',APP.tenant.id).single()
     tenantRow = data || {}
+    // My Plan widget data — plan reference row + this tenant's own usage
+    // (RLS already scopes tenant_usage_monthly/daily and tenant_plan_payments
+    // to the caller's own tenant) + recent payment history.
+    if(tenantRow.plan_id) {
+      const _plans = await _loadPlansCache()
+      myPlan = _plans.find(p => String(p.id) === String(tenantRow.plan_id)) || null
+    }
+    try {
+      const _now = new Date()
+      const [{data: _mu}, {data: _du}, {data: _pays}] = await Promise.all([
+        sb.from('tenant_usage_monthly').select('transaction_count').eq('tenant_id',APP.tenant.id).eq('year',_now.getFullYear()).eq('month',_now.getMonth()+1).maybeSingle(),
+        sb.from('tenant_usage_daily').select('ai_queries_count').eq('tenant_id',APP.tenant.id).eq('usage_date', _now.toISOString().slice(0,10)).maybeSingle(),
+        sb.from('tenant_plan_payments').select('id,amount,payment_date,payment_method,period_start,period_end').eq('tenant_id',APP.tenant.id).order('payment_date',{ascending:false}).limit(20),
+      ])
+      myPlanUsage = { tx: _mu?.transaction_count || 0, ai: _du?.ai_queries_count || 0 }
+      myPlanPayments = _pays || []
+    } catch(e) { console.warn('My Plan widget data', e) }
     const {data: coaData} = await sb.from('chart_of_accounts').select('id,code,name_en,account_type').eq('tenant_id',APP.tenant.id).is('deleted_at',null).eq('is_active',true).order('code')
     coaAccounts = coaData || []
     const {data: mapData} = await sb.from('default_account_mappings').select('mapping_key,account_id').eq('tenant_id',APP.tenant.id)
@@ -8067,6 +8287,87 @@ async function renderSettings(params={}) {
       <button class="btn btn-danger" style="width:fit-content" onclick="doLogout()"><i class="ti ti-logout"></i> ${c.signOut}</button>
     </div>
   </div>
+  ${isAdmin ? (() => {
+    const isBm = APP.language==='bm'
+    const mp = isBm ? {
+      title:'Pelan Saya', plan:'Pelan', trialLeft:'hari lagi dalam percubaan percuma', trialExpired:'Percubaan tamat',
+      expiresOn:'Diperbaharui/tamat pada', usage:'Penggunaan Bulan Ini', tx:'Transaksi', ai:'Proses AI (hari ini)',
+      history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi', date:'Tarikh', amount:'Jumlah', method:'Kaedah', coverage:'Liputan',
+      upgrade:'Naik Taraf / Perbaharui', methodCash:'Tunai', methodBank:'Pindahan Bank', methodOnline:'Perbankan Online', methodCard:'Kad',
+    } : {
+      title:'My Plan', plan:'Plan', trialLeft:'days left in free trial', trialExpired:'Trial expired',
+      expiresOn:'Renews/expires on', usage:"This Month's Usage", tx:'Transactions', ai:"AI Queries (today)",
+      history:'Payment History', noPayments:'No payments yet', date:'Date', amount:'Amount', method:'Method', coverage:'Coverage',
+      upgrade:'Upgrade / Renew', methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card',
+    }
+    const planName = myPlan ? (isBm?myPlan.name_bm:myPlan.name_en) : '—'
+    const trialInfo = tenantRow.is_trial ? _expiryDaysInfo(tenantRow.trial_ends_at, isBm) : null
+    const expiryInfo = _expiryDaysInfo(tenantRow.plan_expires_at, isBm)
+    const txLimit = myPlan?.monthly_transaction_limit
+    const aiQuota = myPlan?.ai_daily_quota
+    const methodLabel = m => ({cash:mp.methodCash, bank_transfer:mp.methodBank, online_banking:mp.methodOnline, card:mp.methodCard}[m] || m || '-')
+    return `
+  <div class="card" style="max-width:900px;margin-top:16px" id="stg-myplan">
+    <div class="card-header"><div class="card-title">${mp.title}</div></div>
+    <div style="padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <div>
+          <div style="font-size:20px;font-weight:700;font-family:'Space Grotesk',sans-serif">${_aiEscapeHtml(planName)}</div>
+          ${trialInfo ? `<div style="font-size:12px;color:${trialInfo.color};margin-top:2px">${trialInfo.days>=0 ? `${trialInfo.days} ${mp.trialLeft}` : mp.trialExpired}</div>` : ''}
+          ${expiryInfo ? `<div style="font-size:12px;color:${expiryInfo.color};margin-top:2px">${mp.expiresOn} ${expiryInfo.dateFmt} (${expiryInfo.label})</div>` : ''}
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="openMyPlanUpgradeInfo()"><i class="ti ti-arrow-up-circle"></i> ${mp.upgrade}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:11px;color:var(--text-3)">${mp.tx}</div>
+          <div style="font-weight:700;font-size:18px">${myPlanUsage.tx} / ${txLimit==null?'∞':txLimit}</div>
+        </div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:11px;color:var(--text-3)">${mp.ai}</div>
+          <div style="font-weight:700;font-size:18px">${myPlanUsage.ai} / ${aiQuota==null?'∞':aiQuota}</div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px">${mp.history}</div>
+        ${!myPlanPayments.length ? `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${mp.noPayments}</p></div>` :
+        `<div style="overflow-x:auto"><table><thead><tr><th>${mp.date}</th><th style="text-align:right">${mp.amount}</th><th>${mp.method}</th><th>${mp.coverage}</th></tr></thead>
+        <tbody>${myPlanPayments.map(p=>`<tr>
+          <td style="font-size:12px">${formatDate(p.payment_date)}</td>
+          <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
+          <td style="font-size:12px">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
+          <td style="font-size:12px">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
+        </tr>`).join('')}</tbody></table></div>`}
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="my-plan-upgrade-modal-overlay">
+    <div class="modal-box" style="max-width:480px">
+      <div class="modal-box-header"><i class="ti ti-arrow-up-circle"></i> ${mp.upgrade}</div>
+      <div class="modal-box-body">
+        <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+          ? 'Buat pindahan bank ke akaun di bawah, kemudian maklumkan kami dengan kod rujukan anda — kami akan sahkan dalam masa 1 hari bekerja.'
+          : 'Make a bank transfer to the account below, then notify us with your reference code — we will confirm within 1 business day.'}</p>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin:12px 0;font-size:13px;line-height:1.8">
+          <div style="color:var(--warning);font-weight:600;font-size:11px;margin-bottom:4px">TODO: Mike to fill in real bank details</div>
+          <div>${isBm?'Bank':'Bank'}: <strong>—</strong></div>
+          <div>${isBm?'No. Akaun':'Account No.'}: <strong>—</strong></div>
+          <div>${isBm?'Nama Akaun':'Account Name'}: <strong>Phion Sdn Bhd</strong></div>
+        </div>
+        <div style="background:var(--primary-light);border-radius:10px;padding:12px;margin-bottom:12px">
+          <div style="font-size:11px;color:var(--text-3)">${isBm?'Kod Rujukan Anda':'Your Reference Code'}</div>
+          <div style="font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">${_aiEscapeHtml(APP.tenant.code||'')}-${new Date().toISOString().slice(0,7)}</div>
+        </div>
+        <p style="font-size:12px;color:var(--text-3);line-height:1.6">${isBm
+          ? 'Selepas membuat pindahan, maklumkan kami melalui WhatsApp/emel dengan kod rujukan di atas.'
+          : 'After transferring, please notify us via WhatsApp/email with your reference code above.'}</p>
+      </div>
+      <div class="modal-box-footer">
+        <button class="btn btn-primary" onclick="document.getElementById('my-plan-upgrade-modal-overlay').classList.remove('active')">${isBm?'Faham':'Got it'}</button>
+      </div>
+    </div>
+  </div>`
+  })() : ''}
   ${isAdmin ? `
   <div class="card" style="max-width:900px;margin-top:16px" id="stg-company">
     <div class="card-header"><div class="card-title">${cp.title}</div></div>
@@ -28802,7 +29103,7 @@ function obRenderStep() {
         <p style="font-size:15px;color:var(--text-2);line-height:1.55;margin:0 0 28px">
           ${L==='bm'?'Mari sediakan ruang kerja syarikat anda. Hanya beberapa soalan — kurang dari 2 minit.':'Lets set up your company workspace. A few questions — under 2 minutes.'}
         </p>
-        <button class="ob-btn ob-btn-primary" style="width:100%;justify-content:center" onclick="OB.step=1;obRenderStep()">
+        <button class="ob-btn ob-btn-primary" style="width:100%;justify-content:center" onclick="OB.step=1;obRenderStep();if(APP.tenant?.id){sb.from('tenants').update({onboarding_step:1}).eq('id',APP.tenant.id).then(()=>{},(e)=>{console.warn('onboarding_step persist',e)})}">
           ${L==='bm'?'Mula':'Get started'} <i class="ti ti-arrow-right"></i>
         </button>
       </div>`
@@ -28933,7 +29234,17 @@ function obNext() {
   } else if(OB.step === 4) {
     if(!OB.data.fiscal_start || !OB.data.fiscal_end) { obShowError(L==='bm'?'Sila pilih tahun fiskal.':'Please pick a fiscal year.'); return }
   }
-  if(OB.step < OB.totalSteps) { OB.step++; obRenderStep() }
+  if(OB.step < OB.totalSteps) {
+    OB.step++
+    obRenderStep()
+    // Non-blocking — persists wizard progress so All Clients can show real
+    // "Step X/5" progress instead of only Pending/Done. No-op (not an
+    // error) when the tenant hasn't been created yet — see register_tenant()'s
+    // fallback path in obFinish(), which resolves APP.tenant.id later.
+    if(APP.tenant?.id) {
+      sb.from('tenants').update({ onboarding_step: OB.step }).eq('id', APP.tenant.id).then(()=>{}, (e)=>{ console.warn('onboarding_step persist', e) })
+    }
+  }
 }
 
 function obBack() {
