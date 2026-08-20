@@ -221,16 +221,32 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 .lede { color: var(--muted); max-width: 34rem; font-size: 1rem; margin-bottom: 28px; }
 
 .hero {
-  padding: 56px 0 36px;
-  display: block;
-  max-width: 40rem;
+  padding: 56px 0 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
+  max-width: none;
 }
 .hero-copy {
   display: flex; flex-direction: column; justify-content: center;
   min-width: 0;
 }
+.hero .mock {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  align-self: center;
+  min-width: 0;
+}
 @media (max-width: 900px) {
-  .hero { padding-top: 40px; max-width: none; }
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding-top: 40px;
+    align-items: stretch;
+  }
+  .hero .mock { align-self: stretch; }
 }
 .usp-label {
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
@@ -238,16 +254,6 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 }
 .usp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 @media (max-width: 800px) { .usp-grid { grid-template-columns: 1fr; } }
-.mock-section { padding-top: 12px; }
-.mock-section .mock { max-width: 720px; margin: 0 auto; }
-.mock-caption {
-  text-align: center; font-size: 13px; color: var(--muted); margin-top: 14px;
-}
-.diy-line {
-  text-align: center; font-size: 15px; color: var(--text); font-weight: 600;
-  margin: 8px 0 28px; padding: 14px 18px; border: 1px solid var(--border);
-  border-radius: 12px; background: color-mix(in srgb, var(--panel, #262A2F) 70%, transparent);
-}
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
@@ -631,56 +637,6 @@ footer a:hover { color: var(--cyan); }
         <a class="btn btn-ghost" href="https://wa.me/601169980433?text=Saya%20berminat%20hendak%20tahu%20lebih%20lanjut%20tentang%20M-Core" target="_blank" rel="noopener" data-i18n="hero_cta_talk">Talk to us</a>
       </div>
     </div>
-  </section>
-
-  <!-- PROOF -->
-  <div class="proof reveal">
-    <div><b data-i18n="proof_1_v">One workspace</b><span data-i18n="proof_1_l">Sales · stock · payroll · ledger</span></div>
-    <div><b data-i18n="proof_2_v">MY compliance</b><span data-i18n="proof_2_l">EPF · SOCSO · PCB ready</span></div>
-    <div><b data-i18n="proof_3_v">Staff roles</b><span data-i18n="proof_3_l">Owner · admin · ops access</span></div>
-    <div><b data-i18n="proof_4_v">Cloud ledger</b><span data-i18n="proof_4_l">Double-entry, always on</span></div>
-  </div>
-
-  <!-- PAIN -->
-  <section class="block" id="pain">
-    <div class="eyebrow reveal" data-i18n="pain_eyebrow">Why SMEs stall</div>
-    <h2 class="h2 reveal" data-i18n="pain_title">The real blockers</h2>
-    <p class="lede reveal" data-i18n="pain_lede">Familiar? You’re not alone, and you don’t need five more tools.</p>
-    <div class="grid-3">
-      <div class="card reveal"><div class="n">01</div><h3 data-i18n="pain_1_t">Numbers stuck in Excel</h3><p data-i18n="pain_1_d">No live profit truth. Month-end becomes a scavenger hunt across sheets and chats.</p></div>
-      <div class="card reveal"><div class="n">02</div><h3 data-i18n="pain_2_t">Payroll fear &amp; time sink</h3><p data-i18n="pain_2_d">EPF, SOCSO, PCB, easy to get wrong, expensive to fix, painful every month.</p></div>
-      <div class="card reveal"><div class="n">03</div><h3 data-i18n="pain_3_t">Tools that don’t talk</h3><p data-i18n="pain_3_d">Sales in one app, stock in another, accounts somewhere else. Nothing lines up.</p></div>
-    </div>
-  </section>
-
-  <!-- WHY M-CORE (USP triad) -->
-  <section class="block" id="usp">
-    <div class="eyebrow reveal" data-i18n="usp_eyebrow">Why M-Core</div>
-    <h2 class="h2 reveal" data-i18n="usp_title">Three reasons owners switch</h2>
-    <p class="lede reveal" data-i18n="usp_lede">Malaysia-ready, one system, control stays with you.</p>
-    <div class="usp-grid">
-      <div class="card reveal">
-        <span class="usp-label" data-i18n="usp_1_label">MY compliance</span>
-        <h3 data-i18n="usp_1_t">Built for Malaysia</h3>
-        <p data-i18n="usp_1_d">EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.</p>
-      </div>
-      <div class="card reveal">
-        <span class="usp-label" data-i18n="usp_2_label">One login</span>
-        <h3 data-i18n="usp_2_t">One workspace</h3>
-        <p data-i18n="usp_2_d">Sales, stock, payroll and ledger together, one source of numbers, not five apps.</p>
-      </div>
-      <div class="card reveal">
-        <span class="usp-label" data-i18n="usp_3_label">Roles &amp; HR</span>
-        <h3 data-i18n="usp_3_t">Owner control</h3>
-        <p data-i18n="usp_3_d">Roles and permissions, with attendance and outstation-style control so staff only see what you allow.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- DASHBOARD MOCK -->
-  <section class="block mock-section" id="preview">
-    <div class="eyebrow reveal" data-i18n="mock_section_eyebrow">Product</div>
-    <h2 class="h2 reveal" data-i18n="mock_section_title">See it in the product</h2>
     <aside class="mock" id="mockPanel" aria-label="M-Core dashboard preview">
       <div class="mock-top">
         <div class="cap-row">
@@ -743,7 +699,50 @@ footer a:hover { color: var(--cyan); }
         </div>
       </div>
     </aside>
-    <p class="mock-caption reveal" data-i18n="mock_caption">Live KPIs, trends and health, same workspace you open after login.</p>
+  </section>
+
+  <!-- PROOF -->
+  <div class="proof reveal">
+    <div><b data-i18n="proof_1_v">One workspace</b><span data-i18n="proof_1_l">Sales · stock · payroll · ledger</span></div>
+    <div><b data-i18n="proof_2_v">MY compliance</b><span data-i18n="proof_2_l">EPF · SOCSO · PCB ready</span></div>
+    <div><b data-i18n="proof_3_v">Staff roles</b><span data-i18n="proof_3_l">Owner · admin · ops access</span></div>
+    <div><b data-i18n="proof_4_v">Cloud ledger</b><span data-i18n="proof_4_l">Double-entry, always on</span></div>
+  </div>
+
+  <!-- PAIN -->
+  <section class="block" id="pain">
+    <div class="eyebrow reveal" data-i18n="pain_eyebrow">Why SMEs stall</div>
+    <h2 class="h2 reveal" data-i18n="pain_title">The real blockers</h2>
+    <p class="lede reveal" data-i18n="pain_lede">Familiar? You’re not alone, and you don’t need five more tools.</p>
+    <div class="grid-3">
+      <div class="card reveal"><div class="n">01</div><h3 data-i18n="pain_1_t">Numbers stuck in Excel</h3><p data-i18n="pain_1_d">No live profit truth. Month-end becomes a scavenger hunt across sheets and chats.</p></div>
+      <div class="card reveal"><div class="n">02</div><h3 data-i18n="pain_2_t">Payroll fear &amp; time sink</h3><p data-i18n="pain_2_d">EPF, SOCSO, PCB, easy to get wrong, expensive to fix, painful every month.</p></div>
+      <div class="card reveal"><div class="n">03</div><h3 data-i18n="pain_3_t">Tools that don’t talk</h3><p data-i18n="pain_3_d">Sales in one app, stock in another, accounts somewhere else. Nothing lines up.</p></div>
+    </div>
+  </section>
+
+  <!-- WHY M-CORE (USP triad) -->
+  <section class="block" id="usp">
+    <div class="eyebrow reveal" data-i18n="usp_eyebrow">Why M-Core</div>
+    <h2 class="h2 reveal" data-i18n="usp_title">Three reasons owners switch</h2>
+    <p class="lede reveal" data-i18n="usp_lede">Malaysia-ready, one system, control stays with you.</p>
+    <div class="usp-grid">
+      <div class="card reveal">
+        <span class="usp-label" data-i18n="usp_1_label">MY compliance</span>
+        <h3 data-i18n="usp_1_t">Built for Malaysia</h3>
+        <p data-i18n="usp_1_d">EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.</p>
+      </div>
+      <div class="card reveal">
+        <span class="usp-label" data-i18n="usp_2_label">One login</span>
+        <h3 data-i18n="usp_2_t">One workspace</h3>
+        <p data-i18n="usp_2_d">Sales, stock, payroll and ledger together, one source of numbers, not five apps.</p>
+      </div>
+      <div class="card reveal">
+        <span class="usp-label" data-i18n="usp_3_label">Roles &amp; HR</span>
+        <h3 data-i18n="usp_3_t">Owner control</h3>
+        <p data-i18n="usp_3_d">Roles and permissions, with attendance and outstation-style control so staff only see what you allow.</p>
+      </div>
+    </div>
   </section>
 
   <!-- MODULES -->
@@ -770,7 +769,6 @@ footer a:hover { color: var(--cyan); }
 
   <!-- SERVICE PACKAGES (secondary) -->
   <section class="block" id="service-pricing">
-    <p class="diy-line reveal" data-i18n="diy_line">Same system, run it yourself, or let MPFLE operate it.</p>
     <div class="eyebrow reveal" data-i18n="svc_eyebrow">Done with MPFLE</div>
     <h2 class="h2 reveal" data-i18n="svc_title">Optional ops on top of M-Core</h2>
     <p class="lede reveal" data-i18n="svc_lede">You sell. We can run the books, payroll, or web build, same system.</p>
@@ -1106,7 +1104,7 @@ function observeReveals() {
       }, { threshold: 0.08, rootMargin: '0px 0px -16px 0px' });
     }
     document.querySelectorAll('.reveal:not(.in)').forEach(el => io.observe(el));
-    document.querySelectorAll('#pricing .reveal, #service-pricing .reveal, #pricingGrid .reveal, #svcPriceGrid .reveal, #usp .reveal, #preview .reveal, #modules .reveal').forEach(el => el.classList.add('in'));
+    document.querySelectorAll('#pricing .reveal, #service-pricing .reveal, #pricingGrid .reveal, #svcPriceGrid .reveal, #usp .reveal, #modules .reveal').forEach(el => el.classList.add('in'));
   } catch (e) { forceVisible(); }
 }
 
