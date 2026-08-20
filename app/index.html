@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-auth-logo-img">
+<meta name="nexerp-build" content="2026-08-20-sidebar-lockup">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -104,9 +104,9 @@ input,select,textarea{font-family:inherit}
 }
 .auth-logo .brand-wordmark{font-size:2rem}
 .sidebar-logo .brand-wordmark{font-size:1.2rem}
-#sidebar.collapsed .sidebar-logo .brand-wordmark-full{display:none !important}
 #sidebar.collapsed .sidebar-logo-img{display:none !important}
 #sidebar.collapsed .sidebar-logo-icon-only{display:block !important}
+#sidebar.collapsed .sidebar-logo{justify-content:center;padding:12px 8px}
 .auth-logo{border:0 !important;box-shadow:none !important;gap:6px}
 .auth-logo img{border:0;outline:none}
 
@@ -1484,10 +1484,9 @@ html[data-skip-intro="1"] #intro-skip {
 <!-- APP SHELL -->
 <div id="shell">
   <nav id="sidebar">
-    <div class="sidebar-logo" style="padding:12px 14px;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)">
-      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-img" style="height:32px;width:32px;object-fit:contain;flex-shrink:0;display:block" decoding="async">
-      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-icon-only" style="height:28px;width:28px;object-fit:contain;display:none" decoding="async">
-      <span class="brand-wordmark brand-wordmark-full" style="font-size:1.05rem" aria-label="M-Core">M-Core</span>
+    <div class="sidebar-logo" style="padding:10px 12px;gap:0;border-bottom:1px solid rgba(255,255,255,.06)">
+      <img src="assets/m-core-lockup.png" alt="M-Core" class="sidebar-logo-img" style="height:32px;width:auto;max-width:168px;object-fit:contain;display:block" decoding="async">
+      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-icon-only" style="height:28px;width:28px;object-fit:contain;display:none;margin:0 auto" decoding="async">
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-user">
