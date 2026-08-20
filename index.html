@@ -110,9 +110,25 @@ html[data-theme="light"] .hero-wash {
 }
 .logo {
   font-weight: 800; font-size: 1.12rem; letter-spacing: -0.03em;
-  display: inline-flex; align-items: baseline; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0;
+  text-decoration: none; color: var(--text);
+}
+.logo-lockup {
+  height: 36px; width: auto; max-width: min(200px, 48vw);
+  object-fit: contain; display: block;
+}
+.logo-mark-sm {
+  width: 22px; height: 22px; object-fit: contain; display: block; flex-shrink: 0;
 }
 .logo .media { font-weight: 600; color: var(--cyan); margin-left: 0.2em; }
+.footer-brand { margin-bottom: 12px; }
+.footer-brand .logo-lockup { height: 28px; max-width: 160px; }
+.mock-top .cap-row {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+@media (max-width: 720px) {
+  .logo-lockup { height: 30px; max-width: min(160px, 42vw); }
+}
 .nav-actions { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
 .nav-link, .nav-btn, .nav-cta {
   height: 36px; min-height: 36px; padding: 0 12px;
@@ -586,7 +602,9 @@ footer a:hover { color: var(--cyan); }
 
 <header class="nav" id="nav">
   <div class="nav-inner">
-    <a href="#hero" class="logo" aria-label="MPFLE Media">MPFLE<span class="media">Media</span></a>
+    <a href="#hero" class="logo" aria-label="M-Core by MPFLE Media">
+      <img class="logo-lockup" src="assets/m-core-lockup.png" alt="M-Core" width="160" height="36" decoding="async">
+    </a>
     <div class="nav-actions">
       <a class="nav-link" href="#modules" data-i18n="nav_modules">Modules</a>
       <a class="nav-link" href="#pricing" data-i18n="nav_pricing">Pricing</a>
@@ -614,7 +632,10 @@ footer a:hover { color: var(--cyan); }
     </div>
     <aside class="mock" id="mockPanel" aria-label="M-Core dashboard preview">
       <div class="mock-top">
-        <span class="cap" data-i18n="mock_cap">M-Core preview</span>
+        <div class="cap-row">
+          <img class="logo-mark-sm" src="assets/m-core-mark.png" alt="" width="22" height="22" decoding="async" aria-hidden="true">
+          <span class="cap" data-i18n="mock_cap">M-Core preview</span>
+        </div>
         <span class="dot" aria-hidden="true"></span>
       </div>
       <div class="mock-kpis">
@@ -749,8 +770,13 @@ footer a:hover { color: var(--cyan); }
 
 <footer>
   <div>
-    <a href="#hero" class="logo" style="display:inline-flex;margin-bottom:12px">MPFLE<span class="media">Media</span></a>
+    <div class="footer-brand">
+      <a href="#hero" class="logo" aria-label="M-Core by MPFLE Media">
+        <img class="logo-lockup" src="assets/m-core-lockup.png" alt="M-Core" width="140" height="28" decoding="async">
+      </a>
+    </div>
     <p data-i18n="footer_tag">M-Core · books · payroll · stock · sales</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:4px">MPFLE Media</p>
   </div>
   <div>
     <h4 data-i18n="footer_contact">Contact</h4>
