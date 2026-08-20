@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-pos-equal-panels">
+<meta name="nexerp-build" content="2026-08-20-auth-logo-img">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -105,9 +105,10 @@ input,select,textarea{font-family:inherit}
 .auth-logo .brand-wordmark{font-size:2rem}
 .sidebar-logo .brand-wordmark{font-size:1.2rem}
 #sidebar.collapsed .sidebar-logo .brand-wordmark-full{display:none !important}
-#sidebar.collapsed .sidebar-logo .brand-wordmark-short{display:block !important}
-.sidebar-logo .brand-wordmark-short{display:none;font-size:1.25rem}
+#sidebar.collapsed .sidebar-logo-img{display:none !important}
+#sidebar.collapsed .sidebar-logo-icon-only{display:block !important}
 .auth-logo{border:0 !important;box-shadow:none !important;gap:6px}
+.auth-logo img{border:0;outline:none}
 
 .sidebar-nav{flex:1;overflow-y:auto;padding:8px 0}
 .sidebar-nav::-webkit-scrollbar{width:4px}
@@ -1273,9 +1274,9 @@ html[data-skip-intro="1"] #intro-skip {
 <!-- AUTH PAGE -->
 <div id="auth-page">
   <div class="auth-card">
-    <div class="auth-logo" style="justify-content:center;margin-bottom:20px;flex-direction:column;align-items:center;border:0">
-      <div class="brand-wordmark" aria-label="M-Core">M-Core</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(231,233,235,.45);margin-top:6px">MPFLE Media</div>
+    <div class="auth-logo" style="justify-content:center;margin-bottom:16px;flex-direction:column;align-items:center;border:0;gap:10px">
+      <img src="assets/m-core-logo.png" alt="M-Core" width="120" height="auto" style="height:88px;width:auto;object-fit:contain;display:block" decoding="async">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(231,233,235,.45)">MPFLE Media</div>
     </div>
     <div style="text-align:center;margin-bottom:20px;margin-top:-16px">
       <div id="auth-tagline" style="color:rgba(255,255,255,.4);font-size:10px;letter-spacing:.5px">Business OS for books, payroll, stock &amp; sales</div>
@@ -1467,7 +1468,7 @@ html[data-skip-intro="1"] #intro-skip {
 <div id="onboarding-page">
   <div class="ob-wrap">
     <div class="ob-header">
-      <div class="brand-wordmark ob-logo" id="ob-logo" style="font-size:1.6rem;margin-bottom:12px">M-Core</div>
+      <img class="ob-logo" id="ob-logo" src="assets/m-core-logo.png" alt="M-Core" style="height:72px;width:auto;object-fit:contain;margin-bottom:12px;display:block" decoding="async">
       <div class="ob-title" id="ob-title">Welcome to M-Core</div>
       <div class="ob-sub" id="ob-sub">Let's set up your company in just a few steps</div>
     </div>
@@ -1483,9 +1484,10 @@ html[data-skip-intro="1"] #intro-skip {
 <!-- APP SHELL -->
 <div id="shell">
   <nav id="sidebar">
-    <div class="sidebar-logo" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)">
-      <span class="brand-wordmark brand-wordmark-full" aria-label="M-Core">M-Core</span>
-      <span class="brand-wordmark brand-wordmark-short" aria-label="M-Core">M</span>
+    <div class="sidebar-logo" style="padding:12px 14px;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)">
+      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-img" style="height:32px;width:32px;object-fit:contain;flex-shrink:0;display:block" decoding="async">
+      <img src="assets/m-core-mark.png" alt="M-Core" class="sidebar-logo-icon-only" style="height:28px;width:28px;object-fit:contain;display:none" decoding="async">
+      <span class="brand-wordmark brand-wordmark-full" style="font-size:1.05rem" aria-label="M-Core">M-Core</span>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-user">
