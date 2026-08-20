@@ -221,31 +221,32 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
 .lede { color: var(--muted); max-width: 34rem; font-size: 1rem; margin-bottom: 28px; }
 
 .hero {
-  padding: 56px 0 40px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 40px;
-  align-items: center;
+  padding: 56px 0 36px;
+  display: block;
+  max-width: 40rem;
 }
 .hero-copy {
   display: flex; flex-direction: column; justify-content: center;
   min-width: 0;
 }
-.hero .mock {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  align-self: center;
-  min-width: 0;
-}
 @media (max-width: 900px) {
-  .hero {
-    grid-template-columns: 1fr;
-    gap: 28px;
-    padding-top: 40px;
-    align-items: stretch;
-  }
-  .hero .mock { align-self: stretch; }
+  .hero { padding-top: 40px; max-width: none; }
+}
+.usp-label {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--cyan); margin-bottom: 8px;
+}
+.usp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 800px) { .usp-grid { grid-template-columns: 1fr; } }
+.mock-section { padding-top: 12px; }
+.mock-section .mock { max-width: 720px; margin: 0 auto; }
+.mock-caption {
+  text-align: center; font-size: 13px; color: var(--muted); margin-top: 14px;
+}
+.diy-line {
+  text-align: center; font-size: 15px; color: var(--text); font-weight: 600;
+  margin: 8px 0 28px; padding: 14px 18px; border: 1px solid var(--border);
+  border-radius: 12px; background: color-mix(in srgb, var(--panel, #262A2F) 70%, transparent);
 }
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
@@ -617,19 +618,69 @@ footer a:hover { color: var(--cyan); }
 </header>
 
 <div class="shell">
-  <!-- HERO + MOCK -->
+  <!-- HERO -->
   <section class="hero" id="hero">
     <div class="hero-wash" aria-hidden="true"></div>
     <div class="hero-copy">
       <div class="hero-badge"><i></i><span data-i18n="hero_badge">Built for Malaysian SMEs</span></div>
-      <h1 data-i18n="hero_title">One workspace for books, payroll, stock &amp; sales.<br><em>That’s M-Core.</em></h1>
-      <p class="sub" data-i18n="hero_sub">Stop juggling Excel, WhatsApp, and three apps. Run your business OS in one place, DIY or with MPFLE beside you.</p>
+      <h1 data-i18n="hero_title">One workspace for Malaysian SMEs.<br><em>Books, payroll, stock &amp; sales.</em></h1>
+      <p class="sub" data-i18n="hero_sub">Local compliance and staff control in the same place, so numbers and roles stay yours.</p>
       <div class="btn-row">
         <a class="btn btn-primary" href="https://mpflemedia-ux.github.io/nexerp/app/" data-i18n="hero_cta_primary">Open M-Core</a>
         <a class="btn btn-ghost" href="#pricing" data-i18n="hero_cta_plans">See plans</a>
         <a class="btn btn-ghost" href="https://wa.me/601169980433?text=Saya%20berminat%20hendak%20tahu%20lebih%20lanjut%20tentang%20M-Core" target="_blank" rel="noopener" data-i18n="hero_cta_talk">Talk to us</a>
       </div>
     </div>
+  </section>
+
+  <!-- PROOF -->
+  <div class="proof reveal">
+    <div><b data-i18n="proof_1_v">One workspace</b><span data-i18n="proof_1_l">Sales · stock · payroll · ledger</span></div>
+    <div><b data-i18n="proof_2_v">MY compliance</b><span data-i18n="proof_2_l">EPF · SOCSO · PCB ready</span></div>
+    <div><b data-i18n="proof_3_v">Staff roles</b><span data-i18n="proof_3_l">Owner · admin · ops access</span></div>
+    <div><b data-i18n="proof_4_v">Cloud ledger</b><span data-i18n="proof_4_l">Double-entry, always on</span></div>
+  </div>
+
+  <!-- PAIN -->
+  <section class="block" id="pain">
+    <div class="eyebrow reveal" data-i18n="pain_eyebrow">Why SMEs stall</div>
+    <h2 class="h2 reveal" data-i18n="pain_title">The real blockers</h2>
+    <p class="lede reveal" data-i18n="pain_lede">Familiar? You’re not alone, and you don’t need five more tools.</p>
+    <div class="grid-3">
+      <div class="card reveal"><div class="n">01</div><h3 data-i18n="pain_1_t">Numbers stuck in Excel</h3><p data-i18n="pain_1_d">No live profit truth. Month-end becomes a scavenger hunt across sheets and chats.</p></div>
+      <div class="card reveal"><div class="n">02</div><h3 data-i18n="pain_2_t">Payroll fear &amp; time sink</h3><p data-i18n="pain_2_d">EPF, SOCSO, PCB, easy to get wrong, expensive to fix, painful every month.</p></div>
+      <div class="card reveal"><div class="n">03</div><h3 data-i18n="pain_3_t">Tools that don’t talk</h3><p data-i18n="pain_3_d">Sales in one app, stock in another, accounts somewhere else. Nothing lines up.</p></div>
+    </div>
+  </section>
+
+  <!-- WHY M-CORE (USP triad) -->
+  <section class="block" id="usp">
+    <div class="eyebrow reveal" data-i18n="usp_eyebrow">Why M-Core</div>
+    <h2 class="h2 reveal" data-i18n="usp_title">Three reasons owners switch</h2>
+    <p class="lede reveal" data-i18n="usp_lede">Malaysia-ready, one system, control stays with you.</p>
+    <div class="usp-grid">
+      <div class="card reveal">
+        <span class="usp-label" data-i18n="usp_1_label">MY compliance</span>
+        <h3 data-i18n="usp_1_t">Built for Malaysia</h3>
+        <p data-i18n="usp_1_d">EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.</p>
+      </div>
+      <div class="card reveal">
+        <span class="usp-label" data-i18n="usp_2_label">One login</span>
+        <h3 data-i18n="usp_2_t">One workspace</h3>
+        <p data-i18n="usp_2_d">Sales, stock, payroll and ledger together, one source of numbers, not five apps.</p>
+      </div>
+      <div class="card reveal">
+        <span class="usp-label" data-i18n="usp_3_label">Roles &amp; HR</span>
+        <h3 data-i18n="usp_3_t">Owner control</h3>
+        <p data-i18n="usp_3_d">Roles and permissions, with attendance and outstation-style control so staff only see what you allow.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD MOCK -->
+  <section class="block mock-section" id="preview">
+    <div class="eyebrow reveal" data-i18n="mock_section_eyebrow">Product</div>
+    <h2 class="h2 reveal" data-i18n="mock_section_title">See it in the product</h2>
     <aside class="mock" id="mockPanel" aria-label="M-Core dashboard preview">
       <div class="mock-top">
         <div class="cap-row">
@@ -692,39 +743,7 @@ footer a:hover { color: var(--cyan); }
         </div>
       </div>
     </aside>
-  </section>
-
-  <!-- PROOF -->
-  <div class="proof reveal">
-    <div><b data-i18n="proof_1_v">One workspace</b><span data-i18n="proof_1_l">Sales · stock · payroll · ledger</span></div>
-    <div><b data-i18n="proof_2_v">MY compliance</b><span data-i18n="proof_2_l">EPF · SOCSO · PCB ready</span></div>
-    <div><b data-i18n="proof_3_v">Staff roles</b><span data-i18n="proof_3_l">Owner · admin · ops access</span></div>
-    <div><b data-i18n="proof_4_v">Cloud ledger</b><span data-i18n="proof_4_l">Double-entry, always on</span></div>
-  </div>
-
-  <!-- PAIN -->
-  <section class="block" id="pain">
-    <div class="eyebrow reveal" data-i18n="pain_eyebrow">Why SMEs stall</div>
-    <h2 class="h2 reveal" data-i18n="pain_title">The real blockers</h2>
-    <p class="lede reveal" data-i18n="pain_lede">Familiar? You’re not alone, and you don’t need five more tools.</p>
-    <div class="grid-3">
-      <div class="card reveal"><div class="n">01</div><h3 data-i18n="pain_1_t">Numbers stuck in Excel</h3><p data-i18n="pain_1_d">No live profit truth. Month-end becomes a scavenger hunt across sheets and chats.</p></div>
-      <div class="card reveal"><div class="n">02</div><h3 data-i18n="pain_2_t">Payroll fear &amp; time sink</h3><p data-i18n="pain_2_d">EPF, SOCSO, PCB, easy to get wrong, expensive to fix, painful every month.</p></div>
-      <div class="card reveal"><div class="n">03</div><h3 data-i18n="pain_3_t">Tools that don’t talk</h3><p data-i18n="pain_3_d">Sales in one app, stock in another, accounts somewhere else. Nothing lines up.</p></div>
-    </div>
-  </section>
-
-  <!-- USP -->
-  <section class="block" id="usp">
-    <div class="eyebrow reveal" data-i18n="usp_eyebrow">Why M-Core</div>
-    <h2 class="h2 reveal" data-i18n="usp_title">Built for how you actually work</h2>
-    <p class="lede reveal" data-i18n="usp_lede">Four truths, not marketing fluff.</p>
-    <div class="grid-2">
-      <div class="card reveal"><div class="n">01</div><h3 data-i18n="usp_1_t">One workspace</h3><p data-i18n="usp_1_d">Sales, stock, payroll and ledger in the same system, one source of truth.</p></div>
-      <div class="card reveal"><div class="n">02</div><h3 data-i18n="usp_2_t">Built for Malaysia</h3><p data-i18n="usp_2_d">EPF, SOCSO, PCB and local practice baked in, not bolted on later.</p></div>
-      <div class="card reveal"><div class="n">03</div><h3 data-i18n="usp_3_t">Owner + staff roles</h3><p data-i18n="usp_3_d">Permissions so the team can work without seeing what they shouldn’t.</p></div>
-      <div class="card reveal"><div class="n">04</div><h3 data-i18n="usp_4_t">DIY or MPFLE-run</h3><p data-i18n="usp_4_d">Same M-Core engine, you run it, or we operate the books on top.</p></div>
-    </div>
+    <p class="mock-caption reveal" data-i18n="mock_caption">Live KPIs, trends and health, same workspace you open after login.</p>
   </section>
 
   <!-- MODULES -->
@@ -751,6 +770,7 @@ footer a:hover { color: var(--cyan); }
 
   <!-- SERVICE PACKAGES (secondary) -->
   <section class="block" id="service-pricing">
+    <p class="diy-line reveal" data-i18n="diy_line">Same system, run it yourself, or let MPFLE operate it.</p>
     <div class="eyebrow reveal" data-i18n="svc_eyebrow">Done with MPFLE</div>
     <h2 class="h2 reveal" data-i18n="svc_title">Optional ops on top of M-Core</h2>
     <p class="lede reveal" data-i18n="svc_lede">You sell. We can run the books, payroll, or web build, same system.</p>
@@ -844,8 +864,8 @@ const I18N = {
   en: {
     nav_modules:'Modules', nav_pricing:'Pricing', nav_services:'Services', cta_mini:'Client login',
     hero_badge:'Built for Malaysian SMEs',
-    hero_title:'One workspace for books, payroll, stock &amp; sales.<br><em>That’s M-Core.</em>',
-    hero_sub:'Stop juggling Excel, WhatsApp, and three apps. Run your business OS in one place, DIY or with MPFLE beside you.',
+    hero_title:'One workspace for Malaysian SMEs.<br><em>Books, payroll, stock &amp; sales.</em>',
+    hero_sub:'Local compliance and staff control in the same place, so numbers and roles stay yours.',
     hero_cta_primary:'Open M-Core', hero_cta_plans:'See plans', hero_cta_talk:'Talk to us',
     mock_cap:'M-Core preview', mock_kpi1_l:'Sales', mock_kpi2_l:'Collected', mock_kpi3_l:'Payroll',
     mock_chart_t:'Sales trend (6 mo)', mock_radar_t:'Business health',
@@ -858,11 +878,14 @@ const I18N = {
     pain_1_t:'Numbers stuck in Excel', pain_1_d:'No live profit truth. Month-end becomes a scavenger hunt across sheets and chats.',
     pain_2_t:'Payroll fear &amp; time sink', pain_2_d:'EPF, SOCSO, PCB, easy to get wrong, expensive to fix, painful every month.',
     pain_3_t:'Tools that don’t talk', pain_3_d:'Sales in one app, stock in another, accounts somewhere else. Nothing lines up.',
-    usp_eyebrow:'Why M-Core', usp_title:'Built for how you actually work', usp_lede:'Four truths, not marketing fluff.',
-    usp_1_t:'One workspace', usp_1_d:'Sales, stock, payroll and ledger in the same system, one source of truth.',
-    usp_2_t:'Built for Malaysia', usp_2_d:'EPF, SOCSO, PCB and local practice baked in, not bolted on later.',
-    usp_3_t:'Owner + staff roles', usp_3_d:'Permissions so the team can work without seeing what they shouldn’t.',
-    usp_4_t:'DIY or MPFLE-run', usp_4_d:'Same M-Core engine, you run it, or we operate the books on top.',
+    usp_eyebrow:'Why M-Core', usp_title:'Three reasons owners switch',
+    usp_lede:'Malaysia-ready, one system, control stays with you.',
+    usp_1_label:'MY compliance', usp_1_t:'Built for Malaysia', usp_1_d:'EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.',
+    usp_2_label:'One login', usp_2_t:'One workspace', usp_2_d:'Sales, stock, payroll and ledger together, one source of numbers, not five apps.',
+    usp_3_label:'Roles &amp; HR', usp_3_t:'Owner control', usp_3_d:'Roles and permissions, with attendance and outstation-style control so staff only see what you allow.',
+    mock_section_eyebrow:'Product', mock_section_title:'See it in the product',
+    mock_caption:'Live KPIs, trends and health, same workspace you open after login.',
+    diy_line:'Same system, run it yourself, or let MPFLE operate it.',
     mod_eyebrow:'Inside M-Core', mod_title:'Modules that earn their place', mod_lede:'What you open every day, not a feature dump.',
     pricing_eyebrow:'Software', pricing_title:'Four tiers. Pick your scale.',
     pricing_lede:'From free POS-ready to unlimited Pro. Annual saves two months and waives setup.',
@@ -888,8 +911,8 @@ const I18N = {
   ms: {
     nav_modules:'Modul', nav_pricing:'Harga', nav_services:'Perkhidmatan', cta_mini:'Log masuk klien',
     hero_badge:'Untuk PKS Malaysia',
-    hero_title:'Satu workspace untuk lejar, gaji, stok &amp; jualan.<br><em>Itu M-Core.</em>',
-    hero_sub:'Berhenti juggle Excel, WhatsApp, dan tiga app. Jalankan business OS di satu tempat, DIY atau bersama MPFLE.',
+    hero_title:'Satu ruang kerja untuk SME Malaysia.<br><em>Lejar, gaji, stok &amp; jualan.</em>',
+    hero_sub:'Pematuhan tempatan dan kawalan staf dalam satu tempat, nombor dan peranan kekal milik anda.',
     hero_cta_primary:'Buka M-Core', hero_cta_plans:'Lihat pelan', hero_cta_talk:'Hubungi kami',
     mock_cap:'Pratonton M-Core', mock_kpi1_l:'Jualan', mock_kpi2_l:'Kutipan', mock_kpi3_l:'Gaji',
     mock_chart_t:'Trend jualan (6 bln)', mock_radar_t:'Kesihatan perniagaan',
@@ -902,11 +925,14 @@ const I18N = {
     pain_1_t:'Nombor tersekat di Excel', pain_1_d:'Tiada kebenaran untung langsung. Hujung bulan jadi buru data merentas hamparan dan chat.',
     pain_2_t:'Takut gaji &amp; buang masa', pain_2_d:'EPF, SOCSO, PCB, mudah silap, mahal betulkan, menyakitkan setiap bulan.',
     pain_3_t:'Alat yang tak bercakap', pain_3_d:'Jualan satu app, stok satu lagi, akaun di tempat lain. Tiada yang selari.',
-    usp_eyebrow:'Kenapa M-Core', usp_title:'Dibina ikut cara anda kerja', usp_lede:'Empat kebenaran, bukan fluff marketing.',
-    usp_1_t:'Satu workspace', usp_1_d:'Jualan, stok, gaji dan lejar dalam sistem sama, satu sumber kebenaran.',
-    usp_2_t:'Untuk Malaysia', usp_2_d:'EPF, SOCSO, PCB dan amalan tempatan dibina dalam, bukan ditambah kemudian.',
-    usp_3_t:'Owner + peranan staf', usp_3_d:'Kebenaran supaya pasukan boleh kerja tanpa nampak yang tak sepatutnya.',
-    usp_4_t:'DIY atau MPFLE urus', usp_4_d:'Enjin M-Core sama, anda urus, atau kami urus lejar di atasnya.',
+    usp_eyebrow:'Kenapa M-Core', usp_title:'Tiga sebab owner bertukar',
+    usp_lede:'Sedia Malaysia, satu sistem, kawalan kekal milik anda.',
+    usp_1_label:'Pematuhan MY', usp_1_t:'Dibina untuk Malaysia', usp_1_d:'EPF, SOCSO, EIS, PCB dan amalan gaji/lejar tempatan, bukan templat asing.',
+    usp_2_label:'Satu log masuk', usp_2_t:'Satu ruang kerja', usp_2_d:'Jualan, stok, gaji dan lejar bersama, satu sumber nombor, bukan lima app.',
+    usp_3_label:'Peranan &amp; HR', usp_3_t:'Kawalan owner', usp_3_d:'Peranan dan kebenaran, dengan kawalan kehadiran/luar stesen supaya staf nampak apa yang anda benarkan sahaja.',
+    mock_section_eyebrow:'Produk', mock_section_title:'Lihat dalam produk',
+    mock_caption:'KPI, trend dan kesihatan langsung, ruang kerja sama selepas log masuk.',
+    diy_line:'Sistem sama, urus sendiri, atau biar MPFLE operasikan.',
     mod_eyebrow:'Dalam M-Core', mod_title:'Modul yang layak ada', mod_lede:'Apa yang anda buka setiap hari, bukan dump feature.',
     pricing_eyebrow:'Perisian', pricing_title:'Empat peringkat. Pilih skala anda.',
     pricing_lede:'Dari percuma sedia POS hingga Pro tanpa had. Tahunan jimat 2 bulan dan gugurkan setup.',
@@ -929,6 +955,7 @@ const I18N = {
     footer_copyright:'© 2026 MPFLE Media',
     footer_top:'Kembali ke atas'
   }
+};
 };
 
 function forceVisible() {
