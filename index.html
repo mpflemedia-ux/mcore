@@ -956,7 +956,6 @@ const I18N = {
     footer_top:'Kembali ke atas'
   }
 };
-};
 
 function forceVisible() {
   document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
@@ -1107,7 +1106,7 @@ function observeReveals() {
       }, { threshold: 0.08, rootMargin: '0px 0px -16px 0px' });
     }
     document.querySelectorAll('.reveal:not(.in)').forEach(el => io.observe(el));
-    document.querySelectorAll('#pricing .reveal, #service-pricing .reveal, #pricingGrid .reveal, #svcPriceGrid .reveal').forEach(el => el.classList.add('in'));
+    document.querySelectorAll('#pricing .reveal, #service-pricing .reveal, #pricingGrid .reveal, #svcPriceGrid .reveal, #usp .reveal, #preview .reveal, #modules .reveal').forEach(el => el.classList.add('in'));
   } catch (e) { forceVisible(); }
 }
 
