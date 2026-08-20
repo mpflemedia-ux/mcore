@@ -980,56 +980,63 @@ function renderSvcPriceGrid() {
   const grid = document.getElementById('svcPriceGrid');
   if (!grid) return;
   const isBm = currentLang === 'ms';
+  const talk = isBm ? 'Hubungi kami' : 'Talk to us';
+  const mailto = 'mailto:hello@mpflemedia.my';
+  // Easy-buy packages: name + From RM only (no homework formulas)
   const cards = [
     {
       tag: isBm ? 'Virtual CFO & Lejar' : 'Virtual CFO & Bookkeeping',
       title: isBm ? 'Bookkeeping & Kewangan' : 'Bookkeeping & Financials',
       blurb: isBm
-        ? 'Laporan kesihatan perniagaan bulanan, bukan sekadar key-in.'
-        : 'Monthly business health reports, not key-in only.',
+        ? 'Laporan kesihatan perniagaan bulanan, bukan sekadar key-in. Sebutharga akhir selepas sampel penyata.'
+        : 'Monthly business health reports, not key-in only. Final quote after a sample statement.',
       tiers: isBm ? [
-        {k:'Mikro (<100 transaksi/bln)', v:'RM 300–600 / bln', d:'Freelancer, ejen, runcit kecil'},
-        {k:'SME sederhana (100–500 transaksi)', v:'RM 800–1,500 / bln', d:'Pemborong, agensi, kafe'},
-        {k:'Tinggi / kompleks (500+)', v:'RM 2,000–4,000+ / bln', d:'Multi-cawangan, operasi kompleks'}
+        {k:'Lite', v:'Dari RM 300 / bln', d:'Di bawah ~100 dokumen/bln — freelancer, runcit kecil'},
+        {k:'Standard', v:'Dari RM 800 / bln', d:'~100–500 / bln — kafe, agensi, pemborong kecil'},
+        {k:'Plus', v:'Dari RM 2,000 / bln', d:'500+ atau multi-cawangan'}
       ] : [
-        {k:'Micro (<100 txn/mo)', v:'RM 300–600 / mo', d:'Freelancer, agent, small retail'},
-        {k:'Mid SME (100–500 txn/mo)', v:'RM 800–1,500 / mo', d:'Wholesaler, agency, cafe'},
-        {k:'High / complex (500+)', v:'RM 2,000–4,000+ / mo', d:'Multi-branch, complex ops'}
+        {k:'Lite', v:'From RM 300 / mo', d:'Under ~100 docs/mo — freelancer, small retail'},
+        {k:'Standard', v:'From RM 800 / mo', d:'~100–500 / mo — cafe, agency, small wholesale'},
+        {k:'Plus', v:'From RM 2,000 / mo', d:'500+ or multi-branch'}
       ]
     },
     {
       tag: isBm ? 'Pematuhan' : 'Compliance',
       title: isBm ? 'Gaji & Cukai' : 'Payroll & Tax',
-      blurb: isBm ? 'Kiraan, EPF/SOCSO/PCB, payslip, pemfailan cukai.' : 'Calc, EPF/SOCSO/PCB, payslips, tax filings.',
+      blurb: isBm
+        ? 'Kiraan, EPF/SOCSO/PCB, payslip. Cukai (Borang C / PT) dari RM 1,200 / tahun — sebut berasingan.'
+        : 'Calc, EPF/SOCSO/PCB, payslips. Tax (Borang C / PT) from RM 1,200 / year — quoted separately.',
       tiers: isBm ? [
-        {k:'Payroll asas', v:'RM 150–300 / bln', d:'Asas bulanan'},
-        {k:'Per staf', v:'+ RM 30–50 / staf / bln', d:'Kiraan + payslip'},
-        {k:'Cukai (Borang C / PT)', v:'RM 1,200–3,000 / tahun', d:'Pemfailan tahunan'}
+        {k:'Pasukan 1–5', v:'Dari RM 300 / bln', d:'Kiraan, EPF/SOCSO/PCB, payslip'},
+        {k:'Pasukan 6–15', v:'Dari RM 550 / bln', d:'Kiraan, EPF/SOCSO/PCB, payslip'},
+        {k:'Pasukan 16+', v:'Sebut harga', d:'Ikut saiz pasukan'}
       ] : [
-        {k:'Payroll base', v:'RM 150–300 / mo', d:'Monthly base'},
-        {k:'Per staff', v:'+ RM 30–50 / staff / mo', d:'Calc + payslips'},
-        {k:'Tax (Borang C / PT)', v:'RM 1,200–3,000 / year', d:'Annual filing'}
+        {k:'Team 1–5', v:'From RM 300 / mo', d:'Calc, EPF/SOCSO/PCB, payslips'},
+        {k:'Team 6–15', v:'From RM 550 / mo', d:'Calc, EPF/SOCSO/PCB, payslips'},
+        {k:'Team 16+', v:'Quote', d:'Sized to your team'}
       ]
     },
     {
       tag: isBm ? 'Projek' : 'Projects',
       title: isBm ? 'Web & Sistem' : 'Website & Systems',
-      blurb: isBm ? 'Landing, e-dagang, atau sistem tersuai.' : 'Landings, e-commerce, or custom systems.',
+      blurb: isBm
+        ? 'Skop disahkan selepas brief ringkas.'
+        : 'Scope confirmed after a short brief.',
       tiers: isBm ? [
-        {k:'Korporat / landing', v:'RM 2,500–5,000', d:'2–4 minggu'},
-        {k:'E-dagang', v:'RM 5,000–12,000+', d:'Kedai online'},
-        {k:'Sistem tersuai', v:'RM 15,000–50,000+', d:'Integrasi M-Core'}
+        {k:'Landing', v:'Dari RM 2,500', d:'2–4 minggu, WA / borang'},
+        {k:'Store', v:'Dari RM 5,000', d:'E-dagang'},
+        {k:'Custom', v:'Dari RM 15,000', d:'Sistem tersuai / integrasi M-Core'}
       ] : [
-        {k:'Corporate / landing', v:'RM 2,500–5,000', d:'2–4 weeks'},
-        {k:'E-commerce', v:'RM 5,000–12,000+', d:'Online store'},
-        {k:'Custom system', v:'RM 15,000–50,000+', d:'M-Core integrations'}
+        {k:'Landing', v:'From RM 2,500', d:'2–4 weeks, WA / forms'},
+        {k:'Store', v:'From RM 5,000', d:'E-commerce'},
+        {k:'Custom', v:'From RM 15,000', d:'Custom / M-Core integration'}
       ]
     }
   ];
   grid.innerHTML = cards.map(c =>
     '<article class="svc-price reveal"><div class="tag">'+c.tag+'</div><h3>'+c.title+'</h3><p class="blurb">'+c.blurb+'</p>'+
     c.tiers.map(x => '<div class="tier"><strong>'+x.k+'</strong><span class="rm">'+x.v+'</span><br><span>'+x.d+'</span></div>').join('')+
-    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="'+WA_TALK+'" target="_blank" rel="noopener">'+(isBm?'Hubungi kami':'Talk to us')+'</a></div></article>'
+    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="'+mailto+'">'+talk+'</a></div></article>'
   ).join('');
   observeReveals();
 }
