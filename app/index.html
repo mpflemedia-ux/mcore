@@ -1291,14 +1291,14 @@ html[data-skip-intro="1"] #intro-skip {
       <div class="auth-form">
         <div id="login-error" class="auth-error"></div>
         <div class="form-group">
-          <label class="form-label">Email</label>
+          <label class="form-label" id="lbl-login-email">Email</label>
           <div class="input-group">
             <i class="ti ti-mail input-icon"></i>
             <input type="email" id="login-email" class="form-input" placeholder="name@company.com" autocomplete="email">
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Password</label>
+          <label class="form-label" id="lbl-login-password">Password</label>
           <div class="input-group">
             <i class="ti ti-lock input-icon"></i>
             <input type="password" id="login-password" class="form-input has-eye" placeholder="••••••••" autocomplete="current-password">
@@ -1306,7 +1306,7 @@ html[data-skip-intro="1"] #intro-skip {
           </div>
         </div>
         <button class="btn btn-primary btn-lg btn-block" id="btn-login" onclick="doLogin()">Sign In</button>
-        <div class="auth-link"><a onclick="showForgotPassword()">Forgot password?</a></div>
+        <div class="auth-link"><a onclick="showForgotPassword()" id="link-forgot-password">Forgot password?</a></div>
       </div>
     </div>
 
@@ -1317,20 +1317,20 @@ html[data-skip-intro="1"] #intro-skip {
         <div id="register-success" class="auth-success"></div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Full Name</label>
+            <label class="form-label" id="lbl-reg-name">Full Name</label>
             <input type="text" id="reg-name" class="form-input" placeholder="Your name">
           </div>
           <div class="form-group">
-            <label class="form-label">Company Name</label>
+            <label class="form-label" id="lbl-reg-company">Company Name</label>
             <input type="text" id="reg-company" class="form-input" placeholder="Company Sdn Bhd">
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Invite code <span style="font-weight:400;color:var(--text-3)">(optional — join existing team)</span></label>
+          <label class="form-label" id="lbl-reg-invite">Invite code <span style="font-weight:400;color:var(--text-3)" id="lbl-reg-invite-hint">(optional — join existing team)</span></label>
           <input type="text" id="reg-invite" class="form-input" placeholder="Paste invite code" value="">
         </div>
         <div class="form-group">
-          <label class="form-label">Email</label>
+          <label class="form-label" id="lbl-reg-email">Email</label>
           <div class="input-group">
             <i class="ti ti-mail input-icon"></i>
             <input type="email" id="reg-email" class="form-input" placeholder="name@company.com">
@@ -1338,14 +1338,14 @@ html[data-skip-intro="1"] #intro-skip {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Password</label>
+            <label class="form-label" id="lbl-reg-password">Password</label>
             <div class="input-group">
               <input type="password" id="reg-password" class="form-input has-eye" placeholder="Min. 8 characters">
               <i class="ti ti-eye eye-toggle" onclick="togglePw('reg-password',this)" title="Show/hide password"></i>
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Confirm</label>
+            <label class="form-label" id="lbl-reg-confirm">Confirm</label>
             <div class="input-group">
               <input type="password" id="reg-confirm" class="form-input has-eye" placeholder="Repeat password">
               <i class="ti ti-eye eye-toggle" onclick="togglePw('reg-confirm',this)" title="Show/hide password"></i>
@@ -1353,7 +1353,7 @@ html[data-skip-intro="1"] #intro-skip {
           </div>
         </div>
         <button class="btn btn-primary btn-lg btn-block" id="btn-register" onclick="doRegister()">Create Account</button>
-        <div class="auth-link" style="font-size:11px;color:rgba(255,255,255,.3)">
+        <div class="auth-link" style="font-size:11px;color:rgba(255,255,255,.3)" id="reg-terms-text">
           By registering, you agree to <a>Terms &amp; Conditions</a> of M-Core
         </div>
       </div>
@@ -1589,9 +1589,9 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implic
 // GLOBAL STATE
 const APP = {
   tenant:   { id:null, code:null, name:null, plan:null, config:{} },
-  user:     { id:null, name:null, email:null, role:null, language:'en', theme:'light' },
+  user:     { id:null, name:null, email:null, role:null, language:'bm', theme:'light' },
   tenantConfig: { modules:{}, features:{}, roles:{} },
-  language: 'en', theme: 'light', currentPage: null,
+  language: 'bm', theme: 'light', currentPage: null,
 }
 
 /** Normalize tenant UUID — never pass string "null" to PostgREST */
@@ -3582,6 +3582,12 @@ async function doRegister() {
         p_industry:    'general',
         p_plan_code:   'free' // Free-plan-as-the-hook — new signups land on Free, not silently on a paid tier
       })
+      // Best-effort explicit default — register_tenant() is a live RPC not
+      // tracked in this repo, so its own user_profiles insert can't be
+      // audited here; this covers the default regardless of whatever that
+      // RPC does internally. Fire-and-forget, same pattern as other
+      // best-effort writes in this file — never blocks/awaits registration.
+      sb.from('user_profiles').update({language: 'bm'}).eq('id', data.user.id).then(()=>{},()=>{})
       if(rpcError) {
         console.error('register_tenant error:', rpcError)
         // Still allow account — onboarding can repair tenant link
@@ -3933,7 +3939,7 @@ async function loadUserSession(user, opts={}) {
     APP.user.permissions = _perms || {}
     // Best-effort last_login stamp
     sb.from('user_profiles').update({last_login: new Date().toISOString()}).eq('id', user.id).then(()=>{},()=>{})
-    APP.language=profile.language||'en'
+    APP.language=profile.language||'bm'
     APP.theme = localStorage.getItem('nexerp_theme') || profile.theme || 'light'
     applyTheme(APP.theme)
     // Always prefer profile.tenant_id (even when tenants embed/select fails RLS)
@@ -4013,8 +4019,45 @@ function _resetSessionLoadGuard() {
 }
 
 // SHELL UI
+// Auth page (Sign In/Register tabs, labels, buttons) was static English
+// HTML with no localization anywhere — APP.language defaulting to 'bm'
+// (see APP's own definition above) had no effect on it. Sets the visible
+// text of every static auth-page label/button/tab based on APP.language,
+// same isBm ? '...' : '...' bilingual pattern used throughout this file.
+// Only login+register are covered (matches what was actually asked) —
+// the forgot-password/reset-OTP/PIN panels are a separate, not-yet-covered
+// gap if that's wanted later.
+function _applyAuthPageLang() {
+  const isBm = APP.language === 'bm'
+  const set = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text }
+  set('tab-login', isBm ? 'Log Masuk' : 'Sign In')
+  set('tab-register', isBm ? 'Daftar' : 'Register')
+  set('lbl-login-email', isBm ? 'Emel' : 'Email')
+  set('lbl-login-password', isBm ? 'Kata Laluan' : 'Password')
+  set('btn-login', isBm ? 'Log Masuk' : 'Sign In')
+  set('link-forgot-password', isBm ? 'Lupa kata laluan?' : 'Forgot password?')
+  set('lbl-reg-name', isBm ? 'Nama Penuh' : 'Full Name')
+  set('lbl-reg-company', isBm ? 'Nama Syarikat' : 'Company Name')
+  const invLbl = document.getElementById('lbl-reg-invite')
+  if(invLbl) invLbl.childNodes[0].textContent = isBm ? 'Kod jemputan ' : 'Invite code '
+  set('lbl-reg-invite-hint', isBm ? '(pilihan — sertai team sedia ada)' : '(optional — join existing team)')
+  set('lbl-reg-email', isBm ? 'Emel' : 'Email')
+  set('lbl-reg-password', isBm ? 'Kata Laluan' : 'Password')
+  set('lbl-reg-confirm', isBm ? 'Sahkan' : 'Confirm')
+  set('btn-register', isBm ? 'Cipta Akaun' : 'Create Account')
+  const termsEl = document.getElementById('reg-terms-text')
+  if(termsEl) {
+    const link = termsEl.querySelector('a')
+    const linkText = link ? link.outerHTML : ''
+    termsEl.innerHTML = isBm
+      ? `Dengan mendaftar, anda bersetuju dengan ${linkText || '<a>Terma &amp; Syarat</a>'} M-Core`
+      : `By registering, you agree to ${linkText || '<a>Terms &amp; Conditions</a>'} of M-Core`
+  }
+}
+
 function showAuthPage() {
   document.getElementById('auth-page').style.display='flex'
+  _applyAuthPageLang()
   document.getElementById('shell').classList.remove('active')
   // Default Sign In; only Register if a live invite token remains
   try {
@@ -4209,6 +4252,7 @@ async function toggleLang() {
   const tagline = LANG[APP.language].tagline
   const authTag = document.getElementById('auth-tagline')
   if(authTag) authTag.textContent = tagline
+  _applyAuthPageLang()
   buildSidebar()
   openPage(APP.currentPage||'dashboard')
   showToast(APP.language==='bm'?'Bahasa ditukar ke Melayu':'Language changed to English','info')

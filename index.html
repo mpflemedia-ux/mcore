@@ -854,8 +854,8 @@ const softwarePlans = [
     features:{en:['Unlimited transactions','Up to 10 branches','2,000 AI queries / day','Priority support'],ms:['Transaksi tanpa had','Sehingga 10 cawangan','2,000 pertanyaan AI / hari','Sokongan keutamaan']}}
 ];
 
-let currentLang = localStorage.getItem('mcore_lang') || 'en';
-if (currentLang !== 'en' && currentLang !== 'ms') currentLang = 'en';
+let currentLang = localStorage.getItem('mcore_lang') || 'ms';
+if (currentLang !== 'en' && currentLang !== 'ms') currentLang = 'ms';
 let billing = 'monthly';
 
 const I18N = {
