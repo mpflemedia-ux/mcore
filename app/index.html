@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-tg-activity2">
+<meta name="nexerp-build" content="2026-08-22-tg-att">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1940,7 +1940,7 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-inventory" '+(p.inventory!==false?'checked':'')+'> '+(isBm?'Inventori (produk)':'Inventory (products)')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-purchasing" '+(p.purchasing!==false?'checked':'')+'> '+(isBm?'Pembelian (PO)':'Purchasing (PO)')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-finance" '+(p.finance!==false?'checked':'')+'> '+(isBm?'Kewangan (jurnal / tuntutan)':'Finance (journal / claims)')+'</label>'
-    + '<label><input type="checkbox" id="notif-ev-hr" '+(p.hr!==false?'checked':'')+'> '+(isBm?'HR (cuti / outstation)':'HR (leave / outstation)')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-hr" '+(p.hr!==false?'checked':'')+'> '+(isBm?'HR (kehadiran / cuti / outstation)':'HR (attendance / leave / outstation)')+'</label>'
     + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" id="tg-test-btn" onclick="_tgSendTestNotification()">'+(isBm?'Hantar ujian ke Telegram':'Send test to Telegram')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
 
@@ -2072,27 +2072,32 @@ async function _tgNotifyEmployee(employeeId, text) {
 }
 
 
-/** Push business activity to Telegram owners (respect mute + prefs + simple dedupe). */
-async function _tgActivity(prefKey, text) {
+/** Push business activity to Telegram owners (mute + prefs + short dedupe). */
+async function _tgActivity(prefKey, text, opts) {
   try {
     if (!APP.tenant?.id) return
+    opts = opts || {}
     const prefs = (typeof _notifGetPrefs === 'function') ? _notifGetPrefs() : {}
     if (prefs.muted) return
-    // Pref keys: sales, inventory, purchasing, finance, hr, overdue, low_stock, leave, outstation, insight
+    // Prefer explicit false; undefined defaults to ON for operational keys
     if (prefKey && prefs[prefKey] === false) return
+    // leave/outstation map to hr when hr false
+    if ((prefKey === 'leave' || prefKey === 'outstation') && prefs.hr === false) return
     const body = String(text || '').trim().slice(0, 3500)
     if (!body) return
-    const day = new Date().toISOString().slice(0, 10)
-    const fp = (prefKey || 'x') + '|' + body.slice(0, 100)
+    const fp = (prefKey || 'x') + '|' + body.slice(0, 160)
     const storeKey = 'mcore_tg_act_' + (APP.tenant.id || '')
     let bag = {}
     try { bag = JSON.parse(localStorage.getItem(storeKey) || '{}') || {} } catch (e) { bag = {} }
-    if (bag[fp] === day) return // once per day per message fingerprint
-    bag[fp] = day
-    // prune
+    const now = Date.now()
+    const ttl = opts.daily ? (24 * 3600 * 1000) : (3 * 60 * 1000) // 3 min default so attendance/sales fire again later
+    const prev = Number(bag[fp] || 0)
+    if (prev && (now - prev) < ttl) return
+    bag[fp] = now
     const keys = Object.keys(bag)
-    if (keys.length > 80) {
-      keys.slice(0, keys.length - 60).forEach(k => { delete bag[k] })
+    if (keys.length > 100) {
+      keys.sort(function (a, b) { return Number(bag[a] || 0) - Number(bag[b] || 0) })
+      keys.slice(0, keys.length - 70).forEach(function (k) { delete bag[k] })
     }
     try { localStorage.setItem(storeKey, JSON.stringify(bag)) } catch (e) {}
     await _tgNotifyOwners(body)
@@ -2321,11 +2326,11 @@ async function loadNotifications() {
       const ls = items.filter(it => it.kind === 'low_stock')
       if (ov.length) {
         const isBm2 = APP.language==='bm'
-        _tgActivity('overdue', (isBm2?'M-Core · Invois tertunggak: ':'M-Core · Overdue invoices: ') + ov.length + (ov[0]?.text ? ('\n'+ov.slice(0,3).map(x=>x.text).join('\n')) : ''))
+        _tgActivity('overdue', (isBm2?'M-Core · Invois tertunggak: ':'M-Core · Overdue invoices: ') + ov.length + (ov[0]?.text ? ('\n'+ov.slice(0,3).map(x=>x.text).join('\n')) : ''), { daily: true })
       }
       if (ls.length) {
         const isBm2 = APP.language==='bm'
-        _tgActivity('low_stock', (isBm2?'M-Core · Stok rendah: ':'M-Core · Low stock: ') + ls.length + (ls[0]?.text ? ('\n'+ls.slice(0,3).map(x=>x.text).join('\n')) : ''))
+        _tgActivity('low_stock', (isBm2?'M-Core · Stok rendah: ':'M-Core · Low stock: ') + ls.length + (ls[0]?.text ? ('\n'+ls.slice(0,3).map(x=>x.text).join('\n')) : ''), { daily: true })
       }
     } catch (e) {}
     if(badge) { badge.textContent=String(items.length); badge.classList.toggle('show', items.length>0) }
@@ -10851,6 +10856,7 @@ async function _crmSave(id) {
   btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save'
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
   showToast(id ? 'Customer updated!' : 'Customer added!', 'success')
+  try { const isBm=APP.language==='bm'; _tgActivity('sales', isBm?'M-Core · Pelanggan disimpan':'M-Core · Customer saved') } catch(e) {}
   openPage('crm')
 }
 
@@ -19701,6 +19707,7 @@ async function _quoSave(id) {
   if(itemsErr) { errEl.textContent='Error: '+itemsErr.message; errEl.style.display='block'; return }
 
   showToast(APP.language==='bm'?'Sebut harga disimpan!':'Quotation saved!', 'success')
+  try { _tgActivity('sales', APP.language==='bm'?'M-Core · Sebut harga disimpan':'M-Core · Quotation saved') } catch(e) {}
   openPage('sales',{view:'quo-form',id:quoId})
 }
 
@@ -22833,6 +22840,7 @@ async function _employeeSave(id, fromApplicantId) {
   }
   auditLog(id?'update':'create','employees', id||newId)
   showToast(isBm?'Pekerja disimpan!':'Employee saved!', 'success')
+  try { const isBm=APP.language==='bm'; _tgActivity('hr', isBm?'M-Core · Pekerja disimpan':'M-Core · Employee saved') } catch(e) {}
   openPage('hr',{})
 }
 
@@ -26914,6 +26922,12 @@ async function _attendanceSave() {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog(id?'update':'create', 'attendance', id||null)
   showToast(isBm?'Kehadiran disimpan!':'Attendance saved!', 'success')
+  try {
+    const empLabel = document.getElementById('att-employee')?.selectedOptions?.[0]?.text
+      || document.getElementById('att-employee')?.value || ''
+    const st = status || ''
+    _tgActivity('hr', (isBm?'M-Core · Kehadiran':'M-Core · Attendance') + '\n' + (empLabel || '') + ' · ' + (date || '') + ' · ' + st + (clockIn ? (' · in '+clockIn) : '') + (clockOut ? (' · out '+clockOut) : ''))
+  } catch(e) {}
   _attendanceResetForm()
   // Ensure history filter shows the new row
   window._attHistFilter = window._attHistFilter || {}
