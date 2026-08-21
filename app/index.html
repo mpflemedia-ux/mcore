@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pos-card-fit">
+<meta name="nexerp-build" content="2026-08-22-pos-cat">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -858,6 +858,22 @@ html[data-skip-intro="1"] #intro-skip {
   background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px;
   display:flex;flex-direction:column;overflow:hidden;
 }
+
+.pos-cat-chips{
+  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;flex-shrink:0;
+  max-height:72px;overflow-y:auto;
+}
+.pos-cat-chip{
+  border:1px solid var(--border);background:var(--bg);color:var(--text-2);
+  border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;
+  cursor:pointer;white-space:nowrap;line-height:1.3;
+}
+.pos-cat-chip:hover{border-color:var(--primary);color:var(--primary)}
+.pos-cat-chip.active{
+  background:color-mix(in srgb,var(--primary) 18%,transparent);
+  border-color:var(--primary);color:var(--primary);
+}
+
 .pos-products #pos-grid{flex:1 1 auto;min-height:0;max-height:none !important;overflow-y:auto;-webkit-overflow-scrolling:touch;align-content:start;align-items:start}
 .pos-cart{
   background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:0;
@@ -27378,6 +27394,7 @@ async function _leaveReject(id) { await _leaveSetStatus(id, 'rejected') }
 let _posCart = []
 let _posProducts = []
 let _posSearch = ''
+let _posCategory = ''
 let _posCurrentSession = null
 let _posOtherSessions = []
 let _posEndShiftTarget = null
@@ -27765,9 +27782,10 @@ async function renderPOS(params={}) {
     confirm:'Confirm Payment', cancel:'Cancel', noProducts:'No products',
     scan:'Scan', notFound:'Product not found for code: '
   }
-  const {data} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
+  const {data} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url,category').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = data || []
   _posCart = []
+  _posCategory = ''
   const _posEmployees = await _scLoadEmployees()
 
   const isBm = APP.language==='bm'
@@ -27783,12 +27801,13 @@ async function renderPOS(params={}) {
   <div id="pos-other-shifts" style="margin-bottom:12px"></div>
   <div class="pos-wrap">
     <div class="pos-products">
-      <div style="display:flex;gap:8px;margin-bottom:14px">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
         <div class="input-group" style="flex:1"><i class="ti ti-search input-icon"></i>
           <input id="pos-search" type="text" class="form-input" placeholder="${t.search}" oninput="_posFilterProducts(this.value)" autofocus>
         </div>
         <button class="btn btn-outline" onclick="_posScanBarcode()" title="${t.scan}"><i class="ti ti-barcode"></i> ${t.scan}</button>
       </div>
+      <div id="pos-cat-chips" class="pos-cat-chips" aria-label="Category filter"></div>
       <div id="pos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:8px;padding-bottom:8px;align-content:start;align-items:start"></div>
     </div>
     <div class="pos-cart">
@@ -27877,6 +27896,7 @@ async function renderPOS(params={}) {
     </div>
   </div>`
 
+  _posRenderCatChips()
   _posRenderGrid()
   _posRenderCart()
   await _posCheckSession()
@@ -28447,6 +28467,41 @@ async function _posStartShift() {
 }
 
 function _posFilterProducts(val) { _posSearch = val.toLowerCase(); _posRenderGrid() }
+function _posSetCategory(cat) {
+  _posCategory = String(cat || '')
+  _posRenderCatChips()
+  _posRenderGrid()
+}
+function _posRenderCatChips() {
+  const el = document.getElementById('pos-cat-chips')
+  if (!el) return
+  const isBm = APP.language === 'bm'
+  const cats = []
+  const seen = new Set()
+  ;(_posProducts || []).forEach(function (p) {
+    const c = String(p.category || '').trim()
+    if (!c) return
+    const k = c.toLowerCase()
+    if (seen.has(k)) return
+    seen.add(k)
+    cats.push(c)
+  })
+  cats.sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: 'base' }) })
+  const allLab = isBm ? 'Semua' : 'All'
+  const uncat = isBm ? 'Tiada kategori' : 'Uncategorised'
+  const hasUncat = (_posProducts || []).some(function (p) { return !String(p.category || '').trim() })
+  let html = '<button type="button" class="pos-cat-chip' + (!_posCategory ? ' active' : '') + '" onclick="_posSetCategory(\'\')">' + allLab + '</button>'
+  cats.forEach(function (c) {
+    const esc = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const active = _posCategory === c ? ' active' : ''
+    html += '<button type="button" class="pos-cat-chip' + active + '" onclick="_posSetCategory(\'' + esc + '\')">' + _aiEscapeHtml(c) + '</button>'
+  })
+  if (hasUncat) {
+    html += '<button type="button" class="pos-cat-chip' + (_posCategory === '__none__' ? ' active' : '') + '" onclick="_posSetCategory(\'__none__\')">' + uncat + '</button>'
+  }
+  el.innerHTML = html
+}
+
 
 function _posInitials(name) {
   if(!name) return '?'
@@ -28516,7 +28571,15 @@ function _posRenderGrid() {
   const grid = document.getElementById('pos-grid')
   if(!grid) return
   const isBm = APP.language==='bm'
-  const list = _posProducts.filter(p => !_posSearch || (p.name_en||'').toLowerCase().includes(_posSearch) || (p.name_bm||'').toLowerCase().includes(_posSearch) || (p.code||'').toLowerCase().includes(_posSearch))
+  const list = _posProducts.filter(p => {
+    if (_posCategory === '__none__') {
+      if (String(p.category || '').trim()) return false
+    } else if (_posCategory) {
+      if (String(p.category || '').trim() !== _posCategory) return false
+    }
+    if (!_posSearch) return true
+    return (p.name_en||'').toLowerCase().includes(_posSearch) || (p.name_bm||'').toLowerCase().includes(_posSearch) || (p.code||'').toLowerCase().includes(_posSearch)
+  })
   if(list.length===0) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:30px"><p>${isBm?'Tiada produk':'No products'}</p></div>`; return }
   grid.innerHTML = list.map(p => {
     const stock = Number(p.stock_qty||0)
@@ -28892,8 +28955,9 @@ async function _posCheckout() {
     )
   } catch(e) {}
   _posCart = []
-  const {data: refreshed} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
+  const {data: refreshed} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url,category').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = refreshed || []
+  _posRenderCatChips()
   _posRenderGrid()
   _posRenderCart()
   _posLoadShiftSalesTotal()
