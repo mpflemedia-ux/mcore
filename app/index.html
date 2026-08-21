@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-plan-id-tenant">
+<meta name="nexerp-build" content="2026-08-22-ai-usage">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3241,6 +3241,7 @@ async function sendAIChatMessage() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'chat', message, context } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     AI_CHAT.messages.push({role:'assistant', text: data.data.reply})
   } catch(err) {
     console.error('AI chat error:', err)
@@ -6136,6 +6137,7 @@ async function _dbLoadAiInsight() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'business_insight', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const insights = data.data.insights || []
     if(!insights.length) { if(out) out.innerHTML = `<span style="color:var(--db-text4)">${t.empty}</span>` }
     else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${insights.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
@@ -6189,6 +6191,7 @@ async function _dbLoadMarketingAdvice() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'marketing_advice', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const ideas = data.data.ideas || []
     if(!ideas.length) { if(out) out.innerHTML = `<span style="color:var(--db-text4)">${t.empty}</span>` }
     else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${ideas.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
@@ -6240,6 +6243,7 @@ async function _dbLoadDailyDigest() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'daily_digest', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const items = data.data.items || []
     if(!items.length) { if(out) out.innerHTML = `<span style="color:var(--db-text4)">${t.empty}</span>` }
     else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${items.map(i=>`<li>${_aiEscapeHtml(i)}</li>`).join('')}</ul>`
@@ -9791,6 +9795,7 @@ async function _taxAskGuidance() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'tax_guidance', question, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<div>${_aiEscapeHtml(data.data.answer)}</div>` +
       `<div style="margin-top:10px;font-size:11px;color:var(--warning);border-top:1px solid var(--border);padding-top:8px"><i class="ti ti-alert-triangle"></i> ${t.disclaimer}</div>`
   } catch(err) {
@@ -9826,6 +9831,7 @@ async function _docGenerate() {
     }})
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(loadingEl) loadingEl.innerHTML = ''
     if(textEl) { textEl.value = data.data.draft; textEl.style.display = 'block' }
     if(copyBtn) copyBtn.style.display = 'block'
@@ -10001,6 +10007,7 @@ async function _fraudScan() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'fraud_scan', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const flags = data.data.flags || []
     if(!flags.length) { if(out) out.innerHTML = `<span style="color:var(--success)"><i class="ti ti-shield-check"></i> ${t.clean}</span>` }
     else if(out) out.innerHTML = `<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${flags.map(f=>`<li style="color:var(--warning)">${_aiEscapeHtml(f)}</li>`).join('')}</ul>`
@@ -10264,6 +10271,7 @@ async function _cpScanSSM(event) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_ssm_certificate', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const r = data.data
 
     const setVal = (id, v) => { const el = document.getElementById(id); if(el && v!=null) el.value = v }
@@ -10303,6 +10311,7 @@ async function _cpScanBank(event) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_bank_statement', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const r = data.data
 
     const setVal = (id, v) => { const el = document.getElementById(id); if(el && v!=null) el.value = v }
@@ -11429,6 +11438,7 @@ async function _custFollowUpSuggest(custId) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'follow_up_suggestion', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<div><i class="ti ti-bulb" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.suggestion)}</div>`
   } catch(err) {
     console.error('AI follow-up suggestion error:', err)
@@ -13790,6 +13800,7 @@ async function _jnlAutoCategorize(i) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'categorize', description, accounts } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     _jnlLines[i].account_id = data.data.account_id
     _jnlRenderLines()
     const pct = data.data.confidence!=null ? ` (${Math.round(data.data.confidence*100)}%)` : ''
@@ -13970,6 +13981,7 @@ async function _fyMonthEndSummary() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'month_end_summary', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<div><i class="ti ti-sparkles" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.summary)}</div>`
   } catch(err) {
     console.error('Month-end summary error:', err)
@@ -14448,6 +14460,7 @@ async function _expScanReceipt(event) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'receipt', image_base64: base64, mime_type: mimeType } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const r = data.data
 
     if(r.amount != null) document.getElementById('ef-amount').value = r.amount
@@ -17991,6 +18004,7 @@ async function _prodAiScanFileSelected(event) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_product_image', image_base64: base64, mime_type: mimeType } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     _prodAiScanResult = data.data
     _prodAiScanRenderConfirm()
   } catch(err) {
@@ -18121,6 +18135,7 @@ async function _invGeneratePODraft() {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'generate_po', products, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(loadingEl) loadingEl.innerHTML = ''
     if(textEl) { textEl.value = data.data.draft; textEl.style.display = 'block' }
     if(copyBtn) copyBtn.style.display = 'block'
@@ -20170,6 +20185,7 @@ async function _doLoadSuggestion(id) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'logistics_suggest', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<i class="ti ti-route" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.suggestion)}`
   } catch(err) {
     console.error('Logistics suggest error:', err)
@@ -22682,6 +22698,7 @@ async function _woLoadCheck(id) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'production_check', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<i class="ti ti-clipboard-check" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.advisory)}`
   } catch(err) {
     console.error('Production check error:', err)
@@ -23478,6 +23495,7 @@ async function _appScanForm(event) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_application_form', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     const r = data.data
 
     const setVal = (id, v) => { const el = document.getElementById(id); if(el && v!=null) el.value = v }
@@ -23813,6 +23831,11 @@ function _scNextPeriod(month, year) {
     (see _dbUsageWarningCheck) and the read-only Vendor Admin usage display. */
 async function _usageCaptureForSale() {
   try { await sb.rpc('increment_monthly_transaction_usage') } catch(e) { console.warn('_usageCaptureForSale', e) }
+}
+
+/** After successful ai-proxy call — bumps tenant_usage_daily.ai_queries_count (My Plan widget). */
+async function _usageCaptureAi() {
+  try { await sb.rpc('increment_ai_daily_usage') } catch (e) { console.warn('_usageCaptureAi', e) }
 }
 
 /** Called right after an invoice's status becomes 'paid' or a POS sale completes.
@@ -24677,6 +24700,7 @@ async function _payslipLoadNote(id) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'hr_payslip_note', context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<i class="ti ti-notes" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.note)}`
   } catch(err) {
     console.error('Payslip note error:', err)
@@ -29157,6 +29181,7 @@ async function _repAiSummary(reportType) {
     const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'narrate_report', report_type: reportType, context, language: APP.language } })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
+    try { _usageCaptureAi() } catch (e) {}
     if(out) out.innerHTML = `<div style="font-size:13px;line-height:1.5"><i class="ti ti-sparkles" style="color:var(--primary)"></i> ${_aiEscapeHtml(data.data.summary)}</div>`
   } catch(err) {
     console.error('AI report summary error:', err)
