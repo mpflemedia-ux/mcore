@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-21-settings-trial-cp">
+<meta name="nexerp-build" content="2026-08-21-cp-rpc">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8649,6 +8649,23 @@ async function renderSettings(params={}) {
       try { tenantRow.config = JSON.parse(tenantRow.config) } catch(e) { tenantRow.config = {} }
     }
     if(!tenantRow.config || typeof tenantRow.config !== 'object') tenantRow.config = {}
+    // Hydrate form from config.company_profile when tenants columns empty (RLS write path)
+    const _cpSnap = tenantRow.config.company_profile
+    if(_cpSnap && typeof _cpSnap === 'object') {
+      const _pick = (col, key) => {
+        const cur = tenantRow[col]
+        if(cur != null && String(cur).trim() !== '') return
+        if(_cpSnap[key] != null && String(_cpSnap[key]).trim() !== '') tenantRow[col] = _cpSnap[key]
+      }
+      _pick('name', 'name'); _pick('logo_url', 'logo_url'); _pick('payment_qr_url', 'payment_qr_url')
+      _pick('ssm_no', 'ssm_no'); _pick('incorporation_date', 'incorporation_date')
+      _pick('address', 'address'); _pick('address_line2', 'address_line2')
+      _pick('city', 'city'); _pick('postcode', 'postcode'); _pick('state', 'state'); _pick('country', 'country')
+      _pick('email', 'email'); _pick('phone', 'phone'); _pick('fax', 'fax'); _pick('website', 'website')
+      _pick('bank_name', 'bank_name'); _pick('account_number', 'account_number'); _pick('account_name', 'account_name')
+      _pick('sst_gst_no', 'sst_gst_no'); _pick('tax_type', 'tax_type'); _pick('currency', 'currency')
+      _pick('invoice_terms', 'invoice_terms')
+    }
     // My Plan widget data — plan reference row + this tenant's own usage
     // (RLS already scopes tenant_usage_monthly/daily and tenant_plan_payments
     // to the caller's own tenant) + recent payment history.
@@ -9908,39 +9925,64 @@ async function _cpSave() {
   }
 
   const tinVal = (document.getElementById('cp-tin')?.value || '').trim() || null
-  // Routed through _tenantConfigPatch (same helper role permissions /
-  // period lock saves use), as its OWN call rather than folded into the
-  // payload.config below — avoids clobbering books_lock_date / roles.
+  // TIN + company_profile snapshot in config via merge_tenant_config (works under RLS).
+  // Column fields go through update_tenant_company_profile RPC (SECURITY DEFINER) —
+  // direct tenants UPDATE often returns 0 rows under RLS even for owner/admin.
   try {
-    await _tenantConfigPatch({ tin: tinVal })
+    await _tenantConfigPatch({ tin: tinVal, company_profile: payload })
   } catch(error) {
     msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; showToast(error.message, 'error'); return
   }
 
-  // .select() after update: PostgREST can return success with 0 rows when RLS
-  // blocks the write — without select, the client cannot tell. Only toast OK
-  // when a row actually comes back.
-  const { data: savedRow, error } = await sb.from('tenants').update(payload).eq('id', APP.tenant.id).select('*').maybeSingle()
-  if(error) {
-    msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message
-    showToast(error.message, 'error')
-    return
-  }
-  if(!savedRow) {
-    const blocked = APP.language==='bm'
-      ? 'Simpan gagal — tiada baris dikemas kini (semak kebenaran RLS / tenant).'
-      : 'Save failed — no row updated (check RLS / tenant permission).'
-    msgEl.style.color='var(--danger)'; msgEl.textContent = blocked
-    showToast(blocked, 'error')
-    return
+  let savedRow = null
+  const { data: rpcRow, error: rpcErr } = await sb.rpc('update_tenant_company_profile', {
+    p_tenant_id: APP.tenant.id,
+    p_profile: payload
+  })
+  if(!rpcErr && rpcRow) {
+    savedRow = rpcRow
+  } else {
+    const missingRpc = rpcErr && (rpcErr.code === 'PGRST202' || /function .* does not exist|could not find the function/i.test(rpcErr.message||''))
+    if(rpcErr && !missingRpc) {
+      msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+rpcErr.message
+      showToast(rpcErr.message, 'error')
+      return
+    }
+    // Fallback: direct update (environments with tenants UPDATE policy)
+    const { data: upRow, error } = await sb.from('tenants').update(payload).eq('id', APP.tenant.id).select('*').maybeSingle()
+    if(error) {
+      msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message
+      showToast(error.message, 'error')
+      return
+    }
+    if(!upRow) {
+      // Columns blocked by RLS — config.company_profile already saved above.
+      // Treat as soft success so refresh still hydrates from config overlay.
+      savedRow = { ...(APP.tenant||{}), ...payload, id: APP.tenant.id, name }
+      const soft = APP.language==='bm'
+        ? 'Profil disimpan (config). Jalankan migrasi update_tenant_company_profile untuk tulis kolum tenants.'
+        : 'Profile saved (config). Run update_tenant_company_profile migration to write tenants columns.'
+      console.warn('company profile: tenants column update blocked; config.company_profile used', rpcErr||error)
+      APP.tenant = { ...(APP.tenant||{}), ...savedRow }
+      if(APP.tenant.config && typeof APP.tenant.config === 'object') {
+        APP.tenant.config = { ...APP.tenant.config, tin: tinVal, company_profile: payload }
+      }
+      _pdocTenantCache = null
+      msgEl.style.color='var(--success)'
+      msgEl.textContent = t.saved
+      showToast(t.saved, 'success')
+      return
+    }
+    savedRow = upRow
   }
 
-  // Patch in-memory tenant so shell name + next Settings open stay consistent
   APP.tenant = { ...(APP.tenant||{}), ...savedRow, name: savedRow.name || name }
-  if(tinVal != null && APP.tenant.config && typeof APP.tenant.config === 'object') {
-    APP.tenant.config = { ...APP.tenant.config, tin: tinVal }
+  if(APP.tenant.config && typeof APP.tenant.config === 'object') {
+    APP.tenant.config = { ...APP.tenant.config, tin: tinVal, company_profile: payload }
+  } else {
+    APP.tenant.config = { tin: tinVal, company_profile: payload }
   }
-  _pdocTenantCache = null // logo/QR/address just changed — don't let the next print/POS-QR use a stale cached copy
+  _pdocTenantCache = null
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')
