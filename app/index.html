@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-tg-fix">
+<meta name="nexerp-build" content="2026-08-22-tg-test">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1936,7 +1936,7 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-leave" '+(p.leave?'checked':'')+'> '+(isBm?'Cuti pending':'Leave pending')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
     + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
-    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" id="tg-test-btn" onclick="_tgSendTestNotification()">'+(isBm?'Hantar ujian ke Telegram':'Send test to Telegram')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
 
 
@@ -2112,6 +2112,53 @@ function _tgSaveBotName() {
   localStorage.setItem('nexerp_tg_bot', name)
   window.NEXERP_TELEGRAM_BOT = name
   showToast(APP.language === 'bm' ? 'Nama bot disimpan' : 'Bot name saved', 'success')
+  try { _tgRefreshMyLinkStatus() } catch (e) {}
+}
+
+/** Manual test: send one Telegram message to the current user's linked chat (this tenant). */
+async function _tgSendTestNotification() {
+  const isBm = APP.language === 'bm'
+  const btn = document.getElementById('tg-test-btn')
+  if (typeof isTenantAdmin === 'function' && !isTenantAdmin()) {
+    showToast(isBm ? 'Akses ditolak' : 'Access denied', 'error')
+    return
+  }
+  if (!APP.user?.id || !APP.tenant?.id) {
+    showToast(isBm ? 'Log masuk dulu' : 'Sign in first', 'error')
+    return
+  }
+  if (btn) { btn.disabled = true; btn.textContent = isBm ? 'Menghantar…' : 'Sending…' }
+  try {
+    const linked = await _tgIsLinked('user', APP.user.id)
+    if (!linked) {
+      showToast(
+        isBm
+          ? 'Telegram belum dipautkan untuk tenant ini. Klik Pautkan Telegram → Start.'
+          : 'Telegram not linked for this tenant. Click Link Telegram → Start.',
+        'warning'
+      )
+      return
+    }
+    const tenantName = (APP.tenant && (APP.tenant.name || APP.tenant.code)) || 'M-Core'
+    const when = new Date().toLocaleString()
+    const text = isBm
+      ? ('✅ Ujian M-Core\nTenant: ' + tenantName + '\nMasa: ' + when + '\n\nJika anda nampak mesej ini, notifikasi Telegram berfungsi.')
+      : ('✅ M-Core test\nTenant: ' + tenantName + '\nTime: ' + when + '\n\nIf you see this, Telegram notifications work.')
+    const res = await _tgSend({ subjectType: 'user', subjectId: APP.user.id, text: text })
+    if (res && res.ok === false) {
+      showToast((isBm ? 'Gagal hantar: ' : 'Send failed: ') + (res.error || 'unknown'), 'error')
+      return
+    }
+    showToast(isBm ? 'Ujian dihantar — semak Telegram' : 'Test sent — check Telegram', 'success')
+  } catch (e) {
+    showToast((isBm ? 'Gagal: ' : 'Failed: ') + (e.message || e), 'error')
+  } finally {
+    if (btn) {
+      btn.disabled = false
+      btn.textContent = isBm ? 'Hantar ujian ke Telegram' : 'Send test to Telegram'
+    }
+    try { _tgRefreshMyLinkStatus() } catch (e) {}
+  }
 }
 
 async function loadNotifications() {
