@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-plan-gate-fix">
+<meta name="nexerp-build" content="2026-08-22-plan-id-tenant">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4342,6 +4342,13 @@ async function loadUserSession(user, opts={}) {
       APP.tenant.code = profile.tenants.code
       APP.tenant.name = profile.tenants.name
       APP.tenant.config = profile.tenants.config || {}
+      // Plan fields required for sidebar module gate (Free vs Pro)
+      APP.tenant.plan_id = profile.tenants.plan_id || null
+      APP.tenant.plan = profile.tenants.plan || null
+      APP.tenant.plan_code = null
+      APP.tenant.is_trial = profile.tenants.is_trial
+      APP.tenant.trial_ends_at = profile.tenants.trial_ends_at || null
+      APP.tenant.plan_expires_at = profile.tenants.plan_expires_at || null
       APP.tenantConfig.roles = (function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
     } else if(APP.tenant.id) {
       // Fetch tenant row separately when embed missing
@@ -4352,6 +4359,12 @@ async function loadUserSession(user, opts={}) {
           APP.tenant.code = trow.code
           APP.tenant.name = trow.name
           APP.tenant.config = trow.config || {}
+          APP.tenant.plan_id = trow.plan_id || null
+          APP.tenant.plan = trow.plan || null
+          APP.tenant.plan_code = null
+          APP.tenant.is_trial = trow.is_trial
+          APP.tenant.trial_ends_at = trow.trial_ends_at || null
+          APP.tenant.plan_expires_at = trow.plan_expires_at || null
           APP.tenantConfig.roles = (function(r){r=r||{};const o={};Object.keys(r).forEach(k=>{o[String(k).toLowerCase()]=r[k]});return o})(APP.tenant.config.roles)
         }
       } catch(e) { console.warn('tenant fetch', e) }
@@ -4558,7 +4571,9 @@ async function _loadAdminSignupBadge() {
 function buildSidebar() {
   try {
     if (typeof _loadPlansCache === 'function' && !_plansCache) {
-      /* sync path: cache may already be filled in session; if not, leave resolve as free until next paint */
+      _loadPlansCache().then(function () {
+        try { _hydrateTenantPlanCode(); buildSidebar() } catch (e2) {}
+      }).catch(function () {})
     }
     _hydrateTenantPlanCode()
   } catch (e) {}
