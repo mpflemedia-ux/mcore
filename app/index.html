@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-21-prod-category">
+<meta name="nexerp-build" content="2026-08-21-prod-zero-price">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17771,12 +17771,12 @@ async function renderProductForm(id=null) {
     addTitle:'Tambah Produk', editTitle:'Edit Produk', back:'Inventori',
     sku:'SKU', name:'Nama Produk *', nameBm:'Nama Produk (BM, pilihan)', price:'Harga Jual (RM) *', cost:'Kos (RM)', stock:'Kuantiti Stok', unit:'Unit',
     category:'Kategori', reorderPoint:'Titik Pesan Semula (pilihan, lalai 5)', barcode:'Kod Bar (pilihan)',
-    save:'Simpan', cancel:'Batal', required:'Nama dan harga jual diperlukan.', uploadImage:'Muat naik gambar'
+    save:'Simpan', cancel:'Batal', required:'Nama dan harga jual diperlukan (harga 0 dibenarkan).', uploadImage:'Muat naik gambar'
   } : {
     addTitle:'Add Product', editTitle:'Edit Product', back:'Inventory',
     sku:'SKU', name:'Product Name *', nameBm:'Product Name (BM, optional)', price:'Sell Price (RM) *', cost:'Cost (RM)', stock:'Stock Quantity', unit:'Unit',
     category:'Category', reorderPoint:'Reorder Point (optional, default 5)', barcode:'Barcode (optional)',
-    save:'Save', cancel:'Cancel', required:'Name and sell price are required.', uploadImage:'Upload image'
+    save:'Save', cancel:'Cancel', required:'Name and sell price are required (price 0 is allowed).', uploadImage:'Upload image'
   }
   let prod = { unit:'pcs' }
   let fromAiScan = false
@@ -17808,8 +17808,8 @@ async function renderProductForm(id=null) {
       <div class="form-group"><label class="form-label">${t.category}</label><select id="pf-category" class="form-select">${_prodCategoryOptionsHtml(prod.category||'')}</select></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="pf-name" type="text" class="form-input" value="${prod.name_en||''}"></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.nameBm}</label><input id="pf-name-bm" type="text" class="form-input" value="${prod.name_bm||''}"></div>
-      <div class="form-group"><label class="form-label">${t.price}</label><input id="pf-price" type="number" step="0.01" class="form-input" value="${prod.unit_price||''}"></div>
-      <div class="form-group"><label class="form-label">${t.cost}</label><input id="pf-cost" type="number" step="0.01" class="form-input" value="${prod.unit_cost||''}"></div>
+      <div class="form-group"><label class="form-label">${t.price}</label><input id="pf-price" type="number" step="0.01" class="form-input" value="${prod.unit_price != null && prod.unit_price !== '' ? prod.unit_price : ''}"></div>
+      <div class="form-group"><label class="form-label">${t.cost}</label><input id="pf-cost" type="number" step="0.01" class="form-input" value="${prod.unit_cost != null && prod.unit_cost !== '' ? prod.unit_cost : ''}"></div>
       <div class="form-group"><label class="form-label">${t.stock}</label><input id="pf-stock" type="number" class="form-input" value="${prod.stock_qty ?? 0}"></div>
       <div class="form-group"><label class="form-label">${t.reorderPoint}</label><input id="pf-reorder-point" type="number" class="form-input" value="${prod.reorder_point ?? ''}" placeholder="5"></div>
     </div>
@@ -17953,10 +17953,14 @@ async function _prodUploadImage(event) {
 async function _prodSave(id) {
   const t = APP.language==='bm' ? {required:'Nama dan harga jual diperlukan.'} : {required:'Name and sell price are required.'}
   const name = document.getElementById('pf-name').value.trim()
-  const price = document.getElementById('pf-price').value
+  const priceRaw = document.getElementById('pf-price').value
   const errEl = document.getElementById('pf-form-err')
   errEl.style.display='none'
-  if(!name || !price) { errEl.textContent=t.required; errEl.style.display='block'; return }
+  // Allow sell price 0 (e.g. M-Core Free). Only block empty/missing name or price field.
+  if(!name || priceRaw === '' || priceRaw === null || priceRaw === undefined) {
+    errEl.textContent=t.required; errEl.style.display='block'; return
+  }
+  const price = priceRaw
   const reorderPointRaw = document.getElementById('pf-reorder-point').value
   const payload = {
     tenant_id: APP.tenant.id, code: document.getElementById('pf-sku').value.trim()||null, name_en: name,
