@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-notif-bell-pos">
+<meta name="nexerp-build" content="2026-08-22-pos-fill">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -808,22 +808,23 @@ html[data-skip-intro="1"] #intro-skip {
 /* Signature block — compact */
 
 /* ── POS Counter ── */
-/* Panels must fit inside #main viewport so Checkout is fully on-screen
-   (topbar + page header + shift row + #main padding ≈ 280–320px). */
+/* Stretch product + cart panels down toward viewport bottom (leave small
+   gap for FABs). Cart foot/Checkout stay in-flow at bottom of flex column. */
 .pos-wrap{
   display:grid;
   grid-template-columns:1fr minmax(300px,360px);
   gap:16px;
-  align-items:start;
-  padding-bottom:24px;
+  align-items:stretch;
+  padding-bottom:12px;
   box-sizing:border-box;
+  min-height:calc(100dvh - 155px);
 }
-@media(max-width:900px){.pos-wrap{grid-template-columns:1fr;padding-bottom:88px}}
+@media(max-width:900px){.pos-wrap{grid-template-columns:1fr;padding-bottom:88px;min-height:0}}
 .pos-products,.pos-cart{
-  /* Shorter than viewport so cart foot + Checkout fully visible without clip */
-  height:calc(100dvh - 300px);
-  max-height:calc(100dvh - 300px);
-  min-height:0;
+  /* Fill nearly to bottom of screen — was 300px offset (too short / empty gap) */
+  height:calc(100dvh - 165px);
+  max-height:calc(100dvh - 165px);
+  min-height:420px;
   box-sizing:border-box;
 }
 .pos-products{
