@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-tg-att">
+<meta name="nexerp-build" content="2026-08-22-tg-pos-shift">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -28080,6 +28080,18 @@ async function _posFinalizeCloseShift() {
     _posRenderOtherShifts()
 
     showToast(t.done, 'success')
+    try {
+      const isBm = L === 'bm'
+      const sales = totals && totals.total_sales != null ? Number(totals.total_sales) : 0
+      const variance = p && p.cashVariance != null ? Number(p.cashVariance) : null
+      const sn = session && (session.session_no || session.id) ? String(session.session_no || session.id).slice(0, 24) : ''
+      _tgActivity('sales',
+        (isBm ? 'M-Core · POS shift ditutup' : 'M-Core · POS shift closed')
+        + (sn ? ('\n#' + sn) : '')
+        + '\n' + (isBm ? 'Jualan: ' : 'Sales: ') + 'RM ' + sales.toFixed(2)
+        + (variance != null ? ('\n' + (isBm ? 'Beza tunai: ' : 'Cash variance: ') + 'RM ' + variance.toFixed(2)) : '')
+      )
+    } catch (e) {}
     _posHideEndShiftModal()
   } catch(err) {
     console.error('_posFinalizeCloseShift error:', err)
@@ -28256,6 +28268,18 @@ async function _posStartShift() {
     _posRenderShiftStatus()
     _posCloseShiftModal()
     showToast(t.started, 'success')
+    try {
+      const isBm = APP.language === 'bm'
+      const emp = (_posClockInEmployee && _posClockInEmployee.name) ? _posClockInEmployee.name : ''
+      const cash = Number(openingCash || 0)
+      const sn = data && data.session_no ? data.session_no : ''
+      _tgActivity('sales',
+        (isBm ? 'M-Core · POS shift dibuka' : 'M-Core · POS shift started')
+        + (sn ? ('\n#' + sn) : '')
+        + (emp ? ('\n' + (isBm ? 'Staff: ' : 'Staff: ') + emp) : '')
+        + '\n' + (isBm ? 'Float: ' : 'Opening float: ') + 'RM ' + cash.toFixed(2)
+      )
+    } catch (e) {}
   } catch(err) {
     console.error('_posStartShift error:', err)
     if(errEl) { errEl.textContent = t.err + (err.message||''); errEl.style.display='block' }
