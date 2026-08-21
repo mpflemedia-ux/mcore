@@ -1589,9 +1589,9 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implic
 // GLOBAL STATE
 const APP = {
   tenant:   { id:null, code:null, name:null, plan:null, config:{} },
-  user:     { id:null, name:null, email:null, role:null, language:'en', theme:'light' },
+  user:     { id:null, name:null, email:null, role:null, language:'bm', theme:'light' },
   tenantConfig: { modules:{}, features:{}, roles:{} },
-  language: 'en', theme: 'light', currentPage: null,
+  language: 'bm', theme: 'light', currentPage: null,
 }
 
 /** Normalize tenant UUID — never pass string "null" to PostgREST */
@@ -3582,6 +3582,12 @@ async function doRegister() {
         p_industry:    'general',
         p_plan_code:   'free' // Free-plan-as-the-hook — new signups land on Free, not silently on a paid tier
       })
+      // Best-effort explicit default — register_tenant() is a live RPC not
+      // tracked in this repo, so its own user_profiles insert can't be
+      // audited here; this covers the default regardless of whatever that
+      // RPC does internally. Fire-and-forget, same pattern as other
+      // best-effort writes in this file — never blocks/awaits registration.
+      sb.from('user_profiles').update({language: 'bm'}).eq('id', data.user.id).then(()=>{},()=>{})
       if(rpcError) {
         console.error('register_tenant error:', rpcError)
         // Still allow account — onboarding can repair tenant link
@@ -3933,7 +3939,7 @@ async function loadUserSession(user, opts={}) {
     APP.user.permissions = _perms || {}
     // Best-effort last_login stamp
     sb.from('user_profiles').update({last_login: new Date().toISOString()}).eq('id', user.id).then(()=>{},()=>{})
-    APP.language=profile.language||'en'
+    APP.language=profile.language||'bm'
     APP.theme = localStorage.getItem('nexerp_theme') || profile.theme || 'light'
     applyTheme(APP.theme)
     // Always prefer profile.tenant_id (even when tenants embed/select fails RLS)
