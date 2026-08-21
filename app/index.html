@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pos-cart-items">
+<meta name="nexerp-build" content="2026-08-22-pos-extend">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -808,23 +808,25 @@ html[data-skip-intro="1"] #intro-skip {
 /* Signature block — compact */
 
 /* ── POS Counter ── */
-/* Stretch product + cart panels down toward viewport bottom (leave small
-   gap for FABs). Cart foot/Checkout stay in-flow at bottom of flex column. */
+/* Pull product + cart boxes down to near viewport bottom (user red-line). */
+#main:has(.pos-wrap){
+  padding-bottom:6px !important;
+}
 .pos-wrap{
   display:grid;
   grid-template-columns:1fr minmax(320px,400px);
   gap:16px;
   align-items:stretch;
-  padding-bottom:12px;
+  padding-bottom:4px;
+  margin-bottom:0;
   box-sizing:border-box;
-  min-height:calc(100dvh - 155px);
+  min-height:calc(100dvh - 110px);
 }
 @media(max-width:900px){.pos-wrap{grid-template-columns:1fr;padding-bottom:88px;min-height:0}}
 .pos-products,.pos-cart{
-  /* Fill nearly to bottom of screen — was 300px offset (too short / empty gap) */
-  height:calc(100dvh - 165px);
-  max-height:calc(100dvh - 165px);
-  min-height:420px;
+  height:calc(100dvh - 118px);
+  max-height:calc(100dvh - 118px);
+  min-height:480px;
   box-sizing:border-box;
 }
 .pos-products{
