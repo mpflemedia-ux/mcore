@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pos-checkout-full">
+<meta name="nexerp-build" content="2026-08-22-notif-bell-pos">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2107,6 +2107,46 @@ async function _tgNotifyEmployee(employeeId, text) {
 
 
 /** Push business activity to Telegram owners (mute + prefs + short dedupe). */
+
+/** In-app bell feed for activity that also goes to Telegram (per tenant, local). */
+function _notifBellKey() {
+  return 'mcore_bell_' + (APP.tenant && APP.tenant.id ? APP.tenant.id : 'x')
+}
+function _notifLoadBell() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_notifBellKey()) || '[]')
+    return Array.isArray(arr) ? arr : []
+  } catch (e) { return [] }
+}
+function _notifPushBell(title, meta) {
+  if (!APP.tenant || !APP.tenant.id) return
+  const row = {
+    id: 'b' + Date.now() + Math.random().toString(36).slice(2, 7),
+    text: String(title || '').trim().slice(0, 140),
+    meta: String(meta || '').trim().slice(0, 220),
+    icon: 'ti-bell',
+    color: 'var(--primary)',
+    at: Date.now()
+  }
+  if (!row.text) return
+  let arr = _notifLoadBell()
+  arr.unshift(row)
+  arr = arr.slice(0, 40)
+  try { localStorage.setItem(_notifBellKey(), JSON.stringify(arr)) } catch (e) {}
+  // Live-refresh badge / list if shell is up
+  try {
+    const badge = document.getElementById('notif-badge')
+    const list = document.getElementById('notif-menu')
+    if (badge || (list && list.classList.contains('open'))) {
+      if (typeof loadNotifications === 'function') loadNotifications()
+    } else if (badge) {
+      const n = (_notifLoadBell().length) + (Number(badge.textContent) || 0)
+      // soft bump — full count on next open
+      badge.classList.add('show')
+    }
+  } catch (e) {}
+}
+
 async function _tgActivity(prefKey, text, opts) {
   try {
     if (!APP.tenant?.id) return
@@ -2134,6 +2174,13 @@ async function _tgActivity(prefKey, text, opts) {
       keys.slice(0, keys.length - 70).forEach(function (k) { delete bag[k] })
     }
     try { localStorage.setItem(storeKey, JSON.stringify(bag)) } catch (e) {}
+    // Mirror every Telegram activity into the in-app bell
+    try {
+      const lines = body.split('\n').map(function (s) { return s.trim() }).filter(Boolean)
+      const title = lines[0] || body
+      const meta = lines.slice(1).join(' · ')
+      _notifPushBell(title, meta)
+    } catch (e) {}
     await _tgNotifyOwners(body)
   } catch (e) { console.warn('_tgActivity', e) }
 }
@@ -2368,6 +2415,19 @@ async function loadNotifications() {
       }
     } catch (e) {}
     if(badge) { badge.textContent=String(items.length); badge.classList.toggle('show', items.length>0) }
+    // Activity feed (Telegram mirrors) — newest first, then live alerts
+    try {
+      const bell = _notifLoadBell()
+      bell.forEach(function (b) {
+        items.push({
+          text: b.text,
+          meta: b.meta || (b.at ? new Date(b.at).toLocaleString() : ''),
+          icon: b.icon || 'ti-bell',
+          color: b.color || 'var(--primary)',
+          go: null
+        })
+      })
+    } catch (e) {}
     if(!items.length) {
       if(list) list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">'+(isBm?'Tiada pemberitahuan':'No notifications')+'</div>'
       window._notifItems = []
@@ -28119,9 +28179,21 @@ async function _posFinalizeCloseShift() {
       const sales = totals && totals.total_sales != null ? Number(totals.total_sales) : 0
       const variance = p && p.cashVariance != null ? Number(p.cashVariance) : null
       const sn = session && (session.session_no || session.id) ? String(session.session_no || session.id).slice(0, 24) : ''
+      let staffName = ''
+      try {
+        if (session && session.employee_id) {
+          const { data: empRow } = await sb.from('employees').select('name').eq('id', session.employee_id).eq('tenant_id', APP.tenant.id).maybeSingle()
+          if (empRow && empRow.name) staffName = empRow.name
+        }
+        if (!staffName && session && session.cashier_id) {
+          const { data: up } = await sb.from('user_profiles').select('full_name').eq('id', session.cashier_id).maybeSingle()
+          if (up && up.full_name) staffName = up.full_name
+        }
+      } catch (e2) {}
       _tgActivity('sales',
         (isBm ? 'M-Core · POS shift ditutup' : 'M-Core · POS shift closed')
         + (sn ? ('\n#' + sn) : '')
+        + (staffName ? ('\nStaff: ' + staffName) : '')
         + '\n' + (isBm ? 'Jualan: ' : 'Sales: ') + 'RM ' + sales.toFixed(2)
         + (variance != null ? ('\n' + (isBm ? 'Beza tunai: ' : 'Cash variance: ') + 'RM ' + variance.toFixed(2)) : '')
       )
@@ -28755,7 +28827,18 @@ async function _posCheckout() {
   if(modal) modal.classList.add('active')
   showToast(isBm2?'Jualan berjaya!':'Sale completed!', 'success')
   try {
-    _tgActivity('sales', (isBm2?'M-Core · Jualan POS selesai':'M-Core · POS sale completed'))
+    const lineBits = (cartSnapshot || []).slice(0, 5).map(function (c) {
+      return (c.qty + '× ' + (c.name || '')).trim()
+    }).filter(Boolean)
+    const more = (cartSnapshot || []).length > 5 ? (' +' + ((cartSnapshot.length) - 5) + '…') : ''
+    _tgActivity('sales',
+      (isBm2 ? 'M-Core · Jualan POS selesai' : 'M-Core · POS sale completed')
+      + '\n' + (isBm2 ? 'Jumlah: ' : 'Total: ') + formatRM(total)
+      + (receiptNo ? ('\n#' + receiptNo) : '')
+      + (cashierName ? ('\nStaff: ' + cashierName) : '')
+      + (methodLabel ? ('\n' + methodLabel) : '')
+      + (lineBits.length ? ('\n' + lineBits.join(', ') + more) : '')
+    )
   } catch(e) {}
   _posCart = []
   const {data: refreshed} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
