@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-plan-gate">
+<meta name="nexerp-build" content="2026-08-22-plan-gate-fix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1899,32 +1899,57 @@ const _PLAN_MODULES = {
   unlimited: null
 }
 
+function _hydrateTenantPlanCode() {
+  try {
+    if (!APP.tenant) return
+    // Prefer live plan_id → plans.code (ignore stale tenants.plan text)
+    if (APP.tenant.plan_id && _plansCache && _plansCache.length) {
+      const p = _plansCache.find(function (x) { return String(x.id) === String(APP.tenant.plan_id) })
+      if (p && p.code) {
+        APP.tenant.plan_code = String(p.code).toLowerCase().trim()
+        return APP.tenant.plan_code
+      }
+    }
+  } catch (e) {}
+  return APP.tenant && APP.tenant.plan_code ? String(APP.tenant.plan_code).toLowerCase() : ''
+}
+
 function _resolveTenantPlanCode() {
   try {
-    if (APP.tenant && APP.tenant.plan_code) return String(APP.tenant.plan_code).toLowerCase().trim()
+    // MP Workspace = full product (not a Free customer)
+    if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return 'unlimited'
+    _hydrateTenantPlanCode()
+    if (APP.tenant && APP.tenant.plan_code) {
+      const c = String(APP.tenant.plan_code).toLowerCase().trim()
+      if (c) return c
+    }
     const pid = APP.tenant && APP.tenant.plan_id
     if (pid && _plansCache && _plansCache.length) {
       const p = _plansCache.find(function (x) { return String(x.id) === String(pid) })
       if (p && p.code) return String(p.code).toLowerCase().trim()
     }
-    const legacy = String((APP.tenant && APP.tenant.plan) || '').toLowerCase()
-    if (legacy) {
-      if (/unlim|legacy/.test(legacy)) return 'unlimited'
-      if (/pro/.test(legacy)) return 'pro'
-      if (/business|bisnes/.test(legacy)) return 'business'
-      if (/starter|permulaan/.test(legacy)) return 'starter'
-      if (/free|percuma/.test(legacy)) return 'free'
+    // Only use legacy text column when plan_id is missing (old rows)
+    if (!pid) {
+      const legacy = String((APP.tenant && APP.tenant.plan) || '').toLowerCase()
+      if (legacy) {
+        if (/unlim|legacy/.test(legacy)) return 'unlimited'
+        if (/\bpro\b/.test(legacy)) return 'pro'
+        if (/business|bisnes/.test(legacy)) return 'business'
+        if (/starter|permulaan/.test(legacy)) return 'starter'
+        if (/free|percuma/.test(legacy)) return 'free'
+      }
+      return 'unlimited'
     }
+    // plan_id set but cache not ready — restrictive until hydrated (matches SA Free assignment)
+    return 'free'
   } catch (e) {}
-  // Missing plan → treat as unlimited so paid/legacy tenants are not locked by accident
-  return 'unlimited'
+  return 'free'
 }
 
 function _planAllowsModule(module) {
   if (!module || module === 'core') return true
-  // Platform operators always full product access
-  try { if (typeof isPlatformAdmin === 'function' && isPlatformAdmin()) return true } catch (e) {}
-  // Platform home (MP Workspace) — ops tenant, not a Free customer
+  // Only platform HOME tenant skips plan gate — not every platform_admin session
+  // (admin role still needed for Admin page; MP Workspace plan is unlimited)
   try { if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true } catch (e) {}
   const code = _resolveTenantPlanCode()
   if (code === 'pro' || code === 'unlimited') return true
@@ -4353,7 +4378,8 @@ async function loadUserSession(user, opts={}) {
       await _loadPlansCache()
       if (APP.tenant && APP.tenant.plan_id && _plansCache) {
         const pl = _plansCache.find(function (x) { return String(x.id) === String(APP.tenant.plan_id) })
-        if (pl && pl.code) APP.tenant.plan_code = pl.code
+        if (pl && pl.code) APP.tenant.plan_code = String(pl.code).toLowerCase().trim()
+        else APP.tenant.plan_code = null
       }
     } catch (e) { console.warn('plan cache', e) }
     const onboardDone = profile.tenants ? profile.tenants.onboarding_completed : true
@@ -4530,6 +4556,13 @@ async function _loadAdminSignupBadge() {
 }
 
 function buildSidebar() {
+  try {
+    if (typeof _loadPlansCache === 'function' && !_plansCache) {
+      /* sync path: cache may already be filled in session; if not, leave resolve as free until next paint */
+    }
+    _hydrateTenantPlanCode()
+  } catch (e) {}
+
   const nav=document.getElementById('sidebar-nav')
   if(!nav) return
   nav.innerHTML=''
