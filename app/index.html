@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-20-sidebar-lockup">
+<meta name="nexerp-build" content="2026-08-21-settings-trial-cp">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7818,6 +7818,41 @@ function _expiryDaysInfo(dateStr, isBm) {
   return { days, color, label, dateFmt: formatDate(String(dateStr).slice(0,10)) }
 }
 
+// Platform home tenant (MP Workspace) — same codes as soft_delete_tenant guard
+function _isPlatformHomeTenant(tenant) {
+  if(!tenant) return false
+  const codeUp = String(tenant.code||'').toUpperCase()
+  const nameLow = String(tenant.name||'').toLowerCase().trim()
+  return codeUp === 'MPWORK24' || codeUp === 'MPWORK' || nameLow === 'mp workspace' || nameLow === 'mpworkspace'
+}
+
+// Unlimited / legacy / enterprise plans should not show a free-trial countdown
+function _isUnlimitedOrLegacyPlan(plan) {
+  if(!plan) return false
+  const code = String(plan.code||'').toLowerCase()
+  const en = String(plan.name_en||'').toLowerCase()
+  const bm = String(plan.name_bm||'').toLowerCase()
+  const blob = code + ' ' + en + ' ' + bm
+  if(/unlimited|legacy|enterprise/.test(blob)) return true
+  if(plan.monthly_transaction_limit == null && /unlim|legacy/.test(blob)) return true
+  return false
+}
+
+/** Show trial countdown only for real converting trials — not platform home / unlimited legacy */
+function _shouldShowMyPlanTrial(tenantRow, plan) {
+  if(!tenantRow || !tenantRow.is_trial) return false
+  if(_isPlatformHomeTenant(tenantRow)) return false
+  if(_isUnlimitedOrLegacyPlan(plan)) return false
+  return true
+}
+
+/** Upgrade/Renew CTA: hide for platform home + unlimited/legacy (stable plan, not converting) */
+function _shouldShowMyPlanUpgrade(tenantRow, plan) {
+  if(_isPlatformHomeTenant(tenantRow)) return false
+  if(_isUnlimitedOrLegacyPlan(plan)) return false
+  return true
+}
+
 async function _loadPlansCache() {
   if(_plansCache) return _plansCache
   const { data } = await sb.from('plans').select('id,code,name_en,name_bm')
@@ -8606,8 +8641,14 @@ async function renderSettings(params={}) {
   let myPlanUsage = { tx: 0, ai: 0 }
   let myPlanPayments = []
   if(isAdmin) {
-    const {data} = await sb.from('tenants').select('*').eq('id',APP.tenant.id).single()
+    const {data, error: tenantLoadErr} = await sb.from('tenants').select('*').eq('id',APP.tenant.id).single()
+    if(tenantLoadErr) console.warn('Settings tenant load', tenantLoadErr)
     tenantRow = data || {}
+    // config may arrive as JSON string depending on driver — normalize for form bind
+    if(typeof tenantRow.config === 'string') {
+      try { tenantRow.config = JSON.parse(tenantRow.config) } catch(e) { tenantRow.config = {} }
+    }
+    if(!tenantRow.config || typeof tenantRow.config !== 'object') tenantRow.config = {}
     // My Plan widget data — plan reference row + this tenant's own usage
     // (RLS already scopes tenant_usage_monthly/daily and tenant_plan_payments
     // to the caller's own tenant) + recent payment history.
@@ -8751,8 +8792,11 @@ async function renderSettings(params={}) {
       upgrade:'Upgrade / Renew', methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card',
     }
     const planName = myPlan ? (isBm?myPlan.name_bm:myPlan.name_en) : '—'
-    const trialInfo = tenantRow.is_trial ? _expiryDaysInfo(tenantRow.trial_ends_at, isBm) : null
-    const expiryInfo = _expiryDaysInfo(tenantRow.plan_expires_at, isBm)
+    // Trial banner only for real trials — not Unlimited Legacy / platform home
+    const trialInfo = _shouldShowMyPlanTrial(tenantRow, myPlan) ? _expiryDaysInfo(tenantRow.trial_ends_at, isBm) : null
+    // Paid plan expiry still shown unless platform home (home is not a converting sub)
+    const expiryInfo = _isPlatformHomeTenant(tenantRow) ? null : _expiryDaysInfo(tenantRow.plan_expires_at, isBm)
+    const showUpgrade = _shouldShowMyPlanUpgrade(tenantRow, myPlan)
     const txLimit = myPlan?.monthly_transaction_limit
     const aiQuota = myPlan?.ai_daily_quota
     const methodLabel = m => ({cash:mp.methodCash, bank_transfer:mp.methodBank, online_banking:mp.methodOnline, card:mp.methodCard}[m] || m || '-')
@@ -8766,7 +8810,7 @@ async function renderSettings(params={}) {
           ${trialInfo ? `<div style="font-size:12px;color:${trialInfo.color};margin-top:2px">${trialInfo.days>=0 ? `${trialInfo.days} ${mp.trialLeft}` : mp.trialExpired}</div>` : ''}
           ${expiryInfo ? `<div style="font-size:12px;color:${expiryInfo.color};margin-top:2px">${mp.expiresOn} ${expiryInfo.dateFmt} (${expiryInfo.label})</div>` : ''}
         </div>
-        <button type="button" class="btn btn-primary btn-sm" onclick="openMyPlanUpgradeInfo()"><i class="ti ti-arrow-up-circle"></i> ${mp.upgrade}</button>
+        ${showUpgrade ? `<button type="button" class="btn btn-primary btn-sm" onclick="openMyPlanUpgradeInfo()"><i class="ti ti-arrow-up-circle"></i> ${mp.upgrade}</button>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
         <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
@@ -9866,23 +9910,36 @@ async function _cpSave() {
   const tinVal = (document.getElementById('cp-tin')?.value || '').trim() || null
   // Routed through _tenantConfigPatch (same helper role permissions /
   // period lock saves use), as its OWN call rather than folded into the
-  // payload.config below — a previous version merged config inline here
-  // via its own SELECT-then-merge-then-UPDATE, which meant this save could
-  // silently overwrite a books_lock_date or roles change made concurrently
-  // through the atomic RPC path. That data-loss risk matters more than the
-  // single-call atomicity this trades away (name/address could now save
-  // while the TIN merge fails, or vice versa — a partial, retriable save,
-  // not a silent one).
+  // payload.config below — avoids clobbering books_lock_date / roles.
   try {
     await _tenantConfigPatch({ tin: tinVal })
   } catch(error) {
-    msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return
+    msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; showToast(error.message, 'error'); return
   }
 
-  const {error} = await sb.from('tenants').update(payload).eq('id', APP.tenant.id)
-  if(error) { msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message; return }
+  // .select() after update: PostgREST can return success with 0 rows when RLS
+  // blocks the write — without select, the client cannot tell. Only toast OK
+  // when a row actually comes back.
+  const { data: savedRow, error } = await sb.from('tenants').update(payload).eq('id', APP.tenant.id).select('*').maybeSingle()
+  if(error) {
+    msgEl.style.color='var(--danger)'; msgEl.textContent = 'Error: '+error.message
+    showToast(error.message, 'error')
+    return
+  }
+  if(!savedRow) {
+    const blocked = APP.language==='bm'
+      ? 'Simpan gagal — tiada baris dikemas kini (semak kebenaran RLS / tenant).'
+      : 'Save failed — no row updated (check RLS / tenant permission).'
+    msgEl.style.color='var(--danger)'; msgEl.textContent = blocked
+    showToast(blocked, 'error')
+    return
+  }
 
-  APP.tenant.name = name
+  // Patch in-memory tenant so shell name + next Settings open stay consistent
+  APP.tenant = { ...(APP.tenant||{}), ...savedRow, name: savedRow.name || name }
+  if(tinVal != null && APP.tenant.config && typeof APP.tenant.config === 'object') {
+    APP.tenant.config = { ...APP.tenant.config, tin: tinVal }
+  }
   _pdocTenantCache = null // logo/QR/address just changed — don't let the next print/POS-QR use a stale cached copy
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
