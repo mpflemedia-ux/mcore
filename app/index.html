@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pos-extend">
+<meta name="nexerp-build" content="2026-08-22-pos-flex-fill">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -223,7 +223,7 @@ input,select,textarea{font-family:inherit}
 @media (max-width:400px){
   .tenant-chip{max-width:min(70px,24vw);font-size:9px;padding:3px 6px}
 }
-#main{flex:1;overflow-y:auto;padding:24px}
+#main{flex:1;min-height:0;overflow-y:auto;padding:24px}
 
 /* AUTH */
 .auth-card{background:#22262B;border-radius:var(--radius-lg);border:1px solid rgba(231,233,235,.10);padding:40px;width:100%;max-width:420px;box-shadow:0 24px 48px rgba(0,0,0,.35)}
@@ -808,25 +808,50 @@ html[data-skip-intro="1"] #intro-skip {
 /* Signature block — compact */
 
 /* ── POS Counter ── */
-/* Pull product + cart boxes down to near viewport bottom (user red-line). */
+/* Fill remaining #main height (nested under topbar) — NOT 100dvh which
+   overshoots/undershoots and left a huge empty gap under the boxes. */
+#main-area{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
 #main:has(.pos-wrap){
-  padding-bottom:6px !important;
+  display:flex !important;
+  flex-direction:column !important;
+  flex:1 1 auto;
+  min-height:0 !important;
+  overflow:hidden !important;
+  padding:12px 20px 10px !important;
+  box-sizing:border-box;
+}
+#main:has(.pos-wrap) > .page-header{
+  flex:0 0 auto;
+  margin-bottom:10px !important;
+}
+#main:has(.pos-wrap) > #pos-other-shifts{
+  flex:0 0 auto;
 }
 .pos-wrap{
   display:grid;
   grid-template-columns:1fr minmax(320px,400px);
-  gap:16px;
+  gap:14px;
   align-items:stretch;
-  padding-bottom:4px;
-  margin-bottom:0;
+  flex:1 1 auto;
+  min-height:0 !important;
+  height:auto !important;
+  margin:0;
+  padding:0;
   box-sizing:border-box;
-  min-height:calc(100dvh - 110px);
 }
-@media(max-width:900px){.pos-wrap{grid-template-columns:1fr;padding-bottom:88px;min-height:0}}
+@media(max-width:900px){
+  #main:has(.pos-wrap){overflow-y:auto !important;padding-bottom:88px !important}
+  .pos-wrap{grid-template-columns:1fr;min-height:0;height:auto !important;flex:none}
+}
 .pos-products,.pos-cart{
-  height:calc(100dvh - 118px);
-  max-height:calc(100dvh - 118px);
-  min-height:480px;
+  height:100% !important;
+  max-height:100% !important;
+  min-height:0 !important;
   box-sizing:border-box;
 }
 .pos-products{
@@ -836,13 +861,13 @@ html[data-skip-intro="1"] #intro-skip {
 .pos-products #pos-grid{flex:1 1 auto;min-height:0;max-height:none !important;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .pos-cart{
   background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:0;
-  position:sticky;top:8px;
+  position:relative;
+  top:0;
   display:flex;flex-direction:column;
   overflow:hidden;
 }
 @media(max-width:900px){
-  .pos-products,.pos-cart{height:auto;max-height:none;min-height:260px}
-  .pos-cart{max-height:none;position:relative;top:0}
+  .pos-products,.pos-cart{height:auto !important;max-height:none !important;min-height:280px !important}
 }
 .pos-cart-head{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 /* Cart lines must stay readable — never collapse under payment foot */
