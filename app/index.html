@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-tg-test">
+<meta name="nexerp-build" content="2026-08-22-tg-activity2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1859,7 +1859,7 @@ function _notifPrefsKey() {
   return 'nexerp_notif_prefs_' + (APP.tenant?.id || 'x') + '_' + (APP.user?.id || APP.user?.email || 'x')
 }
 function _notifDefaultPrefs() {
-  return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, dismissed:[] }
+  return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, sales:true, inventory:true, purchasing:true, finance:true, hr:true, dismissed:[] }
 }
 function _notifGetPrefs() {
   const d = _notifDefaultPrefs()
@@ -1936,6 +1936,11 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-leave" '+(p.leave?'checked':'')+'> '+(isBm?'Cuti pending':'Leave pending')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
     + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-sales" '+(p.sales!==false?'checked':'')+'> '+(isBm?'Jualan (invois / POS / bayaran)':'Sales (invoice / POS / payment)')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-inventory" '+(p.inventory!==false?'checked':'')+'> '+(isBm?'Inventori (produk)':'Inventory (products)')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-purchasing" '+(p.purchasing!==false?'checked':'')+'> '+(isBm?'Pembelian (PO)':'Purchasing (PO)')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-finance" '+(p.finance!==false?'checked':'')+'> '+(isBm?'Kewangan (jurnal / tuntutan)':'Finance (journal / claims)')+'</label>'
+    + '<label><input type="checkbox" id="notif-ev-hr" '+(p.hr!==false?'checked':'')+'> '+(isBm?'HR (cuti / outstation)':'HR (leave / outstation)')+'</label>'
     + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" id="tg-test-btn" onclick="_tgSendTestNotification()">'+(isBm?'Hantar ujian ke Telegram':'Send test to Telegram')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
 
@@ -1951,7 +1956,12 @@ async function _notifSavePrefsFromUI() {
     overdue: !!document.getElementById('notif-ev-overdue')?.checked,
     low_stock: !!document.getElementById('notif-ev-stock')?.checked,
     leave: !!document.getElementById('notif-ev-leave')?.checked,
-    outstation: !!document.getElementById('notif-ev-outstation')?.checked
+    outstation: !!document.getElementById('notif-ev-outstation')?.checked,
+    sales: !!document.getElementById('notif-ev-sales')?.checked,
+    inventory: !!document.getElementById('notif-ev-inventory')?.checked,
+    purchasing: !!document.getElementById('notif-ev-purchasing')?.checked,
+    finance: !!document.getElementById('notif-ev-finance')?.checked,
+    hr: !!document.getElementById('notif-ev-hr')?.checked
   })
   showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
   try { loadNotifications() } catch (e) {}
@@ -2059,6 +2069,34 @@ async function _tgNotifyEmployee(employeeId, text) {
     }
     if (userId) await _tgNotifySubject('user', userId, text)
   } catch (e) { console.warn('tg employee', e) }
+}
+
+
+/** Push business activity to Telegram owners (respect mute + prefs + simple dedupe). */
+async function _tgActivity(prefKey, text) {
+  try {
+    if (!APP.tenant?.id) return
+    const prefs = (typeof _notifGetPrefs === 'function') ? _notifGetPrefs() : {}
+    if (prefs.muted) return
+    // Pref keys: sales, inventory, purchasing, finance, hr, overdue, low_stock, leave, outstation, insight
+    if (prefKey && prefs[prefKey] === false) return
+    const body = String(text || '').trim().slice(0, 3500)
+    if (!body) return
+    const day = new Date().toISOString().slice(0, 10)
+    const fp = (prefKey || 'x') + '|' + body.slice(0, 100)
+    const storeKey = 'mcore_tg_act_' + (APP.tenant.id || '')
+    let bag = {}
+    try { bag = JSON.parse(localStorage.getItem(storeKey) || '{}') || {} } catch (e) { bag = {} }
+    if (bag[fp] === day) return // once per day per message fingerprint
+    bag[fp] = day
+    // prune
+    const keys = Object.keys(bag)
+    if (keys.length > 80) {
+      keys.slice(0, keys.length - 60).forEach(k => { delete bag[k] })
+    }
+    try { localStorage.setItem(storeKey, JSON.stringify(bag)) } catch (e) {}
+    await _tgNotifyOwners(body)
+  } catch (e) { console.warn('_tgActivity', e) }
 }
 
 async function _tgNotifyOwners(text) {
@@ -2277,6 +2315,19 @@ async function loadNotifications() {
       } catch(e) {}
     }
     items.sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0))
+    // Telegram fan-out for dashboard-derived alerts (once/day via _tgActivity dedupe)
+    try {
+      const ov = items.filter(it => it.kind === 'overdue')
+      const ls = items.filter(it => it.kind === 'low_stock')
+      if (ov.length) {
+        const isBm2 = APP.language==='bm'
+        _tgActivity('overdue', (isBm2?'M-Core · Invois tertunggak: ':'M-Core · Overdue invoices: ') + ov.length + (ov[0]?.text ? ('\n'+ov.slice(0,3).map(x=>x.text).join('\n')) : ''))
+      }
+      if (ls.length) {
+        const isBm2 = APP.language==='bm'
+        _tgActivity('low_stock', (isBm2?'M-Core · Stok rendah: ':'M-Core · Low stock: ') + ls.length + (ls[0]?.text ? ('\n'+ls.slice(0,3).map(x=>x.text).join('\n')) : ''))
+      }
+    } catch (e) {}
     if(badge) { badge.textContent=String(items.length); badge.classList.toggle('show', items.length>0) }
     if(!items.length) {
       if(list) list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">'+(isBm?'Tiada pemberitahuan':'No notifications')+'</div>'
@@ -8495,6 +8546,7 @@ async function doRecordPayment() {
   })
   if(error) { showToast(error.message, 'error'); return }
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
+  try { _tgActivity('sales', isBm?'M-Core · Bayaran direkod':'M-Core · Payment recorded') } catch(e) {}
   overlay.classList.remove('active')
   renderAdminClients()
 }
@@ -13530,6 +13582,10 @@ async function _jnlSave(id) {
 
   auditLog(id?'update':'create','journal_entries', entryId)
   showToast(APP.language==='bm'?'Entri jurnal disimpan!':'Journal entry saved!', 'success')
+  try {
+    const isBm = APP.language==='bm'
+    _tgActivity('finance', isBm?'M-Core · Entri jurnal disimpan':'M-Core · Journal entry saved')
+  } catch(e) {}
   openPage('accounting',{view:'journal'})
 }
 
@@ -14013,6 +14069,10 @@ async function _expSave(id) {
   }
 
   showToast(APP.language==='bm'?'Tuntutan disimpan!':'Claim saved!', 'success')
+  try {
+    const isBm = APP.language==='bm'
+    _tgActivity('finance', isBm?'M-Core · Tuntutan belanja disimpan':'M-Core · Expense claim saved')
+  } catch(e) {}
   openPage('accounting',{view:'expense'})
 }
 
@@ -18074,6 +18134,11 @@ async function _prodSave(id) {
   else { const r = await sb.from('products').insert(payload); error = r.error }
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
   showToast(APP.language==='bm'?'Produk disimpan!':'Product saved!', 'success')
+  try {
+    const isBm = APP.language==='bm'
+    const nm = document.getElementById('pf-name')?.value || ''
+    _tgActivity('inventory', (isBm?'M-Core · Produk disimpan':'M-Core · Product saved') + (nm?('\n'+nm):''))
+  } catch(e) {}
   openPage('inventory',{})
 }
 
@@ -18795,6 +18860,10 @@ async function _invSave(id) {
   // any internal failure; see _commissionCaptureForSale).
   if(status === 'paid') { _commissionCaptureForSale('invoice', invId); _usageCaptureForSale() }
   showToast(APP.language==='bm'?'Invois disimpan!':'Invoice saved!', 'success')
+  try {
+    const isBm = APP.language==='bm'
+    _tgActivity('sales', (isBm?'M-Core · Invois disimpan':'M-Core · Invoice saved') + (document.getElementById('inv-no')?.value ? ('\n#'+document.getElementById('inv-no').value) : ''))
+  } catch(e) {}
   openPage('sales',{view:'inv-detail',id:invId})
 }
 
@@ -19357,6 +19426,7 @@ async function _paySave(invoiceId, balance) {
   }
 
   showToast(APP.language==='bm'?'Bayaran direkod!':'Payment recorded!', 'success')
+  try { _tgActivity('sales', APP.language==='bm'?'M-Core · Bayaran invois direkod':'M-Core · Invoice payment recorded') } catch(e) {}
   renderInvDetail(invoiceId)
 }
 
@@ -20364,6 +20434,7 @@ async function _poSave(id) {
 
   auditLog(id?'update':'create','purchase_orders', poId)
   showToast(isBm?'PO disimpan!':'PO saved!', 'success')
+  try { _tgActivity('purchasing', isBm?'M-Core · PO disimpan':'M-Core · PO saved') } catch(e) {}
   openPage('purchasing',{view:'po-detail',id:poId})
 }
 
@@ -20983,6 +21054,7 @@ async function _billPaySave(billId, balance) {
 
   auditLog('create','supplier_payments', payRow?.id || billId)
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
+  try { _tgActivity('sales', isBm?'M-Core · Bayaran direkod':'M-Core · Payment recorded') } catch(e) {}
   renderSupplierBillDetail(billId)
 }
 
@@ -26412,7 +26484,7 @@ async function _attSubmitOutstation() {
   showToast(isBm?'Permohonan dihantar — menunggu kelulusan HR/owner':'Request submitted — pending HR/owner approval', 'success')
   _attLoadOutstationList()
   try { if(typeof _attRefreshOwnerNotif === 'function') _attRefreshOwnerNotif() } catch(e) {}
-  try { _tgNotifyOwners((isBm?'NexERP · Outstation menunggu':'NexERP · Outstation pending')+'\n'+(location||'')+' · '+start+' → '+end) } catch(e) {}
+  try { _tgActivity('hr', (isBm?'M-Core · Outstation menunggu':'M-Core · Outstation pending')+'\n'+(location||'')+' · '+start+' → '+end) } catch(e) {}
   
 }
 
@@ -26508,8 +26580,8 @@ async function _attReviewOutstation(id, status) {
   try {
     if (row && row.employee_id) {
       const line = (status==='approved'
-        ? (isBm ? 'NexERP · Outstation diluluskan' : 'NexERP · Outstation approved')
-        : (isBm ? 'NexERP · Outstation ditolak' : 'NexERP · Outstation rejected'))
+        ? (isBm ? 'M-Core · Outstation diluluskan' : 'M-Core · Outstation approved')
+        : (isBm ? 'M-Core · Outstation ditolak' : 'M-Core · Outstation rejected'))
         + '\n' + (row.location||'') + ' · ' + (row.start_date||'') + ' → ' + (row.end_date||'')
       await _tgNotifyEmployee(row.employee_id, line)
     }
@@ -26992,7 +27064,7 @@ async function _leaveSave() {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('create', 'leave_requests', null)
   showToast(isBm?'Permohonan cuti dihantar!':'Leave request submitted!', 'success')
-  try { _tgNotifyOwners((isBm?'NexERP · Cuti menunggu':'NexERP · Leave pending')+'\n'+(payload.leave_type||'')+' · '+(payload.start_date||'')) } catch(e) {}
+  try { _tgActivity('hr', (isBm?'M-Core · Cuti menunggu':'M-Core · Leave pending')+'\n'+(payload.leave_type||'')+' · '+(payload.start_date||'')) } catch(e) {}
   openPage('hr',{view:'leave'})
 }
 
@@ -27127,7 +27199,7 @@ async function _leaveSetStatus(id, status) {
   showToast(status==='approved' ? (isBm?'Cuti diluluskan!':'Leave approved!') : (isBm?'Cuti ditolak.':'Leave rejected.'), 'success')
   try {
     if(leaveRow && leaveRow.employee_id) {
-      const line = (status==='approved' ? (isBm?'NexERP · Cuti diluluskan':'NexERP · Leave approved') : (isBm?'NexERP · Cuti ditolak':'NexERP · Leave rejected'))
+      const line = (status==='approved' ? (isBm?'M-Core · Cuti diluluskan':'M-Core · Leave approved') : (isBm?'M-Core · Cuti ditolak':'M-Core · Leave rejected'))
         + '\n' + (leaveRow.leave_type||'') + ' · ' + (leaveRow.start_date||'')
       await _tgNotifyEmployee(leaveRow.employee_id, line)
     }
@@ -28610,6 +28682,9 @@ async function _posCheckout() {
   const modal = document.getElementById('pos-receipt-modal')
   if(modal) modal.classList.add('active')
   showToast(isBm2?'Jualan berjaya!':'Sale completed!', 'success')
+  try {
+    _tgActivity('sales', (isBm2?'M-Core · Jualan POS selesai':'M-Core · POS sale completed'))
+  } catch(e) {}
   _posCart = []
   const {data: refreshed} = await sb.from('products').select('id,code,name_en,name_bm,unit_price,stock_qty,image_url').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en')
   _posProducts = refreshed || []
