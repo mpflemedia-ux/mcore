@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-free-no-ai">
+<meta name="nexerp-build" content="2026-08-22-quota-block">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1982,6 +1982,64 @@ function _guardAiAccess() {
       ? 'Pelan Free tidak termasuk AI. Naik taraf ke Starter atau lebih tinggi.'
       : 'Free plan does not include AI. Upgrade to Starter or higher.', 'warning')
   } catch (e) {}
+  return false
+}
+
+/** Live usage vs plan limits. null limit = unlimited. */
+async function _getUsageSnapshot() {
+  const snap = { txCount: 0, txLimit: null, aiCount: 0, aiQuota: null, planCode: 'unlimited' }
+  try {
+    if (!APP.tenant || !APP.tenant.id) return snap
+    await _loadPlansCache()
+    _hydrateTenantPlanCode()
+    snap.planCode = _resolveTenantPlanCode()
+    let plan = null
+    if (APP.tenant.plan_id && _plansCache) {
+      plan = _plansCache.find(function (x) { return String(x.id) === String(APP.tenant.plan_id) })
+    }
+    if (plan) {
+      snap.txLimit = plan.monthly_transaction_limit != null ? Number(plan.monthly_transaction_limit) : null
+      snap.aiQuota = plan.ai_daily_quota != null ? Number(plan.ai_daily_quota) : null
+    }
+    const now = new Date()
+    const today = now.toISOString().slice(0, 10)
+    const [{ data: monthUsage }, { data: dayUsage }] = await Promise.all([
+      sb.from('tenant_usage_monthly').select('transaction_count').eq('tenant_id', APP.tenant.id).eq('year', now.getFullYear()).eq('month', now.getMonth() + 1).maybeSingle(),
+      sb.from('tenant_usage_daily').select('ai_queries_count').eq('tenant_id', APP.tenant.id).eq('usage_date', today).maybeSingle(),
+    ])
+    snap.txCount = Number(monthUsage && monthUsage.transaction_count || 0)
+    snap.aiCount = Number(dayUsage && dayUsage.ai_queries_count || 0)
+  } catch (e) { console.warn('_getUsageSnapshot', e) }
+  return snap
+}
+
+/** Block new billable sales when monthly txn quota reached. MP Workspace / null limit = allow. */
+async function _guardTxnQuota() {
+  try {
+    if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true
+  } catch (e) {}
+  const snap = await _getUsageSnapshot()
+  if (snap.txLimit == null) return true
+  if (snap.txCount < snap.txLimit) return true
+  const isBm = APP.language === 'bm'
+  showToast(isBm
+    ? ('Had transaksi bulanan tercapai (' + snap.txCount + '/' + snap.txLimit + '). Naik taraf pelan untuk terus menjual.')
+    : ('Monthly transaction limit reached (' + snap.txCount + '/' + snap.txLimit + '). Upgrade plan to continue selling.'), 'error')
+  return false
+}
+
+/** Block AI when daily quota reached (after Free plan gate). */
+async function _guardAiQuota() {
+  try {
+    if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true
+  } catch (e) {}
+  const snap = await _getUsageSnapshot()
+  if (snap.aiQuota == null) return true
+  if (snap.aiCount < snap.aiQuota) return true
+  const isBm = APP.language === 'bm'
+  showToast(isBm
+    ? ('Had AI harian tercapai (' + snap.aiCount + '/' + snap.aiQuota + '). Cuba esok atau naik taraf.')
+    : ('Daily AI quota reached (' + snap.aiCount + '/' + snap.aiQuota + '). Try tomorrow or upgrade.'), 'error')
   return false
 }
 
@@ -8300,7 +8358,7 @@ function _shouldShowMyPlanUpgrade(tenantRow, plan) {
 
 async function _loadPlansCache() {
   if(_plansCache) return _plansCache
-  const { data } = await sb.from('plans').select('id,code,name_en,name_bm')
+  const { data } = await sb.from('plans').select('id,code,name_en,name_bm,monthly_transaction_limit,ai_daily_quota,max_branches')
   const list = data || []
   list.sort((a,b) => _PLAN_CODE_ORDER.indexOf(a.code) - _PLAN_CODE_ORDER.indexOf(b.code))
   _plansCache = list
@@ -19111,7 +19169,10 @@ async function _invSave(id) {
     channel: document.getElementById('if-channel')?.value || 'retail'
   }
   // Keep paid_amt consistent with status when user changes status manually
-  if(status === 'paid') payload.paid_amt = total
+  if(status === 'paid') {
+    if(!(await _guardTxnQuota())) return
+    payload.paid_amt = total
+  }
   else if(status === 'unpaid' || status === 'cancelled') payload.paid_amt = 0
   // partial: leave paid_amt as-is on update; on create stay 0
   else if(!id) payload.paid_amt = 0
@@ -19728,8 +19789,12 @@ async function _paySave(invoiceId, balance) {
 
   const newPaid = Number(inv.paid_amt||0) + amount
   const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
+  // Count only flips to paid once — block if this payment would complete the invoice at quota
+  if(newStatus === 'paid' && String(inv.status||'') !== 'paid') {
+    if(!(await _guardTxnQuota())) return
+  }
   await sb.from('invoices').update({paid_amt:newPaid, status:newStatus}).eq('id',invoiceId).eq('tenant_id',APP.tenant.id)
-  if(newStatus === 'paid') { _commissionCaptureForSale('invoice', invoiceId); _usageCaptureForSale() } // fire-and-forget, never blocks payment save
+  if(newStatus === 'paid') { _commissionCaptureForSale('invoice', invoiceId); _usageCaptureForSale() }
 
   try {
     const cogs = (newStatus==='paid' && inv.status!=='paid') ? await _calcCOGS('invoice_items','invoice_id',invoiceId) : 0
@@ -23860,6 +23925,7 @@ async function _usageCaptureForSale() {
 
 async function _invokeAiProxy(body) {
   if (!_guardAiAccess()) return { data: null, error: { message: 'AI not available on Free plan' } }
+  if (!(await _guardAiQuota())) return { data: null, error: { message: 'AI daily quota reached' } }
   return sb.functions.invoke('ai-proxy', { body })
 }
 async function _usageCaptureAi() {
@@ -29023,6 +29089,7 @@ function _posCloseReceipt() {
 
 async function _posCheckout() {
   if(_posCart.length===0) { showToast('Cart is empty', 'error'); return }
+  if(!(await _guardTxnQuota())) return
 
   const checkOk = await _posCheckSession()
   let session = _posCurrentSession
