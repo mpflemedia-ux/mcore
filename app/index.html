@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pos-sort">
+<meta name="nexerp-build" content="2026-08-22-plan-gate">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1888,45 +1888,97 @@ function assertNotPeriodLocked(dateStr) {
   return true
 }
 
+/** Modules allowed per plan code (sidebar + openPage). null = all modules.
+ *  Free = SME starter surface only. Pro/Unlimited = full product.
+ *  platform_admin + MP Workspace always full (see _planAllowsModule). */
+const _PLAN_MODULES = {
+  free: ['core', 'crm', 'sales', 'pos', 'inventory'],
+  starter: ['core', 'crm', 'sales', 'pos', 'inventory', 'purchasing', 'sales_commission', 'reports'],
+  business: ['core', 'crm', 'sales', 'pos', 'inventory', 'purchasing', 'sales_commission', 'reports', 'logistics', 'accounting', 'vouchers', 'hr', 'hr_attendance', 'hr_employees', 'hr_payroll', 'hr_recruit', 'production'],
+  pro: null,
+  unlimited: null
+}
+
+function _resolveTenantPlanCode() {
+  try {
+    if (APP.tenant && APP.tenant.plan_code) return String(APP.tenant.plan_code).toLowerCase().trim()
+    const pid = APP.tenant && APP.tenant.plan_id
+    if (pid && _plansCache && _plansCache.length) {
+      const p = _plansCache.find(function (x) { return String(x.id) === String(pid) })
+      if (p && p.code) return String(p.code).toLowerCase().trim()
+    }
+    const legacy = String((APP.tenant && APP.tenant.plan) || '').toLowerCase()
+    if (legacy) {
+      if (/unlim|legacy/.test(legacy)) return 'unlimited'
+      if (/pro/.test(legacy)) return 'pro'
+      if (/business|bisnes/.test(legacy)) return 'business'
+      if (/starter|permulaan/.test(legacy)) return 'starter'
+      if (/free|percuma/.test(legacy)) return 'free'
+    }
+  } catch (e) {}
+  // Missing plan → treat as unlimited so paid/legacy tenants are not locked by accident
+  return 'unlimited'
+}
+
+function _planAllowsModule(module) {
+  if (!module || module === 'core') return true
+  // Platform operators always full product access
+  try { if (typeof isPlatformAdmin === 'function' && isPlatformAdmin()) return true } catch (e) {}
+  // Platform home (MP Workspace) — ops tenant, not a Free customer
+  try { if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true } catch (e) {}
+  const code = _resolveTenantPlanCode()
+  if (code === 'pro' || code === 'unlimited') return true
+  const allowed = _PLAN_MODULES[code]
+  if (!allowed) return true // unknown code → do not lock
+  if (allowed.indexOf(module) >= 0) return true
+  if (module === 'hr' || String(module).indexOf('hr_') === 0) {
+    return allowed.indexOf('hr') >= 0 || allowed.indexOf(module) >= 0
+  }
+  if (module === 'vouchers' && allowed.indexOf('accounting') >= 0) return true
+  return false
+}
+
 function canAccess(module) {
   const role = (APP.user && APP.user.role) ? String(APP.user.role).toLowerCase().trim() : ''
-  if(module==='core') return true
-  if(!role) return false
-  if(role==='owner' || role==='admin' || role==='platform_admin' || isPlatformAdmin()) return true
-  if(module==='admin') return false
+  if (module === 'core') return true
+  if (!role) return false
+  // Plan gate first — Free tenant owner must not get Pro modules
+  if (!_planAllowsModule(module)) return false
+  if (role === 'owner' || role === 'admin' || role === 'platform_admin' || (typeof isPlatformAdmin === 'function' && isPlatformAdmin())) return true
+  if (module === 'admin') return false
 
   let mods
   const ov = APP.user && APP.user.module_override
-  if(Array.isArray(ov)) {
+  if (Array.isArray(ov)) {
     mods = ov.map(String)
   } else {
     const rolesMap = (APP.tenantConfig && APP.tenantConfig.roles) || {}
     const roleKey = role.replace(/\s+/g, '_')
     const hasCustom = Object.keys(rolesMap).length > 0
     let configured = rolesMap[role] || rolesMap[roleKey]
-    if(!Array.isArray(configured)) {
-      const found = Object.keys(rolesMap).find(k => String(k).toLowerCase() === role || String(k).toLowerCase() === roleKey)
-      if(found) configured = rolesMap[found]
+    if (!Array.isArray(configured)) {
+      const found = Object.keys(rolesMap).find(function (k) { return String(k).toLowerCase() === role || String(k).toLowerCase() === roleKey })
+      if (found) configured = rolesMap[found]
     }
-    if(Array.isArray(configured)) {
+    if (Array.isArray(configured)) {
       mods = configured.map(String)
-    } else if(hasCustom) {
+    } else if (hasCustom) {
       mods = []
     } else {
       const fallback = _DEFAULT_ROLE_MODULES[roleKey] || _DEFAULT_ROLE_MODULES[role] || RP_ROLE_DEFAULTS[roleKey] || RP_ROLE_DEFAULTS[role] || []
       mods = Array.isArray(fallback) ? fallback.map(String) : []
     }
   }
-  if(mods.includes(module)) return true
-  if(module==='hr') {
-    return mods.includes('hr') || mods.some(m => String(m).startsWith('hr_'))
+  if (mods.includes(module)) return true
+  if (module === 'hr') {
+    return mods.includes('hr') || mods.some(function (m) { return String(m).startsWith('hr_') })
   }
-  if(module==='hr_attendance' || module==='hr_employees' || module==='hr_payroll' || module==='hr_recruit') {
-    if(mods.includes('hr')) return true
+  if (module === 'hr_attendance' || module === 'hr_employees' || module === 'hr_payroll' || module === 'hr_recruit') {
+    if (mods.includes('hr')) return true
     return mods.includes(module)
   }
-  if(module==='vouchers' && mods.includes('accounting')) return true
-  if(module==='reports') return mods.includes('reports')
+  if (module === 'vouchers' && mods.includes('accounting')) return true
+  if (module === 'reports') return mods.includes('reports')
   return false
 }
 
@@ -4296,6 +4348,14 @@ async function loadUserSession(user, opts={}) {
     if(APP.tenant.id) {
       try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
     }
+    // Resolve plan code for canAccess / sidebar (Free vs Pro module gate)
+    try {
+      await _loadPlansCache()
+      if (APP.tenant && APP.tenant.plan_id && _plansCache) {
+        const pl = _plansCache.find(function (x) { return String(x.id) === String(APP.tenant.plan_id) })
+        if (pl && pl.code) APP.tenant.plan_code = pl.code
+      }
+    } catch (e) { console.warn('plan cache', e) }
     const onboardDone = profile.tenants ? profile.tenants.onboarding_completed : true
     if(APP.tenant.id && profile.tenants && !profile.tenants.onboarding_completed) {
         const r = String(profile.role||APP.user.role||'').toLowerCase()
@@ -8506,7 +8566,16 @@ async function _onPlanChange(selectEl) {
   if(error) { showToast(error.message, 'error'); selectEl.value = prevId; return }
   selectEl.dataset.prev = newId
   if(tenant) tenant.plan_id = newId
-  showToast(isBm ? `Pelan dikemaskini kepada ${planName}.` : `Plan updated to ${planName}.`, 'success')
+  // If SA is operating inside that tenant session, apply gate immediately
+  if (APP.tenant && String(APP.tenant.id) === String(tenantId)) {
+    APP.tenant.plan_id = newId
+    if (plan && plan.code) APP.tenant.plan_code = plan.code
+    try { buildSidebar() } catch (e) {}
+    try { if (typeof openPage === 'function') openPage('dashboard') } catch (e) {}
+  }
+  showToast(isBm
+    ? ('Pelan dikemaskini kepada ' + planName + '. Modul sidebar mengikut pelan baharu.')
+    : ('Plan updated to ' + planName + '. Sidebar modules now follow the new plan.'), 'success')
 }
 
 function _toggleSelectAllTenants(cb) {
