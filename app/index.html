@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pos-cat">
+<meta name="nexerp-build" content="2026-08-22-pos-sort">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -27395,6 +27395,7 @@ let _posCart = []
 let _posProducts = []
 let _posSearch = ''
 let _posCategory = ''
+let _posSort = 'price_desc' // default: highest price first
 let _posCurrentSession = null
 let _posOtherSessions = []
 let _posEndShiftTarget = null
@@ -27786,6 +27787,10 @@ async function renderPOS(params={}) {
   _posProducts = data || []
   _posCart = []
   _posCategory = ''
+  try {
+    const sk = localStorage.getItem('mcore_pos_sort_' + (APP.tenant && APP.tenant.id ? APP.tenant.id : 'x'))
+    _posSort = sk || 'price_desc'
+  } catch (e) { _posSort = 'price_desc' }
   const _posEmployees = await _scLoadEmployees()
 
   const isBm = APP.language==='bm'
@@ -27801,10 +27806,18 @@ async function renderPOS(params={}) {
   <div id="pos-other-shifts" style="margin-bottom:12px"></div>
   <div class="pos-wrap">
     <div class="pos-products">
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <div class="input-group" style="flex:1"><i class="ti ti-search input-icon"></i>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <div class="input-group" style="flex:1;min-width:140px"><i class="ti ti-search input-icon"></i>
           <input id="pos-search" type="text" class="form-input" placeholder="${t.search}" oninput="_posFilterProducts(this.value)" autofocus>
         </div>
+        <select id="pos-sort" class="form-select" style="width:auto;min-width:150px;max-width:200px" onchange="_posSetSort(this.value)" title="${isBm?'Susun':'Sort'}">
+          <option value="price_desc" ${(_posSort||'price_desc')==='price_desc'?'selected':''}>${isBm?'Harga ↓ tinggi':'Price ↓ high'}</option>
+          <option value="price_asc" ${_posSort==='price_asc'?'selected':''}>${isBm?'Harga ↑ rendah':'Price ↑ low'}</option>
+          <option value="name_asc" ${_posSort==='name_asc'?'selected':''}>${isBm?'Nama A–Z':'Name A–Z'}</option>
+          <option value="name_desc" ${_posSort==='name_desc'?'selected':''}>${isBm?'Nama Z–A':'Name Z–A'}</option>
+          <option value="stock_desc" ${_posSort==='stock_desc'?'selected':''}>${isBm?'Stok ↓ banyak':'Stock ↓ high'}</option>
+          <option value="stock_asc" ${_posSort==='stock_asc'?'selected':''}>${isBm?'Stok ↑ sedikit':'Stock ↑ low'}</option>
+        </select>
         <button class="btn btn-outline" onclick="_posScanBarcode()" title="${t.scan}"><i class="ti ti-barcode"></i> ${t.scan}</button>
       </div>
       <div id="pos-cat-chips" class="pos-cat-chips" aria-label="Category filter"></div>
@@ -28467,6 +28480,11 @@ async function _posStartShift() {
 }
 
 function _posFilterProducts(val) { _posSearch = val.toLowerCase(); _posRenderGrid() }
+function _posSetSort(val) {
+  _posSort = val || 'price_desc'
+  try { localStorage.setItem('mcore_pos_sort_' + (APP.tenant && APP.tenant.id ? APP.tenant.id : 'x'), _posSort) } catch (e) {}
+  _posRenderGrid()
+}
 function _posSetCategory(cat) {
   _posCategory = String(cat || '')
   _posRenderCatChips()
@@ -28579,6 +28597,18 @@ function _posRenderGrid() {
     }
     if (!_posSearch) return true
     return (p.name_en||'').toLowerCase().includes(_posSearch) || (p.name_bm||'').toLowerCase().includes(_posSearch) || (p.code||'').toLowerCase().includes(_posSearch)
+  })
+  const sortKey = _posSort || 'price_desc'
+  list.sort(function (a, b) {
+    const pa = Number(a.unit_price || 0), pb = Number(b.unit_price || 0)
+    const sa = Number(a.stock_qty || 0), sb = Number(b.stock_qty || 0)
+    const na = (prodName(a) || '').toLowerCase(), nb = (prodName(b) || '').toLowerCase()
+    if (sortKey === 'price_asc') return pa - pb
+    if (sortKey === 'name_asc') return na.localeCompare(nb)
+    if (sortKey === 'name_desc') return nb.localeCompare(na)
+    if (sortKey === 'stock_desc') return sb - sa
+    if (sortKey === 'stock_asc') return sa - sb
+    return pb - pa // price_desc default
   })
   if(list.length===0) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:30px"><p>${isBm?'Tiada produk':'No products'}</p></div>`; return }
   grid.innerHTML = list.map(p => {
