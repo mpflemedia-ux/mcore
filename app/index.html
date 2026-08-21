@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-ai-usage">
+<meta name="nexerp-build" content="2026-08-22-free-no-ai">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1963,6 +1963,28 @@ function _planAllowsModule(module) {
   return false
 }
 
+function _planAllowsAi() {
+  try {
+    if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true
+  } catch (e) {}
+  const code = (typeof _resolveTenantPlanCode === 'function') ? _resolveTenantPlanCode() : 'unlimited'
+  // Free plan: no AI. Starter+ include AI (quota still tracked).
+  if (code === 'free') return false
+  return true
+}
+
+/** Returns false + toast if Free plan tries AI. Call before every ai-proxy use. */
+function _guardAiAccess() {
+  if (_planAllowsAi()) return true
+  const isBm = APP.language === 'bm'
+  try {
+    showToast(isBm
+      ? 'Pelan Free tidak termasuk AI. Naik taraf ke Starter atau lebih tinggi.'
+      : 'Free plan does not include AI. Upgrade to Starter or higher.', 'warning')
+  } catch (e) {}
+  return false
+}
+
 function canAccess(module) {
   const role = (APP.user && APP.user.role) ? String(APP.user.role).toLowerCase().trim() : ''
   if (module === 'core') return true
@@ -3238,7 +3260,7 @@ async function sendAIChatMessage() {
 
   try {
     const context = await aiChatGetContext()
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'chat', message, context } })
+    const {data, error} = await _invokeAiProxy({ action:'chat', message, context })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -4962,21 +4984,21 @@ function renderDashboard() {
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <div class="db-card-title" style="margin:0"><i class="ti ti-bulb"></i> ${isBm?'Wawasan AI Perniagaan':'AI Business Insight'}</div>
-          <button type="button" id="db-insight-btn" class="btn btn-outline btn-sm" onclick="_dbLoadAiInsight()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
+          <button type="button" id="db-insight-btn" class="btn btn-outline btn-sm" onclick="_dbLoadAiInsight()" ${!_planAllowsAi()?'disabled title="'+(isBm?'Pelan Free — AI tidak termasuk':'Free plan — AI not included')+'"':''}><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
         </div>
         <div id="db-insight-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk analisis ringkas bulan ini.':'Click Generate for a short analysis of this month.'}</div>
       </div>
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <div class="db-card-title" style="margin:0"><i class="ti ti-speakerphone"></i> ${isBm?'Idea Pemasaran AI':'AI Marketing Ideas'}</div>
-          <button type="button" id="db-marketing-btn" class="btn btn-outline btn-sm" onclick="_dbLoadMarketingAdvice()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
+          <button type="button" id="db-marketing-btn" class="btn btn-outline btn-sm" onclick="_dbLoadMarketingAdvice()" ${!_planAllowsAi()?'disabled title="'+(isBm?'Pelan Free — AI tidak termasuk':'Free plan — AI not included')+'"':''}><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
         </div>
         <div id="db-marketing-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk idea pemasaran.':'Click Generate for marketing ideas.'}</div>
       </div>
       <div class="db-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <div class="db-card-title" style="margin:0"><i class="ti ti-list-check"></i> ${isBm?'Ringkasan Harian AI':'AI Daily Digest'}</div>
-          <button type="button" id="db-digest-btn" class="btn btn-outline btn-sm" onclick="_dbLoadDailyDigest()"><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
+          <button type="button" id="db-digest-btn" class="btn btn-outline btn-sm" onclick="_dbLoadDailyDigest()" ${!_planAllowsAi()?'disabled title="'+(isBm?'Pelan Free — AI tidak termasuk':'Free plan — AI not included')+'"':''}><i class="ti ti-sparkles"></i> ${isBm?'Jana':'Generate'}</button>
         </div>
         <div id="db-digest-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:48px">${isBm?'Klik Jana untuk item tindakan hari ini.':'Click Generate for today\'s action items.'}</div>
       </div>
@@ -6107,6 +6129,7 @@ async function _dbLoadRecentActivity() {
 
 
 async function _dbLoadAiInsight() {
+  if (!_guardAiAccess()) return
   const isBm = APP.language==='bm'
   const t = isBm
     ? { loading:'Menjana wawasan...', err:'Ralat: ', empty:'Tiada data mencukupi untuk wawasan buat masa ini.' }
@@ -6134,7 +6157,7 @@ async function _dbLoadAiInsight() {
       `Outstanding receivables (all unpaid/partial invoices, all-time): RM${outstanding.toFixed(2)}.\n` +
       `Low stock products (at or below each product's reorder point): ${lowStock.length} product(s)${lowStockList ? ' — ' + lowStockList : ''}.`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'business_insight', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'business_insight', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -6149,6 +6172,7 @@ async function _dbLoadAiInsight() {
 }
 
 async function _dbLoadMarketingAdvice() {
+  if (!_guardAiAccess()) return
   const isBm = APP.language==='bm'
   const t = isBm
     ? { loading:'Menjana idea...', err:'Ralat: ', empty:'Tiada data mencukupi untuk idea pemasaran buat masa ini.' }
@@ -6188,7 +6212,7 @@ async function _dbLoadMarketingAdvice() {
       `Total active customers: ${custCount ?? 0}.\n` +
       `Top selling products (all-time, by units sold): ${topProductsList || 'no sales data yet'}.`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'marketing_advice', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'marketing_advice', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -6203,6 +6227,7 @@ async function _dbLoadMarketingAdvice() {
 }
 
 async function _dbLoadDailyDigest() {
+  if (!_guardAiAccess()) return
   const isBm = APP.language==='bm'
   const t = isBm
     ? { loading:'Menjana ringkasan harian...', err:'Ralat: ', empty:'Tiada item tindakan buat masa ini — semua nampak elok!' }
@@ -6240,7 +6265,7 @@ async function _dbLoadDailyDigest() {
       `Low stock products (${lowStockLines.length}):\n${lowStockLines.join('\n') || 'none'}\n\n` +
       `Compliance deadlines within 7 days:\n${complianceLines.join('\n') || 'none'}`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'daily_digest', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'daily_digest', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -6877,13 +6902,11 @@ async function _dbInsightAI(card, ctx, isBm) {
       `Voice: ${voice}\n` +
       `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
       `Facts JSON: ${JSON.stringify(facts)}`
-  const { data, error } = await sb.functions.invoke('ai-proxy', {
-    body: {
+  const { data, error } = await _invokeAiProxy({
       action: 'chat',
       message,
       context: `NexERP dashboard card insight. Tenant-scoped metrics only. Card=${card}.`
-    }
-  })
+    })
   if(error) throw error
   if(!data?.success) throw new Error(data?.error || 'AI failed')
   let reply = (data.data && (data.data.reply || data.data.text || data.data.message)) || ''
@@ -9268,7 +9291,7 @@ async function renderSettings(params={}) {
         </div>
         <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
           <div style="font-size:11px;color:var(--text-3)">${mp.ai}</div>
-          <div style="font-weight:700;font-size:18px">${myPlanUsage.ai} / ${aiQuota==null?'∞':aiQuota}</div>
+          <div style="font-weight:700;font-size:18px">${!_planAllowsAi() ? (isBm ? 'Tidak termasuk' : 'Not included') : (myPlanUsage.ai + ' / ' + (aiQuota==null?'∞':aiQuota))}</div>
         </div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:12px">
@@ -9792,7 +9815,7 @@ async function _taxAskGuidance() {
   if(out) out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
 
   try {
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'tax_guidance', question, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'tax_guidance', question, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -9826,9 +9849,9 @@ async function _docGenerate() {
   if(loadingEl) loadingEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}`
 
   try {
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: {
+    const {data, error} = await _invokeAiProxy({
       action:'generate_document', doc_type: docType, name, context, language: APP.language
-    }})
+    })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -10004,7 +10027,7 @@ async function _fraudScan() {
     const context = `POS transactions, last 30 days (${posLines.length}):\n${posLines.join('\n') || 'none'}\n\n` +
       `Journal entries, last 30 days (${jeLines.length}):\n${jeLines.join('\n') || 'none'}`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'fraud_scan', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'fraud_scan', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -10268,7 +10291,7 @@ async function _cpScanSSM(event) {
       if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
     }
     const images = await Promise.all(pageBlobs.map((blob) => _compressImageToBase64(blob)))
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_ssm_certificate', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
+    const {data, error} = await _invokeAiProxy({ action:'scan_ssm_certificate', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -10308,7 +10331,7 @@ async function _cpScanBank(event) {
       if(statusEl) statusEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ${t.scanning}`
     }
     const images = await Promise.all(pageBlobs.map((blob) => _compressImageToBase64(blob)))
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_bank_statement', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
+    const {data, error} = await _invokeAiProxy({ action:'scan_bank_statement', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -11435,7 +11458,7 @@ async function _custFollowUpSuggest(custId) {
     const context = `Customer: ${cust.name}. Member since: ${cust.created_at ? cust.created_at.slice(0,10) : '-'}.\n` +
       `Recent invoice history (most recent first, up to 10):\n${historyLines || (isBm?'Tiada sejarah invois.':'No invoice history.')}`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'follow_up_suggestion', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'follow_up_suggestion', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -12367,8 +12390,8 @@ async function _pcOcrOneFile(file, onProgress) {
   if(onProgress) onProgress(0.15)
   const { base64, mimeType } = await _compressImageToBase64(file)
   if(onProgress) onProgress(0.4)
-  const { data, error } = await sb.functions.invoke('ai-proxy', {
-    body: { action: 'receipt', image_base64: base64, mime_type: mimeType || 'image/jpeg' }
+  const { data, error } = await _invokeAiProxy({
+    action: 'receipt', image_base64: base64, mime_type: mimeType || 'image/jpeg'
   })
   if(onProgress) onProgress(0.85)
   if(error) throw error
@@ -13797,7 +13820,7 @@ async function _jnlAutoCategorize(i) {
 
   try {
     const accounts = _jnlAccounts.map(a=>({id:a.id, code:a.code, name_en:a.name_en}))
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'categorize', description, accounts } })
+    const {data, error} = await _invokeAiProxy({ action:'categorize', description, accounts })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -13978,7 +14001,7 @@ async function _fyMonthEndSummary() {
       `Last month (${lastStart} to ${lastEnd}): Total Revenue RM${prev.totalRev.toFixed(2)}, Total Expenses RM${prev.totalExp.toFixed(2)}, Net Profit/Loss RM${(prev.totalRev-prev.totalExp).toFixed(2)}.\n` +
       `Expense breakdown by account (this month vs last month):\n${expenseLines || 'none'}`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'month_end_summary', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'month_end_summary', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -14457,7 +14480,7 @@ async function _expScanReceipt(event) {
 
   try {
     const {base64, mimeType} = await _compressImageToBase64(file)
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'receipt', image_base64: base64, mime_type: mimeType } })
+    const {data, error} = await _invokeAiProxy({ action:'receipt', image_base64: base64, mime_type: mimeType })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -15335,7 +15358,7 @@ async function _recoExtractPdfPage(pageBlob, i, total, maxAttempts, skipInitialD
       await _sleep(attempt * (wasRateLimited ? 5000 : 1200))
     }
     try {
-      const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+      const { data, error } = await _invokeAiProxy({
         action: 'extract_bank_transactions',
         images: [{ image_base64: img.base64, mime_type: img.mimeType }],
         // Tells ai-proxy it may fall back to salvaging a still-malformed
@@ -15347,7 +15370,7 @@ async function _recoExtractPdfPage(pageBlob, i, total, maxAttempts, skipInitialD
         // instead of letting attempts 2-maxAttempts still try for the
         // model's occasional clean, FULL read of the page.
         allow_partial: attempt === maxAttempts - 1,
-      }})
+      })
       if (error) throw error
       if (!data?.success) throw new Error(data?.error || 'Unknown error')
       return {
@@ -17105,12 +17128,12 @@ async function _recoRunMatch() {
   try {
     const unmatchedIdx = _recoMatches.map((m,i) => m ? -1 : i).filter(i => i >= 0)
     if (unmatchedIdx.length && candidates.length) {
-      const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+      const { data, error } = await _invokeAiProxy({
         action: 'reconcile_match',
         transactions: unmatchedIdx.map(i => ({ idx: i, date: _recoTxns[i].date, description: _recoTxns[i].description, amount: _recoTxns[i].amount })),
         candidates,
         language: APP.language
-      }})
+      })
       if (!error && data?.success && data.data?.matches) {
         data.data.matches.forEach(m => {
           if (m.txn_idx != null && !_recoMatches[m.txn_idx]) _recoMatches[m.txn_idx] = m
@@ -17348,12 +17371,12 @@ async function _recoRefineOther() {
   const expenseOthers = others.filter(({t}) => Number(t.amount) < 0)
   const runBatch = async (batch, categories) => {
     if (!batch.length || !categories.length) return []
-    const { data, error } = await sb.functions.invoke('ai-proxy', { body: {
+    const { data, error } = await _invokeAiProxy({
       action: 'categorize_bank',
       transactions: batch.map(({t,i}) => ({ idx:i, date:t.date, description:t.description, amount:t.amount })),
       categories,
       language: APP.language
-    }})
+    })
     if (error) throw error
     // Matches every other ai-proxy call site in this file — the function
     // always responds HTTP 200 even on failure (GROQ_API_KEY missing, Groq
@@ -18001,7 +18024,7 @@ async function _prodAiScanFileSelected(event) {
   try {
     const {base64, mimeType} = await _compressImageToBase64(file)
     _prodAiScanPhotoDataUrl = `data:${mimeType};base64,${base64}`
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_product_image', image_base64: base64, mime_type: mimeType } })
+    const {data, error} = await _invokeAiProxy({ action:'scan_product_image', image_base64: base64, mime_type: mimeType })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -18132,7 +18155,7 @@ async function _invGeneratePODraft() {
       return { name: prodName(p), code: p.code||undefined, stock_qty: Number(p.stock_qty||0), reorder_point: Number(p.reorder_point ?? 5), total_sold: totalSold }
     }))
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'generate_po', products, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'generate_po', products, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -18888,11 +18911,11 @@ async function _invDraftReminder(invId) {
   if(loadingEl) loadingEl.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Menjana draf...':'Generating draft...'}`
 
   try {
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: {
+    const {data, error} = await _invokeAiProxy({
       action:'draft_reminder',
       invoice: { ref_no: inv.ref_no, customer_name: inv.customer_name, total: inv.total, paid_amt: inv.paid_amt, due_date: inv.due_date },
       language: APP.language
-    }})
+    })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     if(loadingEl) loadingEl.innerHTML = ''
@@ -20182,7 +20205,7 @@ async function _doLoadSuggestion(id) {
     if(!doRec) throw new Error('Delivery order not found')
     const context = `Delivery address: ${doRec.delivery_address||'-'}. Driver: ${doRec.driver_name||'not assigned'}. Vehicle: ${doRec.vehicle_no||'not assigned'}. Created: ${doRec.created_at||'-'}.`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'logistics_suggest', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'logistics_suggest', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -22695,7 +22718,7 @@ async function _woLoadCheck(id) {
     if(!wo) throw new Error('Work order not found')
     const context = `Product: ${prodName(wo.products)} (current stock: ${wo.products?.stock_qty ?? '-'}). Quantity to produce: ${wo.qty_to_produce}. Materials needed (free text, no linked inventory/BOM data): ${wo.materials_needed||'not specified'}.`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'production_check', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'production_check', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -23492,7 +23515,7 @@ async function _appScanForm(event) {
     // Language Proficiency/Emergency Contact on page 2, which a single
     // getPage(1)-only conversion was silently never sending to the AI at all.
     const images = await Promise.all(pageBlobs.map((blob) => _compressImageToBase64(blob)))
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'scan_application_form', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) } })
+    const {data, error} = await _invokeAiProxy({ action:'scan_application_form', images: images.map(img => ({ image_base64: img.base64, mime_type: img.mimeType })) })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -23834,6 +23857,11 @@ async function _usageCaptureForSale() {
 }
 
 /** After successful ai-proxy call — bumps tenant_usage_daily.ai_queries_count (My Plan widget). */
+
+async function _invokeAiProxy(body) {
+  if (!_guardAiAccess()) return { data: null, error: { message: 'AI not available on Free plan' } }
+  return sb.functions.invoke('ai-proxy', { body })
+}
 async function _usageCaptureAi() {
   try { await sb.rpc('increment_ai_daily_usage') } catch (e) { console.warn('_usageCaptureAi', e) }
 }
@@ -24697,7 +24725,7 @@ async function _payslipLoadNote(id) {
     if(!rec) throw new Error('Payroll record not found')
     const context = `Employee: ${rec.employees?.name||'-'}. Period: ${rec.month}/${rec.year}. Basic salary: RM${rec.basic_salary}. EPF employee: RM${rec.epf_employee}. SOCSO employee: RM${rec.socso_employee}. EIS employee: RM${rec.eis_employee}. PCB: RM${rec.pcb}. Net pay: RM${rec.net_pay}.`
 
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'hr_payslip_note', context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'hr_payslip_note', context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
@@ -29178,7 +29206,7 @@ async function _repAiSummary(reportType) {
   if(out) out.innerHTML = `<div style="color:var(--text-3);font-size:13px"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${t.loading}</div>`
 
   try {
-    const {data, error} = await sb.functions.invoke('ai-proxy', { body: { action:'narrate_report', report_type: reportType, context, language: APP.language } })
+    const {data, error} = await _invokeAiProxy({ action:'narrate_report', report_type: reportType, context, language: APP.language })
     if(error) throw error
     if(!data?.success) throw new Error(data?.error || 'Unknown error')
     try { _usageCaptureAi() } catch (e) {}
