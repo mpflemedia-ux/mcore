@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-tenant-prod-cat">
+<meta name="nexerp-build" content="2026-08-22-tg-fix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1936,7 +1936,7 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-leave" '+(p.leave?'checked':'')+'> '+(isBm?'Cuti pending':'Leave pending')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-outstation" '+(p.outstation?'checked':'')+'> Outstation pending</label>'
     + '<label><input type="checkbox" id="notif-ev-insight" '+(p.insight?'checked':'')+'> '+(isBm?'AI insight dashboard':'Dashboard AI insights')+'</label>'
-    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
 
 
@@ -2073,7 +2073,8 @@ async function _tgNotifyOwners(text) {
     const adminIds = {}
     ;(profiles || []).forEach(function (p) {
       const r = String(p.role || '').toLowerCase()
-      if (r === 'owner' || r === 'admin') adminIds[p.id] = true
+      // platform_admin operates tenant home (MP Workspace) — include in owner alerts
+      if (r === 'owner' || r === 'admin' || r === 'platform_admin') adminIds[p.id] = true
     })
     const hasAdmin = Object.keys(adminIds).length > 0
     for (let i = 0; i < links.length; i++) {
@@ -2090,9 +2091,20 @@ async function _tgRefreshMyLinkStatus() {
   const el = document.getElementById('tg-link-status')
   if (!el || !APP.user || !APP.user.id) return
   const isBm = APP.language === 'bm'
-  const ok = await _tgIsLinked('user', APP.user.id)
-  el.textContent = ok ? (isBm ? 'Telegram dipautkan' : 'Telegram linked') : (isBm ? 'Belum pautkan Telegram' : 'Telegram not linked')
-  el.style.color = ok ? 'var(--success)' : 'var(--warning)'
+  const bot = _tgBotUsername()
+  if (!bot) {
+    el.textContent = isBm ? 'Isi & simpan nama bot, kemudian pautkan' : 'Save bot name, then Link Telegram'
+    el.style.color = 'var(--warning)'
+    return
+  }
+  try {
+    const ok = await _tgIsLinked('user', APP.user.id)
+    el.textContent = ok ? (isBm ? 'Telegram dipautkan' : 'Telegram linked') : (isBm ? 'Belum pautkan Telegram — klik Link Telegram' : 'Telegram not linked — click Link Telegram')
+    el.style.color = ok ? 'var(--success)' : 'var(--warning)'
+  } catch (e) {
+    el.textContent = isBm ? 'Gagal semak pautan' : 'Could not check link'
+    el.style.color = 'var(--danger)'
+  }
 }
 function _tgSaveBotName() {
   const v = (document.getElementById('tg-bot-username') && document.getElementById('tg-bot-username').value) || ''
