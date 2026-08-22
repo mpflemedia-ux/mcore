@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-ai-toast2">
+<meta name="nexerp-build" content="2026-08-22-sub-rev-bf">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8910,6 +8910,12 @@ async function _loadTenantPaymentHistory(tenantId) {
   const { data, error } = await sb.from('tenant_plan_payments')
     .select('id,amount,payment_date,payment_method,period_months,period_start,period_end')
     .eq('tenant_id', tenantId).order('payment_date', { ascending: false })
+  // Backfill journals for payments recorded before auto-post existed (idempotent)
+  try {
+    const client = (_adminClientsData || []).find(function (d) { return d.id === tenantId })
+    const n = await _backfillPlatformSubJournals(tenantId, client)
+    if (n > 0) showToast(isBm ? (n + ' bayaran dilampir ke jurnal hasil MP Workspace.') : (n + ' payment(s) posted to MP Workspace revenue journal.'), 'success')
+  } catch (e) { console.warn('sub journal backfill', e) }
   if(error) { host.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">${_aiEscapeHtml(error.message)}</div>`; return }
   if(!data || !data.length) { host.innerHTML = `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${isBm?'Tiada bayaran lagi':'No payments yet'}</p></div>`; return }
   const methodLabel = m => ({ cash: isBm?'Tunai':'Cash', bank_transfer: isBm?'Pindahan Bank':'Bank Transfer', online_banking: isBm?'Perbankan Online':'Online Banking', card: isBm?'Kad':'Card' }[m] || m || '-')
@@ -8950,50 +8956,94 @@ async function doRecordPayment() {
   if(!planId || !paymentDate || !method || !(amount > 0)) {
     showToast(isBm?'Sila lengkapkan semua medan.':'Please fill in all fields.', 'error'); return
   }
-  const { data: payRpcData, error } = await sb.rpc('record_tenant_payment', {
+  const { error } = await sb.rpc('record_tenant_payment', {
     p_tenant_id: tenantId, p_plan_id: planId, p_amount: amount, p_payment_date: paymentDate,
     p_payment_method: method, p_period_months: periodMonths, p_period_end_override: override
   })
   if(error) { showToast(error.message, 'error'); return }
-  // SaaS fee is income for platform books (MP Workspace), not the client tenant
+  // SaaS fee → MP Workspace books (Revenue KPI from journals)
+  let journalOk = false
   try {
     const client = (_adminClientsData || []).find(function (d) { return d.id === tenantId })
-    await _postPlatformSubscriptionIncome({
+    let payId = null
+    try {
+      const { data: latest } = await sb.from('tenant_plan_payments')
+        .select('id').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      payId = latest && latest.id
+    } catch (e) {}
+    const posted = await _postPlatformSubscriptionIncome({
       amount: amount,
       paymentDate: paymentDate,
       clientName: (client && client.name) || tenantId,
       clientCode: (client && client.code) || '',
       method: method,
-      sourceId: (payRpcData && (payRpcData.id || payRpcData.payment_id)) || null
+      sourceId: payId
     })
+    journalOk = !!(posted && !posted.skipped)
   } catch (e) { console.warn('platform sub journal', e) }
-  showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
+  showToast(journalOk
+    ? (isBm ? 'Bayaran direkod + hasil masuk jurnal MP Workspace.' : 'Payment recorded + revenue journal on MP Workspace.')
+    : (isBm ? 'Bayaran direkod.' : 'Payment recorded.'), 'success')
   try { _tgActivity('sales', isBm?'M-Core · Bayaran direkod':'M-Core · Payment recorded') } catch(e) {}
   overlay.classList.remove('active')
   renderAdminClients()
 }
 
 /** Post Dr Cash / Cr Sales Revenue on platform home tenant for client plan payments. */
-async function _postPlatformSubscriptionIncome({ amount, paymentDate, clientName, clientCode, method, sourceId }) {
+async function _postPlatformSubscriptionIncome({ amount, paymentDate, clientName, clientCode, method, sourceId, quiet }) {
   if (!(amount > 0)) return null
   if (!_isPlatformHomeTenant(APP.tenant)) {
-    console.warn('Subscription income journal skipped — switch to MP Workspace tenant context')
+    if (!quiet) console.warn('Subscription income journal skipped — APP.tenant is not MP Workspace')
     return null
   }
   const isBm = APP.language === 'bm'
   const label = (clientCode ? (clientCode + ' · ') : '') + (clientName || 'client')
   const desc = (isBm ? 'Langganan M-Core — ' : 'M-Core subscription — ') + label
     + (method ? (' (' + method + ')') : '')
-  // Unique-ish source id so re-record does not always double-post if RPC returns id
-  const sid = sourceId || ('subpay-' + String(clientCode || clientName || '') + '-' + String(paymentDate) + '-' + String(amount))
-  return await _postSaleJournal({
+  const sid = String(sourceId || ('subpay-' + String(clientCode || clientName || '') + '-' + String(paymentDate) + '-' + String(amount))).slice(0, 80)
+  try {
+    if (sid && await _journalAlreadyPosted('tenant_plan_payments', sid)) return { skipped: true }
+  } catch (e) {}
+  const posted = await _postSaleJournal({
     description: desc,
     entryDate: paymentDate || new Date().toISOString().slice(0, 10),
     amount: amount,
     cogsAmount: 0,
     sourceTable: 'tenant_plan_payments',
-    sourceId: String(sid).slice(0, 80)
+    sourceId: sid
   })
+  if (!posted && !quiet) {
+    showToast(isBm
+      ? 'Bayaran disimpan, tapi jurnal hasil gagal — set Default Accounts (Cash + Sales Revenue) di MP Workspace.'
+      : 'Payment saved, but revenue journal failed — set Default Accounts (Cash + Sales Revenue) on MP Workspace.', 'warning')
+  }
+  return posted
+}
+
+/** Backfill platform journals for existing tenant_plan_payments (idempotent). */
+async function _backfillPlatformSubJournals(tenantId, clientMeta) {
+  if (!_isPlatformHomeTenant(APP.tenant) || !tenantId) return 0
+  const { data, error } = await sb.from('tenant_plan_payments')
+    .select('id,amount,payment_date,payment_method')
+    .eq('tenant_id', tenantId)
+    .order('payment_date', { ascending: true })
+  if (error || !data || !data.length) return 0
+  let n = 0
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i]
+    if (!(Number(p.amount) > 0)) continue
+    const r = await _postPlatformSubscriptionIncome({
+      amount: Number(p.amount),
+      paymentDate: p.payment_date,
+      clientName: (clientMeta && clientMeta.name) || '',
+      clientCode: (clientMeta && clientMeta.code) || '',
+      method: p.payment_method,
+      sourceId: p.id,
+      quiet: true
+    })
+    if (r && !r.skipped) n++
+  }
+  return n
 }
 
 async function doSuspendTenant(tenantId) {
