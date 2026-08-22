@@ -9403,9 +9403,9 @@ async function doSoftDeleteTenant() {
 // ─── Referral Program (Platform Admin) ──────────────────────────────────────
 // referral_partners: id, referral_code, full_name, phone, email, bank_name,
 //   bank_account_no, bank_account_name, qr_code_url, created_at
-// referral_conversions: id, referral_code (FK → referral_partners.referral_code),
-//   tenant_id, status ('registered'|'converted'|'paid'), commission_amount,
-//   created_at, paid_at, paid_by
+// referral_conversions: id, referral_partner_id (FK → referral_partners.id),
+//   tenant_id, plan_code, status ('registered'|'converted'|'paid'), commission_amount,
+//   registered_at, converted_at, paid_at, paid_by, notes
 let _adminReferralPartners = []
 let _adminReferralConversions = []
 let _adminReferralTenantNames = {}
@@ -9414,7 +9414,7 @@ let _adminReferralState = { q:'', status:'all', sortKey:'created', sortDir:'desc
 async function _loadAdminReferralData() {
   const [{data: partners, error: pErr}, {data: conversions, error: cErr}] = await Promise.all([
     sb.from('referral_partners').select('*').order('created_at', {ascending:false}),
-    sb.from('referral_conversions').select('*').order('created_at', {ascending:false})
+    sb.from('referral_conversions').select('*').order('registered_at', {ascending:false})
   ])
   if(pErr) return {error: pErr}
   _adminReferralPartners = partners || []
@@ -9434,7 +9434,7 @@ async function _loadAdminReferralData() {
 }
 
 function _adminReferralConvsFor(partner) {
-  return _adminReferralConversions.filter(c => c.referral_code && partner.referral_code && String(c.referral_code)===String(partner.referral_code))
+  return _adminReferralConversions.filter(c => c.referral_partner_id && partner.id && String(c.referral_partner_id)===String(partner.id))
 }
 function _adminReferralStats(partner) {
   const convs = _adminReferralConvsFor(partner)
@@ -9496,17 +9496,17 @@ async function renderAdminReferrals() {
   const newThisMonth = _adminReferralPartners.filter(p => _adminReferralIsThisMonth(p.created_at)).length
 
   // Leaderboard (this month, by registration month of their conversions)
-  const monthConvs = _adminReferralConversions.filter(c => _adminReferralIsThisMonth(c.created_at))
+  const monthConvs = _adminReferralConversions.filter(c => _adminReferralIsThisMonth(c.registered_at))
   const byCode = {}
   monthConvs.forEach(c => {
-    const k = String(c.referral_code||'')
+    const k = String(c.referral_partner_id||'')
     if(!k) return
     if(!byCode[k]) byCode[k] = { count:0, commission:0 }
     byCode[k].count++
     if(c.status==='converted' || c.status==='paid') byCode[k].commission += Number(c.commission_amount||0)
   })
   const partnerByCode = {}
-  _adminReferralPartners.forEach(p => { if(p.referral_code) partnerByCode[String(p.referral_code)] = p })
+  _adminReferralPartners.forEach(p => { if(p.id) partnerByCode[String(p.id)] = p })
   let topReferrer = null, topReferrerCount = 0
   let topEarner = null, topEarnerAmount = 0
   Object.keys(byCode).forEach(code => {
@@ -9648,7 +9648,7 @@ async function renderAdminReferralDetail(partnerId) {
       <button class="btn btn-outline btn-sm" onclick="openPage('admin',{view:'referrals'})">${t.back}</button></div>`
     return
   }
-  const convs = _adminReferralConvsFor(partner).sort((a,b)=>(Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0))
+  const convs = _adminReferralConvsFor(partner).sort((a,b)=>(Date.parse(b.registered_at)||0)-(Date.parse(a.registered_at)||0))
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
@@ -9683,7 +9683,7 @@ async function renderAdminReferralDetail(partnerId) {
       <td>${_aiEscapeHtml(_adminReferralTenantNames[c.tenant_id]||c.tenant_id||'—')}</td>
       <td style="color:${c.status==='paid'?'var(--success)':c.status==='converted'?'var(--warning)':'var(--text-3)'}">${_aiEscapeHtml(c.status||'—')}</td>
       <td>${formatRM(Number(c.commission_amount||0))}</td>
-      <td style="font-size:12px;color:var(--text-3)">${c.created_at?formatDate(c.created_at):'—'}</td>
+      <td style="font-size:12px;color:var(--text-3)">${c.registered_at?formatDate(c.registered_at):'—'}</td>
       <td style="font-size:12px;color:var(--text-3)">${c.paid_at?formatDate(c.paid_at):'—'}</td>
       <td>${c.status==='converted' ? `<button type="button" class="btn btn-outline btn-sm" onclick="doMarkReferralPaid('${c.id}','${partner.id}')">${t.markPaid}</button>` : ''}</td>
     </tr>`).join('')}
