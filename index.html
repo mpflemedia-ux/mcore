@@ -167,7 +167,7 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
   }
   .nav-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
     width: 100%;
   }
@@ -200,13 +200,14 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
     border-radius: 10px;
     letter-spacing: 0.01em;
   }
-  /* Order: 3 links, then theme+lang, then full-width login */
+  /* Order: 4 links (2x2), then theme+lang side by side, then full-width login */
   .nav-actions .nav-link:nth-child(1) { order: 1; }
   .nav-actions .nav-link:nth-child(2) { order: 2; }
   .nav-actions .nav-link:nth-child(3) { order: 3; }
-  .nav-actions .theme-toggle { order: 4; }
-  .nav-actions .nav-lang { order: 5; grid-column: 2 / 4; }
-  .nav-actions .nav-cta { order: 6; }
+  .nav-actions .nav-link:nth-child(4) { order: 4; }
+  .nav-actions .theme-toggle { order: 5; }
+  .nav-actions .nav-lang { order: 6; }
+  .nav-actions .nav-cta { order: 7; }
 }
 @media (max-width: 360px) {
   .nav-link { font-size: 12px; }
@@ -657,6 +658,7 @@ footer a:hover { color: var(--cyan); }
       <a class="nav-link" href="#modules" data-i18n="nav_modules">Modules</a>
       <a class="nav-link" href="#pricing" data-i18n="nav_pricing">Pricing</a>
       <a class="nav-link" href="#service-pricing" data-i18n="nav_services">Services</a>
+      <a class="nav-link" href="#referral" data-i18n="nav_referral">Referral Program</a>
       <button type="button" class="nav-btn theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Toggle day and dark mode" title="Day / Dark"><span class="icon-sun" aria-hidden="true">☀</span><span class="icon-moon" aria-hidden="true">☾</span></button>
       <button type="button" class="nav-btn nav-lang" id="langToggleBtn" onclick="toggleLang()" aria-label="Toggle language">EN | BM</button>
       <a href="https://mpflemedia-ux.github.io/nexerp/app/" class="nav-cta" data-i18n="cta_mini">Client login</a>
@@ -960,7 +962,7 @@ try {
 
 const I18N = {
   en: {
-    nav_modules:'Modules', nav_pricing:'Pricing', nav_services:'Services', cta_mini:'Client login',
+    nav_modules:'Modules', nav_pricing:'Pricing', nav_services:'Services', nav_referral:'Referral Program', cta_mini:'Client login',
     hero_badge:'Built for Malaysian SMEs',
     hero_title:'One workspace for Malaysian SMEs.<br><em>Books, payroll, stock &amp; sales.</em>',
     hero_sub:'Local compliance and staff control in the same place, so numbers and roles stay yours.',
@@ -1016,7 +1018,7 @@ const I18N = {
     ref_submitting:'Submitting…', ref_copied:'Copied!'
   },
   ms: {
-    nav_modules:'Modul', nav_pricing:'Harga', nav_services:'Perkhidmatan', cta_mini:'Log masuk klien',
+    nav_modules:'Modul', nav_pricing:'Harga', nav_services:'Perkhidmatan', nav_referral:'Program Referral', cta_mini:'Log masuk klien',
     hero_badge:'Untuk PKS Malaysia',
     hero_title:'Satu ruang kerja untuk SME Malaysia.<br><em>Lejar, gaji, stok &amp; jualan.</em>',
     hero_sub:'Pematuhan tempatan dan kawalan staf dalam satu tempat, nombor dan peranan kekal milik anda.',
