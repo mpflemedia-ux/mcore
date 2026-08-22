@@ -4870,6 +4870,7 @@ function _dbShortcutsHtml(isBm) {
     { id:'db-sec-pnl', icon:'ti-scale', en:'P&L Chart', bm:'Carta P&L' },
     { id:'db-sec-customers', icon:'ti-users', en:'Top Customers', bm:'Pelanggan Top' },
     { id:'db-sec-topsp', icon:'ti-medal', en:'Top Sales Person', bm:'Jualan Terbaik' },
+    ...(isPlatformAdmin() ? [{ id:'db-sec-topref', icon:'ti-gift', en:'Top Referral', bm:'Referral Terbaik' }] : []),
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
@@ -5059,8 +5060,8 @@ function renderDashboard() {
     </div>
 
     ${isPlatformAdmin() ? `
-    <div class="db-ops-row" style="margin-top:16px">
-      <div class="db-card db-card-glow" id="db-sec-topref" style="max-width:420px">
+    <div class="db-ops-row" style="grid-template-columns:1fr;margin-top:16px">
+      <div class="db-card db-card-glow" id="db-sec-topref">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-gift"></i> ${isBm?'Referral Terbaik':'Top Referral'}</div>
         <div class="db-chart-slot"><canvas id="db-topref-chart"></canvas></div>
         <div id="db-topref-fallback" class="db-card-foot" style="display:none"></div>
