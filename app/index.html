@@ -620,6 +620,15 @@ html[data-skip-intro="1"] #intro-skip {
 .db-mini-table tr[data-href]:hover td{background:color-mix(in srgb,var(--primary) 8%,transparent)}
 
 .db-card-glow{box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 20%,transparent),0 12px 40px -16px color-mix(in srgb,var(--primary) 45%,transparent)}
+.gantt-row{display:flex;align-items:center;margin-bottom:4px}
+.gantt-label{width:150px;min-width:150px;font-size:11px;color:var(--text-3);padding-right:10px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-bar-wrap{flex:1;position:relative;height:26px;background:var(--bg);border-radius:4px}
+.gantt-bar{position:absolute;height:26px;border-radius:5px;display:flex;align-items:center;padding:0 7px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;cursor:pointer}
+.gantt-bar.gdone{opacity:1}
+.gantt-bar.gpending{opacity:.4}
+.gantt-today-line{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--danger);z-index:10;border-radius:1px;pointer-events:none}
+.gantt-today-line::before{content:"";position:absolute;top:-4px;left:-3px;width:8px;height:8px;border-radius:50%;background:var(--danger)}
+.gantt-grid{position:absolute;top:0;bottom:0;width:1px;background:var(--border);pointer-events:none}
 .db-kpi-focus .db-kpi-value{font-size:15px;line-height:1.2}
 .db-kpi-value.is-text{font-size:11px!important;font-weight:600!important;letter-spacing:0!important;font-family:Inter,system-ui,sans-serif!important;line-height:1.2!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;max-height:3.6em}
 .db-kpi-card:has(#db-val-topInvoice) .db-kpi-value.is-text,
@@ -10158,6 +10167,11 @@ async function renderAdminDevRoadmap() {
   </div></div>
   ${_adminTabs('devroadmap')}
   <div id="admin-devroadmap-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  <div class="card" style="padding:16px;margin-top:16px">
+    <div style="font-weight:600;font-size:14px;margin-bottom:10px"><i class="ti ti-chart-gantt"></i> ${isBm?'Garis Masa':'Timeline'}</div>
+    <div id="devroadmap-gantt-legend"></div>
+    <div id="devroadmap-gantt-rows"></div>
+  </div>
   <div class="modal-overlay" id="admin-devroadmap-modal-overlay">
     <div class="modal-box" style="max-width:520px">
       <div class="modal-box-header"><i class="ti ti-rocket"></i> <span id="admin-devroadmap-modal-title">${t.add}</span></div>
@@ -10182,6 +10196,10 @@ async function renderAdminDevRoadmap() {
   }
   _adminDevRoadmapData = data || []
   _adminDevRoadmapRenderBoard()
+  const ganttLegendEl = document.getElementById('devroadmap-gantt-legend')
+  if(ganttLegendEl) ganttLegendEl.innerHTML = _devGanttLegendRender(_adminDevRoadmapData)
+  const ganttRowsEl = document.getElementById('devroadmap-gantt-rows')
+  if(ganttRowsEl) ganttRowsEl.innerHTML = _devGanttRender(_adminDevRoadmapData)
 }
 
 function _adminDevRoadmapRenderBoard() {
@@ -10218,6 +10236,56 @@ function _adminDevRoadmapRenderBoard() {
       </div>`
     }).join('')}
   </div>`
+}
+
+function _devGanttModuleColors(items) {
+  const palette = ['#0891B2','#7C3AED','#16A34A','#D97706','#DC2626','#2563EB','#DB2777']
+  const moduleColors = {}
+  let ci = 0
+  items.forEach(it => { const m = it.module||'Other'; if(!moduleColors[m]) moduleColors[m] = palette[ci++ % palette.length] })
+  return moduleColors
+}
+
+function _devGanttLegendRender(items) {
+  if(!items.length) return ''
+  const moduleColors = _devGanttModuleColors(items)
+  return `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    ${Object.keys(moduleColors).map(m => `<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3)"><span style="width:8px;height:8px;border-radius:50%;background:${moduleColors[m]};display:inline-block"></span>${_aiEscapeHtml(m)}</div>`).join('')}
+  </div>`
+}
+
+function _devGanttRender(items) {
+  const isBm = APP.language==='bm'
+  if(!items.length) return ''
+  const dates = items.map(it => new Date(it.created_at))
+  const minDate = new Date(Math.min.apply(null, dates))
+  const today = new Date()
+  const totalDays = Math.max(7, Math.ceil((today - minDate) / 86400000) + 3)
+  const dayOf = (d) => Math.max(0, Math.floor((new Date(d) - minDate) / 86400000))
+
+  const moduleColors = _devGanttModuleColors(items)
+
+  const gridDays = []
+  for(let d=0; d<=totalDays; d+=7) gridDays.push(d)
+  const gridLines = gridDays.map(d => `<div class="gantt-grid" style="left:${(d/totalDays)*100}%"></div>`).join('')
+  const todayPct = (dayOf(today)/totalDays)*100
+
+  const rows = items.map(it => {
+    const s = dayOf(it.started_at || it.created_at)
+    const e = it.completed_at ? dayOf(it.completed_at) : dayOf(today)
+    const lp = (s/totalDays)*100
+    const wp = Math.max(1.5, ((e-s)/totalDays)*100)
+    const color = moduleColors[it.module||'Other']
+    const cls = it.stage==='completed' ? 'gdone' : 'gpending'
+    return `<div class="gantt-row">
+      <div class="gantt-label" title="${_aiEscapeHtml(it.title)}">${_aiEscapeHtml(it.title)}</div>
+      <div class="gantt-bar-wrap">${gridLines}${lp<=todayPct&&todayPct<=100?`<div class="gantt-today-line" style="left:${todayPct}%"></div>`:''}
+        <div class="gantt-bar ${cls}" style="left:${lp}%;width:${wp}%;background:${color}" title="${_aiEscapeHtml(it.title)} — ${_aiEscapeHtml(it.module||'')}">${wp>10?_aiEscapeHtml(it.title):''}</div>
+      </div>
+    </div>`
+  }).join('')
+
+  return `<div style="margin-bottom:8px;font-size:10px;color:var(--text-3)">${isBm?'Mula':'Started'}: ${minDate.toLocaleDateString()} → ${isBm?'Hari ini':'Today'}: ${today.toLocaleDateString()}</div>${rows}`
 }
 
 async function doChangeDevRoadmapStage(itemId, newStage) {
