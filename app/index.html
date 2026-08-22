@@ -4361,6 +4361,39 @@ function _applyInviteAuthUI() {
     setTimeout(fill, 800)
   } catch(e) {}
 }
+function _captureRefFromUrl() {
+  try {
+    const params = new URLSearchParams(location.search)
+    const ref = params.get('ref')
+    if(ref) {
+      localStorage.setItem('mcore_ref_code', ref.trim())
+      params.delete('ref')
+      const qs = params.toString()
+      const clean = location.pathname + (qs ? '?' + qs : '') + location.hash
+      history.replaceState({}, '', clean)
+      setTimeout(() => _applyRefAuthUI(), 200)
+    }
+  } catch(e) {}
+}
+
+function _applyRefAuthUI() {
+  try {
+    const ref = (localStorage.getItem('mcore_ref_code') || '').trim()
+    if(!ref) return
+    const fill = () => {
+      const still = (localStorage.getItem('mcore_ref_code') || '').trim()
+      if(!still) return
+      if(typeof switchAuthTab === 'function') switchAuthTab('register')
+    }
+    if(document.getElementById('form-register')) fill()
+    else document.addEventListener('DOMContentLoaded', fill)
+    setTimeout(fill, 50)
+    setTimeout(fill, 300)
+    setTimeout(fill, 800)
+  } catch(e) {}
+}
+_captureRefFromUrl()
+_applyRefAuthUI()
 _captureInviteFromUrl()
 _applyInviteAuthUI()
 // Public invoice deep link (no login)

@@ -1250,7 +1250,7 @@ async function submitReferralPartner() {
     else if (data && typeof data === 'object') code = data.referral_code || data.code;
     if (!code) throw new Error('No referral code returned');
 
-    const link = 'https://mpflemedia-ux.github.io/nexerp/?ref=' + encodeURIComponent(code);
+    const link = 'https://mpflemedia-ux.github.io/nexerp/app/?ref=' + encodeURIComponent(code);
     document.getElementById('refResultCode').textContent = code;
     document.getElementById('refResultLink').value = link;
     document.getElementById('refResult').hidden = false;
