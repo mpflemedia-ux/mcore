@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-del-pay">
+<meta name="nexerp-build" content="2026-08-22-sa-cust-sync2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10848,6 +10848,13 @@ async function _cpSave() {
       msgEl.style.color='var(--success)'
       msgEl.textContent = t.saved
       showToast(t.saved, 'success')
+
+  try {
+    if (APP.tenant && APP.tenant.id) {
+      sb.rpc('sync_tenant_as_platform_customer', { p_tenant_id: APP.tenant.id }).then(function () {}, function (e) { console.warn('platform customer sync', e) })
+    }
+  } catch (e) { console.warn('platform customer sync', e) }
+
       return
     }
     savedRow = upRow
@@ -10863,6 +10870,13 @@ async function _cpSave() {
   msgEl.style.color='var(--success)'
   msgEl.textContent = t.saved
   showToast(t.saved, 'success')
+
+  try {
+    if (APP.tenant && APP.tenant.id) {
+      sb.rpc('sync_tenant_as_platform_customer', { p_tenant_id: APP.tenant.id }).then(function () {}, function (e) { console.warn('platform customer sync', e) })
+    }
+  } catch (e) { console.warn('platform customer sync', e) }
+
 }
 
 async function _damSave() {
