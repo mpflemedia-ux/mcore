@@ -7960,16 +7960,6 @@ async function _dbRenderTopReferral() {
   }
 }
 
-// Gamification tier by all-time completed_count (dev_roadmap_stats view).
-function _devBadgeTier(n) {
-  if(n>=50) return {icon:'ti-crown', label_en:'M-Core Legend', label_bm:'Legenda M-Core'}
-  if(n>=30) return {icon:'ti-cpu', label_en:'Core Engineer', label_bm:'Jurutera Core'}
-  if(n>=15) return {icon:'ti-compass', label_en:'Architect', label_bm:'Arkitek'}
-  if(n>=5) return {icon:'ti-hammer', label_en:'Builder', label_bm:'Pembina'}
-  if(n>=1) return {icon:'ti-flag', label_en:'First Ship', label_bm:'Penghantaran Pertama'}
-  return null
-}
-
 // ISO 8601 week key (Thursday-anchored) so a streak spans Mon-Sun weeks
 // consistently regardless of which day of the week an item was completed on.
 function _isoWeekKey(d) {
@@ -8003,31 +7993,41 @@ async function _dbRenderDevRoadmap() {
       window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, { devroadmap: null })
     }
 
-    const [{data: statsRow, error: statsErr}, {data: completedRows}] = await Promise.all([
+    const [{data: statsRow, error: statsErr}, {data: allItems}] = await Promise.all([
       sb.from('dev_roadmap_stats').select('*').maybeSingle(),
-      sb.from('dev_roadmap_items').select('completed_at').eq('stage', 'completed')
+      sb.from('dev_roadmap_items').select('stage, module, completed_at')
     ])
     if(statsErr || !statsRow) { showEmpty(isBm ? 'Tiada data pembangunan sistem lagi' : 'No system development data yet'); return }
     if(fallback) { fallback.style.display = 'none'; fallback.textContent = '' }
 
-    const ideaCount = Number(statsRow.idea_count || 0)
-    const plannedCount = Number(statsRow.planned_count || 0)
-    const inProgressCount = Number(statsRow.in_progress_count || 0)
-    const completedCount = Number(statsRow.completed_count || 0)
     const completedThisMonth = Number(statsRow.completed_this_month || 0)
     const completedLastMonth = Number(statsRow.completed_last_month || 0)
     const avgHoursThisMonth = Number(statsRow.avg_hours_this_month || 0)
     const avgHoursLastMonth = Number(statsRow.avg_hours_last_month || 0)
 
-    const dates = (completedRows || []).map(r => r.completed_at).filter(Boolean)
-    const streak = _computeDevStreak(dates)
-    const tier = _devBadgeTier(completedCount)
-    const badgeLabel = tier ? (isBm ? tier.label_bm : tier.label_en) : (isBm ? 'Belum ada lencana' : 'No badge yet')
+    // Single source of truth (level/XP/rank/badges/streak) shared with the Admin tab.
+    const stats = _adminDevRoadmapComputeStats(allItems || [])
+    const { ideaCount, plannedCount, inProgressCount, completedCount, level, xpInLevel, xpNeeded, rankTitle, streak } = stats
+    const badgeLabel = isBm ? rankTitle.bm : rankTitle.en
 
     if(badgesEl) {
-      badgesEl.innerHTML = `
-        ${tier ? `<span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--warning)"><i class="ti ${tier.icon}"></i> ${_aiEscapeHtml(badgeLabel)}</span>` : `<span style="color:var(--text-3);font-size:12px">${_aiEscapeHtml(badgeLabel)}</span>`}
-        <span style="font-size:12px;color:var(--text-3)">🔥 ${streak} ${isBm?'minggu berturut-turut':'week streak'}</span>`
+      const xpPct = Math.min(100, Math.round((xpInLevel/xpNeeded)*100))
+      const badgeChip = (b) => {
+        const unlocked = !!b.test(stats)
+        return `<span title="${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}" style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 7px;border-radius:12px;background:${unlocked?'color-mix(in srgb,var(--warning) 18%,transparent)':'var(--bg)'};border:1px solid ${unlocked?'var(--warning)':'var(--border)'};color:${unlocked?'var(--warning)':'var(--text-3)'};opacity:${unlocked?1:.45}"><i class="ti ${b.icon}"></i> ${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}</span>`
+      }
+      badgesEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;width:100%">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:700;color:var(--warning)">${isBm?'Tahap':'Level'} ${level} · ${_aiEscapeHtml(badgeLabel)}</span>
+          <div style="flex:1;min-width:80px;max-width:140px;height:6px;border-radius:3px;background:var(--bg);overflow:hidden">
+            <div style="height:100%;width:${xpPct}%;background:var(--primary)"></div>
+          </div>
+          <span style="font-size:12px;color:var(--text-3)">🔥 ${streak} ${isBm?'minggu berturut-turut':'week streak'}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${DEVROADMAP_BADGE_DEFS.map(badgeChip).join('')}
+        </div>
+      </div>`
     }
 
     if(statsEl) {
@@ -8043,7 +8043,7 @@ async function _dbRenderDevRoadmap() {
         ideaCount, plannedCount, inProgressCount, completedCount,
         completedThisMonth, completedLastMonth,
         avgHoursThisMonth, avgHoursLastMonth,
-        badgeLabel, streak
+        badgeLabel, streak, level, xpInLevel
       }
     })
 
