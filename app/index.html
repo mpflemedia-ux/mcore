@@ -7235,7 +7235,7 @@ async function _dbFillCardInsights(ctx) {
 
   const langCache = store.cardsByLang[lang]
   const needSlot = !!(slot && !(store.slots[slot] && store.slots[slot].langs && store.slots[slot].langs[lang]))
-  const needLang = !langCache
+  const needLang = !langCache || cards.some(c => !(c.key in langCache))
   const needAI = metricsChanged || needSlot || needLang
 
   if(!needAI && langCache) {
