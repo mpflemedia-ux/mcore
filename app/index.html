@@ -10154,10 +10154,10 @@ async function renderAdminDevRoadmap() {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Pembangunan Sistem', sub:'Kanban ciri & perkembangan produk M-Core',
+    title:'Pembangunan Sistem', sub:'Papan pemuka & senarai perkembangan produk M-Core',
     close:'Tutup', save:'Simpan', add:'Tambah Item'
   } : {
-    title:'System Development', sub:'M-Core product/feature kanban',
+    title:'System Development', sub:'M-Core product/feature dashboard & task list',
     close:'Close', save:'Save', add:'Add Item'
   }
   document.getElementById('main').innerHTML = `
@@ -10167,11 +10167,6 @@ async function renderAdminDevRoadmap() {
   </div></div>
   ${_adminTabs('devroadmap')}
   <div id="admin-devroadmap-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
-  <div class="card" style="padding:16px;margin-top:16px">
-    <div style="font-weight:600;font-size:14px;margin-bottom:10px"><i class="ti ti-chart-gantt"></i> ${isBm?'Garis Masa':'Timeline'}</div>
-    <div id="devroadmap-gantt-legend"></div>
-    <div id="devroadmap-gantt-rows"></div>
-  </div>
   <div class="modal-overlay" id="admin-devroadmap-modal-overlay">
     <div class="modal-box" style="max-width:520px">
       <div class="modal-box-header"><i class="ti ti-rocket"></i> <span id="admin-devroadmap-modal-title">${t.add}</span></div>
@@ -10195,47 +10190,294 @@ async function renderAdminDevRoadmap() {
     return
   }
   _adminDevRoadmapData = data || []
-  _adminDevRoadmapRenderBoard()
-  const ganttLegendEl = document.getElementById('devroadmap-gantt-legend')
-  if(ganttLegendEl) ganttLegendEl.innerHTML = _devGanttLegendRender(_adminDevRoadmapData)
-  const ganttRowsEl = document.getElementById('devroadmap-gantt-rows')
-  if(ganttRowsEl) ganttRowsEl.innerHTML = _devGanttRender(_adminDevRoadmapData)
+  _adminDevRoadmapRenderAll()
 }
 
-function _adminDevRoadmapRenderBoard() {
-  const wrap = document.getElementById('admin-devroadmap-wrap')
-  if(!wrap) return
+/** Level/XP/rank/badges/module-coverage math, shared by header + badge row + Zone Power/Radar charts. */
+function _adminDevRoadmapComputeStats(items) {
+  const completed = items.filter(i => i.stage==='completed')
+  const ideaCount = items.filter(i => i.stage==='idea').length
+  const plannedCount = items.filter(i => i.stage==='planned').length
+  const inProgressCount = items.filter(i => i.stage==='in_progress').length
+  const completedCount = completed.length
+  const total = items.length
+  const level = Math.floor(completedCount/3)+1
+  const xpInLevel = (completedCount%3)*100
+  const xpNeeded = 300
+  const rankTitle = level>=15 ? {en:'M-Core Legend', bm:'Legenda M-Core'}
+    : level>=10 ? {en:'Core Engineer', bm:'Jurutera Core'}
+    : level>=6 ? {en:'Core Architect', bm:'Arkitek Core'}
+    : level>=3 ? {en:'Core Builder', bm:'Pembina Core'}
+    : {en:'Core Apprentice', bm:'Perantis Core'}
+  const boardClearPct = total ? (completedCount/total*100) : 0
+  const moduleMap = {}
+  items.forEach(it => {
+    const m = it.module || 'Other'
+    if(!moduleMap[m]) moduleMap[m] = { module: m, completed_in_module: 0, total_in_module: 0 }
+    moduleMap[m].total_in_module++
+    if(it.stage==='completed') moduleMap[m].completed_in_module++
+  })
+  const moduleCoverage = Object.values(moduleMap).map(m => Object.assign({}, m, { pct: m.total_in_module ? (m.completed_in_module/m.total_in_module*100) : 0 }))
+  const streak = _computeDevStreak(completed.map(i=>i.completed_at).filter(Boolean))
+  return { ideaCount, plannedCount, inProgressCount, completedCount, total, level, xpInLevel, xpNeeded, rankTitle, boardClearPct, moduleCoverage, streak }
+}
+
+const DEVROADMAP_BADGE_DEFS = [
+  { key:'first_blood', label_en:'First Blood', label_bm:'Darah Pertama', icon:'ti-bolt', test: s => s.completedCount >= 1 },
+  { key:'on_fire', label_en:'On Fire', label_bm:'Menyala', icon:'ti-flame', test: s => s.streak >= 2 },
+  { key:'half_board', label_en:'Half Board', label_bm:'Separuh Papan', icon:'ti-chess-knight', test: s => s.boardClearPct >= 50 },
+  { key:'ledger_lord', label_en:'Ledger Lord', label_bm:'Tuan Lejar', icon:'ti-report-money', test: s => s.moduleCoverage.some(m => /accounting|billing/i.test(m.module) && m.completed_in_module>0) },
+  { key:'people_ops', label_en:'People Ops', label_bm:'Ops Insan', icon:'ti-users', test: s => s.moduleCoverage.some(m => /hr|team/i.test(m.module) && m.completed_in_module>0) },
+  { key:'revenue_run', label_en:'Revenue Run', label_bm:'Larian Hasil', icon:'ti-cash', test: s => s.moduleCoverage.some(m => /referral|revenue/i.test(m.module) && m.completed_in_module>0) },
+  { key:'ai_link', label_en:'AI Link', label_bm:'Pautan AI', icon:'ti-brain', test: s => s.moduleCoverage.some(m => /ai/i.test(m.module) && m.completed_in_module>0) },
+  { key:'completionist', label_en:'Completionist', label_bm:'Penuntas', icon:'ti-crown', test: s => (s.ideaCount+s.plannedCount+s.inProgressCount)===0 && s.completedCount > 0 }
+]
+
+function _adminDevRoadmapHeaderHtml(stats) {
+  const isBm = APP.language==='bm'
+  const openCount = stats.ideaCount + stats.plannedCount + stats.inProgressCount
+  const zonesClear = stats.moduleCoverage.filter(m => m.pct >= 100).length
+  const xpPct = Math.min(100, Math.round((stats.xpInLevel/stats.xpNeeded)*100))
+  const statBox = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+      <div style="font-size:10px;color:var(--text-3)">${label}</div>
+      <div style="font-weight:700;font-size:16px">${val}</div>
+    </div>`
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px">
+    <div class="card db-card-glow" style="padding:18px">
+      <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${isBm?'Arahan Teras':'Core Command'}</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+        <div style="width:56px;height:56px;min-width:56px;border-radius:50%;background:color-mix(in srgb,var(--primary) 18%,transparent);border:2px solid var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:var(--primary)">${stats.level}</div>
+        <div>
+          <div style="font-weight:700;font-size:15px">${isBm?'Tahap':'Level'} ${stats.level}</div>
+          <div style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(isBm?stats.rankTitle.bm:stats.rankTitle.en)}</div>
+        </div>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--bg);overflow:hidden;margin-bottom:4px">
+        <div style="height:100%;width:${xpPct}%;background:var(--primary)"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:14px">${stats.xpInLevel} / ${stats.xpNeeded} XP</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        ${statBox(isBm?'Ditawan':'Claimed', stats.completedCount)}
+        ${statBox(isBm?'Terbuka':'Open', openCount)}
+        ${statBox(isBm?'Rentetan':'Streak', stats.streak + (isBm?' mgu':'w'))}
+      </div>
+    </div>
+    <div class="card" style="padding:18px">
+      <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${isBm?'Denyut Misi':'Mission Pulse'}</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        ${statBox(isBm?'Papan Bersih':'Board Clear', Math.round(stats.boardClearPct)+'%')}
+        ${statBox(isBm?'Tahap':'Level', stats.level)}
+        ${statBox(isBm?'Zon Bersih':'Zones Clear', zonesClear)}
+        ${statBox(isBm?'Boss Terbuka':'Boss Open', stats.inProgressCount)}
+      </div>
+    </div>
+  </div>`
+}
+
+function _adminDevRoadmapBadgeRowHtml(stats) {
+  const isBm = APP.language==='bm'
+  return `<div class="card" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;flex-wrap:wrap;gap:14px">
+      ${DEVROADMAP_BADGE_DEFS.map(b => {
+        const unlocked = !!b.test(stats)
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;opacity:${unlocked?1:.45}" title="${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}">
+          <div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${unlocked?'color-mix(in srgb,var(--warning) 18%,transparent)':'var(--bg)'};border:1px solid ${unlocked?'var(--warning)':'var(--border)'}">
+            <i class="ti ${b.icon}" style="font-size:20px;color:${unlocked?'var(--warning)':'var(--text-3)'}"></i>
+          </div>
+          <div style="font-size:10px;text-align:center;color:${unlocked?'var(--text)':'var(--text-3)'};line-height:1.2">${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}</div>
+        </div>`
+      }).join('')}
+    </div>
+  </div>`
+}
+
+function _adminDevRoadmapListHtml(items) {
   const isBm = APP.language==='bm'
   const stageLabels = isBm
     ? { idea:'Idea', planned:'Dirancang', in_progress:'Sedang Dibuat', completed:'Selesai' }
     : { idea:'Idea', planned:'Planned', in_progress:'In Progress', completed:'Completed' }
-  const stageIcons = { idea:'ti-bulb', planned:'ti-calendar-event', in_progress:'ti-tools', completed:'ti-check' }
-  const addLabel = isBm ? '+ Tambah' : '+ Add'
+  const stageColors = { idea:'var(--text-3)', planned:'var(--warning)', in_progress:'var(--primary)', completed:'var(--success)' }
+  const addLabel = isBm ? '+ Tambah Item' : '+ Add Item'
   const noItems = isBm ? 'Tiada item.' : 'No items.'
-  const viewPr = isBm ? 'Lihat PR' : 'View PR'
-
-  const cardHtml = (item) => `<div class="card" style="padding:10px;margin-bottom:8px;cursor:pointer" onclick="openDevRoadmapModal('${item.id}')">
-    <div style="font-weight:600;font-size:13px;margin-bottom:4px">${_aiEscapeHtml(item.title||'—')}</div>
-    ${item.module ? `<span style="font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg);border:1px solid var(--border);color:var(--text-3)">${_aiEscapeHtml(item.module)}</span>` : ''}
-    <div style="font-size:12px;color:var(--text-2);margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${_aiEscapeHtml(item.description||'')}</div>
-    ${item.stage==='completed' && item.pr_url ? `<a href="${_aiEscapeHtml(item.pr_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;color:var(--primary);display:inline-block;margin-top:4px">${viewPr}</a>` : ''}
-    <select onclick="event.stopPropagation()" onchange="doChangeDevRoadmapStage('${item.id}', this.value)" class="form-select" style="margin-top:8px;font-size:11px;padding:4px 6px;height:auto">
+  const sorted = items.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+  const rowHtml = (item) => `<div class="card" style="padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap" onclick="openDevRoadmapModal('${item.id}')">
+    <div style="flex:1;min-width:160px">
+      <div style="font-weight:600;font-size:13px">${_aiEscapeHtml(item.title||'—')}</div>
+      ${item.module ? `<span style="font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg);border:1px solid var(--border);color:var(--text-3)">${_aiEscapeHtml(item.module)}</span>` : ''}
+    </div>
+    <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${stageColors[item.stage]||'var(--text-3)'}">${stageLabels[item.stage]||item.stage}</span>
+    <select onclick="event.stopPropagation()" onchange="doChangeDevRoadmapStage('${item.id}', this.value)" class="form-select" style="font-size:11px;padding:4px 6px;height:auto">
       ${_DEVROADMAP_STAGES.map(s => `<option value="${s}" ${item.stage===s?'selected':''}>${stageLabels[s]}</option>`).join('')}
     </select>
+    <div style="font-size:11px;color:var(--text-3);white-space:nowrap">${item.created_at ? formatDate(item.created_at) : '—'}</div>
   </div>`
+  return `<div class="card" style="padding:0">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap">
+      <div style="font-weight:600;font-size:14px">${isBm?'Semua Tugasan':'All Tasks'} (${items.length})</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="openDevRoadmapModal(null)">${addLabel}</button>
+    </div>
+    <div style="padding:14px">
+      ${items.length ? sorted.map(rowHtml).join('') : `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 0">${noItems}</div>`}
+    </div>
+  </div>`
+}
 
-  wrap.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
-    ${_DEVROADMAP_STAGES.map(s => {
-      const items = _adminDevRoadmapData.filter(i => i.stage===s)
-      return `<div class="card" style="padding:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:6px">
-          <div style="font-weight:600;font-size:13px;white-space:nowrap"><i class="ti ${stageIcons[s]}"></i> ${stageLabels[s]} (${items.length})</div>
-          <button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="openDevRoadmapModal(null, '${s}')">${addLabel}</button>
-        </div>
-        ${items.length ? items.map(cardHtml).join('') : `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:16px 0">${noItems}</div>`}
-      </div>`
-    }).join('')}
-  </div>`
+function _adminDevRoadmapRenderAll() {
+  const wrap = document.getElementById('admin-devroadmap-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const items = _adminDevRoadmapData
+  const stats = _adminDevRoadmapComputeStats(items)
+
+  wrap.innerHTML = `
+    ${_adminDevRoadmapHeaderHtml(stats)}
+    ${_adminDevRoadmapBadgeRowHtml(stats)}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px">
+      <div class="card" style="padding:16px">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${isBm?'Kuasa Zon':'Zone Power'}</div>
+        <div class="db-chart-slot"><canvas id="devroadmap-zonepower-chart"></canvas></div>
+      </div>
+      <div class="card" style="padding:16px">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-radar"></i> ${isBm?'Radar Modul':'Module Radar'}</div>
+        <div class="db-chart-slot" style="max-width:360px;margin:0 auto"><canvas id="devroadmap-radar-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-line"></i> ${isBm?'Burn-up':'Burn-up'}</div>
+      <div class="db-chart-slot"><canvas id="devroadmap-burnup-chart"></canvas></div>
+      <div id="devroadmap-burnup-empty" class="db-card-foot" style="display:none"></div>
+    </div>
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:14px;margin-bottom:10px"><i class="ti ti-chart-gantt"></i> ${isBm?'Garis Masa':'Timeline'}</div>
+      <div id="devroadmap-gantt-legend"></div>
+      <div id="devroadmap-gantt-rows"></div>
+    </div>
+    ${_adminDevRoadmapListHtml(items)}
+  `
+
+  _devZonePowerRender(stats.moduleCoverage)
+  _devRadarRender(stats.moduleCoverage)
+  _devBurnupRender(items)
+
+  const ganttLegendEl = document.getElementById('devroadmap-gantt-legend')
+  if(ganttLegendEl) ganttLegendEl.innerHTML = _devGanttLegendRender(items)
+  const ganttRowsEl = document.getElementById('devroadmap-gantt-rows')
+  if(ganttRowsEl) ganttRowsEl.innerHTML = _devGanttRender(items)
+}
+
+function _devRoadmapChartDestroy(key, canvas) {
+  window._devRoadmapAdminCharts = window._devRoadmapAdminCharts || {}
+  if(window._devRoadmapAdminCharts[key]) { try { window._devRoadmapAdminCharts[key].destroy() } catch(e) {} ; delete window._devRoadmapAdminCharts[key] }
+  if(canvas && typeof Chart!=='undefined' && typeof Chart.getChart==='function') {
+    const existing = Chart.getChart(canvas)
+    if(existing) { try { existing.destroy() } catch(e) {} }
+  }
+}
+
+function _devZonePowerRender(moduleCoverage) {
+  const canvas = document.getElementById('devroadmap-zonepower-chart')
+  if(!canvas || typeof Chart === 'undefined') return
+  _devRoadmapChartDestroy('zonepower', canvas)
+  const isBm = APP.language==='bm'
+  const tick = _dbChartTickColor()
+  const labels = moduleCoverage.map(m => m.module)
+  const data = moduleCoverage.map(m => Math.round(m.pct))
+  const moduleColorsMap = _devGanttModuleColors(_adminDevRoadmapData)
+  const colors = moduleCoverage.map(m => moduleColorsMap[m.module] || '#0891B2')
+  const avg = data.length ? Math.round(data.reduce((a,b)=>a+b,0)/data.length) : 0
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  window._devRoadmapAdminCharts = window._devRoadmapAdminCharts || {}
+  window._devRoadmapAdminCharts.zonepower = new Chart(canvas, {
+    data: {
+      labels,
+      datasets: [
+        { type:'bar', label: isBm?'Skor Zon':'Zone Score', data, backgroundColor: colors, borderRadius:6, maxBarThickness:36, order:2 },
+        { type:'line', label: isBm?'Purata':'Average', data: labels.map(()=>avg), borderColor: primary, backgroundColor:'transparent', borderWidth:2, pointRadius:3, pointBackgroundColor: primary, tension:.2, order:1 }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction: { mode:'index', intersect:false },
+      plugins: { legend: { labels:{ color:tick, boxWidth:10, font:{size:11} } } },
+      scales: {
+        x: { ticks:{ color:tick, font:{size:11} }, grid:{ display:false } },
+        y: { min:0, max:100, ticks:{ color:tick }, grid:{ color:'rgba(148,163,184,.12)' } }
+      }
+    }
+  })
+}
+
+function _devRadarRender(moduleCoverage) {
+  const canvas = document.getElementById('devroadmap-radar-chart')
+  if(!canvas || typeof Chart === 'undefined') return
+  _devRoadmapChartDestroy('radar', canvas)
+  const isBm = APP.language==='bm'
+  const tick = _dbChartTickColor()
+  const labels = moduleCoverage.map(m => m.module)
+  const data = moduleCoverage.map(m => Math.round(m.pct))
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  window._devRoadmapAdminCharts = window._devRoadmapAdminCharts || {}
+  window._devRoadmapAdminCharts.radar = new Chart(canvas, {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [{
+        label: isBm?'Liputan Modul (%)':'Module Coverage (%)',
+        data,
+        borderColor: primary,
+        backgroundColor: 'rgba(14,116,144,.22)',
+        pointBackgroundColor: primary,
+        pointBorderColor: '#fff',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: { legend: { display:false } },
+      scales: {
+        r: {
+          min:0, max:100,
+          ticks: { display:false, backdropColor:'transparent' },
+          grid: { color:'rgba(128,128,128,.15)' },
+          angleLines: { color:'rgba(128,128,128,.12)' },
+          pointLabels: { color:tick, font:{size:12,weight:'600'} }
+        }
+      }
+    }
+  })
+}
+
+function _devBurnupRender(items) {
+  const canvas = document.getElementById('devroadmap-burnup-chart')
+  const emptyEl = document.getElementById('devroadmap-burnup-empty')
+  if(!canvas || typeof Chart === 'undefined') return
+  _devRoadmapChartDestroy('burnup', canvas)
+  const isBm = APP.language==='bm'
+  const completedDates = items.filter(i => i.stage==='completed' && i.completed_at).map(i => String(i.completed_at).slice(0,10))
+  const uniqueDates = [...new Set(completedDates)].sort()
+  if(!uniqueDates.length) {
+    if(emptyEl) { emptyEl.style.display='block'; emptyEl.textContent = isBm?'Tiada item selesai lagi.':'No completed items yet.' }
+  } else if(emptyEl) { emptyEl.style.display='none'; emptyEl.textContent='' }
+  const counts = {}
+  completedDates.forEach(d => { counts[d] = (counts[d]||0)+1 })
+  let cumulative = 0
+  const data = uniqueDates.map(d => { cumulative += counts[d]; return cumulative })
+  const labels = uniqueDates.map(d => formatDate(d))
+  const tick = _dbChartTickColor()
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  window._devRoadmapAdminCharts = window._devRoadmapAdminCharts || {}
+  window._devRoadmapAdminCharts.burnup = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets: [{ label: isBm?'Kumulatif Selesai':'Cumulative Completed', data, borderColor: primary, backgroundColor:'rgba(14,116,144,.15)', fill:true, tension:.25, pointRadius:3, pointBackgroundColor: primary }] },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: { legend: { labels:{ color:tick } } },
+      scales: {
+        x: { ticks:{ color:tick } },
+        y: { ticks:{ color:tick }, beginAtZero:true, precision:0 }
+      }
+    }
+  })
 }
 
 function _devGanttModuleColors(items) {
@@ -10305,7 +10547,13 @@ function openDevRoadmapModal(itemId, defaultStage) {
   const overlay = document.getElementById('admin-devroadmap-modal-overlay')
   overlay.dataset.itemId = item ? item.id : ''
   document.getElementById('admin-devroadmap-modal-title').textContent = item ? (isBm?'Sunting Item':'Edit Item') : (isBm?'Tambah Item':'Add Item')
+  const detailBlock = item ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;font-size:11px">
+      <div><div style="color:var(--text-3)">${isBm?'Dicipta':'Created'}</div><div>${item.created_at?formatDate(item.created_at):'—'}</div></div>
+      <div><div style="color:var(--text-3)">${isBm?'Mula':'Started'}</div><div>${item.started_at?formatDate(item.started_at):'—'}</div></div>
+      <div><div style="color:var(--text-3)">${isBm?'Selesai':'Completed'}</div><div>${item.completed_at?formatDate(item.completed_at):'—'}</div></div>
+    </div>${(item.started_at && item.completed_at) ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">${isBm?'Durasi':'Duration'}: ${Math.round((new Date(item.completed_at)-new Date(item.started_at))/3600000)} ${isBm?'jam':'hrs'}</div>` : ''}` : ''
   document.getElementById('admin-devroadmap-modal-body').innerHTML = `
+    ${detailBlock}
     <div class="form-group"><label class="form-label">${isBm?'Tajuk':'Title'}</label><input type="text" id="devroadmap-title" class="form-input" value="${_aiEscapeHtml(item?.title||'')}"></div>
     <div class="form-group"><label class="form-label">${isBm?'Keterangan':'Description'}</label><textarea id="devroadmap-desc" class="form-input" rows="3">${_aiEscapeHtml(item?.description||'')}</textarea></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
