@@ -606,7 +606,43 @@ footer a:hover { color: var(--cyan); }
 @media (prefers-reduced-motion: reduce) {
   .scroll-fab { transition: opacity .15s ease; transform: none; }
 }
+
+/* Referral program */
+.ref-panel {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r);
+  padding: 24px; margin-top: 20px;
+}
+.ref-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 16px; }
+.ref-field { display: flex; flex-direction: column; gap: 6px; }
+.ref-field label {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.ref-field input {
+  height: 44px; padding: 0 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--elev); color: var(--text);
+  font: inherit; font-size: 14px; width: 100%;
+}
+.ref-field input:focus { outline: none; border-color: var(--border-hi); }
+.ref-field input::placeholder { color: var(--muted); }
+.ref-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.ref-msg { grid-column: 1 / -1; font-size: 13px; }
+.ref-msg.err { color: #F87171; }
+.ref-result {
+  margin-top: 18px; padding: 16px; border-radius: 10px;
+  background: var(--elev); border: 1px solid var(--border-hi);
+}
+.ref-result .code {
+  font-family: 'Space Grotesk', monospace; font-weight: 700; font-size: 1.3rem;
+  color: var(--cyan); letter-spacing: 0.04em; margin-bottom: 8px;
+}
+.ref-result .link-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ref-result input.ref-link {
+  flex: 1; min-width: 200px; height: 40px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--muted); font-size: 13px;
+}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div class="ambient" aria-hidden="true"></div>
@@ -780,6 +816,57 @@ footer a:hover { color: var(--cyan); }
     <div class="svc-price-grid" id="svcPriceGrid"></div>
   </section>
 
+  <!-- REFERRAL PROGRAM -->
+  <section class="block" id="referral">
+    <div class="eyebrow reveal" data-i18n="ref_eyebrow">Earn with M-Core</div>
+    <h2 class="h2 reveal" data-i18n="ref_title">Refer a business, earn commission</h2>
+    <p class="lede reveal" data-i18n="ref_lede">RM30–RM70 per paid signup, once they subscribe, paid straight to your bank account.</p>
+    <div class="ref-panel reveal">
+      <form class="ref-form" id="refForm" onsubmit="return false">
+        <div class="ref-field">
+          <label for="ref-name" data-i18n="ref_lbl_name">Full name</label>
+          <input type="text" id="ref-name" autocomplete="name" required>
+        </div>
+        <div class="ref-field">
+          <label for="ref-phone" data-i18n="ref_lbl_phone">Phone number</label>
+          <input type="tel" id="ref-phone" placeholder="+601X-XXXXXXX" autocomplete="tel" required>
+        </div>
+        <div class="ref-field">
+          <label for="ref-email" data-i18n="ref_lbl_email">Email</label>
+          <input type="email" id="ref-email" autocomplete="email" required>
+        </div>
+        <div class="ref-field">
+          <label for="ref-bank-name" data-i18n="ref_lbl_bank_name">Bank name</label>
+          <input type="text" id="ref-bank-name" required>
+        </div>
+        <div class="ref-field">
+          <label for="ref-bank-acc-no" data-i18n="ref_lbl_bank_acc_no">Bank account number</label>
+          <input type="text" id="ref-bank-acc-no" inputmode="numeric" required>
+        </div>
+        <div class="ref-field">
+          <label for="ref-bank-acc-name" data-i18n="ref_lbl_bank_acc_name">Bank account holder name</label>
+          <input type="text" id="ref-bank-acc-name" required>
+        </div>
+        <div class="ref-field">
+          <label for="ref-qr" data-i18n="ref_lbl_qr">Payment QR code link (optional)</label>
+          <input type="url" id="ref-qr" placeholder="https://...">
+        </div>
+        <div class="ref-actions">
+          <button type="button" class="btn btn-primary" id="refSubmitBtn" onclick="submitReferralPartner()" data-i18n="ref_submit">Join Referral Program</button>
+        </div>
+        <div class="ref-msg err" id="refMsg" hidden></div>
+      </form>
+      <div class="ref-result" id="refResult" hidden>
+        <div data-i18n="ref_result_lede">You're in! Share this link, you'll get commission on every paid signup.</div>
+        <div class="code" id="refResultCode"></div>
+        <div class="link-row">
+          <input type="text" class="ref-link" id="refResultLink" readonly>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="copyReferralLink()" id="refCopyBtn" data-i18n="ref_copy">Copy link</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="cta reveal" id="contact">
     <h2 data-i18n="cta_h2">Ready when you are.</h2>
     <p data-i18n="cta_p">Open M-Core free, or talk to MPFLE about plans and ops.</p>
@@ -863,6 +950,18 @@ let currentLang = localStorage.getItem('mcore_lang') || 'ms';
 if (currentLang !== 'en' && currentLang !== 'ms') currentLang = 'ms';
 let billing = 'monthly';
 
+// Referral program — same Supabase project as app/index.html (anon key, safe client-side)
+const REF_SUPABASE_URL  = 'https://wjqhhnjlgoigoagsnsen.supabase.co';
+const REF_SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw';
+let refSb = null;
+try { refSb = supabase.createClient(REF_SUPABASE_URL, REF_SUPABASE_ANON); } catch (e) { console.error('referral supabase init', e); }
+
+// Capture ?ref=CODE on any landing visit (register flow reads this later) — never strip the URL param.
+try {
+  const _refFromUrl = new URLSearchParams(window.location.search).get('ref');
+  if (_refFromUrl) localStorage.setItem('mcore_ref_code', _refFromUrl);
+} catch (e) {}
+
 const I18N = {
   en: {
     nav_modules:'Modules', nav_pricing:'Pricing', nav_services:'Services', cta_mini:'Client login',
@@ -909,7 +1008,17 @@ const I18N = {
     footer_tag:'M-Core · books · payroll · stock · sales',
     footer_contact:'Contact', footer_product:'Product', footer_pricing:'Pricing', footer_svc:'Services',
     footer_copyright:'© 2026 MPFLE Media',
-    footer_top:'Back to top'
+    footer_top:'Back to top',
+    ref_eyebrow:'Earn with M-Core', ref_title:'Refer a business, earn commission',
+    ref_lede:'RM30–RM70 per paid signup, once they subscribe, paid straight to your bank account.',
+    ref_lbl_name:'Full name', ref_lbl_phone:'Phone number', ref_lbl_email:'Email',
+    ref_lbl_bank_name:'Bank name', ref_lbl_bank_acc_no:'Bank account number', ref_lbl_bank_acc_name:'Bank account holder name',
+    ref_lbl_qr:'Payment QR code link (optional)',
+    ref_submit:'Join Referral Program', ref_copy:'Copy link',
+    ref_result_lede:'You\'re in! Share this link, you\'ll get commission on every paid signup.',
+    ref_err_required:'Please fill in name, phone, email and all bank details.',
+    ref_err_generic:'Something went wrong. Please try again.',
+    ref_submitting:'Submitting…', ref_copied:'Copied!'
   },
   ms: {
     nav_modules:'Modul', nav_pricing:'Harga', nav_services:'Perkhidmatan', cta_mini:'Log masuk klien',
@@ -956,7 +1065,17 @@ const I18N = {
     footer_tag:'M-Core · lejar · gaji · stok · jualan',
     footer_contact:'Hubungi', footer_product:'Produk', footer_pricing:'Harga', footer_svc:'Perkhidmatan',
     footer_copyright:'© 2026 MPFLE Media',
-    footer_top:'Kembali ke atas'
+    footer_top:'Kembali ke atas',
+    ref_eyebrow:'Dapatkan komisen', ref_title:'Rujuk bisnes, dapat komisen',
+    ref_lede:'RM30–RM70 setiap signup berbayar, lepas mereka subscribe, terus masuk akaun bank anda.',
+    ref_lbl_name:'Nama penuh', ref_lbl_phone:'No telefon', ref_lbl_email:'Emel',
+    ref_lbl_bank_name:'Nama bank', ref_lbl_bank_acc_no:'No akaun bank', ref_lbl_bank_acc_name:'Nama pemilik akaun bank',
+    ref_lbl_qr:'Link QR code bayaran (pilihan)',
+    ref_submit:'Sertai Program Referral', ref_copy:'Salin link',
+    ref_result_lede:'Anda dah daftar! Kongsi link ni, anda dapat komisen setiap signup berbayar.',
+    ref_err_required:'Sila isi nama, no telefon, emel dan semua butiran bank.',
+    ref_err_generic:'Ada masalah. Sila cuba lagi.',
+    ref_submitting:'Menghantar…', ref_copied:'Disalin!'
   }
 };
 
@@ -1086,6 +1205,86 @@ function applyLang(lang) {
   observeReveals();
 }
 function toggleLang() { applyLang(currentLang === 'en' ? 'ms' : 'en'); }
+
+async function submitReferralPartner() {
+  const t = I18N[currentLang];
+  const msgEl = document.getElementById('refMsg');
+  const btn = document.getElementById('refSubmitBtn');
+  msgEl.hidden = true;
+
+  const fullName = document.getElementById('ref-name').value.trim();
+  const phone = document.getElementById('ref-phone').value.trim();
+  const email = document.getElementById('ref-email').value.trim();
+  const bankName = document.getElementById('ref-bank-name').value.trim();
+  const bankAccNo = document.getElementById('ref-bank-acc-no').value.trim();
+  const bankAccName = document.getElementById('ref-bank-acc-name').value.trim();
+  const qrUrl = document.getElementById('ref-qr').value.trim();
+
+  if (!fullName || !phone || !email || !bankName || !bankAccNo || !bankAccName) {
+    msgEl.textContent = t.ref_err_required;
+    msgEl.hidden = false;
+    return;
+  }
+  if (!refSb) {
+    msgEl.textContent = t.ref_err_generic;
+    msgEl.hidden = false;
+    return;
+  }
+
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t.ref_submitting;
+
+  try {
+    const { data, error } = await refSb.rpc('submit_referral_partner', {
+      p_full_name: fullName,
+      p_phone: phone,
+      p_email: email,
+      p_bank_name: bankName,
+      p_bank_account_no: bankAccNo,
+      p_bank_account_name: bankAccName,
+      p_qr_code_url: qrUrl || null
+    });
+    if (error) throw error;
+
+    // RPC return shape isn't fixed here (could be a scalar, a row, or an array) — handle all of them.
+    let code = null;
+    if (typeof data === 'string') code = data;
+    else if (Array.isArray(data)) code = data[0]?.referral_code || data[0];
+    else if (data && typeof data === 'object') code = data.referral_code || data.code;
+    if (!code) throw new Error('No referral code returned');
+
+    const link = 'https://mpflemedia-ux.github.io/nexerp/?ref=' + encodeURIComponent(code);
+    document.getElementById('refResultCode').textContent = code;
+    document.getElementById('refResultLink').value = link;
+    document.getElementById('refResult').hidden = false;
+    document.getElementById('refForm').hidden = true;
+  } catch (e) {
+    console.error('submit_referral_partner', e);
+    msgEl.textContent = (e && e.message) ? e.message : t.ref_err_generic;
+    msgEl.hidden = false;
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+function copyReferralLink() {
+  const input = document.getElementById('refResultLink');
+  const btn = document.getElementById('refCopyBtn');
+  const t = I18N[currentLang];
+  const done = () => {
+    const original = t.ref_copy;
+    btn.textContent = t.ref_copied;
+    setTimeout(() => { btn.textContent = original; }, 1600);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(input.value).then(done, () => { input.select(); document.execCommand('copy'); done(); });
+  } else {
+    input.select();
+    document.execCommand('copy');
+    done();
+  }
+}
 
 function applyTheme(theme) {
   const t = theme === 'light' ? 'light' : 'dark';

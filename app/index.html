@@ -4124,6 +4124,14 @@ async function doRegister() {
         APP.user.name   = name
         if(tid) try { localStorage.setItem('nexerp_pending_tenant_id', tid) } catch(e) {}
         console.log('Tenant created:', rpcData)
+        // Referral program — best-effort, non-blocking: never delay/break registration.
+        try {
+          const refCode = localStorage.getItem('mcore_ref_code')
+          if(refCode && tid) {
+            sb.rpc('record_referral_conversion', { p_referral_code: refCode, p_tenant_id: tid })
+              .then(() => { try { localStorage.removeItem('mcore_ref_code') } catch(e) {} }, () => {})
+          }
+        } catch(e) {}
       }
       const isBmReg = (localStorage.getItem('nexerp_lang') === 'bm') || (typeof APP !== 'undefined' && APP.language === 'bm')
       if(!data.session) {
@@ -7865,6 +7873,8 @@ function renderAdmin(params={}) {
   if(params.view==='clients' && isPlatformAdmin()) { renderAdminClients(); return }
   if(params.view==='audit' && isPlatformAdmin()) { renderAdminAuditLog(); return }
   if(params.view==='announcements' && isPlatformAdmin()) { renderAdminAnnouncements(); return }
+  if(params.view==='referrals' && isPlatformAdmin()) { renderAdminReferrals(); return }
+  if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
   renderAdminTeam()
 }
 
@@ -7876,6 +7886,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='clients'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'clients'})"><i class="ti ti-building-skyscraper"></i> ${isBm?'Semua Client':'All Clients'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='audit'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'audit'})"><i class="ti ti-history"></i> ${isBm?'Log Audit':'Audit Log'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
   </div>`
 }
 
@@ -9388,6 +9399,308 @@ async function doSoftDeleteTenant() {
   renderAdminClients()
 }
 
+
+// ─── Referral Program (Platform Admin) ──────────────────────────────────────
+// referral_partners: id, referral_code, full_name, phone, email, bank_name,
+//   bank_account_no, bank_account_name, qr_code_url, created_at
+// referral_conversions: id, referral_code (FK → referral_partners.referral_code),
+//   tenant_id, status ('registered'|'converted'|'paid'), commission_amount,
+//   created_at, paid_at, paid_by
+let _adminReferralPartners = []
+let _adminReferralConversions = []
+let _adminReferralTenantNames = {}
+let _adminReferralState = { q:'', status:'all', sortKey:'created', sortDir:'desc' }
+
+async function _loadAdminReferralData() {
+  const [{data: partners, error: pErr}, {data: conversions, error: cErr}] = await Promise.all([
+    sb.from('referral_partners').select('*').order('created_at', {ascending:false}),
+    sb.from('referral_conversions').select('*').order('created_at', {ascending:false})
+  ])
+  if(pErr) return {error: pErr}
+  _adminReferralPartners = partners || []
+  _adminReferralConversions = cErr ? [] : (conversions || [])
+
+  const tenantIds = Array.from(new Set(_adminReferralConversions.map(c=>c.tenant_id).filter(Boolean)))
+  if(tenantIds.length) {
+    try {
+      const {data: tRows} = await sb.from('tenants').select('id,name,code').in('id', tenantIds)
+      _adminReferralTenantNames = {}
+      ;(tRows||[]).forEach(t => { _adminReferralTenantNames[t.id] = t.name || t.code })
+    } catch(e) { _adminReferralTenantNames = {} }
+  } else {
+    _adminReferralTenantNames = {}
+  }
+  return {}
+}
+
+function _adminReferralConvsFor(partner) {
+  return _adminReferralConversions.filter(c => c.referral_code && partner.referral_code && String(c.referral_code)===String(partner.referral_code))
+}
+function _adminReferralStats(partner) {
+  const convs = _adminReferralConvsFor(partner)
+  const registered = convs.length
+  const converted = convs.filter(c => c.status==='converted' || c.status==='paid').length
+  const totalCommission = convs.filter(c => c.status==='converted' || c.status==='paid')
+    .reduce((sum,c) => sum + Number(c.commission_amount||0), 0)
+  return { registered, converted, totalCommission }
+}
+function _adminReferralIsThisMonth(dateStr) {
+  if(!dateStr) return false
+  const d = new Date(dateStr), now = new Date()
+  return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth()
+}
+
+async function renderAdminReferrals() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Program Referral', sub:'Rakan referral, penukaran & komisen',
+    name:'Nama', contact:'Kontak', registered:'Berdaftar', converted:'Ditukar', commission:'Jumlah Komisen',
+    created:'Dicipta', noData:'Tiada rakan referral lagi.', search:'Cari', status:'Status',
+    all:'Semua', hasConverted:'Ada Ditukar', hasPaid:'Ada Dibayar', noneYet:'Belum Ada',
+    pendingPayout:'Payout Belum Bayar', newThisMonth:'Referral Baru Bulan Ni',
+    topReferrer:'Top Referrer', topEarner:'Top Earner', bulanIni:'bulan ini', noWinner:'Tiada lagi'
+  } : {
+    title:'Referral Program', sub:'Partners, conversions & commission',
+    name:'Name', contact:'Contact', registered:'Registered', converted:'Converted', commission:'Total Commission',
+    created:'Created', noData:'No referral partners yet.', search:'Search', status:'Status',
+    all:'All', hasConverted:'Has Converted', hasPaid:'Has Paid', noneYet:'None Yet',
+    pendingPayout:'Pending Payout', newThisMonth:'New Referrals This Month',
+    topReferrer:'Top Referrer', topEarner:'Top Earner', bulanIni:'this month', noWinner:'None yet'
+  }
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('referrals')}
+  <div id="admin-referrals-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+
+  const wrap = document.getElementById('admin-referrals-wrap')
+  const {error} = await _loadAdminReferralData()
+  if(error) {
+    wrap.innerHTML = `<div class="card" style="padding:24px">
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Pastikan jadual referral_partners/referral_conversions dan RLS platform_admin dah disediakan (Fasa 1 SQL).'
+        : 'Make sure referral_partners/referral_conversions tables and platform_admin RLS are set up (Phase 1 SQL).'}</p>
+    </div>`
+    return
+  }
+
+  // Dashboard KPIs
+  const pendingPayout = _adminReferralConversions
+    .filter(c => c.status==='converted')
+    .reduce((sum,c) => sum + Number(c.commission_amount||0), 0)
+  const newThisMonth = _adminReferralPartners.filter(p => _adminReferralIsThisMonth(p.created_at)).length
+
+  // Leaderboard (this month, by registration month of their conversions)
+  const monthConvs = _adminReferralConversions.filter(c => _adminReferralIsThisMonth(c.created_at))
+  const byCode = {}
+  monthConvs.forEach(c => {
+    const k = String(c.referral_code||'')
+    if(!k) return
+    if(!byCode[k]) byCode[k] = { count:0, commission:0 }
+    byCode[k].count++
+    if(c.status==='converted' || c.status==='paid') byCode[k].commission += Number(c.commission_amount||0)
+  })
+  const partnerByCode = {}
+  _adminReferralPartners.forEach(p => { if(p.referral_code) partnerByCode[String(p.referral_code)] = p })
+  let topReferrer = null, topReferrerCount = 0
+  let topEarner = null, topEarnerAmount = 0
+  Object.keys(byCode).forEach(code => {
+    if(byCode[code].count > topReferrerCount) { topReferrerCount = byCode[code].count; topReferrer = partnerByCode[code] }
+    if(byCode[code].commission > topEarnerAmount) { topEarnerAmount = byCode[code].commission; topEarner = partnerByCode[code] }
+  })
+
+  const leaderCard = (label, partner, valueHtml) => `
+    <div style="background:linear-gradient(135deg,rgba(34,211,238,.12),rgba(20,184,166,.06));border:1px solid rgba(34,211,238,.35);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:#22D3EE;font-weight:700;letter-spacing:.04em;text-transform:uppercase">${label}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;margin-top:6px">${partner ? _aiEscapeHtml(partner.full_name||partner.email||'—') : t.noWinner}</div>
+      ${partner ? `<div style="font-size:12px;color:var(--text-3);margin-top:2px">${valueHtml}</div>` : ''}
+    </div>`
+
+  wrap.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px">
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${t.pendingPayout}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:var(--warning)">${formatRM(pendingPayout)}</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${t.newThisMonth}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${newThisMonth}</div>
+    </div>
+    ${leaderCard(t.topReferrer, topReferrer, `${topReferrerCount} ${isBm?'referral':'referrals'} · ${t.bulanIni}`)}
+    ${leaderCard(t.topEarner, topEarner, `${formatRM(topEarnerAmount)} · ${t.bulanIni}`)}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <div class="form-group" style="margin:0;min-width:200px;flex:1">
+      <label class="form-label">${t.search}</label>
+      <input id="admin-ref-q" class="form-input" type="search" placeholder="${isBm?'Nama, emel atau kod':'Name, email or code'}" value="${_aiEscapeHtml(_adminReferralState.q||'')}" oninput="_adminReferralFilterChanged()">
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">${t.status}</label>
+      <select id="admin-ref-status" class="form-select" onchange="_adminReferralFilterChanged()">
+        <option value="all" ${_adminReferralState.status==='all'?'selected':''}>${t.all}</option>
+        <option value="converted" ${_adminReferralState.status==='converted'?'selected':''}>${t.hasConverted}</option>
+        <option value="paid" ${_adminReferralState.status==='paid'?'selected':''}>${t.hasPaid}</option>
+        <option value="none" ${_adminReferralState.status==='none'?'selected':''}>${t.noneYet}</option>
+      </select>
+    </div>
+  </div>
+  <div class="card"><div id="admin-referrals-table-host" style="overflow-x:auto;padding:8px"></div></div>`
+
+  _adminReferralRenderTable()
+}
+
+function _adminReferralFilterChanged() {
+  _adminReferralState.q = document.getElementById('admin-ref-q')?.value || ''
+  _adminReferralState.status = document.getElementById('admin-ref-status')?.value || 'all'
+  _adminReferralRenderTable()
+}
+function _adminReferralSort(key) {
+  if(_adminReferralState.sortKey === key) {
+    _adminReferralState.sortDir = _adminReferralState.sortDir === 'asc' ? 'desc' : 'asc'
+  } else {
+    _adminReferralState.sortKey = key
+    _adminReferralState.sortDir = (key==='created'||key==='registered'||key==='converted'||key==='commission') ? 'desc' : 'asc'
+  }
+  _adminReferralRenderTable()
+}
+function _adminReferralSortMark(key) {
+  if(_adminReferralState.sortKey !== key) return ''
+  return _adminReferralState.sortDir === 'asc' ? ' ▲' : ' ▼'
+}
+function _adminReferralFiltered() {
+  const st = _adminReferralState
+  const isBm = APP.language==='bm'
+  const q = String(st.q||'').trim().toLowerCase()
+  let rows = _adminReferralPartners.map(p => Object.assign({}, p, _adminReferralStats(p)))
+  if(q) rows = rows.filter(p => (p.full_name||'').toLowerCase().includes(q) || (p.email||'').toLowerCase().includes(q) || (p.referral_code||'').toLowerCase().includes(q))
+  if(st.status==='converted') rows = rows.filter(p => p.converted > 0)
+  else if(st.status==='paid') rows = rows.filter(p => _adminReferralConvsFor(p).some(c=>c.status==='paid'))
+  else if(st.status==='none') rows = rows.filter(p => p.registered === 0)
+  const dir = st.sortDir==='asc' ? 1 : -1
+  const key = st.sortKey || 'created'
+  rows.sort((a,b) => {
+    let av, bv
+    switch(key) {
+      case 'name': av=(a.full_name||'').toLowerCase(); bv=(b.full_name||'').toLowerCase(); break
+      case 'registered': av=a.registered; bv=b.registered; break
+      case 'converted': av=a.converted; bv=b.converted; break
+      case 'commission': av=a.totalCommission; bv=b.totalCommission; break
+      default: av=Date.parse(a.created_at||0)||0; bv=Date.parse(b.created_at||0)||0
+    }
+    if(av<bv) return -1*dir
+    if(av>bv) return 1*dir
+    return 0
+  })
+  return rows
+}
+function _adminReferralRenderTable() {
+  const host = document.getElementById('admin-referrals-table-host')
+  if(!host) return
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    name:'Nama', contact:'Kontak', registered:'Berdaftar', converted:'Ditukar', commission:'Jumlah Komisen', created:'Dicipta', noMatch:'Tiada rakan sepadan.'
+  } : {
+    name:'Name', contact:'Contact', registered:'Registered', converted:'Converted', commission:'Total Commission', created:'Created', noMatch:'No matching partners.'
+  }
+  const th = (key,label) => `<th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="_adminReferralSort('${key}')">${label}${_adminReferralSortMark(key)}</th>`
+  const rows = _adminReferralFiltered()
+  if(!rows.length) {
+    host.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noMatch}</p></div>`
+    return
+  }
+  host.innerHTML = `<table><thead><tr>
+    ${th('name', t.name)}<th>${t.contact}</th>${th('registered', t.registered)}${th('converted', t.converted)}${th('commission', t.commission)}${th('created', t.created)}
+  </tr></thead><tbody>
+  ${rows.map(p => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'referral-detail',id:'${p.id}'})">
+    <td>${_aiEscapeHtml(p.full_name||'—')}<div style="font-size:11px;color:var(--text-3)">${_aiEscapeHtml(p.referral_code||'')}</div></td>
+    <td style="font-size:12px">${_aiEscapeHtml(p.phone||'')}<br>${_aiEscapeHtml(p.email||'')}</td>
+    <td>${p.registered}</td>
+    <td>${p.converted}</td>
+    <td>${formatRM(p.totalCommission)}</td>
+    <td style="font-size:12px;color:var(--text-3)">${p.created_at?formatDate(p.created_at):'—'}</td>
+  </tr>`).join('')}
+  </tbody></table>`
+}
+
+async function renderAdminReferralDetail(partnerId) {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    back:'Kembali', contact:'Kontak', bank:'Butiran Bank', qr:'QR Code', conversions:'Senarai Penukaran',
+    tenant:'Tenant', status:'Status', commission:'Komisen', created:'Dicipta', paidAt:'Dibayar Pada',
+    markPaid:'Tanda Sudah Bayar', noData:'Rakan referral tidak dijumpai.', noConv:'Tiada penukaran lagi.'
+  } : {
+    back:'Back', contact:'Contact', bank:'Bank Details', qr:'QR Code', conversions:'Conversions',
+    tenant:'Tenant', status:'Status', commission:'Commission', created:'Created', paidAt:'Paid At',
+    markPaid:'Mark as Paid', noData:'Referral partner not found.', noConv:'No conversions yet.'
+  }
+  document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:40px"><div class="spinner"></div></div>`
+
+  if(!_adminReferralPartners.length) await _loadAdminReferralData()
+  const partner = _adminReferralPartners.find(p => String(p.id)===String(partnerId))
+  if(!partner) {
+    document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p>
+      <button class="btn btn-outline btn-sm" onclick="openPage('admin',{view:'referrals'})">${t.back}</button></div>`
+    return
+  }
+  const convs = _adminReferralConvsFor(partner).sort((a,b)=>(Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0))
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${_aiEscapeHtml(partner.full_name||'—')}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${_aiEscapeHtml(partner.referral_code||'')}</div>
+  </div></div>
+  <div style="font-size:13px;color:var(--text-3);margin-bottom:12px;cursor:pointer" onclick="openPage('admin',{view:'referrals'})">← ${t.back}</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px">
+    <div class="card" style="padding:16px">
+      <div style="font-weight:600;margin-bottom:8px">${t.contact}</div>
+      <div style="font-size:13px;color:var(--text-2)">${_aiEscapeHtml(partner.phone||'—')}</div>
+      <div style="font-size:13px;color:var(--text-2)">${_aiEscapeHtml(partner.email||'—')}</div>
+    </div>
+    <div class="card" style="padding:16px">
+      <div style="font-weight:600;margin-bottom:8px">${t.bank}</div>
+      <div style="font-size:13px;color:var(--text-2)">${_aiEscapeHtml(partner.bank_name||'—')}</div>
+      <div style="font-size:13px;color:var(--text-2)">${_aiEscapeHtml(partner.bank_account_no||'—')}</div>
+      <div style="font-size:13px;color:var(--text-2)">${_aiEscapeHtml(partner.bank_account_name||'—')}</div>
+    </div>
+    ${partner.qr_code_url ? `<div class="card" style="padding:16px">
+      <div style="font-weight:600;margin-bottom:8px">${t.qr}</div>
+      <a href="${_aiEscapeHtml(partner.qr_code_url)}" target="_blank" rel="noopener" style="font-size:13px;word-break:break-all">${_aiEscapeHtml(partner.qr_code_url)}</a>
+    </div>` : ''}
+  </div>
+  <div class="card"><div style="overflow-x:auto;padding:8px">
+    <div style="font-weight:600;padding:8px 8px 4px">${t.conversions}</div>
+    ${!convs.length ? `<div class="empty-state" style="padding:32px"><p>${t.noConv}</p></div>` : `
+    <table><thead><tr>
+      <th>${t.tenant}</th><th>${t.status}</th><th>${t.commission}</th><th>${t.created}</th><th>${t.paidAt}</th><th></th>
+    </tr></thead><tbody>
+    ${convs.map(c => `<tr>
+      <td>${_aiEscapeHtml(_adminReferralTenantNames[c.tenant_id]||c.tenant_id||'—')}</td>
+      <td style="color:${c.status==='paid'?'var(--success)':c.status==='converted'?'var(--warning)':'var(--text-3)'}">${_aiEscapeHtml(c.status||'—')}</td>
+      <td>${formatRM(Number(c.commission_amount||0))}</td>
+      <td style="font-size:12px;color:var(--text-3)">${c.created_at?formatDate(c.created_at):'—'}</td>
+      <td style="font-size:12px;color:var(--text-3)">${c.paid_at?formatDate(c.paid_at):'—'}</td>
+      <td>${c.status==='converted' ? `<button type="button" class="btn btn-outline btn-sm" onclick="doMarkReferralPaid('${c.id}','${partner.id}')">${t.markPaid}</button>` : ''}</td>
+    </tr>`).join('')}
+    </tbody></table>`}
+  </div></div>`
+}
+
+async function doMarkReferralPaid(conversionId, partnerId) {
+  const isBm = APP.language==='bm'
+  const {error} = await sb.from('referral_conversions')
+    .update({status:'paid', paid_at:new Date().toISOString(), paid_by:APP.user.id})
+    .eq('id', conversionId)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Ditanda sudah bayar.':'Marked as paid.', 'success')
+  await _loadAdminReferralData()
+  renderAdminReferralDetail(partnerId)
+}
 
 async function renderAdminTenantDetail(tenantId) {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
