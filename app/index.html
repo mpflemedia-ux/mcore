@@ -3778,7 +3778,25 @@ function _obtEnd(markDone) {
   if(el) el.remove()
   if(_obtResizeHandler) { window.removeEventListener('resize', _obtResizeHandler); _obtResizeHandler = null }
   _obtResetSidebarTourStyles()
-  if(markDone) _obtMarkDone()
+  if(markDone) {
+    // Set the local flag synchronously, BEFORE _obtMarkDone()'s server
+    // round-trip resolves — renderDashboard() (which openPage('dashboard')
+    // below triggers) calls _obtMaybeAutoStart() on every visit, and that
+    // gate reads APP.user.permissions.onboarding_tour_done from memory. If
+    // this were left to the async save alone, navigating straight to
+    // Dashboard right after Skip/Finish would race it: the local flag is
+    // still stale at that point, so the tour would immediately auto-restart
+    // — the user would see it pop right back up the moment they finished
+    // it. _obtMarkDone() still fires to persist this to the server as before.
+    APP.user.permissions = Object.assign({}, APP.user.permissions || {}, { onboarding_tour_done: true })
+    _obtMarkDone()
+  }
+  // Tour can be started from any page (auto-start on Dashboard, or Replay
+  // tour from Settings) but always ends the same way for the user —
+  // Skip/Finish are the only two call sites for this function, both real
+  // "I'm done with the tour" actions, so always landing back on Dashboard
+  // is safe regardless of where it started. No-op if already there.
+  openPage('dashboard')
 }
 
 function _obtNext() {
@@ -3862,7 +3880,21 @@ function _obtMaybeAutoStart() {
   if(!APP.user.role || APP.user.role==='owner') return
   if(APP.user.permissions && APP.user.permissions.onboarding_tour_done) return
   if(_obtActive) return
-  setTimeout(() => { try { _obtStart() } catch(e) { console.error(e) } }, 400)
+  // Re-check both guards again when this actually fires, 400ms later — not
+  // just at schedule time. renderDashboard() calls this on every dashboard
+  // visit, and now that _obtEnd() navigates straight back to Dashboard on
+  // Skip/Finish, a dashboard visit that happened right before the user
+  // started the tour can have a stale timer still pending from THAT visit.
+  // Without re-validating here, that stale timer would fire after the user
+  // already finished the tour (_obtActive back to false by then) and
+  // restart it — the tour popping right back up the moment it was closed.
+  setTimeout(() => {
+    try {
+      if(APP.user.permissions && APP.user.permissions.onboarding_tour_done) return
+      if(_obtActive) return
+      _obtStart()
+    } catch(e) { console.error(e) }
+  }, 400)
 }
 
 // Manual replay (Settings button) — works regardless of role or done-state.
