@@ -10136,7 +10136,7 @@ async function doDeleteReferralPartner(partnerId, partnerName) {
 
 // ─── System Development tracker (Platform Admin) ────────────────────────────
 // dev_roadmap_items: id, title, description, module, stage
-//   ('idea'|'planned'|'in_progress'|'completed'), pr_link, started_at,
+//   ('idea'|'planned'|'in_progress'|'completed'), pr_url, started_at,
 //   completed_at (both auto-set by DB trigger on stage change), created_at
 let _adminDevRoadmapData = []
 const _DEVROADMAP_STAGES = ['idea', 'planned', 'in_progress', 'completed']
@@ -10200,7 +10200,7 @@ function _adminDevRoadmapRenderBoard() {
     <div style="font-weight:600;font-size:13px;margin-bottom:4px">${_aiEscapeHtml(item.title||'—')}</div>
     ${item.module ? `<span style="font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg);border:1px solid var(--border);color:var(--text-3)">${_aiEscapeHtml(item.module)}</span>` : ''}
     <div style="font-size:12px;color:var(--text-2);margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${_aiEscapeHtml(item.description||'')}</div>
-    ${item.stage==='completed' && item.pr_link ? `<a href="${_aiEscapeHtml(item.pr_link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;color:var(--primary);display:inline-block;margin-top:4px">${viewPr}</a>` : ''}
+    ${item.stage==='completed' && item.pr_url ? `<a href="${_aiEscapeHtml(item.pr_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;color:var(--primary);display:inline-block;margin-top:4px">${viewPr}</a>` : ''}
     <select onclick="event.stopPropagation()" onchange="doChangeDevRoadmapStage('${item.id}', this.value)" class="form-select" style="margin-top:8px;font-size:11px;padding:4px 6px;height:auto">
       ${_DEVROADMAP_STAGES.map(s => `<option value="${s}" ${item.stage===s?'selected':''}>${stageLabels[s]}</option>`).join('')}
     </select>
@@ -10250,7 +10250,7 @@ function openDevRoadmapModal(itemId, defaultStage) {
     </div>
     <div class="form-group" id="devroadmap-pr-group" style="display:${stage==='completed'?'':'none'}">
       <label class="form-label">${isBm?'Link PR (pilihan)':'PR Link (optional)'}</label>
-      <input type="url" id="devroadmap-pr" class="form-input" placeholder="https://github.com/..." value="${_aiEscapeHtml(item?.pr_link||'')}">
+      <input type="url" id="devroadmap-pr" class="form-input" placeholder="https://github.com/..." value="${_aiEscapeHtml(item?.pr_url||'')}">
     </div>
     ${item ? `<button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="doDeleteDevRoadmapItem('${item.id}')">${isBm?'Padam Item Ini':'Delete This Item'}</button>` : ''}`
   overlay.classList.add('active')
@@ -10272,7 +10272,7 @@ async function doSaveDevRoadmapItem() {
   const stage = document.getElementById('devroadmap-stage').value
   const prLink = document.getElementById('devroadmap-pr')?.value.trim() || null
   if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
-  const payload = { title, description, module, stage, pr_link: stage==='completed' ? prLink : null }
+  const payload = { title, description, module, stage, pr_url: stage==='completed' ? prLink : null }
   const { error } = itemId
     ? await sb.from('dev_roadmap_items').update(payload).eq('id', itemId)
     : await sb.from('dev_roadmap_items').insert(payload)
