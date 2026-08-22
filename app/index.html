@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-sub-rev-bf">
+<meta name="nexerp-build" content="2026-08-22-sub-jnl-hard">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8989,11 +8989,40 @@ async function doRecordPayment() {
   renderAdminClients()
 }
 
+/** Resolve Cash + Sales Revenue accounts for platform books (defaults, then COA fallback). */
+async function _resolvePlatformCashRevenueAccounts() {
+  let cashAcc = null, revenueAcc = null
+  try { cashAcc = await _getDefaultAccountId('cash') } catch (e) {}
+  try { revenueAcc = await _getDefaultAccountId('sales_revenue') } catch (e) {}
+  if (cashAcc && revenueAcc) return { cashAcc, revenueAcc }
+  try {
+    const { data } = await sb.from('chart_of_accounts')
+      .select('id,code,account_type,name_en,name_bm')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    const rows = data || []
+    if (!cashAcc) {
+      const byCode = rows.find(a => String(a.code) === '1000')
+      const byName = rows.find(a => /cash|bank|tunai/i.test(String(a.name_en||'') + ' ' + String(a.name_bm||'')))
+      cashAcc = (byCode && byCode.id) || (byName && byName.id) || null
+    }
+    if (!revenueAcc) {
+      const byCode = rows.find(a => String(a.code) === '4000')
+      const byType = rows.find(a => String(a.account_type) === 'revenue')
+      revenueAcc = (byCode && byCode.id) || (byType && byType.id) || null
+    }
+  } catch (e) { console.warn('_resolvePlatformCashRevenueAccounts', e) }
+  return { cashAcc, revenueAcc }
+}
+
 /** Post Dr Cash / Cr Sales Revenue on platform home tenant for client plan payments. */
 async function _postPlatformSubscriptionIncome({ amount, paymentDate, clientName, clientCode, method, sourceId, quiet }) {
   if (!(amount > 0)) return null
   if (!_isPlatformHomeTenant(APP.tenant)) {
-    if (!quiet) console.warn('Subscription income journal skipped — APP.tenant is not MP Workspace')
+    if (!quiet) {
+      showToast(APP.language === 'bm'
+        ? 'Jurnal hasil hanya ditulis pada tenant MP Workspace. Log masuk sebagai workspace platform.'
+        : 'Revenue journal only posts on MP Workspace. Stay on the platform home tenant.', 'warning')
+    }
     return null
   }
   const isBm = APP.language === 'bm'
@@ -9004,44 +9033,75 @@ async function _postPlatformSubscriptionIncome({ amount, paymentDate, clientName
   try {
     if (sid && await _journalAlreadyPosted('tenant_plan_payments', sid)) return { skipped: true }
   } catch (e) {}
-  const posted = await _postSaleJournal({
-    description: desc,
-    entryDate: paymentDate || new Date().toISOString().slice(0, 10),
-    amount: amount,
-    cogsAmount: 0,
-    sourceTable: 'tenant_plan_payments',
-    sourceId: sid
-  })
-  if (!posted && !quiet) {
-    showToast(isBm
-      ? 'Bayaran disimpan, tapi jurnal hasil gagal — set Default Accounts (Cash + Sales Revenue) di MP Workspace.'
-      : 'Payment saved, but revenue journal failed — set Default Accounts (Cash + Sales Revenue) on MP Workspace.', 'warning')
+
+  const { cashAcc, revenueAcc } = await _resolvePlatformCashRevenueAccounts()
+  if (!cashAcc || !revenueAcc) {
+    if (!quiet) {
+      showToast(isBm
+        ? 'Tiada akaun Cash / Sales Revenue. Settings → Chart of Accounts / Default Accounts (MP Workspace).'
+        : 'Missing Cash / Sales Revenue accounts. Settings → Chart of Accounts / Default Accounts (MP Workspace).', 'error')
+    }
+    return null
   }
-  return posted
+
+  try {
+    const posted = await _postJournalEntry({
+      description: desc,
+      entryDate: paymentDate || new Date().toISOString().slice(0, 10),
+      entryType: 'auto',
+      lines: [
+        { account_id: cashAcc, debit: amount, credit: 0 },
+        { account_id: revenueAcc, debit: 0, credit: amount }
+      ],
+      sourceTable: 'tenant_plan_payments',
+      sourceId: sid,
+      skipLockCheck: true // SaaS fee must post even if books lock blocks ops dates
+    })
+    return posted
+  } catch (e) {
+    console.warn('platform sub journal post', e)
+    if (!quiet) showToast((isBm ? 'Gagal jurnal hasil: ' : 'Revenue journal failed: ') + (e.message || e), 'error')
+    return null
+  }
 }
 
 /** Backfill platform journals for existing tenant_plan_payments (idempotent). */
 async function _backfillPlatformSubJournals(tenantId, clientMeta) {
-  if (!_isPlatformHomeTenant(APP.tenant) || !tenantId) return 0
+  if (!tenantId) return 0
+  if (!_isPlatformHomeTenant(APP.tenant)) return 0
   const { data, error } = await sb.from('tenant_plan_payments')
     .select('id,amount,payment_date,payment_method')
     .eq('tenant_id', tenantId)
     .order('payment_date', { ascending: true })
-  if (error || !data || !data.length) return 0
+  if (error) {
+    console.warn('backfill payments load', error)
+    showToast((APP.language === 'bm' ? 'Gagal baca sejarah bayaran: ' : 'Failed to load payment history: ') + error.message, 'error')
+    return 0
+  }
+  if (!data || !data.length) return 0
   let n = 0
+  let lastErr = null
   for (let i = 0; i < data.length; i++) {
     const p = data[i]
     if (!(Number(p.amount) > 0)) continue
-    const r = await _postPlatformSubscriptionIncome({
-      amount: Number(p.amount),
-      paymentDate: p.payment_date,
-      clientName: (clientMeta && clientMeta.name) || '',
-      clientCode: (clientMeta && clientMeta.code) || '',
-      method: p.payment_method,
-      sourceId: p.id,
-      quiet: true
-    })
-    if (r && !r.skipped) n++
+    try {
+      const r = await _postPlatformSubscriptionIncome({
+        amount: Number(p.amount),
+        paymentDate: p.payment_date,
+        clientName: (clientMeta && clientMeta.name) || '',
+        clientCode: (clientMeta && clientMeta.code) || '',
+        method: p.payment_method,
+        sourceId: p.id,
+        quiet: true
+      })
+      if (r && !r.skipped) n++
+      else if (!r) lastErr = 'post_failed'
+    } catch (e) { lastErr = e.message || String(e) }
+  }
+  if (n === 0 && lastErr) {
+    showToast(APP.language === 'bm'
+      ? 'Tiada jurnal dibuat. Semak Chart of Accounts / Default Accounts di MP Workspace.'
+      : 'No journals created. Check Chart of Accounts / Default Accounts on MP Workspace.', 'warning')
   }
   return n
 }
@@ -11009,8 +11069,8 @@ async function _postSaleJournal({ description, entryDate, amount, cogsAmount, so
 // returns the same shape (so callers/report code don't need a separate
 // code path), but never touches journal_entries/journal_lines — used by
 // the backfill's dry-run mode to preview totals with zero risk of writing.
-async function _postJournalEntry({ description, entryDate, entryType, lines, sourceTable, sourceId, dryRun }) {
-  if(!dryRun && entryDate && !assertNotPeriodLocked(entryDate)) return null
+async function _postJournalEntry({ description, entryDate, entryType, lines, sourceTable, sourceId, dryRun, skipLockCheck }) {
+  if(!dryRun && entryDate && !skipLockCheck && !assertNotPeriodLocked(entryDate)) return null
 
   const totalDebit = lines.reduce((s,l)=>s+Number(l.debit||0), 0)
   const totalCredit = lines.reduce((s,l)=>s+Number(l.credit||0), 0)
