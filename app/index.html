@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-pay-upgrade">
+<meta name="nexerp-build" content="2026-08-22-free-exp-subrev">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8356,6 +8356,17 @@ function _shouldShowMyPlanUpgrade(tenantRow, plan) {
   return true
 }
 
+/** Free = forever — never show plan_expires_at. Unlimited/legacy/platform home same. */
+function _shouldShowMyPlanExpiry(tenantRow, plan) {
+  if (!tenantRow) return false
+  if (_isPlatformHomeTenant(tenantRow)) return false
+  if (_isUnlimitedOrLegacyPlan(plan)) return false
+  const code = String((plan && plan.code) || _resolveTenantPlanCode() || '').toLowerCase()
+  if (code === 'free') return false
+  if (!tenantRow.plan_expires_at) return false
+  return true
+}
+
 async function _loadPlansCache() {
   if(_plansCache) return _plansCache
   const { data } = await sb.from('plans').select('id,code,name_en,name_bm,monthly_transaction_limit,ai_daily_quota,max_branches,monthly_price,annual_price,setup_fee')
@@ -8923,15 +8934,50 @@ async function doRecordPayment() {
   if(!planId || !paymentDate || !method || !(amount > 0)) {
     showToast(isBm?'Sila lengkapkan semua medan.':'Please fill in all fields.', 'error'); return
   }
-  const { error } = await sb.rpc('record_tenant_payment', {
+  const { data: payRpcData, error } = await sb.rpc('record_tenant_payment', {
     p_tenant_id: tenantId, p_plan_id: planId, p_amount: amount, p_payment_date: paymentDate,
     p_payment_method: method, p_period_months: periodMonths, p_period_end_override: override
   })
   if(error) { showToast(error.message, 'error'); return }
+  // SaaS fee is income for platform books (MP Workspace), not the client tenant
+  try {
+    const client = (_adminClientsData || []).find(function (d) { return d.id === tenantId })
+    await _postPlatformSubscriptionIncome({
+      amount: amount,
+      paymentDate: paymentDate,
+      clientName: (client && client.name) || tenantId,
+      clientCode: (client && client.code) || '',
+      method: method,
+      sourceId: (payRpcData && (payRpcData.id || payRpcData.payment_id)) || null
+    })
+  } catch (e) { console.warn('platform sub journal', e) }
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
   try { _tgActivity('sales', isBm?'M-Core · Bayaran direkod':'M-Core · Payment recorded') } catch(e) {}
   overlay.classList.remove('active')
   renderAdminClients()
+}
+
+/** Post Dr Cash / Cr Sales Revenue on platform home tenant for client plan payments. */
+async function _postPlatformSubscriptionIncome({ amount, paymentDate, clientName, clientCode, method, sourceId }) {
+  if (!(amount > 0)) return null
+  if (!_isPlatformHomeTenant(APP.tenant)) {
+    console.warn('Subscription income journal skipped — switch to MP Workspace tenant context')
+    return null
+  }
+  const isBm = APP.language === 'bm'
+  const label = (clientCode ? (clientCode + ' · ') : '') + (clientName || 'client')
+  const desc = (isBm ? 'Langganan M-Core — ' : 'M-Core subscription — ') + label
+    + (method ? (' (' + method + ')') : '')
+  // Unique-ish source id so re-record does not always double-post if RPC returns id
+  const sid = sourceId || ('subpay-' + String(clientCode || clientName || '') + '-' + String(paymentDate) + '-' + String(amount))
+  return await _postSaleJournal({
+    description: desc,
+    entryDate: paymentDate || new Date().toISOString().slice(0, 10),
+    amount: amount,
+    cogsAmount: 0,
+    sourceTable: 'tenant_plan_payments',
+    sourceId: String(sid).slice(0, 80)
+  })
 }
 
 async function doSuspendTenant(tenantId) {
@@ -9479,8 +9525,8 @@ async function renderSettings(params={}) {
     const planName = myPlan ? (isBm?myPlan.name_bm:myPlan.name_en) : '—'
     // Trial banner only for real trials — not Unlimited Legacy / platform home
     const trialInfo = _shouldShowMyPlanTrial(tenantRow, myPlan) ? _expiryDaysInfo(tenantRow.trial_ends_at, isBm) : null
-    // Paid plan expiry still shown unless platform home (home is not a converting sub)
-    const expiryInfo = _isPlatformHomeTenant(tenantRow) ? null : _expiryDaysInfo(tenantRow.plan_expires_at, isBm)
+    // Free forever + unlimited + platform home: no expiry line
+    const expiryInfo = _shouldShowMyPlanExpiry(tenantRow, myPlan) ? _expiryDaysInfo(tenantRow.plan_expires_at, isBm) : null
     const showUpgrade = _shouldShowMyPlanUpgrade(tenantRow, myPlan)
     const txLimit = myPlan?.monthly_transaction_limit
     const aiQuota = myPlan?.ai_daily_quota
