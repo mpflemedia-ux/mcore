@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-sub-jnl-hard">
+<meta name="nexerp-build" content="2026-08-22-del-pay">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8919,13 +8919,45 @@ async function _loadTenantPaymentHistory(tenantId) {
   if(error) { host.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">${_aiEscapeHtml(error.message)}</div>`; return }
   if(!data || !data.length) { host.innerHTML = `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${isBm?'Tiada bayaran lagi':'No payments yet'}</p></div>`; return }
   const methodLabel = m => ({ cash: isBm?'Tunai':'Cash', bank_transfer: isBm?'Pindahan Bank':'Bank Transfer', online_banking: isBm?'Perbankan Online':'Online Banking', card: isBm?'Kad':'Card' }[m] || m || '-')
-  host.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>${isBm?'Tarikh':'Date'}</th><th style="text-align:right">${isBm?'Jumlah':'Amount'}</th><th>${isBm?'Kaedah':'Method'}</th><th>${isBm?'Tempoh Liputan':'Coverage'}</th></tr></thead>
+  host.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>${isBm?'Tarikh':'Date'}</th><th style="text-align:right">${isBm?'Jumlah':'Amount'}</th><th>${isBm?'Kaedah':'Method'}</th><th>${isBm?'Tempoh Liputan':'Coverage'}</th><th></th></tr></thead>
     <tbody>${data.map(p=>`<tr>
       <td style="font-size:12px">${formatDate(p.payment_date)}</td>
       <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
       <td style="font-size:12px">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
       <td style="font-size:12px">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
+      <td style="text-align:right"><button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:transparent;padding:4px 8px" title="${isBm?'Padam':'Delete'}" onclick="doDeleteTenantPlanPayment('${p.id}','${tenantId}')"><i class="ti ti-trash"></i></button></td>
     </tr>`).join('')}</tbody></table></div>`
+}
+
+/** platform_admin: delete one SaaS plan payment + clear related revenue journal on MP Workspace */
+async function doDeleteTenantPlanPayment(paymentId, tenantId) {
+  const isBm = APP.language === 'bm'
+  if (!paymentId) return
+  if (!confirm(isBm
+    ? 'Padam rekod bayaran ini? Jurnal hasil berkaitan (jika ada) juga akan dibuang dari MP Workspace.'
+    : 'Delete this payment record? Related revenue journal (if any) will also be removed from MP Workspace.')) return
+  const { error } = await sb.rpc('delete_tenant_plan_payment', { p_payment_id: paymentId })
+  if (error) {
+    showToast(error.message || (isBm ? 'Gagal padam. Jalankan SQL migration dulu.' : 'Delete failed. Run SQL migration first.'), 'error')
+    return
+  }
+  // Soft-delete matching platform journal (source = this payment)
+  try {
+    if (_isPlatformHomeTenant(APP.tenant)) {
+      const { data: je } = await sb.from('journal_entries')
+        .select('id')
+        .eq('tenant_id', APP.tenant.id)
+        .eq('source_table', 'tenant_plan_payments')
+        .eq('source_id', paymentId)
+        .is('deleted_at', null)
+      for (const row of (je || [])) {
+        await sb.from('journal_entries').update({ deleted_at: new Date().toISOString() }).eq('id', row.id).eq('tenant_id', APP.tenant.id)
+      }
+    }
+  } catch (e) { console.warn('journal cleanup on payment delete', e) }
+  showToast(isBm ? 'Bayaran dipadam.' : 'Payment deleted.', 'success')
+  if (tenantId) _loadTenantPaymentHistory(tenantId)
+  try { renderAdminClients() } catch (e) {}
 }
 
 function _adminPaySyncAmount() {
