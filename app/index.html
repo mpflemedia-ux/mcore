@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-free-exp-subrev">
+<meta name="nexerp-build" content="2026-08-22-ai-toast2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1974,14 +1974,22 @@ function _planAllowsAi() {
 }
 
 /** Returns false + toast if Free plan tries AI. Call before every ai-proxy use. */
-function _guardAiAccess() {
+function _guardAiAccess(opts) {
   if (_planAllowsAi()) return true
-  const isBm = APP.language === 'bm'
-  try {
-    showToast(isBm
-      ? 'Pelan Free tidak termasuk AI. Naik taraf ke Starter atau lebih tinggi.'
-      : 'Free plan does not include AI. Upgrade to Starter or higher.', 'warning')
-  } catch (e) {}
+  const silent = !!(opts && opts.silent)
+  // Auto-load (dashboard cards) must not spam toasts — one toast max per ~10s on explicit actions
+  if (!silent) {
+    try {
+      const now = Date.now()
+      if (!window._aiFreeToastAt || (now - window._aiFreeToastAt) > 10000) {
+        window._aiFreeToastAt = now
+        const isBm = APP.language === 'bm'
+        showToast(isBm
+          ? 'Pelan Free tidak termasuk AI. Naik taraf ke Starter atau lebih tinggi.'
+          : 'Free plan does not include AI. Upgrade to Starter or higher.', 'warning')
+      }
+    } catch (e) {}
+  }
   return false
 }
 
@@ -6964,7 +6972,7 @@ async function _dbInsightAI(card, ctx, isBm) {
       action: 'chat',
       message,
       context: `NexERP dashboard card insight. Tenant-scoped metrics only. Card=${card}.`
-    })
+    }, { silent: true })
   if(error) throw error
   if(!data?.success) throw new Error(data?.error || 'AI failed')
   let reply = (data.data && (data.data.reply || data.data.text || data.data.message)) || ''
@@ -7003,6 +7011,14 @@ async function _dbFillCardInsights(ctx) {
       if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
       el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + String(body).replace(/</g, '&lt;') + '</div>'
     })
+  }
+
+  // Free plan: no AI calls / no toast spam — rule-based card text only
+  if (typeof _planAllowsAi === 'function' && !_planAllowsAi()) {
+    const bodies = {}
+    cards.forEach(c => { bodies[c.key] = _dbInsightFallbackBody(c.key, ctx, isBm) })
+    paint(bodies)
+    return
   }
 
   const now = _dbInsightTzNow()
@@ -24124,8 +24140,9 @@ async function _usageCaptureForSale() {
 
 /** After successful ai-proxy call — bumps tenant_usage_daily.ai_queries_count (My Plan widget). */
 
-async function _invokeAiProxy(body) {
-  if (!_guardAiAccess()) return { data: null, error: { message: 'AI not available on Free plan' } }
+async function _invokeAiProxy(body, opts) {
+  // opts.silent = true for background dashboard fills (no toast spam)
+  if (!_guardAiAccess(opts)) return { data: null, error: { message: 'AI not available on Free plan' } }
   if (!(await _guardAiQuota())) return { data: null, error: { message: 'AI daily quota reached' } }
   return sb.functions.invoke('ai-proxy', { body })
 }
