@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-crm-sub-sum">
+<meta name="nexerp-build" content="2026-08-22-bulk-del">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8399,13 +8399,13 @@ async function renderAdminClients() {
     title:'Admin — Semua Client', sub:'Platform overview (memerlukan RLS policy platform)',
     name:'Syarikat', code:'Kod', plan:'Pelan', status:'Status', onboard:'Onboarding',
     created:'Dicipta', noData:'Tiada tenant / akses ditolak RLS.', users:'Users', open:'Buka',
-    bulkSuspend:'Gantung Pukal', exportCsv:'Eksport CSV', trialEnds:'Tamat Percubaan', planExpires:'Pelan Tamat',
+    bulkSuspend:'Gantung Pukal', bulkDelete:'Padam Pukal', exportCsv:'Eksport CSV', trialEnds:'Tamat Percubaan', planExpires:'Pelan Tamat',
     recordPayment:'Rekod Bayaran', pending:'Belum mula', step:'Langkah'
   } : {
     title:'Admin — All Clients', sub:'Platform overview (requires platform RLS policy)',
     name:'Company', code:'Code', plan:'Plan', status:'Status', onboard:'Onboarding',
     created:'Created', noData:'No tenants / RLS blocked access.', users:'Users', open:'Open',
-    bulkSuspend:'Bulk Suspend', exportCsv:'Export CSV', trialEnds:'Trial Ends', planExpires:'Plan Expires',
+    bulkSuspend:'Bulk Suspend', bulkDelete:'Bulk Delete', exportCsv:'Export CSV', trialEnds:'Trial Ends', planExpires:'Plan Expires',
     recordPayment:'Record Payment', pending:'Pending', step:'Step'
   }
 
@@ -8417,6 +8417,7 @@ async function renderAdminClients() {
   ${_adminTabs('clients')}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <button type="button" id="admin-bulk-suspend-btn" class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" disabled onclick="doBulkSuspendTenants()"><i class="ti ti-ban"></i> ${t.bulkSuspend} (<span id="admin-bulk-suspend-count">0</span>)</button>
+    <button type="button" id="admin-bulk-delete-btn" class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" disabled onclick="doBulkDeleteTenants()"><i class="ti ti-trash"></i> ${t.bulkDelete} (<span id="admin-bulk-delete-count">0</span>)</button>
     <button type="button" class="btn btn-sm btn-outline" onclick="doExportTenantsCsv()"><i class="ti ti-download"></i> ${t.exportCsv}</button>
   </div>
   <div class="card"><div id="admin-clients-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
@@ -8425,6 +8426,13 @@ async function renderAdminClients() {
       <div class="modal-box-header" style="color:var(--danger)"><i class="ti ti-alert-triangle"></i> ${isBm?'Gantung Tenant Secara Pukal':'Bulk Suspend Tenants'}</div>
       <div class="modal-box-body" id="admin-bulk-suspend-body"></div>
       <div class="modal-box-footer" id="admin-bulk-suspend-footer"></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="admin-bulk-delete-modal-overlay">
+    <div class="modal-box" style="max-width:520px">
+      <div class="modal-box-header" style="color:var(--danger)"><i class="ti ti-trash"></i> ${isBm?'Padam Tenant Secara Pukal (lembut)':'Bulk Soft-delete Tenants'}</div>
+      <div class="modal-box-body" id="admin-bulk-delete-body"></div>
+      <div class="modal-box-footer" id="admin-bulk-delete-footer"></div>
     </div>
   </div>
   <div class="modal-overlay" id="admin-payment-modal-overlay">
@@ -8749,6 +8757,10 @@ function _onTenantCheckChange() {
   if(btn) btn.disabled = n === 0
   const label = document.getElementById('admin-bulk-suspend-count')
   if(label) label.textContent = String(n)
+  const delBtn = document.getElementById('admin-bulk-delete-btn')
+  if(delBtn) delBtn.disabled = n === 0
+  const delLabel = document.getElementById('admin-bulk-delete-count')
+  if(delLabel) delLabel.textContent = String(n)
 }
 
 // Two-step confirm (list names, THEN a separate explicit "yes, suspend N"
@@ -8798,6 +8810,82 @@ async function _adminBulkSuspendConfirm() {
   showToast(isBm
     ? `${okCount} tenant digantung.${failCount?` ${failCount} gagal.`:''}`
     : `${okCount} tenant(s) suspended.${failCount?` ${failCount} failed.`:''}`, failCount?'error':'success')
+  renderAdminClients()
+}
+
+
+function _isProtectedPlatformTenant(d) {
+  if (!d) return true
+  const codeUp = String(d.code || '').toUpperCase()
+  const nameLow = String(d.name || '').toLowerCase()
+  return codeUp === 'MPWORK24' || codeUp === 'MPWORK' || nameLow === 'mp workspace' || nameLow === 'mpworkspace'
+}
+
+let _adminBulkDeleteIds = []
+function doBulkDeleteTenants() {
+  const isBm = APP.language === 'bm'
+  const rawIds = Array.from(document.querySelectorAll('.admin-tenant-chk:checked')).map(el => el.dataset.tenantId)
+  if (!rawIds.length) return
+  const ids = []
+  const skipped = []
+  rawIds.forEach(id => {
+    const d = (_adminClientsData || []).find(x => x.id === id)
+    if (_isProtectedPlatformTenant(d)) skipped.push((d && d.name) || id)
+    else ids.push(id)
+  })
+  if (!ids.length) {
+    showToast(isBm
+      ? 'Tiada tenant boleh dipadam (MP Workspace dilindungi).'
+      : 'No deletable tenants selected (MP Workspace is protected).', 'warning')
+    return
+  }
+  _adminBulkDeleteIds = ids
+  const names = ids.map(id => ((_adminClientsData || []).find(d => d.id === id) || {}).name || id)
+  const skipNote = skipped.length
+    ? (isBm
+      ? `<p style="font-size:12px;color:var(--warning);margin:8px 0 0">Dilangkau (dilindungi): ${_aiEscapeHtml(skipped.join(', '))}</p>`
+      : `<p style="font-size:12px;color:var(--warning);margin:8px 0 0">Skipped (protected): ${_aiEscapeHtml(skipped.join(', '))}</p>`)
+    : ''
+  document.getElementById('admin-bulk-delete-body').innerHTML = `
+    <p style="font-size:13px;color:var(--text-2);margin:0 0 10px">${isBm
+      ? `Anda akan <strong>padam lembut</strong> ${ids.length} tenant. Mereka hilang dari All Clients; data dalaman tidak dipadam keras:`
+      : `You will <strong>soft-delete</strong> ${ids.length} tenant(s). They disappear from All Clients; internal data is not hard-deleted:`}</p>
+    <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;max-height:200px;overflow-y:auto">${names.map(n => `<li>${_aiEscapeHtml(n)}</li>`).join('')}</ul>
+    ${skipNote}`
+  document.getElementById('admin-bulk-delete-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="document.getElementById('admin-bulk-delete-modal-overlay').classList.remove('active')">${isBm ? 'Batal' : 'Cancel'}</button>
+    <button type="button" class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" onclick="_adminBulkDeleteStep2()">${isBm ? 'Teruskan' : 'Continue'}</button>`
+  document.getElementById('admin-bulk-delete-modal-overlay').classList.add('active')
+}
+
+function _adminBulkDeleteStep2() {
+  const isBm = APP.language === 'bm'
+  const n = _adminBulkDeleteIds.length
+  document.getElementById('admin-bulk-delete-body').innerHTML = `
+    <p style="font-size:13px;color:var(--text)"><strong>${isBm ? `Sahkan: padam lembut ${n} tenant?` : `Confirm: soft-delete these ${n} tenants?`}</strong></p>
+    <p style="font-size:12px;color:var(--text-3);margin-top:6px">${isBm
+      ? 'Taip <code>DELETE</code> di bawah untuk aktifkan butang padam.'
+      : 'Type <code>DELETE</code> below to enable the delete button.'}</p>
+    <input id="admin-bulk-delete-confirm-input" class="form-input" style="margin-top:10px" placeholder="DELETE" autocomplete="off"
+      oninput="document.getElementById('admin-bulk-delete-confirm-btn').disabled = this.value.trim().toUpperCase() !== 'DELETE'">`
+  document.getElementById('admin-bulk-delete-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="document.getElementById('admin-bulk-delete-modal-overlay').classList.remove('active')">${isBm ? 'Batal' : 'Cancel'}</button>
+    <button type="button" id="admin-bulk-delete-confirm-btn" class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)" disabled onclick="_adminBulkDeleteConfirm()">${isBm ? `Ya, padam ${n} tenant` : `Yes, delete ${n} tenants`}</button>`
+}
+
+async function _adminBulkDeleteConfirm() {
+  const isBm = APP.language === 'bm'
+  const ids = _adminBulkDeleteIds || []
+  document.getElementById('admin-bulk-delete-modal-overlay').classList.remove('active')
+  let okCount = 0, failCount = 0
+  for (const id of ids) {
+    const { error } = await sb.rpc('soft_delete_tenant', { p_tenant_id: id })
+    if (error) failCount++
+    else okCount++
+  }
+  showToast(isBm
+    ? `${okCount} tenant dipadam (lembut).${failCount ? ` ${failCount} gagal.` : ''}`
+    : `${okCount} tenant(s) soft-deleted.${failCount ? ` ${failCount} failed.` : ''}`, failCount ? 'error' : 'success')
   renderAdminClients()
 }
 
