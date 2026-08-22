@@ -305,8 +305,26 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
 .card-title{font-size:14px;font-weight:600}
 /* ONBOARDING WIZARD */
+/* Onboarding is a fixed-dark experience by design (.ob-card/.ob-input/
+   .ob-btn-outline etc. below are all hardcoded dark-mode colors, never
+   theme-aware) — these custom-property redefinitions scope the app's
+   OWN existing dark-theme tokens (see body.dark, ~line 54) to this page's
+   subtree, so every var(--text)/var(--text-2)/var(--text-3)/var(--border)/
+   var(--bg-card)/var(--bg)/var(--grid-line) used anywhere inside it —
+   including inline styles rendered by obRenderStep()/obFinish() — resolves
+   to a dark-safe value regardless of the app's light/dark toggle. Fixes a
+   real bug: a later rule here used to set background:var(--bg) again
+   (second #onboarding-page{} block, now removed), which in light theme
+   silently replaced the intended dark gradient below with a light color,
+   leaving light-theme text (dark by design) unreadable against the
+   still-hardcoded-dark .ob-card. */
+#onboarding-page{
+  --bg:#1E2226; --bg-card:#262A2F;
+  --text:#E7E9EB; --text-2:#9AA0A6; --text-3:#6B7280;
+  --border:rgba(231,233,235,.10);
+  --grid-line:rgba(231,233,235,0.045);
+}
 #onboarding-page{display:none;align-items:center;justify-content:center;width:100%;min-height:100vh;background:linear-gradient(135deg,#1E293B 0%,#0F172A 50%,#1a1060 100%);padding:20px;position:relative}
-#onboarding-page{background:var(--bg)}
 #onboarding-page::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:0;
   background-color:var(--bg);
   background-image:
