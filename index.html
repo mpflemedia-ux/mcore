@@ -1010,7 +1010,7 @@ function renderSvcPriceGrid() {
   if (!grid) return;
   const isBm = currentLang === 'ms';
   const talk = isBm ? 'Hubungi kami' : 'Talk to us';
-  const mailto = 'mailto:hello@mpflemedia.my';
+  const talkHref = WA_TALK;
   // Easy-buy packages: name + From RM only (no homework formulas)
   const cards = [
     {
@@ -1065,7 +1065,7 @@ function renderSvcPriceGrid() {
   grid.innerHTML = cards.map(c =>
     '<article class="svc-price reveal"><div class="tag">'+c.tag+'</div><h3>'+c.title+'</h3><p class="blurb">'+c.blurb+'</p>'+
     c.tiers.map(x => '<div class="tier"><strong>'+x.k+'</strong><span class="rm">'+x.v+'</span><br><span>'+x.d+'</span></div>').join('')+
-    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="'+mailto+'">'+talk+'</a></div></article>'
+    '<div class="svc-cta"><a class="btn btn-primary btn-sm" href="'+talkHref+'" target="_blank" rel="noopener">'+talk+'</a></div></article>'
   ).join('');
   observeReveals();
 }
