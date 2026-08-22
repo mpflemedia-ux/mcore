@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-quota-block">
+<meta name="nexerp-build" content="2026-08-22-pay-upgrade">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8358,7 +8358,7 @@ function _shouldShowMyPlanUpgrade(tenantRow, plan) {
 
 async function _loadPlansCache() {
   if(_plansCache) return _plansCache
-  const { data } = await sb.from('plans').select('id,code,name_en,name_bm,monthly_transaction_limit,ai_daily_quota,max_branches')
+  const { data } = await sb.from('plans').select('id,code,name_en,name_bm,monthly_transaction_limit,ai_daily_quota,max_branches,monthly_price,annual_price,setup_fee')
   const list = data || []
   list.sort((a,b) => _PLAN_CODE_ORDER.indexOf(a.code) - _PLAN_CODE_ORDER.indexOf(b.code))
   _plansCache = list
@@ -8817,7 +8817,7 @@ async function openRecordPaymentModal(tenantId) {
   document.getElementById('admin-payment-body').innerHTML = `
     <div class="form-group">
       <label class="form-label">${isBm?'Pelan':'Plan'}</label>
-      <select id="pay-plan-id" class="form-select">${plans.map(p=>`<option value="${p.id}" ${String(p.id)===String(tenant.plan_id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')}</select>
+      <select id="pay-plan-id" class="form-select" onchange="_adminPaySyncAmount()">${plans.map(p=>`<option value="${p.id}" data-monthly="${p.monthly_price!=null?p.monthly_price:''}" data-annual="${p.annual_price!=null?p.annual_price:''}" data-setup="${p.setup_fee!=null?p.setup_fee:0}" ${String(p.id)===String(tenant.plan_id)?'selected':''}>${isBm?p.name_bm:p.name_en}</option>`).join('')}</select>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group"><label class="form-label">${isBm?'Jumlah (RM)':'Amount (RM)'}</label><input type="number" id="pay-amount-admin" class="form-input" step="0.01" min="0"></div>
@@ -8833,7 +8833,7 @@ async function openRecordPaymentModal(tenantId) {
         </select>
       </div>
       <div class="form-group"><label class="form-label">${isBm?'Tempoh':'Period'}</label>
-        <select id="pay-period" class="form-select" onchange="_paySuggestExpiry()">
+        <select id="pay-period" class="form-select" onchange="_paySuggestExpiry();_adminPaySyncAmount()">
           <option value="1">${isBm?'Bulanan (1 bulan)':'Monthly (1 month)'}</option>
           <option value="12">${isBm?'Tahunan (12 bulan)':'Annual (12 months)'}</option>
         </select>
@@ -8849,6 +8849,7 @@ async function openRecordPaymentModal(tenantId) {
       <div id="admin-payment-history" style="padding:8px"><div class="empty-state" style="padding:20px"><div class="spinner"></div></div></div>
     </div>`
   _paySuggestExpiry()
+  try { _adminPaySyncAmount() } catch (e) {}
   overlay.classList.add('active')
   _loadTenantPaymentHistory(tenantId)
 }
@@ -8892,6 +8893,20 @@ async function _loadTenantPaymentHistory(tenantId) {
       <td style="font-size:12px">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
       <td style="font-size:12px">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
     </tr>`).join('')}</tbody></table></div>`
+}
+
+function _adminPaySyncAmount() {
+  const sel = document.getElementById('pay-plan-id')
+  const period = Number(document.getElementById('pay-period')?.value || 1)
+  const amt = document.getElementById('pay-amount-admin')
+  if (!sel || !amt) return
+  const opt = sel.options[sel.selectedIndex]
+  if (!opt) return
+  const monthly = Number(opt.getAttribute('data-monthly') || 0)
+  const annual = Number(opt.getAttribute('data-annual') || 0)
+  const setup = Number(opt.getAttribute('data-setup') || 0)
+  if (period >= 12 && annual > 0) amt.value = annual
+  else if (monthly > 0) amt.value = (monthly + setup).toFixed(2)
 }
 
 async function doRecordPayment() {
@@ -9102,9 +9117,149 @@ async function renderAdminTenantDetail(tenantId) {
 
 const MY_STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','Kuala Lumpur','Labuan','Putrajaya']
 
+/** MPFLE Media receiving account — client bank transfer destination */
+const _PLATFORM_PAYEE = {
+  bank: 'GX Bank Berhad',
+  account_no: '8888 0002 980 34',
+  account_name: 'Ahmad Muhaimin Putera bin Ahmad',
+  whatsapp: '601169980433', // 011-6998 0433
+  email: 'hello@mpflemedia.my'
+}
+
 function openMyPlanUpgradeInfo() {
+  _renderMyPlanUpgradeModal()
   document.getElementById('my-plan-upgrade-modal-overlay')?.classList.add('active')
 }
+
+function _upgradePlanOptionsHtml(isBm) {
+  const plans = (_plansCache || []).filter(function (p) {
+    const c = String(p.code || '').toLowerCase()
+    return c === 'starter' || c === 'business' || c === 'pro'
+  })
+  if (!plans.length) {
+    return '<option value="">—</option>'
+  }
+  return plans.map(function (p) {
+    const label = isBm ? (p.name_bm || p.name_en) : (p.name_en || p.name_bm)
+    return '<option value="' + p.id + '" data-code="' + _aiEscapeHtml(p.code || '') + '" data-monthly="' + (p.monthly_price != null ? p.monthly_price : '') + '" data-annual="' + (p.annual_price != null ? p.annual_price : '') + '" data-setup="' + (p.setup_fee != null ? p.setup_fee : '0') + '">' + _aiEscapeHtml(label) + '</option>'
+  }).join('')
+}
+
+function _upgradeSyncAmount() {
+  const sel = document.getElementById('upg-plan-id')
+  const period = document.getElementById('upg-period')?.value || '1'
+  const amtEl = document.getElementById('upg-amount-label')
+  const setupEl = document.getElementById('upg-setup-label')
+  if (!sel || !amtEl) return
+  const opt = sel.options[sel.selectedIndex]
+  if (!opt) return
+  const monthly = Number(opt.getAttribute('data-monthly') || 0)
+  const annual = Number(opt.getAttribute('data-annual') || 0)
+  const setup = Number(opt.getAttribute('data-setup') || 0)
+  const isAnnual = period === '12'
+  const base = isAnnual ? (annual || monthly * 10) : monthly
+  const total = base + (isAnnual ? 0 : setup) // annual often waives setup on landing
+  amtEl.textContent = formatRM(base)
+  if (setupEl) {
+    setupEl.textContent = isAnnual
+      ? (APP.language === 'bm' ? 'Setup: PERCUMA (tahunan)' : 'Setup: FREE (annual)')
+      : (setup > 0 ? (APP.language === 'bm' ? 'Setup: ' + formatRM(setup) + ' (bulan pertama)' : 'Setup: ' + formatRM(setup) + ' (first month)') : '')
+  }
+  const totalEl = document.getElementById('upg-total-label')
+  if (totalEl) totalEl.textContent = formatRM(isAnnual ? base : (base + setup))
+}
+
+async function _renderMyPlanUpgradeModal() {
+  const isBm = APP.language === 'bm'
+  try { await _loadPlansCache() } catch (e) {}
+  const body = document.querySelector('#my-plan-upgrade-modal-overlay .modal-box-body')
+  const header = document.querySelector('#my-plan-upgrade-modal-overlay .modal-box-header')
+  if (header) header.innerHTML = '<i class="ti ti-arrow-up-circle"></i> ' + (isBm ? 'Naik Taraf / Bayar' : 'Upgrade / Pay')
+  if (!body) return
+  const code = (APP.tenant && APP.tenant.code) || ''
+  const company = (APP.tenant && APP.tenant.name) || ''
+  body.innerHTML = `
+    <p style="font-size:13px;color:var(--text-2);line-height:1.55;margin:0 0 12px">
+      ${isBm
+        ? 'Pilih pelan, pindah ke akaun di bawah, kemudian tekan <strong>WhatsApp</strong> supaya kami sahkan dalam 1 hari bekerja.'
+        : 'Pick a plan, transfer to the account below, then tap <strong>WhatsApp</strong> so we can confirm within 1 business day.'}
+    </p>
+    <div class="form-group">
+      <label class="form-label">${isBm ? 'Pelan' : 'Plan'}</label>
+      <select id="upg-plan-id" class="form-select" onchange="_upgradeSyncAmount()">${_upgradePlanOptionsHtml(isBm)}</select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">${isBm ? 'Tempoh' : 'Period'}</label>
+      <select id="upg-period" class="form-select" onchange="_upgradeSyncAmount()">
+        <option value="1">${isBm ? 'Bulanan' : 'Monthly'}</option>
+        <option value="12">${isBm ? 'Tahunan (jimat ~2 bulan)' : 'Annual (save ~2 months)'}</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px">
+        <div style="font-size:11px;color:var(--text-3)">${isBm ? 'Harga pelan' : 'Plan price'}</div>
+        <div id="upg-amount-label" style="font-weight:700;font-size:16px">—</div>
+        <div id="upg-setup-label" style="font-size:11px;color:var(--text-3);margin-top:4px"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px">
+        <div style="font-size:11px;color:var(--text-3)">${isBm ? 'Jumlah dipindah' : 'Transfer total'}</div>
+        <div id="upg-total-label" style="font-weight:700;font-size:16px;color:var(--primary)">—</div>
+      </div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px;line-height:1.75;margin-bottom:12px">
+      <div style="font-weight:600;margin-bottom:4px">${isBm ? 'Akaun penerima (MPFLE Media)' : 'Payee account (MPFLE Media)'}</div>
+      <div>${isBm ? 'Bank' : 'Bank'}: <strong>${_PLATFORM_PAYEE.bank}</strong></div>
+      <div>${isBm ? 'No. akaun' : 'Account no.'}: <strong>${_PLATFORM_PAYEE.account_no}</strong></div>
+      <div>${isBm ? 'Nama' : 'Name'}: <strong>${_aiEscapeHtml(_PLATFORM_PAYEE.account_name)}</strong></div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px">${isBm ? 'Rujukan transfer: kod syarikat anda' : 'Transfer reference: your company code'} <strong>${_aiEscapeHtml(code)}</strong></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">${isBm ? 'No. rujukan / nota (pilihan)' : 'Reference / note (optional)'}</label>
+      <input type="text" id="upg-ref-note" class="form-input" placeholder="${isBm ? 'Contoh: no. resit bank' : 'e.g. bank receipt no.'}">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <button type="button" class="btn btn-primary" style="width:100%;justify-content:center" onclick="_upgradeOpenWhatsApp()">
+        <i class="ti ti-brand-whatsapp"></i> ${isBm ? 'WhatsApp — Saya sudah bayar' : 'WhatsApp — I have paid'}
+      </button>
+      <a class="btn btn-outline" style="width:100%;justify-content:center;text-decoration:none" href="mailto:${_PLATFORM_PAYEE.email}?subject=${encodeURIComponent('M-Core payment — ' + code)}">
+        <i class="ti ti-mail"></i> ${isBm ? 'Atau e-mel' : 'Or email'} ${_PLATFORM_PAYEE.email}
+      </a>
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('my-plan-upgrade-modal-overlay').classList.remove('active')">${isBm ? 'Tutup' : 'Close'}</button>
+    </div>
+    <p style="font-size:11px;color:var(--text-3);margin:12px 0 0;line-height:1.45">
+      ${isBm
+        ? 'Selepas kami sahkan, pelan & tempoh liputan akan dikemaskini dalam My Plan. Jangan kongsi kata laluan.'
+        : 'After we confirm, your plan & coverage dates update in My Plan. Never share your password.'}
+    </p>`
+  _upgradeSyncAmount()
+}
+
+function _upgradeOpenWhatsApp() {
+  const isBm = APP.language === 'bm'
+  const sel = document.getElementById('upg-plan-id')
+  const period = document.getElementById('upg-period')?.value || '1'
+  const note = (document.getElementById('upg-ref-note')?.value || '').trim()
+  const opt = sel && sel.options[sel.selectedIndex]
+  const planName = opt ? opt.textContent.trim() : ''
+  const total = document.getElementById('upg-total-label')?.textContent || ''
+  const code = (APP.tenant && APP.tenant.code) || ''
+  const company = (APP.tenant && APP.tenant.name) || ''
+  const periodLab = period === '12' ? (isBm ? 'Tahunan' : 'Annual') : (isBm ? 'Bulanan' : 'Monthly')
+  const lines = [
+    isBm ? 'Halo MPFLE, saya dah bayar untuk M-Core.' : 'Hi MPFLE, I have paid for M-Core.',
+    (isBm ? 'Syarikat: ' : 'Company: ') + company,
+    (isBm ? 'Kod: ' : 'Code: ') + code,
+    (isBm ? 'Pelan: ' : 'Plan: ') + planName,
+    (isBm ? 'Tempoh: ' : 'Period: ') + periodLab,
+    (isBm ? 'Jumlah: ' : 'Amount: ') + total,
+    note ? ((isBm ? 'Rujukan: ' : 'Ref: ') + note) : '',
+    isBm ? 'Sila sahkan dan aktifkan pelan saya.' : 'Please confirm and activate my plan.'
+  ].filter(Boolean)
+  const url = 'https://wa.me/' + _PLATFORM_PAYEE.whatsapp + '?text=' + encodeURIComponent(lines.join('\n'))
+  window.open(url, '_blank', 'noopener,noreferrer')
+  showToast(isBm ? 'WhatsApp dibuka — hantar mesej untuk pengesahan.' : 'WhatsApp opened — send the message for confirmation.', 'success')
+}
+
 
 async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
