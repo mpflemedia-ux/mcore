@@ -3899,6 +3899,12 @@ function _obtMaybeAutoStart() {
 
 // Manual replay (Settings button) — works regardless of role or done-state.
 async function _obtReplay() {
+  // Replay is triggered from Settings — the tour's own steps (sidebar nav
+  // items, header search/notifications/avatar) only make sense against
+  // the Dashboard chrome, same as the first-time auto-start experience.
+  // Navigate there first so it doesn't play out on top of whatever page
+  // the Replay button happened to be clicked from.
+  openPage('dashboard')
   await _obcSavePerms({ onboarding_tour_done: false })
   _obtStart()
 }
