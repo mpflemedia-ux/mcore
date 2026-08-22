@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-sa-cust-sync2">
+<meta name="nexerp-build" content="2026-08-22-crm-sub-sum">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11782,8 +11782,8 @@ async function renderCustomerSOA(id) {
 }
 
 async function renderCustomerDetail(id) {
-  const t = APP.language==='bm' ? { back:'Senarai Pelanggan', edit:'Edit', invoices:'Invois', noInv:'Tiada invois', totalSpent:'Jumlah Dikutip', outstanding:'Tertunggak', lastOrder:'Pesanan Terakhir', created:'Ahli Sejak' }
-    : { back:'Customer List', edit:'Edit', invoices:'Invoices', noInv:'No invoices', totalSpent:'Total Collected', outstanding:'Outstanding', lastOrder:'Last Order', created:'Member Since' }
+  const t = APP.language==='bm' ? { back:'Senarai Pelanggan', edit:'Edit', invoices:'Invois', noInv:'Tiada invois', totalSpent:'Jumlah Dikutip', outstanding:'Tertunggak', lastOrder:'Pesanan Terakhir', created:'Ahli Sejak', subPay:'Bayaran Langganan', noSub:'Tiada bayaran langganan' }
+    : { back:'Customer List', edit:'Edit', invoices:'Invoices', noInv:'No invoices', totalSpent:'Total Collected', outstanding:'Outstanding', lastOrder:'Last Order', created:'Member Since', subPay:'Subscription Payments', noSub:'No subscription payments' }
 
   document.getElementById('main').innerHTML = '<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>'
 
@@ -11793,15 +11793,40 @@ async function renderCustomerDetail(id) {
   ])
 
   if(!cust) { document.getElementById('main').innerHTML='<div class="empty-state"><p>Customer not found.</p></div>'; return }
-  _custDetailCache = { cust, invs: invs||[] }
 
-  const totalSpent = (invs||[]).filter(i => {
+  // Linked SaaS client tenant (auto-synced CRM row) → include tenant_plan_payments in summary
+  let linkedTenantId = null
+  let subPays = []
+  try {
+    const m = String(cust.notes || '').match(/MCORE_TENANT:([0-9a-f-]{36})/i)
+    if (m) linkedTenantId = m[1]
+  } catch (e) {}
+  if (linkedTenantId) {
+    try {
+      const { data: pays } = await sb.from('tenant_plan_payments')
+        .select('id,amount,payment_date,payment_method,period_start,period_end,period_months')
+        .eq('tenant_id', linkedTenantId)
+        .order('payment_date', { ascending: false })
+        .limit(100)
+      subPays = pays || []
+    } catch (e) { console.warn('customer sub payments', e) }
+  }
+
+  _custDetailCache = { cust, invs: invs||[], subPays, linkedTenantId }
+
+  const invCollected = (invs||[]).filter(i => {
     const s = String(i.status||'').toLowerCase()
     return s === 'paid' || s === 'partial'
   }).reduce((s,i)=>s+Number(i.paid_amt||0),0)
+  const subCollected = subPays.reduce((s,p)=>s+Number(p.amount||0),0)
+  const totalSpent = invCollected + subCollected
   const outstanding = (invs||[]).filter(i => String(i.status||'').toLowerCase() !== 'cancelled')
     .reduce((s,i)=>s+Math.max(0, Number(i.total||0)-Number(i.paid_amt||0)),0)
-  const lastOrder = (invs||[]).length ? (invs[0].issue_date ? new Date(invs[0].issue_date).toLocaleDateString('en-MY') : '-') : '-'
+  let lastOrder = '-'
+  const invDate = (invs||[]).length && invs[0].issue_date ? invs[0].issue_date : null
+  const payDate = subPays.length && subPays[0].payment_date ? subPays[0].payment_date : null
+  const lastRaw = [invDate, payDate].filter(Boolean).sort().reverse()[0]
+  if (lastRaw) lastOrder = new Date(lastRaw).toLocaleDateString('en-MY')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header">
@@ -11861,6 +11886,31 @@ async function renderCustomerDetail(id) {
       }
     </div>
   </div>
+
+  ${linkedTenantId ? `
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><i class="ti ti-credit-card"></i> ${t.subPay}</div>
+      <span style="font-size:12px;color:var(--text-3)">${subPays.length} · ${formatRM(subCollected)}</span>
+    </div>
+    <div style="overflow-x:auto">
+      ${!subPays.length
+        ? `<div class="empty-state" style="padding:28px"><p style="font-size:13px">${t.noSub}</p></div>`
+        : `<table><thead><tr>
+            <th>${APP.language==='bm'?'Tarikh':'Date'}</th>
+            <th style="text-align:right">${APP.language==='bm'?'Jumlah':'Amount'}</th>
+            <th>${APP.language==='bm'?'Kaedah':'Method'}</th>
+            <th>${APP.language==='bm'?'Liputan':'Coverage'}</th>
+          </tr></thead><tbody>
+          ${subPays.map(p => `<tr>
+            <td style="font-size:12px">${p.payment_date ? formatDate(p.payment_date) : '-'}</td>
+            <td style="text-align:right;font-weight:600;color:var(--success)">${formatRM(p.amount)}</td>
+            <td style="font-size:12px">${_aiEscapeHtml(String(p.payment_method||'-').replace(/_/g,' '))}</td>
+            <td style="font-size:12px">${p.period_start ? formatDate(p.period_start) : '-'} – ${p.period_end ? formatDate(p.period_end) : '-'}</td>
+          </tr>`).join('')}
+          </tbody></table>`}
+    </div>
+  </div>` : ''}
 
   <div class="card" style="margin-top:16px">
     <div class="card-header">
