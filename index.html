@@ -847,10 +847,6 @@ footer a:hover { color: var(--cyan); }
           <label for="ref-bank-acc-name" data-i18n="ref_lbl_bank_acc_name">Bank account holder name</label>
           <input type="text" id="ref-bank-acc-name" required>
         </div>
-        <div class="ref-field">
-          <label for="ref-qr" data-i18n="ref_lbl_qr">Payment QR code link (optional)</label>
-          <input type="url" id="ref-qr" placeholder="https://...">
-        </div>
         <div class="ref-actions">
           <button type="button" class="btn btn-primary" id="refSubmitBtn" onclick="submitReferralPartner()" data-i18n="ref_submit">Join Referral Program</button>
         </div>
@@ -1013,7 +1009,6 @@ const I18N = {
     ref_lede:'RM30–RM70 per paid signup, once they subscribe, paid straight to your bank account.',
     ref_lbl_name:'Full name', ref_lbl_phone:'Phone number', ref_lbl_email:'Email',
     ref_lbl_bank_name:'Bank name', ref_lbl_bank_acc_no:'Bank account number', ref_lbl_bank_acc_name:'Bank account holder name',
-    ref_lbl_qr:'Payment QR code link (optional)',
     ref_submit:'Join Referral Program', ref_copy:'Copy link',
     ref_result_lede:'You\'re in! Share this link, you\'ll get commission on every paid signup.',
     ref_err_required:'Please fill in name, phone, email and all bank details.',
@@ -1070,7 +1065,6 @@ const I18N = {
     ref_lede:'RM30–RM70 setiap signup berbayar, lepas mereka subscribe, terus masuk akaun bank anda.',
     ref_lbl_name:'Nama penuh', ref_lbl_phone:'No telefon', ref_lbl_email:'Emel',
     ref_lbl_bank_name:'Nama bank', ref_lbl_bank_acc_no:'No akaun bank', ref_lbl_bank_acc_name:'Nama pemilik akaun bank',
-    ref_lbl_qr:'Link QR code bayaran (pilihan)',
     ref_submit:'Sertai Program Referral', ref_copy:'Salin link',
     ref_result_lede:'Anda dah daftar! Kongsi link ni, anda dapat komisen setiap signup berbayar.',
     ref_err_required:'Sila isi nama, no telefon, emel dan semua butiran bank.',
@@ -1218,7 +1212,7 @@ async function submitReferralPartner() {
   const bankName = document.getElementById('ref-bank-name').value.trim();
   const bankAccNo = document.getElementById('ref-bank-acc-no').value.trim();
   const bankAccName = document.getElementById('ref-bank-acc-name').value.trim();
-  const qrUrl = document.getElementById('ref-qr').value.trim();
+  const qrUrl = '';
 
   if (!fullName || !phone || !email || !bankName || !bankAccNo || !bankAccName) {
     msgEl.textContent = t.ref_err_required;
