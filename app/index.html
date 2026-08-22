@@ -2074,7 +2074,12 @@ function canAccess(module) {
   if (module === 'core') return true
   if (!role) return false
   // Plan gate first — Free tenant owner must not get Pro modules
-  if (!_planAllowsModule(module)) return false
+  if (!_planAllowsModule(module)) {
+    // Free plan carve-out: basic Accounting access (Chart of Accounts +
+    // Journal Entries only). View-level restriction is enforced inside
+    // renderAccounting()/_accTabs() — this only unlocks the module/nav gate.
+    if (!(module === 'accounting' && _resolveTenantPlanCode() === 'free')) return false
+  }
   if (role === 'owner' || role === 'admin' || role === 'platform_admin' || (typeof isPlatformAdmin === 'function' && isPlatformAdmin())) return true
   if (module === 'admin') return false
 
@@ -3616,7 +3621,7 @@ function _onbVisibleNavItems() {
     if(item.id==='dashboard' || item.id==='settings') return false
     if(!canAccess(item.module)) return false
     if(item.id==='applicants' && !canAccess('hr_recruit') && !canManageHR()) return false
-    if(item.id==='reports' && !canAccess('reports') && !canAccess('accounting')) return false
+    if(item.id==='reports' && !canAccess('reports') && !(_planAllowsModule('accounting') && canAccess('accounting'))) return false
     return true
   })
 }
@@ -4732,7 +4737,7 @@ function buildSidebar() {
     if(item.section){ pendingSection = item.section; return }
     if(!canAccess(item.module)) return
     if(item.id === 'applicants' && !canAccess('hr_recruit') && !canManageHR()) return
-    if(item.id === 'reports' && !canAccess('reports') && !canAccess('accounting')) return
+    if(item.id === 'reports' && !canAccess('reports') && !(_planAllowsModule('accounting') && canAccess('accounting'))) return
     if(item.id === 'admin' && !isTenantAdmin() && !canAccess('admin')) return
     if(item.id === 'settings' && !isTenantAdmin()) {
       // staff may open settings but renderSettings already limits tabs
@@ -12268,7 +12273,16 @@ const DEFAULT_ACCOUNT_MAPPING_KEYS = [
   { key:'commission_expense', accountType:'expense',  en:'Commission Expense',       bm:'Perbelanjaan Komisen',      required:false },
 ]
 
+/** Free plan gets basic accounting only: Chart of Accounts + Journal Entries.
+ *  Everything else in this module (Fiscal Years, Expense Claims, Bank Recon,
+ *  Fixed Assets, Opening Balance, Petty Cash, Vouchers) stays plan-gated. */
+function _accBasicOnly() {
+  try { return _resolveTenantPlanCode() === 'free' } catch (e) { return false }
+}
+const _ACC_BASIC_VIEWS = ['coa-form', 'journal', 'journal-form']
+
 function renderAccounting(params={}) {
+  if(_accBasicOnly() && params.view && _ACC_BASIC_VIEWS.indexOf(params.view) < 0) params = {}
   if(params.view==='coa-form') { renderCOAForm(params.id||null); return }
   if(params.view==='journal-form') { renderJournalForm(params.id||null); return }
   if(params.view==='journal') { renderJournalList(); return }
@@ -12287,6 +12301,11 @@ function renderAccounting(params={}) {
 function _accTabs(active) {
   const t = APP.language==='bm' ? { coa:'Carta Akaun', journal:'Entri Jurnal', fiscal:'Tahun Kewangan', expense:'Tuntutan', reconcile:'Penyesuaian Bank', fa:'Aset Tetap', pv:'Baucar Bayaran', ob:'Baki Pembukaan', petty:'Petty Cash' }
     : { coa:'Chart of Accounts', journal:'Journal Entries', fiscal:'Fiscal Years', expense:'Expense Claims', reconcile:'Bank Reconciliation', fa:'Fixed Assets', pv:'Payment Vouchers', ob:'Opening Balance', petty:'Petty Cash' }
+  const basic = _accBasicOnly()
+  if(basic) return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
+    <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
+    <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
+  </div>`
   return `<div style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
     <button class="btn btn-sm ${active==='coa'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{})"><i class="ti ti-list-tree"></i> ${t.coa}</button>
     <button class="btn btn-sm ${active==='journal'?'btn-primary':'btn-outline'}" style="border:none" onclick="openPage('accounting',{view:'journal'})"><i class="ti ti-book"></i> ${t.journal}</button>
