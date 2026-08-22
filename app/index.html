@@ -4904,6 +4904,7 @@ function _dbShortcutsHtml(isBm) {
     { id:'db-sec-customers', icon:'ti-users', en:'Top Customers', bm:'Pelanggan Top' },
     { id:'db-sec-topsp', icon:'ti-medal', en:'Top Sales Person', bm:'Jualan Terbaik' },
     ...(isPlatformAdmin() ? [{ id:'db-sec-topref', icon:'ti-gift', en:'Top Referral', bm:'Referral Terbaik' }] : []),
+    ...(isPlatformAdmin() ? [{ id:'db-sec-devroadmap', icon:'ti-rocket', en:'System Development', bm:'Pembangunan Sistem' }] : []),
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
@@ -5101,6 +5102,19 @@ function renderDashboard() {
         <div id="db-topref-move" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
         <div class="db-card-foot">${isBm?'Top 5 mengikut komisyen tempoh semasa (earned)':'Top 5 by commission this period (earned)'}</div>
         <div class="db-ai-insight" id="db-ai-topreferral"><span class="db-ai-tag">AI</span> …</div>
+      </div>
+    </div>` : ''}
+
+    ${isPlatformAdmin() ? `
+    <div class="db-ops-row" style="grid-template-columns:1fr;margin-top:16px">
+      <div class="db-card db-card-glow" id="db-sec-devroadmap">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</div>
+        <div id="db-devroadmap-badges" style="display:flex;align-items:center;gap:10px;margin-bottom:12px"></div>
+        <div id="db-devroadmap-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px"></div>
+        <div class="db-chart-slot" style="min-height:180px"><canvas id="db-devroadmap-chart"></canvas></div>
+        <div id="db-devroadmap-fallback" class="db-card-foot" style="display:none"></div>
+        <div class="db-card-foot">${isBm?'Item selesai bulan ni vs bulan lepas':'Items completed this month vs last month'}</div>
+        <div class="db-ai-insight" id="db-ai-devroadmap"><span class="db-ai-tag">AI</span> …</div>
       </div>
     </div>` : ''}
 
@@ -5752,6 +5766,7 @@ async function loadDashboardData() {
   // must resolve before the first _dbFillCardInsights() call.
   if (isPlatformAdmin()) {
     try { await _dbRenderTopReferral() } catch(e) { console.warn('top referral', e) }
+    try { await _dbRenderDevRoadmap() } catch(e) { console.warn('dev roadmap', e) }
   }
 
   // Zone Power + Business Health scores (tenant-scoped, no extra schema)
@@ -7011,6 +7026,13 @@ function _dbInsightFallbackBody(card, ctx, isBm) {
       ? `${r.name} ketua carta referral dengan ${fmt(r.commission)} bulan ni (${dirWord} berbanding bulan lepas), unggul ${fmt(r.gapToSecond)} depan #2. Boleh pertimbang shoutout untuk kekalkan momentum.`
       : `${r.name} is topping the referral board with ${fmt(r.commission)} this month (${dirWord} vs last month), leading #2 by ${fmt(r.gapToSecond)}. Consider a shoutout to keep the momentum going.`
   }
+  if(card === 'devroadmap') {
+    const r = ctx.devroadmap
+    if(!r) return isBm ? 'Data masih loading…' : 'Data still loading…'
+    return isBm
+      ? `Setakat ni ${r.completedCount} item siap, ${r.inProgressCount} tengah jalan, ${r.plannedCount} dirancang. ${r.completedThisMonth} selesai bulan ni.`
+      : `${r.completedCount} items shipped so far, ${r.inProgressCount} in progress, ${r.plannedCount} planned. ${r.completedThisMonth} completed this month.`
+  }
   return isBm ? 'Data masih loading…' : 'Still loading data…'
 }
 
@@ -7090,6 +7112,19 @@ function _dbInsightFacts(card, ctx) {
       period: ctx.periodLabel || null
     }
   }
+  if(card === 'devroadmap') {
+    const r = ctx.devroadmap
+    if(!r) return { card: 'system_development', has_data: false }
+    return {
+      card: 'system_development',
+      idea_count: r.ideaCount, planned_count: r.plannedCount,
+      in_progress_count: r.inProgressCount, completed_count: r.completedCount,
+      completed_this_month: r.completedThisMonth, completed_last_month: r.completedLastMonth,
+      avg_hours_this_month: r.avgHoursThisMonth, avg_hours_last_month: r.avgHoursLastMonth,
+      current_badge: r.badgeLabel, streak_weeks: r.streak,
+      existing_modules: ['Accounting','HR & Payroll','POS','Inventory','CRM','Referral Program','Logistics','Purchasing']
+    }
+  }
   return { card }
 }
 
@@ -7110,11 +7145,21 @@ async function _dbInsightAI(card, ctx, isBm) {
       `- HOW: one concrete next action for the owner\n` +
       `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who in the output; MUST include the numeric facts given; if flagged_employee is null do not invent a name; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
       `Facts JSON: ${JSON.stringify(facts)}`
-    : `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
-      `Language: ${lang}.\n` +
-      `Voice: ${voice}\n` +
-      `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
-      `Facts JSON: ${JSON.stringify(facts)}`
+    : card === 'devroadmap'
+      ? `Write ONE fresh Gen Z paragraph (max 70 words) for a Malaysian SME ERP platform's internal "System Development" tracker card.\n` +
+        `Language: ${lang}.\n` +
+        `Voice: ${voice}\n` +
+        `This is the SOLO FOUNDER's own dev progress tracker for building this ERP product itself (not tenant business data).\n` +
+        `Reason through these 2 parts first, then blend into ONE natural paragraph — do NOT print labels:\n` +
+        `- PART 1 (status): comment on the given completed/planned/in-progress counts and this-month-vs-last-month velocity from the facts\n` +
+        `- PART 2 (idea): suggest exactly ONE new feature idea this ERP product doesn't have yet, inspired by current real-world ERP/SaaS industry trends (e.g. AI automation, embedded fintech, predictive analytics, workflow automation) — make it relevant to a Malaysian SME ERP context and distinct from the existing_modules list given\n` +
+        `Rules: creative & different each time; no corporate fluff; no labels; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+        `Facts JSON: ${JSON.stringify(facts)}`
+      : `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
+        `Language: ${lang}.\n` +
+        `Voice: ${voice}\n` +
+        `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+        `Facts JSON: ${JSON.stringify(facts)}`
   const { data, error } = await _invokeAiProxy({
       action: 'chat',
       message,
@@ -7145,7 +7190,8 @@ async function _dbFillCardInsights(ctx) {
     { id: 'db-ai-pnl', key: 'pnl', titleIdx: 5 },
     { id: 'db-ai-attendance', key: 'attendance', titleIdx: 1 },
     { id: 'db-ai-topsp', key: 'topsp', titleIdx: 7 },
-    { id: 'db-ai-topreferral', key: 'topreferral', titleIdx: 4 }
+    { id: 'db-ai-topreferral', key: 'topreferral', titleIdx: 4 },
+    { id: 'db-ai-devroadmap', key: 'devroadmap', titleIdx: 3 }
   ]
 
   const paint = (bodies) => {
@@ -7905,6 +7951,125 @@ async function _dbRenderTopReferral() {
   }
 }
 
+// Gamification tier by all-time completed_count (dev_roadmap_stats view).
+function _devBadgeTier(n) {
+  if(n>=50) return {icon:'ti-crown', label_en:'M-Core Legend', label_bm:'Legenda M-Core'}
+  if(n>=30) return {icon:'ti-cpu', label_en:'Core Engineer', label_bm:'Jurutera Core'}
+  if(n>=15) return {icon:'ti-compass', label_en:'Architect', label_bm:'Arkitek'}
+  if(n>=5) return {icon:'ti-hammer', label_en:'Builder', label_bm:'Pembina'}
+  if(n>=1) return {icon:'ti-flag', label_en:'First Ship', label_bm:'Penghantaran Pertama'}
+  return null
+}
+
+// ISO 8601 week key (Thursday-anchored) so a streak spans Mon-Sun weeks
+// consistently regardless of which day of the week an item was completed on.
+function _isoWeekKey(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const day = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - day + 3)
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(),0,4))
+  const week = 1 + Math.round(((date - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay()+6)%7)) / 7)
+  return date.getUTCFullYear() + '-W' + week
+}
+function _computeDevStreak(dates) {
+  const weeks = new Set(dates.map(d => _isoWeekKey(new Date(d))))
+  let streak = 0, cursor = new Date()
+  while (weeks.has(_isoWeekKey(cursor))) { streak++; cursor.setDate(cursor.getDate()-7) }
+  return streak
+}
+
+async function _dbRenderDevRoadmap() {
+  // System Development tracker card — platform_admin only (gated at call
+  // site + HTML render). Same fetch+chart+ctx shape as _dbRenderTopReferral().
+  const isBm = APP.language === 'bm'
+  try {
+    const canvas = document.getElementById('db-devroadmap-chart')
+    const fallback = document.getElementById('db-devroadmap-fallback')
+    const badgesEl = document.getElementById('db-devroadmap-badges')
+    const statsEl = document.getElementById('db-devroadmap-stats')
+    if(!canvas) return
+
+    const showEmpty = (msg) => {
+      if(fallback) { fallback.style.display = 'block'; fallback.textContent = msg }
+      window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, { devroadmap: null })
+    }
+
+    const [{data: statsRow, error: statsErr}, {data: completedRows}] = await Promise.all([
+      sb.from('dev_roadmap_stats').select('*').maybeSingle(),
+      sb.from('dev_roadmap_items').select('completed_at').eq('stage', 'completed')
+    ])
+    if(statsErr || !statsRow) { showEmpty(isBm ? 'Tiada data pembangunan sistem lagi' : 'No system development data yet'); return }
+    if(fallback) { fallback.style.display = 'none'; fallback.textContent = '' }
+
+    const ideaCount = Number(statsRow.idea_count || 0)
+    const plannedCount = Number(statsRow.planned_count || 0)
+    const inProgressCount = Number(statsRow.in_progress_count || 0)
+    const completedCount = Number(statsRow.completed_count || 0)
+    const completedThisMonth = Number(statsRow.completed_this_month || 0)
+    const completedLastMonth = Number(statsRow.completed_last_month || 0)
+    const avgHoursThisMonth = Number(statsRow.avg_hours_this_month || 0)
+    const avgHoursLastMonth = Number(statsRow.avg_hours_last_month || 0)
+
+    const dates = (completedRows || []).map(r => r.completed_at).filter(Boolean)
+    const streak = _computeDevStreak(dates)
+    const tier = _devBadgeTier(completedCount)
+    const badgeLabel = tier ? (isBm ? tier.label_bm : tier.label_en) : (isBm ? 'Belum ada lencana' : 'No badge yet')
+
+    if(badgesEl) {
+      badgesEl.innerHTML = `
+        ${tier ? `<span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--warning)"><i class="ti ${tier.icon}"></i> ${_aiEscapeHtml(badgeLabel)}</span>` : `<span style="color:var(--text-3);font-size:12px">${_aiEscapeHtml(badgeLabel)}</span>`}
+        <span style="font-size:12px;color:var(--text-3)">🔥 ${streak} ${isBm?'minggu berturut-turut':'week streak'}</span>`
+    }
+
+    if(statsEl) {
+      const box = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:var(--text-3)">${label}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px">${val}</div>
+      </div>`
+      statsEl.innerHTML = box(isBm?'Idea':'Idea', ideaCount) + box(isBm?'Dirancang':'Planned', plannedCount) + box(isBm?'Sedang Dibuat':'In Progress', inProgressCount) + box(isBm?'Selesai':'Completed', completedCount)
+    }
+
+    window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
+      devroadmap: {
+        ideaCount, plannedCount, inProgressCount, completedCount,
+        completedThisMonth, completedLastMonth,
+        avgHoursThisMonth, avgHoursLastMonth,
+        badgeLabel, streak
+      }
+    })
+
+    if(typeof Chart === 'undefined') return
+    _dbDestroy('devRoadmap', canvas)
+    const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+    const tick = _dbChartTickColor()
+    window._dbCharts = window._dbCharts || {}
+    window._dbCharts.devRoadmap = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: [isBm?'Bulan Lepas':'Last Month', isBm?'Bulan Ini':'This Month'],
+        datasets: [{
+          label: isBm?'Item Selesai':'Items Completed',
+          data: [completedLastMonth, completedThisMonth],
+          backgroundColor: ['rgba(148,163,184,.4)', primary],
+          borderRadius: 6,
+          maxBarThickness: 60
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tick }, grid: { display: false } },
+          y: { ticks: { color: tick, stepSize: 1 }, grid: { color: 'rgba(148,163,184,.12)' }, beginAtZero: true }
+        }
+      }
+    })
+  } catch(e) {
+    console.warn('dev roadmap', e)
+  }
+}
+
 function _dbRenderOverdueTable(list) {
   const isBm = APP.language==='bm'
   const el = document.getElementById('db-overdue-table')
@@ -8099,6 +8264,7 @@ function renderAdmin(params={}) {
   if(params.view==='announcements' && isPlatformAdmin()) { renderAdminAnnouncements(); return }
   if(params.view==='referrals' && isPlatformAdmin()) { renderAdminReferrals(); return }
   if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
+  if(params.view==='devroadmap' && isPlatformAdmin()) { renderAdminDevRoadmap(); return }
   renderAdminTeam()
 }
 
@@ -8111,6 +8277,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='audit'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'audit'})"><i class="ti ti-history"></i> ${isBm?'Log Audit':'Audit Log'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='devroadmap'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'devroadmap'})"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</button>` : ''}
   </div>`
 }
 
@@ -9965,6 +10132,165 @@ async function doDeleteReferralPartner(partnerId, partnerName) {
   }
   showToast(isBm?'Rakan referral dipadam.':'Referral partner deleted.', 'success')
   openPage('admin',{view:'referrals'})
+}
+
+// ─── System Development tracker (Platform Admin) ────────────────────────────
+// dev_roadmap_items: id, title, description, module, stage
+//   ('idea'|'planned'|'in_progress'|'completed'), pr_link, started_at,
+//   completed_at (both auto-set by DB trigger on stage change), created_at
+let _adminDevRoadmapData = []
+const _DEVROADMAP_STAGES = ['idea', 'planned', 'in_progress', 'completed']
+
+async function renderAdminDevRoadmap() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Pembangunan Sistem', sub:'Kanban ciri & perkembangan produk M-Core',
+    close:'Tutup', save:'Simpan', add:'Tambah Item'
+  } : {
+    title:'System Development', sub:'M-Core product/feature kanban',
+    close:'Close', save:'Save', add:'Add Item'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('devroadmap')}
+  <div id="admin-devroadmap-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  <div class="modal-overlay" id="admin-devroadmap-modal-overlay">
+    <div class="modal-box" style="max-width:520px">
+      <div class="modal-box-header"><i class="ti ti-rocket"></i> <span id="admin-devroadmap-modal-title">${t.add}</span></div>
+      <div class="modal-box-body" id="admin-devroadmap-modal-body"></div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('admin-devroadmap-modal-overlay').classList.remove('active')">${t.close}</button>
+        <button type="button" class="btn btn-primary" onclick="doSaveDevRoadmapItem()">${t.save}</button>
+      </div>
+    </div>
+  </div>`
+
+  const wrap = document.getElementById('admin-devroadmap-wrap')
+  const {data, error} = await sb.from('dev_roadmap_items').select('*').order('created_at', {ascending:true})
+  if(error) {
+    wrap.innerHTML = `<div class="card" style="padding:24px">
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Pastikan jadual dev_roadmap_items dan RLS platform_admin dah disediakan.'
+        : 'Make sure dev_roadmap_items table and platform_admin RLS are set up.'}</p>
+    </div>`
+    return
+  }
+  _adminDevRoadmapData = data || []
+  _adminDevRoadmapRenderBoard()
+}
+
+function _adminDevRoadmapRenderBoard() {
+  const wrap = document.getElementById('admin-devroadmap-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const stageLabels = isBm
+    ? { idea:'Idea', planned:'Dirancang', in_progress:'Sedang Dibuat', completed:'Selesai' }
+    : { idea:'Idea', planned:'Planned', in_progress:'In Progress', completed:'Completed' }
+  const stageIcons = { idea:'ti-bulb', planned:'ti-calendar-event', in_progress:'ti-tools', completed:'ti-check' }
+  const addLabel = isBm ? '+ Tambah' : '+ Add'
+  const noItems = isBm ? 'Tiada item.' : 'No items.'
+  const viewPr = isBm ? 'Lihat PR' : 'View PR'
+
+  const cardHtml = (item) => `<div class="card" style="padding:10px;margin-bottom:8px;cursor:pointer" onclick="openDevRoadmapModal('${item.id}')">
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">${_aiEscapeHtml(item.title||'—')}</div>
+    ${item.module ? `<span style="font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg);border:1px solid var(--border);color:var(--text-3)">${_aiEscapeHtml(item.module)}</span>` : ''}
+    <div style="font-size:12px;color:var(--text-2);margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${_aiEscapeHtml(item.description||'')}</div>
+    ${item.stage==='completed' && item.pr_link ? `<a href="${_aiEscapeHtml(item.pr_link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:11px;color:var(--primary);display:inline-block;margin-top:4px">${viewPr}</a>` : ''}
+    <select onclick="event.stopPropagation()" onchange="doChangeDevRoadmapStage('${item.id}', this.value)" class="form-select" style="margin-top:8px;font-size:11px;padding:4px 6px;height:auto">
+      ${_DEVROADMAP_STAGES.map(s => `<option value="${s}" ${item.stage===s?'selected':''}>${stageLabels[s]}</option>`).join('')}
+    </select>
+  </div>`
+
+  wrap.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+    ${_DEVROADMAP_STAGES.map(s => {
+      const items = _adminDevRoadmapData.filter(i => i.stage===s)
+      return `<div class="card" style="padding:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:6px">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap"><i class="ti ${stageIcons[s]}"></i> ${stageLabels[s]} (${items.length})</div>
+          <button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="openDevRoadmapModal(null, '${s}')">${addLabel}</button>
+        </div>
+        ${items.length ? items.map(cardHtml).join('') : `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:16px 0">${noItems}</div>`}
+      </div>`
+    }).join('')}
+  </div>`
+}
+
+async function doChangeDevRoadmapStage(itemId, newStage) {
+  const {error} = await sb.from('dev_roadmap_items').update({stage:newStage}).eq('id', itemId)
+  if(error) { showToast(error.message,'error'); return }
+  await renderAdminDevRoadmap()
+}
+
+function openDevRoadmapModal(itemId, defaultStage) {
+  const isBm = APP.language==='bm'
+  const item = itemId ? _adminDevRoadmapData.find(i => String(i.id)===String(itemId)) : null
+  const stage = item ? item.stage : (defaultStage || 'idea')
+  const stageLabels = isBm
+    ? { idea:'Idea', planned:'Dirancang', in_progress:'Sedang Dibuat', completed:'Selesai' }
+    : { idea:'Idea', planned:'Planned', in_progress:'In Progress', completed:'Completed' }
+
+  const overlay = document.getElementById('admin-devroadmap-modal-overlay')
+  overlay.dataset.itemId = item ? item.id : ''
+  document.getElementById('admin-devroadmap-modal-title').textContent = item ? (isBm?'Sunting Item':'Edit Item') : (isBm?'Tambah Item':'Add Item')
+  document.getElementById('admin-devroadmap-modal-body').innerHTML = `
+    <div class="form-group"><label class="form-label">${isBm?'Tajuk':'Title'}</label><input type="text" id="devroadmap-title" class="form-input" value="${_aiEscapeHtml(item?.title||'')}"></div>
+    <div class="form-group"><label class="form-label">${isBm?'Keterangan':'Description'}</label><textarea id="devroadmap-desc" class="form-input" rows="3">${_aiEscapeHtml(item?.description||'')}</textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${isBm?'Modul':'Module'}</label><input type="text" id="devroadmap-module" class="form-input" value="${_aiEscapeHtml(item?.module||'')}"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Peringkat':'Stage'}</label>
+        <select id="devroadmap-stage" class="form-select" onchange="_devRoadmapTogglePrField()">
+          ${_DEVROADMAP_STAGES.map(s => `<option value="${s}" ${stage===s?'selected':''}>${stageLabels[s]}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group" id="devroadmap-pr-group" style="display:${stage==='completed'?'':'none'}">
+      <label class="form-label">${isBm?'Link PR (pilihan)':'PR Link (optional)'}</label>
+      <input type="url" id="devroadmap-pr" class="form-input" placeholder="https://github.com/..." value="${_aiEscapeHtml(item?.pr_link||'')}">
+    </div>
+    ${item ? `<button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="doDeleteDevRoadmapItem('${item.id}')">${isBm?'Padam Item Ini':'Delete This Item'}</button>` : ''}`
+  overlay.classList.add('active')
+}
+
+function _devRoadmapTogglePrField() {
+  const stage = document.getElementById('devroadmap-stage')?.value
+  const grp = document.getElementById('devroadmap-pr-group')
+  if(grp) grp.style.display = stage==='completed' ? '' : 'none'
+}
+
+async function doSaveDevRoadmapItem() {
+  const isBm = APP.language==='bm'
+  const overlay = document.getElementById('admin-devroadmap-modal-overlay')
+  const itemId = overlay.dataset.itemId || null
+  const title = document.getElementById('devroadmap-title').value.trim()
+  const description = document.getElementById('devroadmap-desc').value.trim()
+  const module = document.getElementById('devroadmap-module').value.trim()
+  const stage = document.getElementById('devroadmap-stage').value
+  const prLink = document.getElementById('devroadmap-pr')?.value.trim() || null
+  if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
+  const payload = { title, description, module, stage, pr_link: stage==='completed' ? prLink : null }
+  const { error } = itemId
+    ? await sb.from('dev_roadmap_items').update(payload).eq('id', itemId)
+    : await sb.from('dev_roadmap_items').insert(payload)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Item disimpan.':'Item saved.', 'success')
+  overlay.classList.remove('active')
+  await renderAdminDevRoadmap()
+}
+
+async function doDeleteDevRoadmapItem(itemId) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm?'Padam item ini? Tindakan ni TIDAK BOLEH DIUNDUR.':'Delete this item? This CANNOT be undone.')) return
+  const { error } = await sb.from('dev_roadmap_items').delete().eq('id', itemId)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Item dipadam.':'Item deleted.', 'success')
+  const overlay = document.getElementById('admin-devroadmap-modal-overlay')
+  if(overlay) overlay.classList.remove('active')
+  await renderAdminDevRoadmap()
 }
 
 async function renderAdminTenantDetail(tenantId) {
