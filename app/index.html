@@ -9876,9 +9876,17 @@ async function renderAdminReferralDetail(partnerId) {
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
-    <div class="page-title">${_aiEscapeHtml(partner.full_name||'—')}</div>
+    <div class="page-title">${_aiEscapeHtml(partner.full_name||'—')}
+      <span style="font-size:11px;padding:2px 8px;border-radius:6px;margin-left:8px;
+        background:${partner.status==='active'?'rgba(34,197,94,.15)':'rgba(239,68,68,.15)'};
+        color:${partner.status==='active'?'var(--success)':'var(--danger)'}">${(partner.status||'').toUpperCase()}</span>
+    </div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${_aiEscapeHtml(partner.referral_code||'')}</div>
-  </div></div>
+  </div>
+  <button type="button" class="btn btn-outline btn-sm" onclick="doToggleReferralPartnerStatus('${partner.id}','${partner.status}')">
+    ${partner.status==='active' ? (isBm?'Nyahaktif':'Deactivate') : (isBm?'Aktifkan':'Reactivate')}
+  </button>
+  </div>
   <div style="font-size:13px;color:var(--text-3);margin-bottom:12px;cursor:pointer" onclick="openPage('admin',{view:'referrals'})">← ${t.back}</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px">
     <div class="card" style="padding:16px">
@@ -9922,6 +9930,16 @@ async function doMarkReferralPaid(conversionId, partnerId) {
     .eq('id', conversionId)
   if(error) { showToast(error.message, 'error'); return }
   showToast(isBm?'Ditanda sudah bayar.':'Marked as paid.', 'success')
+  await _loadAdminReferralData()
+  renderAdminReferralDetail(partnerId)
+}
+
+async function doToggleReferralPartnerStatus(partnerId, currentStatus) {
+  const isBm = APP.language==='bm'
+  const newStatus = currentStatus==='active' ? 'inactive' : 'active'
+  const {error} = await sb.from('referral_partners').update({status:newStatus}).eq('id', partnerId)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Status dikemaskini.':'Status updated.', 'success')
   await _loadAdminReferralData()
   renderAdminReferralDetail(partnerId)
 }
