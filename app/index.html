@@ -4011,7 +4011,7 @@ async function doRegister() {
     const inviteToken = (document.getElementById('reg-invite')?.value || localStorage.getItem('nexerp_invite_token') || '').trim()
 
     let data, error
-    ;({data, error} = await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,company_name:company},emailRedirectTo:'https://mpflemedia-ux.github.io/mcore/app/'}}))
+    ;({data, error} = await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,company_name:company},emailRedirectTo:'https://mpflemedia.my/app/'}}))
 
     // Option A hybrid: email already in Auth + invite → Sign In then join/revive
     if(error && inviteToken && /already registered|already been registered|User already registered/i.test(error.message||'')) {
@@ -4180,7 +4180,7 @@ let _pwResetEmail = ''
 async function doForgotPassword() {
   const email=document.getElementById('forgot-email').value.trim()
   if(!email)return
-  const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:`https://mpflemedia-ux.github.io/mcore/app/`})
+  const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:`https://mpflemedia.my/app/`})
   if(error){showToast(error.message,'error');return}
   _pwResetEmail = email
   switchAuthTab('reset-otp')
