@@ -11,7 +11,7 @@
 <meta property="og:title" content="M-Core by MPFLE Media">
 <meta property="og:description" content="Books, payroll, stock and sales in one workspace. DIY or done-with-you.">
 <meta property="og:url" content="https://mpflemedia.my">
-<meta property="og:image" content="https://mpflemedia-ux.github.io/nexerp/assets/apple-touch-icon.png">
+<meta property="og:image" content="https://mpflemedia-ux.github.io/mcore/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png">
 <link rel="shortcut icon" type="image/png" href="assets/favicon.png">
@@ -661,7 +661,7 @@ footer a:hover { color: var(--cyan); }
       <a class="nav-link" href="#referral" data-i18n="nav_referral">Referral Program</a>
       <button type="button" class="nav-btn theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Toggle day and dark mode" title="Day / Dark"><span class="icon-sun" aria-hidden="true">☀</span><span class="icon-moon" aria-hidden="true">☾</span></button>
       <button type="button" class="nav-btn nav-lang" id="langToggleBtn" onclick="toggleLang()" aria-label="Toggle language">EN | BM</button>
-      <a href="https://mpflemedia-ux.github.io/nexerp/app/" class="nav-cta" data-i18n="cta_mini">Client login</a>
+      <a href="https://mpflemedia-ux.github.io/mcore/app/" class="nav-cta" data-i18n="cta_mini">Client login</a>
     </div>
   </div>
 </header>
@@ -675,7 +675,7 @@ footer a:hover { color: var(--cyan); }
       <h1 data-i18n="hero_title">One workspace for Malaysian SMEs.<br><em>Books, payroll, stock &amp; sales.</em></h1>
       <p class="sub" data-i18n="hero_sub">Local compliance and staff control in the same place, so numbers and roles stay yours.</p>
       <div class="btn-row">
-        <a class="btn btn-primary" href="https://mpflemedia-ux.github.io/nexerp/app/" data-i18n="hero_cta_primary">Open M-Core</a>
+        <a class="btn btn-primary" href="https://mpflemedia-ux.github.io/mcore/app/" data-i18n="hero_cta_primary">Open M-Core</a>
         <a class="btn btn-ghost" href="#pricing" data-i18n="hero_cta_plans">See plans</a>
         <a class="btn btn-ghost" href="https://wa.me/601169980433?text=Saya%20berminat%20hendak%20tahu%20lebih%20lanjut%20tentang%20M-Core" target="_blank" rel="noopener" data-i18n="hero_cta_talk">Talk to us</a>
       </div>
@@ -869,7 +869,7 @@ footer a:hover { color: var(--cyan); }
     <h2 data-i18n="cta_h2">Ready when you are.</h2>
     <p data-i18n="cta_p">Open M-Core free, or talk to MPFLE about plans and ops.</p>
     <div class="btn-row">
-      <a class="btn btn-primary" href="https://mpflemedia-ux.github.io/nexerp/app/" data-i18n="cta_app">Open M-Core</a>
+      <a class="btn btn-primary" href="https://mpflemedia-ux.github.io/mcore/app/" data-i18n="cta_app">Open M-Core</a>
       <a class="btn btn-ghost" href="mailto:hello@mpflemedia.my" data-i18n="cta_email">hello@mpflemedia.my</a>
       <a class="btn btn-ghost" href="https://mpflemedia.my" target="_blank" rel="noopener" data-i18n="cta_web">mpflemedia.my</a>
     </div>
@@ -893,7 +893,7 @@ footer a:hover { color: var(--cyan); }
   </div>
   <div>
     <h4 data-i18n="footer_product">Product</h4>
-    <a href="https://mpflemedia-ux.github.io/nexerp/app/">M-Core login</a>
+    <a href="https://mpflemedia-ux.github.io/mcore/app/">M-Core login</a>
     <a href="#pricing" data-i18n="footer_pricing">Pricing</a>
     <a href="#service-pricing" data-i18n="footer_svc">Services</a>
     <button type="button" class="foot-top" id="backToTop" onclick="scrollToTop()" aria-label="Back to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 14 12 8 18 14"/></svg><span data-i18n="footer_top">Back to top</span></button>
@@ -1250,7 +1250,7 @@ async function submitReferralPartner() {
     else if (data && typeof data === 'object') code = data.referral_code || data.code;
     if (!code) throw new Error('No referral code returned');
 
-    const link = 'https://mpflemedia-ux.github.io/nexerp/app/?ref=' + encodeURIComponent(code);
+    const link = 'https://mpflemedia-ux.github.io/mcore/app/?ref=' + encodeURIComponent(code);
     document.getElementById('refResultCode').textContent = code;
     document.getElementById('refResultLink').value = link;
     document.getElementById('refResult').hidden = false;
