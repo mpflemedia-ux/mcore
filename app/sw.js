@@ -1,5 +1,5 @@
 /* NexERP service worker — network-first; bump CACHE to invalidate old shells */
-const CACHE = 'mcore-shell-v7'
+const CACHE = 'mcore-shell-v8'
 const ASSETS = ['./', './index.html', './manifest.webmanifest']
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -35,5 +35,18 @@ self.addEventListener('fetch', e => {
       caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {})
       return res
     }).catch(() => caches.match(e.request))
+  )
+})
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const target = (event.notification && event.notification.data && event.notification.data.url) || '/app/'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if (c.url && c.url.includes('/app') && 'focus' in c) return c.focus()
+      }
+      if (clients.openWindow) return clients.openWindow(target)
+    })
   )
 })

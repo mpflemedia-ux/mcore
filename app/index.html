@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-23-pwa-scope">
+<meta name="nexerp-build" content="2026-08-23-os-notif">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2259,7 +2259,7 @@ async function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-tg-purchasing" '+(p.telegram_purchasing?'checked':'')+'> '+(isBm?'Pembelian':'Purchasing')+'</label>'
     + '<label><input type="checkbox" id="notif-tg-finance" '+(p.telegram_finance?'checked':'')+'> '+(isBm?'Kewangan':'Finance')+'</label>'
     + '<label><input type="checkbox" id="notif-tg-hr" '+(p.telegram_hr?'checked':'')+'> HR</label>'
-    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" id="tg-test-btn" onclick="_tgSendTestNotification()">'+(isBm?'Hantar ujian ke Telegram':'Send test to Telegram')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">'+(isBm?'Telefon / OS':'Phone / OS')+'</div>' + '<label><input type="checkbox" id="notif-os-phone" '+(p.os_phone!==false?'checked':'')+'> '+(isBm?'Tunjuk di bar notifikasi telefon':'Show on phone notification bar')+'</label>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin:8px 0" onclick="_notifRequestOsPermission()">'+(isBm?'Aktifkan kebenaran telefon':'Enable phone permission')+'</button>' + '</div>' + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" id="tg-test-btn" onclick="_tgSendTestNotification()">'+(isBm?'Hantar ujian ke Telegram':'Send test to Telegram')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
 
 
@@ -2280,6 +2280,7 @@ async function _notifSavePrefsFromUI() {
     purchasing: !!document.getElementById('notif-ev-purchasing')?.checked,
     finance: !!document.getElementById('notif-ev-finance')?.checked,
     hr: !!document.getElementById('notif-ev-hr')?.checked,
+    os_phone: !!document.getElementById('notif-os-phone')?.checked,
     telegram_sales: !!document.getElementById('notif-tg-sales')?.checked,
     telegram_inventory: !!document.getElementById('notif-tg-inventory')?.checked,
     telegram_purchasing: !!document.getElementById('notif-tg-purchasing')?.checked,
@@ -2429,11 +2430,73 @@ function _notifPushBell(title, meta) {
     if (badge || (list && list.classList.contains('open'))) {
       if (typeof loadNotifications === 'function') loadNotifications()
     } else if (badge) {
-      const n = (_notifLoadBell().length) + (Number(badge.textContent) || 0)
-      // soft bump — full count on next open
       badge.classList.add('show')
     }
   } catch (e) {}
+  // Also surface on phone OS tray when permission granted (TWA / installed PWA)
+  try { _notifOsNotify(row.text, row.meta) } catch (e) {}
+}
+
+/** OS / phone notification (requires Android Allow notification + browser permission) */
+async function _notifOsNotify(title, body) {
+  try {
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission !== 'granted') return
+    let prefs = {}
+    try { prefs = (typeof _notifGetPrefs === 'function') ? await _notifGetPrefs() : {} } catch (e) {}
+    if (prefs && prefs.muted) return
+    if (prefs && prefs.os_phone === false) return
+    const opts = {
+      body: String(body || '').slice(0, 180),
+      icon: '/app/icons/icon-192.png',
+      badge: '/app/icons/icon-192.png',
+      tag: 'mcore-bell',
+      renotify: true,
+      data: { url: '/app/' }
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+      const reg = await navigator.serviceWorker.ready
+      if (reg && reg.showNotification) {
+        await reg.showNotification(String(title || 'M-Core').slice(0, 80), opts)
+        return
+      }
+    }
+    // Fallback when SW not ready
+    new Notification(String(title || 'M-Core').slice(0, 80), opts)
+  } catch (e) {}
+}
+
+async function _notifRequestOsPermission() {
+  const isBm = APP.language === 'bm'
+  try {
+    if (typeof Notification === 'undefined') {
+      showToast(isBm ? 'Peranti ini tidak sokong notifikasi sistem.' : 'This device does not support system notifications.', 'warning')
+      return false
+    }
+    let perm = Notification.permission
+    if (perm === 'default') {
+      perm = await Notification.requestPermission()
+    }
+    if (perm === 'granted') {
+      try {
+        const prefs = await _notifGetPrefs()
+        prefs.os_phone = true
+        await _notifSavePrefs(prefs)
+      } catch (e) {}
+      showToast(isBm ? 'Notifikasi telefon diaktifkan.' : 'Phone notifications enabled.', 'success')
+      try { await _notifOsNotify(isBm ? 'M-Core sedia' : 'M-Core ready', isBm ? 'Anda akan terima amaran di bar notifikasi.' : 'You will get alerts in the notification bar.') } catch (e) {}
+      return true
+    }
+    if (perm === 'denied') {
+      showToast(isBm
+        ? 'Dibenarkan dihalang. Buka tetapan Android → Apps → M-Core → Notifications → Allow.'
+        : 'Permission blocked. Android Settings → Apps → M-Core → Notifications → Allow.', 'error')
+      return false
+    }
+  } catch (e) {
+    showToast(isBm ? 'Gagal minta kebenaran notifikasi.' : 'Failed to request notification permission.', 'error')
+  }
+  return false
 }
 
 async function _tgActivity(prefKey, text, opts) {
@@ -33244,7 +33307,7 @@ if('serviceWorker' in navigator){
       refreshing = true
       try { location.reload() } catch(e) {}
     })
-    navigator.serviceWorker.register('./sw.js?v=7').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=8').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
