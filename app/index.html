@@ -10423,6 +10423,9 @@ function _adminDevRoadmapRenderAll() {
       <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-line"></i> ${isBm?'Burn-up':'Burn-up'}</div>
       <div class="db-chart-slot"><canvas id="devroadmap-burnup-chart"></canvas></div>
       <div id="devroadmap-burnup-empty" class="db-card-foot" style="display:none"></div>
+      <div class="db-ai-insight" id="devroadmap-burnup-insight" style="margin-top:12px">
+        <span class="db-ai-tag">AI</span> <div>${isBm?'Menganalisis…':'Analyzing…'}</div>
+      </div>
     </div>
     <div class="card" style="padding:16px;margin-bottom:16px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px"><i class="ti ti-chart-gantt"></i> ${isBm?'Garis Masa':'Timeline'}</div>
@@ -10435,6 +10438,7 @@ function _adminDevRoadmapRenderAll() {
   _devZonePowerRender(stats.moduleCoverage)
   _devRadarRender(stats.moduleCoverage)
   _devBurnupRender(items)
+  _devBurnupInsight(items)
   _devZoneRadarInsight(stats.moduleCoverage)
 
   const ganttLegendEl = document.getElementById('devroadmap-gantt-legend')
@@ -10544,6 +10548,52 @@ async function _devZoneRadarInsight(moduleCoverage) {
       + `Point out which module/zone is strongest and which is weakest/uncovered, and suggest ONE next priority zone. No labels, no hashtags, no emoji spam, creative & different each time.\n`
       + `Facts JSON: ${JSON.stringify(facts)}`
     const { data, error } = await _invokeAiProxy({ action:'chat', message, context:'Platform-internal dev roadmap zone coverage. Not tenant data.' }, { silent:true })
+    if(error || !data?.success) throw new Error('ai failed')
+    let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
+    if(!reply || reply.length<12) throw new Error('empty')
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'&lt;') + '</div>'
+  } catch(e) {
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + fallback() + '</div>'
+  }
+}
+
+async function _devBurnupInsight(items) {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('devroadmap-burnup-insight')
+  if(!el) return
+  const completed = items.filter(it => it.stage === 'completed' && it.completed_at)
+    .sort((a,b) => new Date(a.completed_at) - new Date(b.completed_at))
+  const total = completed.length
+  const firstDate = completed[0]?.completed_at ? new Date(completed[0].completed_at) : null
+  const lastDate = completed[total-1]?.completed_at ? new Date(completed[total-1].completed_at) : null
+  const daySpan = (firstDate && lastDate) ? Math.max(1, Math.round((lastDate - firstDate) / 86400000) + 1) : 0
+  const perDay = daySpan > 0 ? (total / daySpan).toFixed(1) : 0
+  // Bandingkan velocity separuh pertama vs separuh kedua tempoh untuk detect speeding-up/slowing-down
+  const half = Math.floor(total / 2)
+  const firstHalfSpan = half > 0 && completed[half-1]?.completed_at && firstDate
+    ? Math.max(1, Math.round((new Date(completed[half-1].completed_at) - firstDate) / 86400000) + 1) : 1
+  const secondHalfSpan = daySpan - firstHalfSpan
+  const firstHalfRate = half > 0 ? half / firstHalfSpan : 0
+  const secondHalfRate = (total - half) > 0 && secondHalfSpan > 0 ? (total - half) / secondHalfSpan : 0
+  const trend = secondHalfRate > firstHalfRate * 1.2 ? 'speeding_up'
+    : secondHalfRate < firstHalfRate * 0.8 ? 'slowing_down' : 'steady'
+
+  const facts = { total_completed: total, day_span: daySpan, per_day_rate: Number(perDay), trend }
+  const fallback = () => {
+    const trendWord = trend==='speeding_up' ? (isBm?'semakin laju':'speeding up')
+      : trend==='slowing_down' ? (isBm?'semakin perlahan':'slowing down')
+      : (isBm?'stabil':'steady')
+    return isBm
+      ? `${total} item siap sepanjang ${daySpan} hari (~${perDay} sehari), momentum ${trendWord}.`
+      : `${total} items shipped over ${daySpan} days (~${perDay}/day), momentum is ${trendWord}.`
+  }
+  try {
+    const message = `Write ONE fresh Gen Z paragraph (max 60 words) explaining what a "Burn-up" cumulative-progress chart means for this Malaysian SME ERP platform's OWN dev velocity (not tenant data).\n`
+      + `Language: ${isBm?'Bahasa Melayu Malaysia, casual Gen Z':'English, casual Gen Z'}.\n`
+      + `Voice: address as ${isBm?'"anda"':'"you"'} only.\n`
+      + `Explain the cumulative-total concept (line only ever goes up), comment on the velocity trend given (speeding up / slowing down / steady), and give ONE encouraging or corrective takeaway. No labels, no hashtags, no emoji spam, creative & different each time.\n`
+      + `Facts JSON: ${JSON.stringify(facts)}`
+    const { data, error } = await _invokeAiProxy({ action:'chat', message, context:'Platform-internal dev roadmap burn-up chart. Not tenant data.' }, { silent:true })
     if(error || !data?.success) throw new Error('ai failed')
     let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
     if(!reply || reply.length<12) throw new Error('empty')
