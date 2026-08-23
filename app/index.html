@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-sw11b">
+<meta name="nexerp-build" content="2026-08-24-dash-spin">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3122,7 +3122,17 @@ function openPage(page, params={}) {
       }
     }
     switch(page){
-      case 'dashboard':  _safeRender(() => renderDashboard()); break
+      case 'dashboard':  _safeRender(() => renderDashboard());
+        setTimeout(function(){
+          try {
+            var m = document.getElementById('main')
+            if (m && /page-loading/i.test(m.innerHTML||'') && APP.currentPage==='dashboard') {
+              console.warn('dashboard stuck loading — retry')
+              renderDashboard()
+            }
+          } catch(e) {}
+        }, 2500);
+        break
       case 'crm':        _safeRender(() => renderCRM(params)); break
       case 'sales':      _safeRender(() => renderSales(params)); break
       case 'pos':        _safeRender(() => renderPOS(params)); break
@@ -4224,11 +4234,13 @@ function _showPostLoginBoot(done) {
 function _afterSessionReady(next) {
   try {
     if (window._mcoreFreshLogin && typeof _showPostLoginBoot === 'function') {
+      window._mcoreForceShellPage = true
       _showPostLoginBoot(next)
       return
     }
   } catch (e) { console.warn('boot splash', e) }
   window._mcoreFreshLogin = false
+  window._mcoreForceShellPage = true
   if (typeof next === 'function') next()
 }
 
@@ -4276,6 +4288,7 @@ async function doLogin() {
       return
     }
     window._mcoreFreshLogin = true
+    window._mcoreForceShellPage = true
     await loadUserSession(data.user)
   } catch(e) {
     btn.innerHTML='Sign In'; btn.disabled=false
@@ -5044,12 +5057,18 @@ function showShell() {
     history.replaceState({ nexerp: true, page: lp, params: lpar }, '', _navHistoryUrl(lp, lpar))
   } catch(e) {}
   try{ if(typeof _hideIntroAll==='function') _hideIntroAll() }catch(e){}
-  if(!alreadyActive) {
-    if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('collapsed')
-    buildSidebar()
-    updateUserUI()
-    _loadBroadcastAnnouncements()
-    _loadAdminSignupBadge()
+  const mainEl = document.getElementById('main')
+  const mainStuck = !!(mainEl && (/page-loading|spinner/i.test(mainEl.innerHTML || '') && (mainEl.innerHTML || '').length < 800))
+  const forcePage = !!window._mcoreForceShellPage || mainStuck || !alreadyActive
+  window._mcoreForceShellPage = false
+  if(forcePage) {
+    if(window.innerWidth <= 768) {
+      try { document.getElementById('sidebar').classList.add('collapsed') } catch(e) {}
+    }
+    try { buildSidebar() } catch(e) { console.warn('buildSidebar', e) }
+    try { updateUserUI() } catch(e) {}
+    try { _loadBroadcastAnnouncements() } catch(e) {}
+    try { _loadAdminSignupBadge() } catch(e) {}
     let lastParams = {}
     try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
     openPage(localStorage.getItem('nexerp_last_page') || 'dashboard', lastParams)
@@ -5249,11 +5268,15 @@ function _dbScrollToSec(id) {
   } catch(e) { console.warn('scroll sec', e) }
 }
 function renderDashboard() {
-  const t = LANG[APP.language].dashboard
+  try {
+  if (!APP.language || !LANG[APP.language]) APP.language = (localStorage.getItem('nexerp_lang') === 'bm' ? 'bm' : 'en')
+  const t = (LANG[APP.language] && LANG[APP.language].dashboard) ? LANG[APP.language].dashboard : (LANG.en.dashboard || {})
   const isBm = APP.language==='bm'
   const monthLabel = new Date().toLocaleDateString(isBm?'ms-MY':'en-MY',{month:'long',year:'numeric'})
+  const mainEl = document.getElementById('main')
+  if (!mainEl) return
 
-  document.getElementById('main').innerHTML = `
+  mainEl.innerHTML = `
   <div id="dashboard-wrap">
     <div class="db-topbar">
       <div>
@@ -5535,6 +5558,13 @@ function renderDashboard() {
   loadDashboardData()
   try { _obcRenderChecklist() } catch(e) { console.error(e) }
   try { _obtMaybeAutoStart() } catch(e) { console.error(e) }
+  } catch (err) {
+    console.error('renderDashboard', err)
+    try {
+      const m = document.getElementById('main')
+      if (m) m.innerHTML = '<div class="empty-state" style="padding:48px"><p style="color:var(--danger)">Dashboard error: '+String(err && err.message || err)+'</p><button type="button" class="btn btn-primary" onclick="openPage(\'dashboard\',{})">Retry</button></div>'
+    } catch (e2) {}
+  }
 }
 
 // Dashboard sales formula (LOCKED — keep charts/KPIs aligned):
