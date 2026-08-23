@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-pwa-landing">
+<meta name="nexerp-build" content="2026-08-24-boot-quote">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -78,6 +78,32 @@ input,select,textarea{font-family:inherit}
     radial-gradient(ellipse 70% 50% at 90% 8%, rgba(14,116,144,0.08), transparent 60%);
   background-size:48px 48px, 48px 48px, auto}
 #auth-page>*{position:relative;z-index:1}
+
+/* Post-login boot splash — M-Core theme + quote */
+#mcore-boot{display:none;position:fixed;inset:0;z-index:99990;align-items:center;justify-content:center;
+  background:#1A1D21;flex-direction:column;padding:28px 22px;text-align:center}
+#mcore-boot.active{display:flex}
+#mcore-boot::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(231,233,235,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(231,233,235,.04) 1px,transparent 1px);
+  background-size:28px 28px;opacity:.55}
+#mcore-boot .boot-inner{position:relative;z-index:1;max-width:420px;width:100%}
+#mcore-boot .boot-mark{width:56px;height:56px;margin:0 auto 18px;border-radius:14px;
+  background:linear-gradient(145deg,#0E7490,#14b8a6);display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 1px rgba(20,184,166,.35),0 12px 32px rgba(14,116,144,.35);
+  animation:bootPulse 1.6s ease-in-out infinite}
+#mcore-boot .boot-mark span{font-weight:800;font-size:22px;color:#E7E9EB;letter-spacing:-.02em;font-family:Inter,system-ui,sans-serif}
+#mcore-boot .boot-brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:rgba(231,233,235,.55);margin-bottom:22px;font-weight:600}
+#mcore-boot .boot-quote{font-size:16px;line-height:1.45;color:#E7E9EB;font-weight:500;min-height:3.2em;margin:0 0 10px}
+#mcore-boot .boot-attr{font-size:12px;color:rgba(231,233,235,.4);margin-bottom:28px}
+#mcore-boot .boot-bar{height:6px;border-radius:99px;background:rgba(231,233,235,.08);overflow:hidden;margin:0 auto;max-width:260px}
+#mcore-boot .boot-bar > i{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,#0E7490,#14b8a6);box-shadow:0 0 12px rgba(20,184,166,.45)}
+#mcore-boot .boot-tip{margin-top:14px;font-size:11px;color:rgba(231,233,235,.35)}
+@keyframes bootPulse{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.06);filter:brightness(1.12)}}
+@media (prefers-reduced-motion:reduce){
+  #mcore-boot .boot-mark{animation:none}
+}
+
 /* Logged-in main canvas: same charcoal grid as landing */
 #main{position:relative;background-color:var(--bg);
   background-image:
@@ -1405,6 +1431,18 @@ html[data-skip-intro="1"] #intro-skip {
 <div id="toast-container"></div>
 
 <!-- AUTH PAGE -->
+
+<div id="mcore-boot" aria-live="polite" aria-busy="true">
+  <div class="boot-inner">
+    <div class="boot-mark" aria-hidden="true"><span>M</span></div>
+    <div class="boot-brand">M-Core</div>
+    <p class="boot-quote" id="mcore-boot-quote"></p>
+    <div class="boot-attr" id="mcore-boot-attr"></div>
+    <div class="boot-bar"><i id="mcore-boot-bar"></i></div>
+    <div class="boot-tip" id="mcore-boot-tip"></div>
+  </div>
+</div>
+
 <div id="auth-page">
   <div class="auth-card">
     <div class="auth-logo" style="justify-content:center;margin-bottom:16px;flex-direction:column;align-items:center;border:0;gap:10px">
@@ -4092,6 +4130,106 @@ async function _obtReplay() {
 }
 
 
+
+// ── Post-login boot splash (quote + timed progress) ─────────────────────
+window._mcoreFreshLogin = false
+
+const _BOOT_QUOTES = [
+  {en:'Ship today. Polish tomorrow.', bm:'Hantar hari ini. Kemas esok.', tag:'Focus'},
+  {en:'Cash in hand beats paper profit.', bm:'Tunai di tangan lebih dari untung kertas.', tag:'Cash'},
+  {en:'One system. One number. No arguments.', bm:'Satu sistem. Satu nombor. Tiada pertengkaran.', tag:'Clarity'},
+  {en:'Count stock before you count dreams.', bm:'Kira stok sebelum kira impian.', tag:'Stock'},
+  {en:'Small wins compound. Track them.', bm:'Kemenangan kecil berganda. Jejaki.', tag:'Habits'},
+  {en:'Pay yourself on the books, not in your head.', bm:'Bayar diri dalam lejar, bukan dalam kepala.', tag:'Discipline'},
+  {en:'Speed without records is just noise.', bm:'Laju tanpa rekod cuma hingar.', tag:'Process'},
+  {en:'Your team moves at the clarity you give.', bm:'Pasukan bergerak ikut kejelasan anda.', tag:'Leadership'},
+  {en:'Close the day. Open the next with a plan.', bm:'Tutup hari. Buka esok dengan rancangan.', tag:'Routine'},
+  {en:'Price is a story. Margin is the truth.', bm:'Harga cerita. Margin kebenaran.', tag:'Margin'},
+  {en:'Customers stay where follow-up is easy.', bm:'Pelanggan kekal bila susulan mudah.', tag:'Service'},
+  {en:'Debt quiet is not debt gone.', bm:'Hutang senyap bukan hutang hilang.', tag:'AR'},
+  {en:'Protect payroll like you protect reputation.', bm:'Jaga gaji seperti jaga nama.', tag:'People'},
+  {en:'Decide with data you trust.', bm:'Putus dengan data yang dipercayai.', tag:'Decisions'},
+  {en:'Less tools. More done.', bm:'Kurang alat. Lebih siap.', tag:'Focus'},
+  {en:'Attendance is culture in numbers.', bm:'Kehadiran ialah budaya dalam nombor.', tag:'HR'},
+  {en:'A clean COA saves every report.', bm:'COA kemas selamatkan setiap laporan.', tag:'Books'},
+  {en:'Sell what you can deliver this week.', bm:'Jual apa yang boleh dihantar minggu ini.', tag:'Ops'},
+  {en:'Owner calm starts with closed books.', bm:'Ketenangan owner bermula dari lejar tutup.', tag:'Owner'},
+  {en:'Progress is a logged action, not a mood.', bm:'Progres ialah tindakan direkod, bukan mood.', tag:'Action'},
+  {en:'Review numbers before you review excuses.', bm:'Semak nombor sebelum semak alasan.', tag:'Review'},
+  {en:'Build trust once. Invoice clean every time.', bm:'Bina percaya sekali. Invois kemas setiap kali.', tag:'Trust'},
+  {en:'Inventory lies if you stop counting.', bm:'Stok menipu bila anda berhenti kira.', tag:'Inventory'},
+  {en:'Hire slow. Systemize fast.', bm:'Ambil pekerja perlahan. Sistem cepat.', tag:'Scale'},
+  {en:'Today receipt is tomorrow proof.', bm:'Resit hari ini bukti esok.', tag:'Proof'},
+  {en:'Goals need a date and an owner.', bm:'Matlamat perlu tarikh dan pemilik.', tag:'Goals'},
+  {en:'Quiet ops beat loud launches.', bm:'Ops senyap menang lawan lancar bising.', tag:'Ops'},
+  {en:'Know your burn before you grow.', bm:'Tahu burn rate sebelum scale.', tag:'Finance'},
+  {en:'Service is a process, not a personality.', bm:'Servis proses, bukan personaliti.', tag:'Service'},
+  {en:'Write it down or it did not happen.', bm:'Tulis atau ia tidak berlaku.', tag:'Discipline'}
+]
+
+function _bootQuoteDuration(text) {
+  var n = String(text || '').length
+  return Math.min(6800, Math.max(4200, Math.round(1200 + n * 70)))
+}
+
+function _pickBootQuote() {
+  var isBm = (typeof APP !== 'undefined' && APP.language === 'bm') || localStorage.getItem('nexerp_lang') === 'bm'
+  var used = []
+  try { used = JSON.parse(sessionStorage.getItem('mcore_boot_quotes_used') || '[]') } catch (e) {}
+  if (!Array.isArray(used)) used = []
+  var pool = _BOOT_QUOTES.filter(function (_, i) { return used.indexOf(i) < 0 })
+  if (!pool.length) { used = []; pool = _BOOT_QUOTES.slice() }
+  var q = pool[Math.floor(Math.random() * pool.length)]
+  var realIdx = _BOOT_QUOTES.indexOf(q)
+  used.push(realIdx)
+  if (used.length > 12) used = used.slice(-12)
+  try { sessionStorage.setItem('mcore_boot_quotes_used', JSON.stringify(used)) } catch (e) {}
+  var text = isBm ? q.bm : q.en
+  return { text: text, tag: q.tag, ms: _bootQuoteDuration(text), isBm: isBm }
+}
+
+function _showPostLoginBoot(done) {
+  var el = document.getElementById('mcore-boot')
+  if (!el) { if (typeof done === 'function') done(); return }
+  var q = _pickBootQuote()
+  var quoteEl = document.getElementById('mcore-boot-quote')
+  var attrEl = document.getElementById('mcore-boot-attr')
+  var barEl = document.getElementById('mcore-boot-bar')
+  var tipEl = document.getElementById('mcore-boot-tip')
+  if (quoteEl) quoteEl.textContent = '"' + q.text + '"'
+  if (attrEl) attrEl.textContent = q.tag ? ('— ' + q.tag) : ''
+  if (tipEl) tipEl.textContent = q.isBm ? 'Menyediakan ruang kerja anda…' : 'Preparing your workspace…'
+  if (barEl) { barEl.style.transition = 'none'; barEl.style.width = '0%' }
+  try { document.getElementById('auth-page').style.display = 'none' } catch (e) {}
+  el.classList.add('active')
+  var ms = q.ms
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ms = Math.min(ms, 1800)
+  } catch (e) {}
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      if (barEl) {
+        barEl.style.transition = 'width ' + ms + 'ms linear'
+        barEl.style.width = '100%'
+      }
+    })
+  })
+  setTimeout(function () {
+    el.classList.remove('active')
+    window._mcoreFreshLogin = false
+    if (typeof done === 'function') done()
+  }, ms)
+}
+
+function _afterSessionReady(next) {
+  if (window._mcoreFreshLogin) {
+    _showPostLoginBoot(next)
+  } else if (typeof next === 'function') {
+    next()
+  }
+}
+
+
 async function doLogin() {
   const email=document.getElementById('login-email').value.trim()
   const pass=document.getElementById('login-password').value
@@ -4134,6 +4272,7 @@ async function doLogin() {
       errEl.classList.add('show')
       return
     }
+    window._mcoreFreshLogin = true
     await loadUserSession(data.user)
   } catch(e) {
     btn.innerHTML='Sign In'; btn.disabled=false
@@ -4260,7 +4399,7 @@ async function doRegister() {
         btn.innerHTML='Create Account'; btn.disabled=false
         try {
           _resetSessionLoadGuard()
-          await loadUserSession(data.user)
+          await window._mcoreFreshLogin = true; loadUserSession(data.user)
           return
         } catch(e) { console.warn(e) }
       }
@@ -4767,10 +4906,10 @@ async function loadUserSession(user, opts={}) {
     if(APP.tenant.id && profile.tenants && !profile.tenants.onboarding_completed) {
         const r = String(profile.role||APP.user.role||'').toLowerCase()
         if(r==='owner'||r==='admin'||isPlatformAdmin()) {
-          showOnboarding()
+          _afterSessionReady(function(){ showOnboarding() })
           return
         }
-        showShell()
+        _afterSessionReady(function(){ showShell() })
         setTimeout(() => {
           try {
             const bm = APP.language==='bm'
@@ -4783,7 +4922,7 @@ async function loadUserSession(user, opts={}) {
       console.error('Session: no tenant_id for user', user.id)
       showToast(APP.language==='bm'?'Akaun tiada syarikat dipautkan. Hubungi admin.':'Account has no company linked. Contact admin.','error')
     }
-    showShell()
+    _afterSessionReady(function(){ showShell() })
   })()
   return _sessionLoadPromise
 }
