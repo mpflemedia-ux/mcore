@@ -1,5 +1,5 @@
 /* NexERP service worker — network-first; bump CACHE to invalidate old shells */
-const CACHE = 'mcore-shell-v6'
+const CACHE = 'mcore-shell-v7'
 const ASSETS = ['./', './index.html', './manifest.webmanifest']
 self.addEventListener('install', e => {
   e.waitUntil(
