@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-23-os-notif">
+<meta name="nexerp-build" content="2026-08-24-notif-prefs">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2161,35 +2161,93 @@ document.addEventListener('click', e => {
 function _notifPrefsKey() {
   return 'nexerp_notif_prefs_' + (APP.tenant?.id || 'x') + '_' + (APP.user?.id || APP.user?.email || 'x')
 }
+const _NOTIF_PREF_KEYS = ['muted','insight','overdue','low_stock','leave','outstation','sales','inventory','purchasing','finance','hr','os_phone','telegram_sales','telegram_inventory','telegram_purchasing','telegram_finance','telegram_hr','dismissed']
 function _notifDefaultPrefs() {
-  return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, sales:true, inventory:true, purchasing:true, finance:true, hr:true, dismissed:[] }
+  return {
+    muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true,
+    sales:true, inventory:true, purchasing:true, finance:true, hr:true,
+    os_phone:true,
+    telegram_sales:false, telegram_inventory:false, telegram_purchasing:false, telegram_finance:false, telegram_hr:false,
+    dismissed:[]
+  }
+}
+function _notifPickPrefFields(obj) {
+  const out = {}
+  _NOTIF_PREF_KEYS.forEach(k => {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== undefined) out[k] = obj[k]
+  })
+  if (!Array.isArray(out.dismissed)) out.dismissed = Array.isArray(obj?.dismissed) ? obj.dismissed : []
+  return out
 }
 async function _notifGetPrefs() {
   const d = _notifDefaultPrefs()
+  // 1) localStorage (always reliable on device)
+  try {
+    const raw = localStorage.getItem(_notifPrefsKey())
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      Object.assign(d, _notifPickPrefFields(parsed))
+    }
+  } catch (e) {}
+  // 2) DB overlay when available
   if (!APP.tenant?.id || !APP.user?.id) return d
   try {
-    const { data } = await sb.from('user_notification_prefs').select('*')
+    const { data, error } = await sb.from('user_notification_prefs').select('*')
       .eq('tenant_id', APP.tenant.id).eq('user_id', APP.user.id).maybeSingle()
-    if (data) {
-      Object.assign(d, data)
-      if(!Array.isArray(d.dismissed)) d.dismissed = []
+    if (!error && data) {
+      const picked = _notifPickPrefFields(data)
+      Object.assign(d, picked)
+      // keep local in sync with DB when DB has values
+      try { localStorage.setItem(_notifPrefsKey(), JSON.stringify(_notifPickPrefFields(d))) } catch (e2) {}
     }
-  } catch(e) {}
+  } catch (e) {}
+  if (!Array.isArray(d.dismissed)) d.dismissed = []
   return d
 }
 async function _notifSetPrefs(patch) {
   const cur = await _notifGetPrefs()
-  const next = Object.assign({}, cur, patch)
-  if(patch && patch.dismissed) next.dismissed = patch.dismissed
+  const next = _notifPickPrefFields(Object.assign({}, cur, patch || {}))
+  if (patch && patch.dismissed) next.dismissed = patch.dismissed
+  if (!Array.isArray(next.dismissed)) next.dismissed = []
+  // Always persist locally first so ticks never "snap back" on panel re-open
+  try { localStorage.setItem(_notifPrefsKey(), JSON.stringify(next)) } catch (e) {}
   if (!APP.tenant?.id || !APP.user?.id) return next
+  const payload = Object.assign({}, next, {
+    tenant_id: APP.tenant.id,
+    user_id: APP.user.id,
+    updated_at: new Date().toISOString()
+  })
   try {
-    const payload = Object.assign({}, next, {
-      tenant_id: APP.tenant.id, user_id: APP.user.id, updated_at: new Date().toISOString()
-    })
-    delete payload.id
-    await sb.from('user_notification_prefs').upsert(payload, { onConflict: 'tenant_id,user_id' })
-  } catch(e) { console.warn('notif prefs save', e) }
+    const { error } = await sb.from('user_notification_prefs').upsert(payload, { onConflict: 'tenant_id,user_id' })
+    if (error) {
+      // Schema may miss telegram_*/os_phone — retry core columns only
+      console.warn('notif prefs upsert', error.message || error)
+      const core = {
+        tenant_id: APP.tenant.id,
+        user_id: APP.user.id,
+        muted: !!next.muted,
+        insight: !!next.insight,
+        overdue: !!next.overdue,
+        low_stock: !!next.low_stock,
+        leave: !!next.leave,
+        outstation: !!next.outstation,
+        sales: !!next.sales,
+        inventory: !!next.inventory,
+        purchasing: !!next.purchasing,
+        finance: !!next.finance,
+        hr: !!next.hr,
+        dismissed: next.dismissed,
+        updated_at: payload.updated_at
+      }
+      const { error: e2 } = await sb.from('user_notification_prefs').upsert(core, { onConflict: 'tenant_id,user_id' })
+      if (e2) console.warn('notif prefs core upsert', e2.message || e2)
+    }
+  } catch (e) { console.warn('notif prefs save', e) }
   return next
+}
+async function _notifSavePrefs(patch) {
+  // alias used by OS permission helper
+  return _notifSetPrefs(patch)
 }
 function _notifFp(it) {
   return String(it.kind || '') + '|' + String(it.ref || it.text || '').slice(0, 80)
@@ -2288,6 +2346,7 @@ async function _notifSavePrefsFromUI() {
     telegram_hr: !!document.getElementById('notif-tg-hr')?.checked
   })
   showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
+  try { await _notifRenderPrefsPanel() } catch (e) {}
   try { loadNotifications() } catch (e) {}
 }
 
