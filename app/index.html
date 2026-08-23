@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-notif-prefs">
+<meta name="nexerp-build" content="2026-08-24-pos-rls">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -31014,7 +31014,13 @@ async function _posStartShift() {
     } catch (e) {}
   } catch(err) {
     console.error('_posStartShift error:', err)
-    if(errEl) { errEl.textContent = t.err + (err.message||''); errEl.style.display='block' }
+    let msg = err && err.message ? err.message : String(err || '')
+    if (/row-level security|42501/i.test(msg)) {
+      msg = (APP.language === 'bm')
+        ? 'Akses ditolak (RLS pos_sessions). Admin: jalankan migrasi policy POS di Supabase.'
+        : 'Access denied (RLS pos_sessions). Admin: run POS sessions RLS migration in Supabase.'
+    }
+    if(errEl) { errEl.textContent = t.err + msg; errEl.style.display='block' }
     if(btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-clock-play"></i> '+t.start }
     return
   }
