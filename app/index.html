@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-login-fix">
+<meta name="nexerp-build" content="2026-08-24-sw11">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4189,6 +4189,7 @@ function _pickBootQuote() {
 }
 
 function _showPostLoginBoot(done) {
+  try {
   var el = document.getElementById('mcore-boot')
   if (!el) { if (typeof done === 'function') done(); return }
   var q = _pickBootQuote()
@@ -4222,11 +4223,14 @@ function _showPostLoginBoot(done) {
 }
 
 function _afterSessionReady(next) {
-  if (window._mcoreFreshLogin) {
-    _showPostLoginBoot(next)
-  } else if (typeof next === 'function') {
-    next()
-  }
+  try {
+    if (window._mcoreFreshLogin && typeof _showPostLoginBoot === 'function') {
+      _showPostLoginBoot(next)
+      return
+    }
+  } catch (e) { console.warn('boot splash', e) }
+  window._mcoreFreshLogin = false
+  if (typeof next === 'function') next()
 }
 
 
@@ -33511,7 +33515,7 @@ if('serviceWorker' in navigator){
       refreshing = true
       try { location.reload() } catch(e) {}
     })
-    navigator.serviceWorker.register('./sw.js?v=9').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=11').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
