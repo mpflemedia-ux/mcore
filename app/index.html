@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-pos-rls">
+<meta name="nexerp-build" content="2026-08-24-pwa-landing">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33372,7 +33372,7 @@ if('serviceWorker' in navigator){
       refreshing = true
       try { location.reload() } catch(e) {}
     })
-    navigator.serviceWorker.register('./sw.js?v=8').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=9').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')

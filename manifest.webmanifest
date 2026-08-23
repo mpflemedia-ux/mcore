@@ -2,8 +2,8 @@
   "id": "/",
   "name": "M-Core by MPFLE Media",
   "short_name": "M-Core",
-  "description": "Business OS for books, payroll, stock and sales \u2014 MPFLE Media",
-  "start_url": "/app/?source=pwa",
+  "description": "Business OS for books, payroll, stock and sales — MPFLE Media",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": [
