@@ -5120,9 +5120,10 @@ function renderDashboard() {
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</div>
         <div id="db-devroadmap-badges" style="display:flex;align-items:center;gap:10px;margin-bottom:12px"></div>
         <div id="db-devroadmap-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px"></div>
-        <div class="db-chart-slot" style="min-height:180px"><canvas id="db-devroadmap-chart"></canvas></div>
+        <div style="height:110px;margin-bottom:10px"><canvas id="db-devroadmap-zonepower-chart"></canvas></div>
+        <div style="height:90px"><canvas id="db-devroadmap-burnup-chart"></canvas></div>
         <div id="db-devroadmap-fallback" class="db-card-foot" style="display:none"></div>
-        <div class="db-card-foot">${isBm?'Item selesai bulan ni vs bulan lepas':'Items completed this month vs last month'}</div>
+        <div class="db-card-foot">${isBm?'Kuasa zon & momentum kumulatif':'Zone power & cumulative momentum'}</div>
         <div class="db-ai-insight" id="db-ai-devroadmap"><span class="db-ai-tag">AI</span> …</div>
       </div>
     </div>` : ''}
@@ -7982,7 +7983,8 @@ async function _dbRenderDevRoadmap() {
   // site + HTML render). Same fetch+chart+ctx shape as _dbRenderTopReferral().
   const isBm = APP.language === 'bm'
   try {
-    const canvas = document.getElementById('db-devroadmap-chart')
+    const canvas = document.getElementById('db-devroadmap-zonepower-chart')
+    const burnupCanvas = document.getElementById('db-devroadmap-burnup-chart')
     const fallback = document.getElementById('db-devroadmap-fallback')
     const badgesEl = document.getElementById('db-devroadmap-badges')
     const statsEl = document.getElementById('db-devroadmap-stats')
@@ -8048,32 +8050,62 @@ async function _dbRenderDevRoadmap() {
     })
 
     if(typeof Chart === 'undefined') return
-    _dbDestroy('devRoadmap', canvas)
     const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
     const tick = _dbChartTickColor()
     window._dbCharts = window._dbCharts || {}
-    window._dbCharts.devRoadmap = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: [isBm?'Bulan Lepas':'Last Month', isBm?'Bulan Ini':'This Month'],
-        datasets: [{
-          label: isBm?'Item Selesai':'Items Completed',
-          data: [completedLastMonth, completedThisMonth],
-          backgroundColor: ['rgba(148,163,184,.4)', primary],
-          borderRadius: 6,
-          maxBarThickness: 60
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: tick }, grid: { display: false } },
-          y: { ticks: { color: tick, stepSize: 1 }, grid: { color: 'rgba(148,163,184,.12)' }, beginAtZero: true }
+
+    // Zone Power mini (bar+line combo) — same pattern as admin tab's _devZonePowerRender(), compact.
+    if(canvas) {
+      _dbDestroy('devRoadmapZonePower', canvas)
+      const moduleColorsMap = _devGanttModuleColors(allItems || [])
+      const zpLabels = stats.moduleCoverage.map(m => m.module)
+      const zpData = stats.moduleCoverage.map(m => Math.round(m.pct))
+      const zpColors = stats.moduleCoverage.map(m => moduleColorsMap[m.module] || '#0891B2')
+      const zpAvg = zpData.length ? Math.round(zpData.reduce((a,b)=>a+b,0)/zpData.length) : 0
+      window._dbCharts.devRoadmapZonePower = new Chart(canvas, {
+        data: {
+          labels: zpLabels,
+          datasets: [
+            { type:'bar', data: zpData, backgroundColor: zpColors, borderRadius:4, maxBarThickness:22, order:2 },
+            { type:'line', data: zpLabels.map(()=>zpAvg), borderColor: primary, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:.2, order:1 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: tick, font:{size:9} }, grid: { display: false } },
+            y: { min:0, max:100, ticks: { color: tick, font:{size:9} }, grid: { color: 'rgba(148,163,184,.12)' } }
+          }
         }
-      }
-    })
+      })
+    }
+
+    // Burn-up mini — same cumulative logic as admin tab's _devBurnupRender(), compact.
+    if(burnupCanvas) {
+      _dbDestroy('devRoadmapBurnup', burnupCanvas)
+      const completedDates = (allItems || []).filter(i => i.stage==='completed' && i.completed_at).map(i => String(i.completed_at).slice(0,10))
+      const uniqueDates = [...new Set(completedDates)].sort()
+      const counts = {}
+      completedDates.forEach(d => { counts[d] = (counts[d]||0)+1 })
+      let cumulative = 0
+      const buData = uniqueDates.map(d => { cumulative += counts[d]; return cumulative })
+      const buLabels = uniqueDates.map(d => formatDate(d))
+      window._dbCharts.devRoadmapBurnup = new Chart(burnupCanvas, {
+        type: 'line',
+        data: { labels: buLabels, datasets: [{ data: buData, borderColor: primary, backgroundColor: 'rgba(14,116,144,.15)', fill: true, tension: .25, pointRadius: 2, pointBackgroundColor: primary }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: tick, font:{size:9} } },
+            y: { ticks: { color: tick, font:{size:9} }, beginAtZero: true, precision: 0 }
+          }
+        }
+      })
+    }
   } catch(e) {
     console.warn('dev roadmap', e)
   }
@@ -10276,13 +10308,13 @@ function _adminDevRoadmapHeaderHtml(stats) {
 
 function _adminDevRoadmapBadgeRowHtml(stats) {
   const isBm = APP.language==='bm'
-  return `<div class="card" style="padding:16px;margin-bottom:16px">
-    <div style="display:flex;flex-wrap:wrap;gap:14px">
+  return `<div class="card" style="padding:14px;margin-bottom:16px">
+    <div style="display:flex;flex-wrap:wrap;gap:10px">
       ${DEVROADMAP_BADGE_DEFS.map(b => {
         const unlocked = !!b.test(stats)
-        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;opacity:${unlocked?1:.45}" title="${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}">
-          <div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${unlocked?'color-mix(in srgb,var(--warning) 18%,transparent)':'var(--bg)'};border:1px solid ${unlocked?'var(--warning)':'var(--border)'}">
-            <i class="ti ${b.icon}" style="font-size:20px;color:${unlocked?'var(--warning)':'var(--text-3)'}"></i>
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:64px;opacity:${unlocked?1:.45}" title="${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}">
+          <div style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${unlocked?'color-mix(in srgb,var(--warning) 18%,transparent)':'var(--bg)'};border:1px solid ${unlocked?'var(--warning)':'var(--border)'}">
+            <i class="ti ${b.icon}" style="font-size:15px;color:${unlocked?'var(--warning)':'var(--text-3)'}"></i>
           </div>
           <div style="font-size:10px;text-align:center;color:${unlocked?'var(--text)':'var(--text-3)'};line-height:1.2">${_aiEscapeHtml(isBm?b.label_bm:b.label_en)}</div>
         </div>`
@@ -10342,6 +10374,9 @@ function _adminDevRoadmapRenderAll() {
         <div class="db-chart-slot" style="max-width:360px;margin:0 auto"><canvas id="devroadmap-radar-chart"></canvas></div>
       </div>
     </div>
+    <div class="db-ai-insight" id="devroadmap-zoneradar-insight" style="margin:12px 0 16px">
+      <span class="db-ai-tag">AI</span> <div>${isBm?'Menganalisis…':'Analyzing…'}</div>
+    </div>
     <div class="card" style="padding:16px;margin-bottom:16px">
       <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-line"></i> ${isBm?'Burn-up':'Burn-up'}</div>
       <div class="db-chart-slot"><canvas id="devroadmap-burnup-chart"></canvas></div>
@@ -10358,6 +10393,7 @@ function _adminDevRoadmapRenderAll() {
   _devZonePowerRender(stats.moduleCoverage)
   _devRadarRender(stats.moduleCoverage)
   _devBurnupRender(items)
+  _devZoneRadarInsight(stats.moduleCoverage)
 
   const ganttLegendEl = document.getElementById('devroadmap-gantt-legend')
   if(ganttLegendEl) ganttLegendEl.innerHTML = _devGanttLegendRender(items)
@@ -10445,6 +10481,34 @@ function _devRadarRender(moduleCoverage) {
       }
     }
   })
+}
+
+async function _devZoneRadarInsight(moduleCoverage) {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('devroadmap-zoneradar-insight')
+  if(!el) return
+  const facts = { modules: moduleCoverage.map(m => ({module:m.module, pct:Math.round(m.pct)})) }
+  const fallback = () => {
+    const sorted = [...moduleCoverage].sort((a,b)=>b.pct-a.pct)
+    const strong = sorted[0], weak = sorted[sorted.length-1]
+    return isBm
+      ? `${strong?.module||'—'} zon paling kuat (${Math.round(strong?.pct||0)}%), ${weak?.module||'—'} paling lemah (${Math.round(weak?.pct||0)}%). Fokus zon lemah seterusnya.`
+      : `${strong?.module||'—'} is the strongest zone (${Math.round(strong?.pct||0)}%), ${weak?.module||'—'} is weakest (${Math.round(weak?.pct||0)}%). Focus the weak zone next.`
+  }
+  try {
+    const message = `Write ONE fresh Gen Z paragraph (max 60 words) explaining what a "Zone Power" module-coverage chart means for this Malaysian SME ERP platform's OWN dev progress (not tenant data).\n`
+      + `Language: ${isBm?'Bahasa Melayu Malaysia, casual Gen Z':'English, casual Gen Z'}.\n`
+      + `Voice: address as ${isBm?'"anda"':'"you"'} only.\n`
+      + `Point out which module/zone is strongest and which is weakest/uncovered, and suggest ONE next priority zone. No labels, no hashtags, no emoji spam, creative & different each time.\n`
+      + `Facts JSON: ${JSON.stringify(facts)}`
+    const { data, error } = await _invokeAiProxy({ action:'chat', message, context:'Platform-internal dev roadmap zone coverage. Not tenant data.' }, { silent:true })
+    if(error || !data?.success) throw new Error('ai failed')
+    let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
+    if(!reply || reply.length<12) throw new Error('empty')
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'&lt;') + '</div>'
+  } catch(e) {
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + fallback() + '</div>'
+  }
 }
 
 function _devBurnupRender(items) {
