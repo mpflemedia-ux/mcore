@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-ls-quota">
+<meta name="nexerp-build" content="2026-08-24-ls-auth">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1755,8 +1755,31 @@ html[data-skip-intro="1"] #intro-skip {
 const SUPABASE_URL  = 'https://wjqhhnjlgoigoagsnsen.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw'
 
+
+/* Emergency: free localStorage so Supabase auth-token can persist (QuotaExceeded blocks login) */
+(function(){
+  try {
+    localStorage.setItem('__mcore_quota_ping', '1')
+    localStorage.removeItem('__mcore_quota_ping')
+  } catch (e) {
+    try {
+      var kill = []
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i)
+        if (!k) continue
+        if (k === 'nexerp_theme' || k === 'nexerp_lang') continue
+        kill.push(k)
+      }
+      kill.forEach(function(k){ try { localStorage.removeItem(k) } catch(x){} })
+    } catch (e2) {
+      try { localStorage.clear() } catch (e3) {}
+    }
+  }
+})();
+
 const { createClient } = supabase
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implicit', detectSessionInUrl: true } })
+
 
 // GLOBAL STATE
 const APP = {
@@ -3076,34 +3099,64 @@ function _clearUiOverlays() {
 
 
 /** Safe localStorage write — never throw QuotaExceeded (breaks openPage/login). */
+function _lsPurgeNonEssential(keepAuth) {
+  try {
+    var keys = []
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i)
+      if (!k) continue
+      if (keepAuth && /auth-token|supabase\.auth|^sb-/i.test(k)) continue
+      if (k === 'nexerp_theme' || k === 'nexerp_lang') continue
+      keys.push(k)
+    }
+    keys.forEach(function (k) { try { localStorage.removeItem(k) } catch (e) {} })
+    return keys.length
+  } catch (e) { return 0 }
+}
+/** Free space so Supabase can write sb-*-auth-token (login fails hard if quota full). */
+function _lsEnsureAuthSpace() {
+  try {
+    localStorage.setItem('__mcore_quota_ping', '1')
+    localStorage.removeItem('__mcore_quota_ping')
+    return true
+  } catch (e1) {
+    _lsPurgeNonEssential(false)
+    try {
+      localStorage.setItem('__mcore_quota_ping', '1')
+      localStorage.removeItem('__mcore_quota_ping')
+      return true
+    } catch (e2) {
+      // Last resort: wipe entire localStorage
+      try { localStorage.clear() } catch (e3) {}
+      try {
+        localStorage.setItem('__mcore_quota_ping', '1')
+        localStorage.removeItem('__mcore_quota_ping')
+        return true
+      } catch (e4) {
+        console.warn('_lsEnsureAuthSpace failed', e4)
+        return false
+      }
+    }
+  }
+}
 function _lsSet(key, val) {
   try {
     localStorage.setItem(key, val)
     return true
   } catch (e1) {
+    _lsPurgeNonEssential(/auth-token|supabase\.auth|^sb-/i.test(key))
     try {
-      var drop = []
-      for (var i = 0; i < localStorage.length; i++) {
-        var k = localStorage.key(i)
-        if (!k) continue
-        if (/^supabase\.auth|^sb-|auth-token/i.test(k)) continue
-        if (/mcore_boot|nexerp_tg|nexerp_dam|nexerp_intro|chart|cache|tmp|draft|dismissed|pos_sort|insight|broadcast/i.test(k)) drop.push(k)
-      }
-      drop.forEach(function (k) { try { localStorage.removeItem(k) } catch (e) {} })
-      if (drop.length < 3) {
-        for (var j = localStorage.length - 1; j >= 0; j--) {
-          var k2 = localStorage.key(j)
-          if (!k2) continue
-          if (/^supabase\.auth|^sb-|auth-token/i.test(k2)) continue
-          if (k2 === 'nexerp_theme' || k2 === 'nexerp_lang' || k2 === key) continue
-          try { localStorage.removeItem(k2) } catch (e) {}
-        }
-      }
       localStorage.setItem(key, val)
       return true
     } catch (e2) {
-      console.warn('_lsSet quota', key, e2)
-      return false
+      try { localStorage.clear() } catch (e3) {}
+      try {
+        localStorage.setItem(key, val)
+        return true
+      } catch (e4) {
+        console.warn('_lsSet quota', key, e4)
+        return false
+      }
     }
   }
 }
@@ -4281,12 +4334,7 @@ function _afterSessionReady(next) {
 
 async function doLogin() {
   // If storage is full, openPage will fail later — free space proactively
-  try {
-    localStorage.setItem('__mcore_quota_ping', '1')
-    localStorage.removeItem('__mcore_quota_ping')
-  } catch (qe) {
-    try { _lsSet('__mcore_quota_ping', '1'); localStorage.removeItem('__mcore_quota_ping') } catch (e) {}
-  }
+  try { _lsEnsureAuthSpace() } catch (qe) {}
   const email=document.getElementById('login-email').value.trim()
   const pass=document.getElementById('login-password').value
   const errEl=document.getElementById('login-error')
