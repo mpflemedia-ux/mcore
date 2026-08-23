@@ -87,11 +87,10 @@ input,select,textarea{font-family:inherit}
   background-image:linear-gradient(rgba(231,233,235,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(231,233,235,.04) 1px,transparent 1px);
   background-size:28px 28px;opacity:.55}
 #mcore-boot .boot-inner{position:relative;z-index:1;max-width:420px;width:100%}
-#mcore-boot .boot-mark{width:56px;height:56px;margin:0 auto 18px;border-radius:14px;
-  background:linear-gradient(145deg,#0E7490,#14b8a6);display:flex;align-items:center;justify-content:center;
-  box-shadow:0 0 0 1px rgba(20,184,166,.35),0 12px 32px rgba(14,116,144,.35);
+#mcore-boot .boot-mark{width:72px;height:72px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;
+  filter:drop-shadow(0 12px 24px rgba(14,116,144,.45));
   animation:bootPulse 1.6s ease-in-out infinite}
-#mcore-boot .boot-mark span{font-weight:800;font-size:22px;color:#E7E9EB;letter-spacing:-.02em;font-family:Inter,system-ui,sans-serif}
+#mcore-boot .boot-mark img{width:100%;height:100%;object-fit:contain}
 #mcore-boot .boot-brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:rgba(231,233,235,.55);margin-bottom:22px;font-weight:600}
 #mcore-boot .boot-quote{font-size:16px;line-height:1.45;color:#E7E9EB;font-weight:500;min-height:3.2em;margin:0 0 10px}
 #mcore-boot .boot-attr{font-size:12px;color:rgba(231,233,235,.4);margin-bottom:28px}
@@ -1434,7 +1433,7 @@ html[data-skip-intro="1"] #intro-skip {
 
 <div id="mcore-boot" aria-live="polite" aria-busy="true">
   <div class="boot-inner">
-    <div class="boot-mark" aria-hidden="true"><span>M</span></div>
+    <div class="boot-mark" aria-hidden="true"><img src="assets/mcore-boot-mark.png" alt=""></div>
     <div class="boot-brand">M-Core</div>
     <p class="boot-quote" id="mcore-boot-quote"></p>
     <div class="boot-attr" id="mcore-boot-attr"></div>
