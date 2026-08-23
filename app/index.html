@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-23-pwa-standalone">
+<meta name="nexerp-build" content="2026-08-23-nav-black">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,9 +19,9 @@
   } catch(e) {}
 })();
 </script>
-<meta name="theme-color" content="#1A1D21" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#0E7490" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1A1D21">
+<meta name="theme-color" content="#1A1D21" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1A1D21" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
 <link rel="shortcut icon" type="image/png" href="favicon.png">
@@ -33244,7 +33244,7 @@ if('serviceWorker' in navigator){
       refreshing = true
       try { location.reload() } catch(e) {}
     })
-    navigator.serviceWorker.register('./sw.js?v=5').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=6').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
