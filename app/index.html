@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-dash-spin">
+<meta name="nexerp-build" content="2026-08-24-ls-quota">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3074,6 +3074,40 @@ function _clearUiOverlays() {
   } catch (e) {}
 }
 
+
+/** Safe localStorage write — never throw QuotaExceeded (breaks openPage/login). */
+function _lsSet(key, val) {
+  try {
+    localStorage.setItem(key, val)
+    return true
+  } catch (e1) {
+    try {
+      var drop = []
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i)
+        if (!k) continue
+        if (/^supabase\.auth|^sb-|auth-token/i.test(k)) continue
+        if (/mcore_boot|nexerp_tg|nexerp_dam|nexerp_intro|chart|cache|tmp|draft|dismissed|pos_sort|insight|broadcast/i.test(k)) drop.push(k)
+      }
+      drop.forEach(function (k) { try { localStorage.removeItem(k) } catch (e) {} })
+      if (drop.length < 3) {
+        for (var j = localStorage.length - 1; j >= 0; j--) {
+          var k2 = localStorage.key(j)
+          if (!k2) continue
+          if (/^supabase\.auth|^sb-|auth-token/i.test(k2)) continue
+          if (k2 === 'nexerp_theme' || k2 === 'nexerp_lang' || k2 === key) continue
+          try { localStorage.removeItem(k2) } catch (e) {}
+        }
+      }
+      localStorage.setItem(key, val)
+      return true
+    } catch (e2) {
+      console.warn('_lsSet quota', key, e2)
+      return false
+    }
+  }
+}
+
 function openPage(page, params={}) {
   _clearUiOverlays()
   try{ _closeMobileSidebar() }catch(e){}
@@ -3085,7 +3119,7 @@ function openPage(page, params={}) {
   // to next — renderSalaryDisbursement() re-registers its own if we're
   // headed back there.
   _sdUnregisterPrintListeners()
-  localStorage.setItem('nexerp_last_page', page)
+  _lsSet('nexerp_last_page', page)
   // Persisting params alongside page (not just the top-level page) is what
   // makes a refresh land back on the actual sub-tab/sub-view the user was
   // on (e.g. Accounting → Journal Entries, params={view:'journal'}) instead
@@ -4246,6 +4280,13 @@ function _afterSessionReady(next) {
 
 
 async function doLogin() {
+  // If storage is full, openPage will fail later — free space proactively
+  try {
+    localStorage.setItem('__mcore_quota_ping', '1')
+    localStorage.removeItem('__mcore_quota_ping')
+  } catch (qe) {
+    try { _lsSet('__mcore_quota_ping', '1'); localStorage.removeItem('__mcore_quota_ping') } catch (e) {}
+  }
   const email=document.getElementById('login-email').value.trim()
   const pass=document.getElementById('login-password').value
   const errEl=document.getElementById('login-error')
@@ -5044,7 +5085,7 @@ function _dismissAnnouncement(id) {
 }
 
 function showShell() {
-  try { localStorage.setItem('nexerp_intro_done', '1') } catch(e) {}
+  _lsSet('nexerp_intro_done', '1')
   document.documentElement.setAttribute('data-skip-intro', '1')
   const alreadyActive = document.getElementById('shell').classList.contains('active')
   document.getElementById('auth-page').style.display='none'
