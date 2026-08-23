@@ -10937,7 +10937,7 @@ async function _renderLearningChapterList() {
 
   const wrap = document.getElementById('learning-chapter-list')
   const [{data: chapters, error}, {data: lessons}, {data: progress}] = await Promise.all([
-    sb.from('learning_chapters').select('*').order('sort_order'),
+    sb.from('learning_chapters').select('*').order('order_index'),
     sb.from('learning_lessons').select('id, chapter_id'),
     sb.from('user_learning_progress').select('lesson_id').eq('user_id', APP.user.id)
   ])
@@ -10980,7 +10980,7 @@ async function _renderLearningChapterDetail(chapterId) {
   document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>`
   const [{data: chapter, error}, {data: lessons}, {data: progress}] = await Promise.all([
     sb.from('learning_chapters').select('*').eq('id', chapterId).single(),
-    sb.from('learning_lessons').select('*').eq('chapter_id', chapterId).order('sort_order'),
+    sb.from('learning_lessons').select('*').eq('chapter_id', chapterId).order('order_index'),
     sb.from('user_learning_progress').select('lesson_id').eq('user_id', APP.user.id)
   ])
   if(error || !chapter) {
@@ -11014,7 +11014,7 @@ async function _renderLearningLessonDetail(lessonId) {
   document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>`
   const [{data: lesson, error}, {data: steps}, {data: progressRow}] = await Promise.all([
     sb.from('learning_lessons').select('*').eq('id', lessonId).single(),
-    sb.from('learning_steps').select('*').eq('lesson_id', lessonId).order('step_no'),
+    sb.from('learning_steps').select('*').eq('lesson_id', lessonId).order('order_index'),
     sb.from('user_learning_progress').select('completed_at').eq('user_id', APP.user.id).eq('lesson_id', lessonId).maybeSingle()
   ])
   if(error || !lesson) {
