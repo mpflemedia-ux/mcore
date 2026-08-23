@@ -1800,6 +1800,7 @@ const NAV_ITEMS = [
   { id:'reports',    icon:'ti-chart-bar',         label_en:'Reports',     label_bm:'Laporan',      module:'reports' },
   { section:'System' },
   { id:'admin',      icon:'ti-shield-cog',        label_en:'Admin',       label_bm:'Admin',        module:'admin' },
+  { id:'learning',   icon:'ti-book-2',            label_en:'Learning Center', label_bm:'Pusat Pembelajaran', module:'core' },
   { id:'settings',   icon:'ti-settings',          label_en:'Settings',    label_bm:'Tetapan',      module:'core' },
 ]
 
@@ -2933,6 +2934,7 @@ function openPage(page, params={}) {
       case 'vouchers':   _safeRender(() => renderPaymentVouchers(params)); break
       case 'reports':    _safeRender(() => renderReports(params)); break
       case 'admin':      _safeRender(() => renderAdmin(params)); break
+      case 'learning':   _safeRender(() => renderLearningCenter(params)); break
       case 'settings':   _safeRender(() => renderSettings(params)); break
       default: main.innerHTML=`<div class="empty-state"><i class="ti ti-mood-confuzed"></i><h3>Page not found</h3></div>`
     }
@@ -3719,6 +3721,7 @@ const _OBT_MODULE_BLURB = {
   vouchers:   { en:'Formal payment vouchers that post to the ledger.',     bm:'Baucar bayaran rasmi yang disiar ke lejar.' },
   reports:    { en:'Financial and operational reports.',                  bm:'Laporan kewangan dan operasi.' },
   admin:      { en:'Manage your team and their module access.',           bm:'Urus pasukan anda dan akses modul mereka.' },
+  learning:   { en:'Step-by-step guides explaining WHY, not just where to click.', bm:'Panduan langkah demi langkah — jelaskan KENAPA, bukan cuma di mana nak klik.' },
 }
 
 // Role-aware by construction: one step per sidebar item canAccess() (which
@@ -10898,6 +10901,166 @@ function _upgradeOpenWhatsApp() {
 }
 
 
+// ── Learning Center: module_key -> canAccess() module mapping ──────────────
+const _LEARNING_MODULE_MAP = {
+  register: 'core', dashboard: 'core', crm: 'crm', sales: 'sales', pos: 'pos',
+  inventory: 'inventory', purchasing: 'purchasing', production: 'production',
+  logistics: 'logistics', hr: 'hr', applicants: 'hr_recruit', accounting: 'accounting',
+  vouchers: 'vouchers', reports: 'reports'
+}
+function _learningCanAccessChapter(moduleKey) {
+  if(moduleKey === 'applicants') return canAccess('hr_recruit') || canManageHR()
+  if(moduleKey === 'reports') return canAccess('reports') || (_planAllowsModule('accounting') && canAccess('accounting'))
+  const mod = _LEARNING_MODULE_MAP[moduleKey] || moduleKey
+  return canAccess(mod)
+}
+function _learningChapterIcon(moduleKey) {
+  if(moduleKey === 'register') return 'ti-rocket'
+  const navMatch = NAV_ITEMS.find(n => n.id === moduleKey)
+  return navMatch ? navMatch.icon : 'ti-book-2'
+}
+
+async function renderLearningCenter(params={}) {
+  if(params.view === 'chapter' && params.id) { await _renderLearningChapterDetail(params.id); return }
+  if(params.view === 'lesson' && params.id) { await _renderLearningLessonDetail(params.id); return }
+  await _renderLearningChapterList()
+}
+
+async function _renderLearningChapterList() {
+  const isBm = APP.language === 'bm'
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${isBm?'Pusat Pembelajaran':'Learning Center'}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${isBm?'Panduan mendalam setiap modul — faham KENAPA, bukan cuma klik':'In-depth guides for every module — understand WHY, not just click-throughs'}</div>
+  </div></div>
+  <div id="learning-chapter-list"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+
+  const wrap = document.getElementById('learning-chapter-list')
+  const [{data: chapters, error}, {data: lessons}, {data: progress}] = await Promise.all([
+    sb.from('learning_chapters').select('*').order('sort_order'),
+    sb.from('learning_lessons').select('id, chapter_id'),
+    sb.from('user_learning_progress').select('lesson_id').eq('user_id', APP.user.id)
+  ])
+  if(error) {
+    wrap.innerHTML = `<div class="card" style="padding:24px"><p style="color:var(--danger)"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Pastikan jadual learning_chapters/learning_lessons/user_learning_progress dan RLS dah disediakan.'
+        : 'Make sure the learning_chapters/learning_lessons/user_learning_progress tables and RLS are set up.'}</p>
+    </div>`
+    return
+  }
+  const doneLessonIds = new Set((progress||[]).map(p => String(p.lesson_id)))
+  const visible = (chapters||[]).filter(c => _learningCanAccessChapter(c.module_key))
+  if(!visible.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada panduan tersedia buat masa ini.':'No guides available yet.'}</p></div>`
+    return
+  }
+  wrap.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+    ${visible.map(c => {
+      const chLessons = (lessons||[]).filter(l => String(l.chapter_id)===String(c.id))
+      const total = chLessons.length
+      const done = chLessons.filter(l => doneLessonIds.has(String(l.id))).length
+      const pct = total ? Math.round((done/total)*100) : 0
+      return `<div class="card" style="padding:16px;cursor:pointer" onclick="openPage('learning',{view:'chapter',id:'${c.id}'})">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <i class="ti ${_learningChapterIcon(c.module_key)}" style="font-size:22px;color:var(--primary)"></i>
+          <div style="font-weight:600;font-size:14px">${_aiEscapeHtml(isBm?c.title_bm:c.title_en)}</div>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--bg);overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:${pct===100?'var(--success)':'var(--primary)'}"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-3)">${done}/${total} ${isBm?'pelajaran selesai':'lessons completed'}</div>
+      </div>`
+    }).join('')}
+  </div>`
+}
+
+async function _renderLearningChapterDetail(chapterId) {
+  const isBm = APP.language === 'bm'
+  document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>`
+  const [{data: chapter, error}, {data: lessons}, {data: progress}] = await Promise.all([
+    sb.from('learning_chapters').select('*').eq('id', chapterId).single(),
+    sb.from('learning_lessons').select('*').eq('chapter_id', chapterId).order('sort_order'),
+    sb.from('user_learning_progress').select('lesson_id').eq('user_id', APP.user.id)
+  ])
+  if(error || !chapter) {
+    document.getElementById('main').innerHTML = `<div class="empty-state"><p>${isBm?'Chapter tidak dijumpai.':'Chapter not found.'}</p>
+      <button class="btn btn-outline btn-sm" onclick="openPage('learning')">← ${isBm?'Kembali':'Back'}</button></div>`
+    return
+  }
+  if(!_learningCanAccessChapter(chapter.module_key)) { renderAccessDenied(); return }
+  const doneLessonIds = new Set((progress||[]).map(p => String(p.lesson_id)))
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${_aiEscapeHtml(isBm?chapter.title_bm:chapter.title_en)}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('learning')">← ${isBm?'Semua Panduan':'All Guides'}</div>
+  </div></div>
+  <div class="card" style="padding:20px;margin-bottom:16px">
+    <p style="font-size:13px;color:var(--text-2);line-height:1.6;margin:0">${_aiEscapeHtml(isBm?chapter.intro_bm:chapter.intro_en)}</p>
+  </div>
+  <div class="card" style="padding:0">
+    ${(lessons||[]).length ? (lessons||[]).map(l => {
+      const done = doneLessonIds.has(String(l.id))
+      return `<div style="padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px" onclick="openPage('learning',{view:'lesson',id:'${l.id}'})">
+        <i class="ti ${done?'ti-circle-check-filled':'ti-circle'}" style="font-size:18px;color:${done?'var(--success)':'var(--text-3)'}"></i>
+        <div style="font-weight:600;font-size:13px">${_aiEscapeHtml(isBm?l.title_bm:l.title_en)}</div>
+      </div>`
+    }).join('') : `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada pelajaran lagi.':'No lessons yet.'}</p></div>`}
+  </div>`
+}
+
+async function _renderLearningLessonDetail(lessonId) {
+  const isBm = APP.language === 'bm'
+  document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>`
+  const [{data: lesson, error}, {data: steps}, {data: progressRow}] = await Promise.all([
+    sb.from('learning_lessons').select('*').eq('id', lessonId).single(),
+    sb.from('learning_steps').select('*').eq('lesson_id', lessonId).order('step_no'),
+    sb.from('user_learning_progress').select('completed_at').eq('user_id', APP.user.id).eq('lesson_id', lessonId).maybeSingle()
+  ])
+  if(error || !lesson) {
+    document.getElementById('main').innerHTML = `<div class="empty-state"><p>${isBm?'Pelajaran tidak dijumpai.':'Lesson not found.'}</p>
+      <button class="btn btn-outline btn-sm" onclick="openPage('learning')">← ${isBm?'Kembali':'Back'}</button></div>`
+    return
+  }
+  const done = !!(progressRow && progressRow.completed_at)
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${_aiEscapeHtml(isBm?lesson.title_bm:lesson.title_en)}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('learning',{view:'chapter',id:'${lesson.chapter_id}'})">← ${isBm?'Kembali ke Chapter':'Back to Chapter'}</div>
+  </div></div>
+  <div class="card" style="padding:20px;margin-bottom:16px">
+    <p style="font-size:13px;color:var(--text-2);line-height:1.6;margin:0">${_aiEscapeHtml(isBm?lesson.intro_bm:lesson.intro_en)}</p>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+    ${(steps||[]).map((s,i) => {
+      const hasNote = !!(s.field_note_en || s.field_note_bm)
+      return `<div class="card" style="padding:16px">
+      <div style="display:flex;gap:12px">
+        <div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">${i+1}</div>
+        <div style="flex:1">
+          <p style="font-size:13px;line-height:1.6;margin:0 0 ${hasNote||s.try_it_page?'10px':'0'}">${_aiEscapeHtml(isBm?s.text_bm:s.text_en)}</p>
+          ${hasNote ? `<div style="background:var(--bg);border-left:3px solid var(--primary);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:${s.try_it_page?'10px':'0'}"><i class="ti ti-info-circle" style="color:var(--primary)"></i> ${_aiEscapeHtml(isBm?s.field_note_bm:s.field_note_en)}</div>` : ''}
+          ${s.try_it_page ? `<button type="button" class="btn btn-outline btn-sm" onclick="openPage('${s.try_it_page}')"><i class="ti ti-arrow-right"></i> ${isBm?'Cuba Sekarang':'Try It Now'}</button>` : ''}
+        </div>
+      </div>
+    </div>`
+    }).join('')}
+  </div>
+  <div class="card" style="padding:16px;text-align:center">
+    ${done
+      ? `<span style="color:var(--success);font-weight:600"><i class="ti ti-circle-check-filled"></i> ${isBm?'Anda dah faham pelajaran ni':"You've marked this understood"}</span>`
+      : `<button type="button" class="btn btn-primary" onclick="doMarkLessonUnderstood('${lessonId}')"><i class="ti ti-check"></i> ${isBm?'Saya Faham':'I Understand This'}</button>`}
+  </div>`
+}
+
+async function doMarkLessonUnderstood(lessonId) {
+  const isBm = APP.language === 'bm'
+  const { error } = await sb.from('user_learning_progress').upsert({ user_id: APP.user.id, lesson_id: lessonId, completed_at: new Date().toISOString() }, { onConflict: 'user_id,lesson_id' })
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Bagus! Progress disimpan.':'Nice! Progress saved.', 'success')
+  await renderLearningCenter({ view: 'lesson', id: lessonId })
+}
+
 async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
   _obcMarkChecklist('profile_reviewed')
@@ -11449,6 +11612,7 @@ async function renderSettings(params={}) {
         ?'Ulang tayang tur pengenalan ringkas sistem ini — berguna sekiranya anda terlepas pada kali pertama atau memerlukan penyegaran semula.'
         :'Replay the short walkthrough tour of the system — handy if you missed it the first time or need a refresher.'}</p>
       <button type="button" class="btn btn-primary btn-sm" onclick="_obtReplay()"><i class="ti ti-player-play"></i> ${APP.language==='bm'?'Ulang Tayang Tur':'Replay tour'}</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="openPage('learning')"><i class="ti ti-book-2"></i> ${APP.language==='bm'?'Buka Pusat Pembelajaran':'Open Learning Center'}</button>
     </div>
   </div>
   <div class="card" style="max-width:500px;margin-top:16px;${isAdmin?'':'display:none'}" id="stg-backup">
