@@ -5102,6 +5102,7 @@ function renderDashboard() {
           <canvas id="db-zone-power-chart"></canvas>
         </div>
         <div class="db-card-foot">${isBm?'Bar = skor modul · Line = purata keseluruhan (tempoh semasa)':'Bars = module scores · Line = overall average (current period)'}</div>
+        <div class="db-card-foot" id="db-zone-power-nodata" style="display:none;color:var(--db-text4)"></div>
         <div class="db-ai-insight" id="db-ai-zone"><span class="db-ai-tag">AI</span> …</div>
       </div>
       <div class="db-card" id="db-sec-health">
@@ -5110,6 +5111,7 @@ function renderDashboard() {
           <canvas id="db-health-radar"></canvas>
         </div>
         <div class="db-card-foot">${isBm?'6 paksi dari data tenant semasa (bukan target manual)':'6 axes from current tenant data (no manual targets)'}</div>
+        <div class="db-card-foot" id="db-health-radar-nodata" style="display:none;color:var(--db-text4)"></div>
         <div class="db-ai-insight" id="db-ai-health"><span class="db-ai-tag">AI</span> …</div>
       </div>
     </div>
@@ -5822,7 +5824,7 @@ async function loadDashboardData() {
   }
 
   // Zone Power + Business Health scores (tenant-scoped, no extra schema)
-  let _stockScore = 70
+  let _stockScore = null
   try {
     const { data: _prods } = await sb.from('products').select('stock_qty,reorder_point')
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(400)
@@ -7000,21 +7002,38 @@ function _dbInsightFallbackBody(card, ctx, isBm) {
   }
   if(card === 'zone' && hs && hs.detail) {
     const d = hs.detail
+    const hd = hs.hasData || {}
     const entries = [
-      [isBm?'Jualan':'Sales', d.sales], [isBm?'Kutipan':'Collection', d.collection],
-      [isBm?'Gaji':'Payroll', d.payroll], [isBm?'Belanja':'Expenses', d.expenses], [isBm?'Stok':'Stock', d.stock]
+      ['sales', isBm?'Jualan':'Sales', d.sales], ['collection', isBm?'Kutipan':'Collection', d.collection],
+      ['payroll', isBm?'Gaji':'Payroll', d.payroll], ['expenses', isBm?'Belanja':'Expenses', d.expenses], ['stock', isBm?'Stok':'Stock', d.stock]
     ]
-    entries.sort((a,b)=>a[1]-b[1])
-    const weak = entries[0], strong = entries[entries.length-1]
+    const known = entries.filter(e => hd[e[0]] !== false)
+    if(known.length <= 1) {
+      return isBm
+        ? 'Zon belum cukup data lagi — semua skor di atas placeholder default. Rekod jualan/invois/stok dulu supaya Zone Power reflect prestasi sebenar.'
+        : 'Zones don\'t have enough data yet — every score above is a default placeholder. Log some sales/invoices/stock first so Zone Power reflects real performance.'
+    }
+    known.sort((a,b)=>a[2]-b[2])
+    const weak = known[0], strong = known[known.length-1]
+    const missing = entries.length - known.length
+    const noteBm = missing > 0 ? ` (${missing} zon lain belum cukup data)` : ''
+    const noteEn = missing > 0 ? ` (${missing} other zone(s) still lack data)` : ''
     return isBm
-      ? `Purata zon ~${hs.zoneAvg}/100 — ${strong[0]} (${strong[1]}) kuat, ${weak[0]} (${weak[1]}) lemah. Fokus lift ${weak[0]} minggu ni.`
-      : `Zone avg ~${hs.zoneAvg}/100 — ${strong[0]} (${strong[1]}) strong, ${weak[0]} (${weak[1]}) weak. Focus lifting ${weak[0]} this week.`
+      ? `Purata zon ~${hs.zoneAvg}/100 — ${strong[1]} (${strong[2]}) kuat, ${weak[1]} (${weak[2]}) lemah${noteBm}. Fokus lift ${weak[1]} minggu ni.`
+      : `Zone avg ~${hs.zoneAvg}/100 — ${strong[1]} (${strong[2]}) strong, ${weak[1]} (${weak[2]}) weak${noteEn}. Focus lifting ${weak[1]} this week.`
   }
   if(card === 'health' && hs && hs.detail) {
     const d = hs.detail
+    const hd = hs.hasData || {}
+    const missingLabels = []
+    if(hd.overdue === false) missingLabels.push(isBm?'Overdue':'Overdue')
+    if(hd.stock === false) missingLabels.push(isBm?'Stok':'Stock')
+    const noteBm = missingLabels.length ? ` (${missingLabels.join(', ')} belum cukup data)` : ''
+    const noteEn = missingLabels.length ? ` (${missingLabels.join(', ')} not enough data yet)` : ''
+    const overdueIsRisk = hd.overdue !== false && d.overdue < 50
     return isBm
-      ? `Overdue ~${d.overdue}/100, Kutipan ~${d.collection}, Stok ~${d.stock}. ${d.overdue < 50 ? 'Debt risk villain arc — collect week on big balances.' : 'Radar lagi balanced — jangan biar satu paksi crash.'}`
-      : `Overdue ~${d.overdue}/100, Collection ~${d.collection}, Stock ~${d.stock}. ${d.overdue < 50 ? 'Debt risk is the villain arc — one collect week on big balances.' : 'Radar more balanced — don\'t let one axis crash out.'}`
+      ? `Overdue ~${d.overdue}/100, Kutipan ~${d.collection}, Stok ~${d.stock}${noteBm}. ${overdueIsRisk ? 'Debt risk villain arc — collect week on big balances.' : 'Radar lagi balanced — jangan biar satu paksi crash.'}`
+      : `Overdue ~${d.overdue}/100, Collection ~${d.collection}, Stock ~${d.stock}${noteEn}. ${overdueIsRisk ? 'Debt risk is the villain arc — one collect week on big balances.' : 'Radar more balanced — don\'t let one axis crash out.'}`
   }
   if(card === 'attendance') {
     const a = ctx.attendance || {}
@@ -7109,10 +7128,12 @@ function _dbInsightFacts(card, ctx) {
     }
   }
   if(card === 'zone') {
-    return { card: 'zone_power', zone_avg: hs && hs.zoneAvg, detail: hs && hs.detail, period: ctx.periodLabel || null }
+    return { card: 'zone_power', zone_avg: hs && hs.zoneAvg, detail: hs && hs.detail,
+      has_data: hs && hs.hasData, period: ctx.periodLabel || null }
   }
   if(card === 'health') {
-    return { card: 'business_health_radar', detail: hs && hs.detail, period: ctx.periodLabel || null }
+    return { card: 'business_health_radar', detail: hs && hs.detail,
+      has_data: hs && hs.hasData, period: ctx.periodLabel || null }
   }
   if(card === 'pnl') {
     return {
@@ -7207,11 +7228,18 @@ async function _dbInsightAI(card, ctx, isBm) {
         `- PART 2 (idea): suggest exactly ONE new feature idea this ERP product doesn't have yet, inspired by current real-world ERP/SaaS industry trends (e.g. AI automation, embedded fintech, predictive analytics, workflow automation) — make it relevant to a Malaysian SME ERP context and distinct from the existing_modules list given\n` +
         `Rules: creative & different each time; no corporate fluff; no labels; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
         `Facts JSON: ${JSON.stringify(facts)}`
-      : `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
-        `Language: ${lang}.\n` +
-        `Voice: ${voice}\n` +
-        `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
-        `Facts JSON: ${JSON.stringify(facts)}`
+      : (card === 'zone' || card === 'health')
+        ? `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard "${card === 'zone' ? 'Zone Power' : 'Business Health Radar'}" card.\n` +
+          `Language: ${lang}.\n` +
+          `Voice: ${voice}\n` +
+          `IMPORTANT: facts.has_data marks which zones/axes have REAL measured data (true) vs a DEFAULT PLACEHOLDER score used only to avoid divide-by-zero when there's no data yet (false — e.g. no sales recorded, no invoice billed yet). NEVER comment on a has_data:false zone as if its number reflects real performance. Only cite has_data:true zones by name/number; if most zones are has_data:false, say plainly there isn't enough data yet instead of inventing a critique or praise.\n` +
+          `Rules: creative & different each time; no corporate fluff; no labels; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+          `Facts JSON: ${JSON.stringify(facts)}`
+        : `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
+          `Language: ${lang}.\n` +
+          `Voice: ${voice}\n` +
+          `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+          `Facts JSON: ${JSON.stringify(facts)}`
   const { data, error } = await _invokeAiProxy({
       action: 'chat',
       message,
@@ -7343,36 +7371,40 @@ function _dbClampScore(n) {
 function _dbBuildHealthScores(m) {
   m = m || {}
   const curS = Number(m.curSales||0), prevS = Number(m.prevSales||0)
-  let sales = 40
-  if(curS <= 0 && prevS <= 0) sales = 40
-  else if(prevS <= 0) sales = curS > 0 ? 75 : 40
-  else sales = _dbClampScore(50 + (((curS - prevS) / prevS) * 100) / 2)
+  let sales = 40, salesHasData = false
+  if(curS <= 0 && prevS <= 0) { sales = 40; salesHasData = false }
+  else if(prevS <= 0) { sales = curS > 0 ? 75 : 40; salesHasData = curS > 0 }
+  else { sales = _dbClampScore(50 + (((curS - prevS) / prevS) * 100) / 2); salesHasData = true }
 
   const collection = _dbClampScore(m.curRate)
+  const collectionHasData = true
 
-  let payroll = 70
-  if(curS > 0.005) payroll = _dbClampScore(100 - (Number(m.payrollCost||0) / curS) * 100)
-  else if(Number(m.payrollCost||0) > 0) payroll = 35
+  let payroll = 70, payrollHasData = false
+  if(curS > 0.005) { payroll = _dbClampScore(100 - (Number(m.payrollCost||0) / curS) * 100); payrollHasData = true }
+  else if(Number(m.payrollCost||0) > 0) { payroll = 35; payrollHasData = true }
 
   const rev = Math.max(Number(m.revenue||0), curS, 0)
-  let expenses = 70
-  if(rev > 0.005) expenses = _dbClampScore(100 - (Number(m.expense||0) / rev) * 100)
-  else if(Number(m.expense||0) > 0) expenses = 40
+  let expenses = 70, expensesHasData = false
+  if(rev > 0.005) { expenses = _dbClampScore(100 - (Number(m.expense||0) / rev) * 100); expensesHasData = true }
+  else if(Number(m.expense||0) > 0) { expenses = 40; expensesHasData = true }
 
   const stock = _dbClampScore(m.stockScore != null ? m.stockScore : 70)
+  const stockHasData = m.stockScore != null
 
-  let overdue = 80
+  let overdue = 80, overdueHasData = false
   const billed = Number(m.billedThis||0)
-  if(billed > 0.005) overdue = _dbClampScore(100 - (Number(m.overdueAmt||0) / billed) * 100)
-  else if(Number(m.overdueAmt||0) > 0) overdue = 30
+  if(billed > 0.005) { overdue = _dbClampScore(100 - (Number(m.overdueAmt||0) / billed) * 100); overdueHasData = true }
+  else if(Number(m.overdueAmt||0) > 0) { overdue = 30; overdueHasData = true }
 
   const zoneVals = [sales, collection, payroll, expenses, stock]
   const avg = zoneVals.reduce((a,b)=>a+b,0) / zoneVals.length
+  const hasData = { sales: salesHasData, collection: collectionHasData, payroll: payrollHasData, expenses: expensesHasData, stock: stockHasData, overdue: overdueHasData }
   return {
     zoneVals,
     zoneAvg: Math.round(avg * 10) / 10,
     radarVals: [sales, collection, overdue, payroll, stock, expenses],
-    detail: { sales, collection, payroll, expenses, stock, overdue }
+    detail: { sales, collection, payroll, expenses, stock, overdue },
+    hasData
   }
 }
 
@@ -7385,6 +7417,8 @@ function _dbRenderZonePowerChart(scores) {
     ? ['Jualan','Kutipan','Gaji','Belanja','Stok']
     : ['Sales','Collection','Payroll','Expenses','Stock']
   const vals = scores.zoneVals || []
+  const zoneKeys = ['sales','collection','payroll','expenses','stock']
+  const hasData = scores.hasData || {}
   const avgLine = labels.map(() => scores.zoneAvg)
   const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
   window._dbCharts = window._dbCharts || {}
@@ -7396,7 +7430,7 @@ function _dbRenderZonePowerChart(scores) {
           type: 'bar',
           label: isBm ? 'Skor zon' : 'Zone score',
           data: vals,
-          backgroundColor: vals.map(v => v >= 70 ? 'rgba(16,185,129,.75)' : v >= 40 ? 'rgba(14,116,144,.75)' : 'rgba(239,68,68,.7)'),
+          backgroundColor: vals.map((v,i) => hasData[zoneKeys[i]] === false ? 'rgba(148,163,184,.35)' : (v >= 70 ? 'rgba(16,185,129,.75)' : v >= 40 ? 'rgba(14,116,144,.75)' : 'rgba(239,68,68,.7)')),
           borderRadius: 6,
           maxBarThickness: 36,
           order: 2
@@ -7429,6 +7463,16 @@ function _dbRenderZonePowerChart(scores) {
       }
     }
   })
+  const noDataEl = document.getElementById('db-zone-power-nodata')
+  if(noDataEl) {
+    const missing = zoneKeys.filter(k => hasData[k] === false).length
+    if(missing > 0) {
+      noDataEl.textContent = isBm ? `${missing} zon belum cukup data — skor placeholder.` : `${missing} zone(s) don't have enough data yet — placeholder score.`
+      noDataEl.style.display = ''
+    } else {
+      noDataEl.style.display = 'none'
+    }
+  }
 }
 
 function _dbRenderHealthRadar(scores) {
@@ -7439,7 +7483,10 @@ function _dbRenderHealthRadar(scores) {
   const labels = isBm
     ? ['Jualan','Kutipan','Overdue','Gaji','Stok','Belanja']
     : ['Sales','Collection','Overdue','Payroll','Stock','Expenses']
+  const radarKeys = ['sales','collection','overdue','payroll','stock','expenses']
+  const hasData = scores.hasData || {}
   const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#0E7490'
+  const mutedGray = 'rgba(148,163,184,.7)'
   window._dbCharts = window._dbCharts || {}
   window._dbCharts.healthRadar = new Chart(ctx, {
     type: 'radar',
@@ -7450,7 +7497,7 @@ function _dbRenderHealthRadar(scores) {
         data: scores.radarVals || [],
         borderColor: primary,
         backgroundColor: 'rgba(14,116,144,.22)',
-        pointBackgroundColor: primary,
+        pointBackgroundColor: radarKeys.map(k => hasData[k] === false ? mutedGray : primary),
         pointBorderColor: '#fff',
         borderWidth: 2
       }]
@@ -7471,6 +7518,16 @@ function _dbRenderHealthRadar(scores) {
       }
     }
   })
+  const noDataEl = document.getElementById('db-health-radar-nodata')
+  if(noDataEl) {
+    const missing = radarKeys.filter(k => hasData[k] === false).length
+    if(missing > 0) {
+      noDataEl.textContent = isBm ? `${missing} paksi belum cukup data — skor placeholder.` : `${missing} axis(es) don't have enough data yet — placeholder score.`
+      noDataEl.style.display = ''
+    } else {
+      noDataEl.style.display = 'none'
+    }
+  }
 }
 
 function _dbRenderGrowthChart(inv) {
