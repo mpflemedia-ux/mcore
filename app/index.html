@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-22-bulk-del">
+<meta name="nexerp-build" content="2026-08-23-pwa-standalone">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,15 +19,19 @@
   } catch(e) {}
 })();
 </script>
-<meta name="theme-color" content="#0E7490">
+<meta name="theme-color" content="#1A1D21" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0E7490" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1A1D21">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
 <link rel="shortcut icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="M-Core">
-<link rel="manifest" href="manifest.webmanifest">
+<meta name="application-name" content="M-Core">
+<link rel="manifest" href="/app/manifest.webmanifest">
 <title>M-Core by MPFLE Media — Business OS for Malaysian SMEs</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -33240,7 +33244,7 @@ if('serviceWorker' in navigator){
       refreshing = true
       try { location.reload() } catch(e) {}
     })
-    navigator.serviceWorker.register('./sw.js?v=4').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=5').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
