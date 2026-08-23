@@ -2160,45 +2160,54 @@ function _notifPrefsKey() {
 function _notifDefaultPrefs() {
   return { muted:false, insight:false, overdue:true, low_stock:true, leave:true, outstation:true, sales:true, inventory:true, purchasing:true, finance:true, hr:true, dismissed:[] }
 }
-function _notifGetPrefs() {
+async function _notifGetPrefs() {
   const d = _notifDefaultPrefs()
+  if (!APP.tenant?.id || !APP.user?.id) return d
   try {
-    const raw = JSON.parse(localStorage.getItem(_notifPrefsKey()) || '{}')
-    if(raw && typeof raw === 'object') {
-      Object.assign(d, raw)
+    const { data } = await sb.from('user_notification_prefs').select('*')
+      .eq('tenant_id', APP.tenant.id).eq('user_id', APP.user.id).maybeSingle()
+    if (data) {
+      Object.assign(d, data)
       if(!Array.isArray(d.dismissed)) d.dismissed = []
     }
   } catch(e) {}
   return d
 }
-function _notifSetPrefs(patch) {
-  const cur = _notifGetPrefs()
+async function _notifSetPrefs(patch) {
+  const cur = await _notifGetPrefs()
   const next = Object.assign({}, cur, patch)
   if(patch && patch.dismissed) next.dismissed = patch.dismissed
-  try { localStorage.setItem(_notifPrefsKey(), JSON.stringify(next)) } catch(e) {}
+  if (!APP.tenant?.id || !APP.user?.id) return next
+  try {
+    const payload = Object.assign({}, next, {
+      tenant_id: APP.tenant.id, user_id: APP.user.id, updated_at: new Date().toISOString()
+    })
+    delete payload.id
+    await sb.from('user_notification_prefs').upsert(payload, { onConflict: 'tenant_id,user_id' })
+  } catch(e) { console.warn('notif prefs save', e) }
   return next
 }
 function _notifFp(it) {
   return String(it.kind || '') + '|' + String(it.ref || it.text || '').slice(0, 80)
 }
-function _notifToggleMute() {
-  const p = _notifGetPrefs()
-  _notifSetPrefs({ muted: !p.muted })
+async function _notifToggleMute() {
+  const p = await _notifGetPrefs()
+  await _notifSetPrefs({ muted: !p.muted })
   loadNotifications()
 }
-function _notifClearAll() {
+async function _notifClearAll() {
   const isBm = APP.language === 'bm'
   const items = window._notifItems || []
-  const p = _notifGetPrefs()
+  const p = await _notifGetPrefs()
   const dismissed = new Set(p.dismissed || [])
   items.forEach(it => dismissed.add(_notifFp(it)))
-  _notifSetPrefs({ dismissed: [...dismissed].slice(-200) })
+  await _notifSetPrefs({ dismissed: [...dismissed].slice(-200) })
   try { localStorage.setItem(typeof _dbInsightNotifKey === 'function' ? _dbInsightNotifKey() : ('nexerp_db_insight_notifs_'+(APP.tenant?.id||'none')), '[]') } catch(e) {}
   showToast(isBm ? 'Pemberitahuan dikosongkan' : 'Notifications cleared', 'success')
   loadNotifications()
 }
 
-function _notifToggleSettingsPanel() {
+async function _notifToggleSettingsPanel() {
   if(typeof isTenantAdmin === 'function' && !isTenantAdmin()) {
     const el = document.getElementById('notif-prefs-panel')
     if(el) { el.setAttribute('hidden', ''); el.innerHTML = '' }
@@ -2212,14 +2221,14 @@ function _notifToggleSettingsPanel() {
   const show = el.hasAttribute('hidden')
   if(show) {
     el.removeAttribute('hidden')
-    try { _notifRenderPrefsPanel(); setTimeout(_tgRefreshMyLinkStatus, 50) } catch(e) {}
+    try { await _notifRenderPrefsPanel(); setTimeout(_tgRefreshMyLinkStatus, 50) } catch(e) {}
   } else {
     el.setAttribute('hidden', '')
   }
   if(btn) btn.classList.toggle('on', show)
 }
 
-function _notifRenderPrefsPanel() {
+async function _notifRenderPrefsPanel() {
   const el = document.getElementById('notif-prefs-panel')
   if(!el) return
   if(typeof isTenantAdmin === 'function' && !isTenantAdmin()) {
@@ -2228,7 +2237,7 @@ function _notifRenderPrefsPanel() {
     return
   }
   const isBm = APP.language === 'bm'
-  const p = _notifGetPrefs()
+  const p = await _notifGetPrefs()
   el.innerHTML = '<div style="font-weight:600;margin-bottom:6px">'+(isBm?'Tetapan':'Settings')+'</div>'
     + '<label><input type="checkbox" id="notif-ev-overdue" '+(p.overdue?'checked':'')+'> '+(isBm?'Invois tertunggak':'Overdue invoices')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-stock" '+(p.low_stock?'checked':'')+'> '+(isBm?'Stok rendah':'Low stock')+'</label>'
@@ -2240,6 +2249,12 @@ function _notifRenderPrefsPanel() {
     + '<label><input type="checkbox" id="notif-ev-purchasing" '+(p.purchasing!==false?'checked':'')+'> '+(isBm?'Pembelian (PO)':'Purchasing (PO)')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-finance" '+(p.finance!==false?'checked':'')+'> '+(isBm?'Kewangan (jurnal / tuntutan)':'Finance (journal / claims)')+'</label>'
     + '<label><input type="checkbox" id="notif-ev-hr" '+(p.hr!==false?'checked':'')+'> '+(isBm?'HR (kehadiran / cuti / outstation)':'HR (attendance / leave / outstation)')+'</label>'
+    + '<div style="margin-top:8px;font-size:11px;color:var(--text-3)">'+(isBm?'Hantar ke Telegram juga:':'Also send to Telegram:')+'</div>'
+    + '<label><input type="checkbox" id="notif-tg-sales" '+(p.telegram_sales?'checked':'')+'> '+(isBm?'Jualan':'Sales')+'</label>'
+    + '<label><input type="checkbox" id="notif-tg-inventory" '+(p.telegram_inventory?'checked':'')+'> '+(isBm?'Inventori':'Inventory')+'</label>'
+    + '<label><input type="checkbox" id="notif-tg-purchasing" '+(p.telegram_purchasing?'checked':'')+'> '+(isBm?'Pembelian':'Purchasing')+'</label>'
+    + '<label><input type="checkbox" id="notif-tg-finance" '+(p.telegram_finance?'checked':'')+'> '+(isBm?'Kewangan':'Finance')+'</label>'
+    + '<label><input type="checkbox" id="notif-tg-hr" '+(p.telegram_hr?'checked':'')+'> HR</label>'
     + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + '<div style="font-weight:600;margin-bottom:4px">Telegram</div>' + '<div id="tg-link-status" style="font-size:12px;margin-bottom:6px">…</div>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgOpenLinkForMe()">'+(isBm?'Pautkan Telegram':'Link Telegram')+'</button>' + '<input type="text" id="tg-bot-username" class="form-input" style="font-size:12px;padding:6px 8px;margin-bottom:4px" placeholder="@YourBot" value="'+(_tgBotUsername() ? ('@'+_tgBotUsername()) : '')+'">' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:6px" onclick="_tgSaveBotName()">'+(isBm?'Simpan nama bot':'Save bot name')+'</button>' + '<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-bottom:8px" id="tg-test-btn" onclick="_tgSendTestNotification()">'+(isBm?'Hantar ujian ke Telegram':'Send test to Telegram')+'</button>' + '</div>' + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="_notifSavePrefsFromUI()">'+(isBm?'Simpan tetapan':'Save settings')+'</button>'
 }
 
@@ -2250,7 +2265,7 @@ async function _notifSavePrefsFromUI() {
     return
   }
   const isBm = APP.language === 'bm'
-  _notifSetPrefs({
+  await _notifSetPrefs({
     insight: !!document.getElementById('notif-ev-insight')?.checked,
     overdue: !!document.getElementById('notif-ev-overdue')?.checked,
     low_stock: !!document.getElementById('notif-ev-stock')?.checked,
@@ -2260,7 +2275,12 @@ async function _notifSavePrefsFromUI() {
     inventory: !!document.getElementById('notif-ev-inventory')?.checked,
     purchasing: !!document.getElementById('notif-ev-purchasing')?.checked,
     finance: !!document.getElementById('notif-ev-finance')?.checked,
-    hr: !!document.getElementById('notif-ev-hr')?.checked
+    hr: !!document.getElementById('notif-ev-hr')?.checked,
+    telegram_sales: !!document.getElementById('notif-tg-sales')?.checked,
+    telegram_inventory: !!document.getElementById('notif-tg-inventory')?.checked,
+    telegram_purchasing: !!document.getElementById('notif-tg-purchasing')?.checked,
+    telegram_finance: !!document.getElementById('notif-tg-finance')?.checked,
+    telegram_hr: !!document.getElementById('notif-tg-hr')?.checked
   })
   showToast(isBm ? 'Tetapan pemberitahuan disimpan' : 'Notification settings saved', 'success')
   try { loadNotifications() } catch (e) {}
@@ -2416,7 +2436,7 @@ async function _tgActivity(prefKey, text, opts) {
   try {
     if (!APP.tenant?.id) return
     opts = opts || {}
-    const prefs = (typeof _notifGetPrefs === 'function') ? _notifGetPrefs() : {}
+    const prefs = (typeof _notifGetPrefs === 'function') ? await _notifGetPrefs() : {}
     if (prefs.muted) return
     // Prefer explicit false; undefined defaults to ON for operational keys
     if (prefKey && prefs[prefKey] === false) return
@@ -2558,7 +2578,7 @@ async function loadNotifications() {
   const muteBtn = document.getElementById('notif-btn-mute')
   const isBm = APP.language==='bm'
   if(title) title.textContent = isBm ? 'Pemberitahuan' : 'Notifications'
-  const prefs = _notifGetPrefs()
+  const prefs = await _notifGetPrefs()
   if(muteBtn) {
     muteBtn.textContent = prefs.muted ? 'On' : 'Off'
     muteBtn.classList.toggle('on', !!prefs.muted)
@@ -2575,7 +2595,7 @@ async function loadNotifications() {
     if(list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">'+(isBm?'Log masuk dulu':'Sign in first')+'</div>'
     return
   }
-  _notifRenderPrefsPanel()
+  await _notifRenderPrefsPanel()
   if(prefs.muted) {
     if(badge) { badge.textContent = '0'; badge.classList.remove('show') }
     if(list) list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">'+(isBm?'Pemberitahuan dimatikan (Off)':'Notifications are off')+'</div>'
@@ -2665,6 +2685,25 @@ async function loadNotifications() {
         })
       } catch(e) {}
     }
+    let dbNotifs = []
+    try {
+      const { data } = await sb.from('notifications').select('*')
+        .eq('user_id', APP.user.id).is('read_at', null)
+        .order('created_at', { ascending: false }).limit(30)
+      dbNotifs = data || []
+    } catch(e) { console.warn('db notifications', e) }
+    const catIcon = { sales:'ti-receipt', inventory:'ti-box', purchasing:'ti-shopping-cart', finance:'ti-report-money', hr:'ti-users' }
+    const catPage = { sales:'sales', inventory:'inventory', purchasing:'purchasing', finance:'accounting', hr:'hr' }
+    dbNotifs.forEach(n => {
+      if (prefs[n.category] === false) return
+      const it = {
+        kind: n.category, ref: n.id, ts: new Date(n.created_at).getTime(),
+        icon: catIcon[n.category] || 'ti-bell', color: 'var(--primary)',
+        text: n.title, meta: n.body || '',
+        go: () => { sb.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).then(()=>{},()=>{}); openPage(catPage[n.category] || 'dashboard') }
+      }
+      items.push(it)
+    })
     items.sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0))
     // Telegram fan-out for dashboard-derived alerts (once/day via _tgActivity dedupe)
     try {
@@ -6839,9 +6878,9 @@ function _dbInsightLangKey() {
 function _dbInsightSaveStore(store) {
   try { localStorage.setItem(_dbInsightStoreKey(), JSON.stringify(store)) } catch(e) {}
 }
-function _dbInsightPushNotif(slotId, isBm, reason) {
+async function _dbInsightPushNotif(slotId, isBm, reason) {
   try {
-    try { const pr = _notifGetPrefs(); if(pr && pr.insight === false) return } catch(e) {}
+    try { const pr = await _notifGetPrefs(); if(pr && pr.insight === false) return } catch(e) {}
     const key = _dbInsightNotifKey()
     let arr = []
     try { arr = JSON.parse(localStorage.getItem(key) || '[]') } catch(e) { arr = [] }
