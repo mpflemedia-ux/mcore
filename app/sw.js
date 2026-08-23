@@ -1,15 +1,12 @@
-/* NexERP service worker — network-first; bump CACHE to invalidate old shells */
-const CACHE = 'mcore-shell-v9'
-const ASSETS = ['./', './index.html', './manifest.webmanifest']
+/* M-Core service worker — HTML always network; bump CACHE to drop bad shells */
+const CACHE = 'mcore-shell-v11'
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())
-  )
+  e.waitUntil(self.skipWaiting())
 })
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(keys.map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   )
 })
@@ -17,15 +14,11 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url)
   if (url.origin !== self.location.origin) return
   if (e.request.method !== 'GET') return
-  // Always prefer network for HTML / app shell so invite UX and fixes go live without Incognito
   const isNav = e.request.mode === 'navigate' || (e.request.headers.get('accept') || '').includes('text/html')
-  if (isNav) {
+  // Never serve stale index.html / SPA shell from cache
+  if (isNav || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/app/') || url.pathname.endsWith('/app')) {
     e.respondWith(
-      fetch(e.request, { cache: 'no-store' }).then(res => {
-        const copy = res.clone()
-        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {})
-        return res
-      }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+      fetch(e.request, { cache: 'no-store' }).catch(() => caches.match('./index.html'))
     )
     return
   }
