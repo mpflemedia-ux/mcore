@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-audit-ls">
+<meta name="nexerp-build" content="2026-08-24-prod-ai-upload">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20626,18 +20626,23 @@ function _prodHideAiScanModal() {
 
 function _prodAiScanRenderCapture() {
   const isBm = APP.language==='bm'
+  // Two pickers: capture=environment → camera only; no capture → gallery/files (and often camera too on desktop)
   const t = isBm
-    ? { hint:'Ambil atau muat naik gambar produk (kotak, label, atau produk itu sendiri) supaya AI boleh cuba kenal pasti dan isikan borang produk secara automatik.', choose:'Pilih Gambar', cancel:'Batal' }
-    : { hint:'Take or upload a photo of the product (packaging, label, or the item itself) so AI can try to identify it and auto-fill the product form.', choose:'Choose Photo', cancel:'Cancel' }
+    ? { hint:'Ambil gambar atau muat naik dari galeri (kotak, label, atau produk) supaya AI kenal pasti dan isikan borang.', take:'Ambil Gambar', upload:'Muat Naik', cancel:'Batal' }
+    : { hint:'Take a photo or upload from gallery (packaging, label, or the item) so AI can identify and auto-fill the form.', take:'Take Photo', upload:'Upload', cancel:'Cancel' }
   document.getElementById('prod-ai-scan-body').innerHTML = `
     <p style="font-size:13px;color:var(--text-3)">${t.hint}</p>
     <div id="prod-ai-scan-status" style="font-size:12px;margin-top:8px"></div>`
   document.getElementById('prod-ai-scan-footer').innerHTML = `
-    <label class="btn btn-primary" style="flex:1;cursor:pointer;text-align:center">
-      <i class="ti ti-camera"></i> ${t.choose}
-      <input type="file" accept="image/*" capture="environment" id="prod-ai-scan-input" onchange="_prodAiScanFileSelected(event)" style="display:none">
+    <label class="btn btn-primary" style="flex:1;cursor:pointer;text-align:center;min-width:120px">
+      <i class="ti ti-camera"></i> ${t.take}
+      <input type="file" accept="image/*" capture="environment" id="prod-ai-scan-input-cam" onchange="_prodAiScanFileSelected(event)" style="display:none">
     </label>
-    <button class="btn btn-outline" onclick="_prodHideAiScanModal()">${t.cancel}</button>`
+    <label class="btn btn-outline" style="flex:1;cursor:pointer;text-align:center;min-width:120px">
+      <i class="ti ti-photo"></i> ${t.upload}
+      <input type="file" accept="image/*" id="prod-ai-scan-input-file" onchange="_prodAiScanFileSelected(event)" style="display:none">
+    </label>
+    <button type="button" class="btn btn-outline" onclick="_prodHideAiScanModal()">${t.cancel}</button>`
 }
 
 async function _prodAiScanFileSelected(event) {
