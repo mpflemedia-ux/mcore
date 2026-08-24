@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-prod-form-ai">
+<meta name="nexerp-build" content="2026-08-24-plan-full-mod">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1981,12 +1981,13 @@ function assertNotPeriodLocked(dateStr) {
 }
 
 /** Modules allowed per plan code (sidebar + openPage). null = all modules.
- *  Free = SME starter surface only. Pro/Unlimited = full product.
- *  platform_admin + MP Workspace always full (see _planAllowsModule). */
+ *  Free = limited surface (POS/Sales/CRM/Inventory). Starter+ = full modules;
+ *  paid plans differ by usage (txn / AI / branches), not by hiding modules.
+ *  platform home (MP Workspace) always full (see _planAllowsModule). */
 const _PLAN_MODULES = {
   free: ['core', 'crm', 'sales', 'pos', 'inventory'],
-  starter: ['core', 'crm', 'sales', 'pos', 'inventory', 'purchasing', 'sales_commission', 'reports'],
-  business: ['core', 'crm', 'sales', 'pos', 'inventory', 'purchasing', 'sales_commission', 'reports', 'logistics', 'accounting', 'vouchers', 'hr', 'hr_attendance', 'hr_employees', 'hr_payroll', 'hr_recruit', 'production'],
+  starter: null,
+  business: null,
   pro: null,
   unlimited: null
 }
@@ -2044,7 +2045,8 @@ function _planAllowsModule(module) {
   // (admin role still needed for Admin page; MP Workspace plan is unlimited)
   try { if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true } catch (e) {}
   const code = _resolveTenantPlanCode()
-  if (code === 'pro' || code === 'unlimited') return true
+  // Paid tiers: full module surface (Starter / Business / Pro / Unlimited)
+  if (code === 'starter' || code === 'business' || code === 'pro' || code === 'unlimited') return true
   const allowed = _PLAN_MODULES[code]
   if (!allowed) return true // unknown code → do not lock
   if (allowed.indexOf(module) >= 0) return true
