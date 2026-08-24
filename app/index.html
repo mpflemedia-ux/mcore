@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-sa-planner">
+<meta name="nexerp-build" content="2026-08-24-planner-embed-fix">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8938,7 +8938,7 @@ async function _plannerLoadList(t) {
   const uid = APP.user && APP.user.id
   if (!uid) { wrap.innerHTML = '<div style="padding:24px;color:var(--danger)">No user</div>'; return }
   try {
-    let q = sb.from('platform_activities').select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,related_tenant_id,notes,tenants:related_tenant_id(name,code)')
+    let q = sb.from('platform_activities').select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,related_tenant_id,notes')
       .eq('owner_user_id', uid).is('deleted_at', null).order('starts_at', { ascending: true, nullsFirst: false })
     const f = window._plannerFilter || {}
     if (f.status && f.status !== 'all') q = q.eq('status', f.status)
@@ -8950,12 +8950,23 @@ async function _plannerLoadList(t) {
       wrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-3)">${t.empty}</div>`
       return
     }
+    // Tenant names without FK embed (related_tenant_id has no schema relationship)
+    let tenantMap = {}
+    try {
+      const ids = []
+      rows.forEach(function (r) { if (r.related_tenant_id) ids.push(r.related_tenant_id) })
+      const uniq = ids.filter(function (v, i, a) { return a.indexOf(v) === i })
+      if (uniq.length) {
+        const { data: tns } = await sb.from('tenants').select('id,name,code').in('id', uniq)
+        ;(tns || []).forEach(function (x) { tenantMap[x.id] = x.name || x.code || '' })
+      }
+    } catch (e) {}
     const now = Date.now()
     wrap.innerHTML = `<div style="display:flex;flex-direction:column;divide-y:1px solid var(--border)">` + rows.map(r => {
       const when = _plannerFmtWhen(r, isBm)
       const ts = r.starts_at || r.due_at
       const overdue = r.status === 'open' && ts && new Date(ts).getTime() < now
-      const client = r.tenants ? (r.tenants.name || r.tenants.code) : ''
+      const client = r.related_tenant_id ? (tenantMap[r.related_tenant_id] || '') : ''
       return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:180px">
           <div style="font-weight:600;font-size:14px">${_aiEscapeHtml(r.title)}</div>
