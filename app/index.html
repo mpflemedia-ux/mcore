@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-fix-scroll">
+<meta name="nexerp-build" content="2026-08-24-notif-clear">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2342,8 +2342,29 @@ async function _notifClearAll() {
   const p = await _notifGetPrefs()
   const dismissed = new Set(p.dismissed || [])
   items.forEach(it => dismissed.add(_notifFp(it)))
-  await _notifSetPrefs({ dismissed: [...dismissed].slice(-200) })
-  try { localStorage.setItem(typeof _dbInsightNotifKey === 'function' ? _dbInsightNotifKey() : ('nexerp_db_insight_notifs_'+(APP.tenant?.id||'none')), '[]') } catch(e) {}
+  // Also fingerprint bell rows currently stored
+  try {
+    (_notifLoadBell() || []).forEach(function (b) {
+      dismissed.add(_notifFp({ kind: 'bell', ref: b.id || b.text, text: b.text }))
+    })
+  } catch (e) {}
+  await _notifSetPrefs({ dismissed: [...dismissed].slice(-300) })
+  // Wipe local activity feed (Kehadiran / Product saved / POS / Telegram mirrors)
+  try { localStorage.setItem(_notifBellKey(), '[]') } catch (e) {}
+  try {
+    localStorage.setItem(
+      typeof _dbInsightNotifKey === 'function' ? _dbInsightNotifKey() : ('nexerp_db_insight_notifs_' + (APP.tenant?.id || 'none')),
+      '[]'
+    )
+  } catch (e) {}
+  // Mark unread DB notifications as read
+  try {
+    if (APP.user?.id) {
+      await sb.from('notifications').update({ read_at: new Date().toISOString() })
+        .eq('user_id', APP.user.id).is('read_at', null)
+    }
+  } catch (e) { console.warn('notif clear db', e) }
+  window._notifItems = []
   showToast(isBm ? 'Pemberitahuan dikosongkan' : 'Notifications cleared', 'success')
   loadNotifications()
 }
@@ -2928,15 +2949,21 @@ async function loadNotifications() {
     try {
       const bell = _notifLoadBell()
       bell.forEach(function (b) {
-        items.push({
+        const it = {
+          kind: 'bell',
+          ref: b.id || b.text,
+          ts: b.at || 0,
           text: b.text,
           meta: b.meta || (b.at ? new Date(b.at).toLocaleString() : ''),
           icon: b.icon || 'ti-bell',
           color: b.color || 'var(--primary)',
           go: null
-        })
+        }
+        if (!dismissed.has(_notifFp(it))) items.push(it)
       })
     } catch (e) {}
+    items.sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0))
+    if(badge) { badge.textContent=String(items.length); badge.classList.toggle('show', items.length>0) }
     if(!items.length) {
       if(list) list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">'+(isBm?'Tiada pemberitahuan':'No notifications')+'</div>'
       window._notifItems = []
