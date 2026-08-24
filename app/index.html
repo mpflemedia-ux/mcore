@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-ob-scroll-next">
+<meta name="nexerp-build" content="2026-08-24-suspend-auth-lock">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5061,12 +5061,28 @@ async function loadUserSession(user, opts={}) {
     // once profile.tenants is actually populated from one of the two
     // branches above; is_active===false specifically (not falsy) since a
     // legacy/missing value on this column must not be treated as suspended.
-    if(profile.tenants && profile.tenants.is_active === false) {
-      await sb.auth.signOut()
+    const tenantSuspended = !!(profile.tenants && profile.tenants.is_active === false)
+    const userInactive = profile.is_active === false
+    if(tenantSuspended || userInactive) {
+      try { await sb.auth.signOut() } catch (e) {}
       _sessionLoadPromise = null
       _sessionLoadUserId = null
+      try { if (typeof hideOnboarding === 'function') hideOnboarding() } catch (e) {}
+      const obEl = document.getElementById('onboarding-page')
+      if (obEl) obEl.classList.remove('active')
       showAuthPage()
-      showToast(APP.language==='bm' ? 'Akaun anda digantung. Sila hubungi sokongan.' : 'Your account is suspended, contact support.', 'error')
+      const msgBm = tenantSuspended
+        ? 'Akaun / syarikat anda digantung. Sila hubungi sokongan.'
+        : 'Akaun pengguna anda tidak aktif. Sila hubungi admin.'
+      const msgEn = tenantSuspended
+        ? 'Your account is suspended, contact support.'
+        : 'Your user account is inactive. Contact admin.'
+      const msg = (APP.language==='bm') ? msgBm : msgEn
+      try {
+        const errEl = document.getElementById('login-error')
+        if (errEl) { errEl.textContent = msg; errEl.classList.add('show') }
+      } catch (e) {}
+      showToast(msg, 'error')
       return
     }
     if(APP.tenant.id) {
@@ -5151,6 +5167,9 @@ function _applyAuthPageLang() {
 }
 
 function showAuthPage() {
+  try { if (typeof hideOnboarding === 'function') hideOnboarding() } catch (e) {}
+  const ob = document.getElementById('onboarding-page')
+  if (ob) ob.classList.remove('active')
   document.getElementById('auth-page').style.display='flex'
   _applyAuthPageLang()
   document.getElementById('shell').classList.remove('active')
@@ -5209,6 +5228,7 @@ function _dismissAnnouncement(id) {
 function showShell() {
   _lsSet('nexerp_intro_done', '1')
   document.documentElement.setAttribute('data-skip-intro', '1')
+  try { if (typeof hideOnboarding === 'function') hideOnboarding() } catch (e) {}
   const alreadyActive = document.getElementById('shell').classList.contains('active')
   document.getElementById('auth-page').style.display='none'
   document.getElementById('shell').classList.add('active')
