@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-ls-auth">
+<meta name="nexerp-build" content="2026-08-24-audit-ls">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2704,7 +2704,7 @@ async function _tgRefreshMyLinkStatus() {
 function _tgSaveBotName() {
   const v = (document.getElementById('tg-bot-username') && document.getElementById('tg-bot-username').value) || ''
   const name = v.replace(/^@/, '').trim()
-  localStorage.setItem('nexerp_tg_bot', name)
+  _lsSet('nexerp_tg_bot', name)
   window.NEXERP_TELEGRAM_BOT = name
   showToast(APP.language === 'bm' ? 'Nama bot disimpan' : 'Bot name saved', 'success')
   try { _tgRefreshMyLinkStatus() } catch (e) {}
@@ -3176,7 +3176,7 @@ function openPage(page, params={}) {
   // makes a refresh land back on the actual sub-tab/sub-view the user was
   // on (e.g. Accounting → Journal Entries, params={view:'journal'}) instead
   // of always resetting to that page's own default view.
-  try { localStorage.setItem('nexerp_last_params', JSON.stringify(params||{})) } catch(e) {}
+  _lsSet('nexerp_last_params', JSON.stringify(params||{}))
   APP.currentPage = page
   // Getting Started checklist item #3 ("Try the X module") — first visit only,
   // no-op after that (see _obcMarkChecklist's in-memory guard).
@@ -4333,7 +4333,17 @@ function _afterSessionReady(next) {
 
 async function doLogin() {
   // If storage is full, openPage will fail later — free space proactively
-  try { _lsEnsureAuthSpace() } catch (qe) {}
+  try {
+    if (typeof _lsEnsureAuthSpace === 'function' && !_lsEnsureAuthSpace()) {
+      const errEl0 = document.getElementById('login-error')
+      if (errEl0) {
+        errEl0.textContent = (localStorage.getItem('nexerp_lang') === 'bm')
+          ? 'Storan peranti penuh. Clear data app / tapis cache laman, cuba lagi.'
+          : 'Device storage full. Clear app data / site data, then try again.'
+        errEl0.classList.add('show')
+      }
+    }
+  } catch (qe) {}
   const email=document.getElementById('login-email').value.trim()
   const pass=document.getElementById('login-password').value
   const errEl=document.getElementById('login-error')
@@ -4415,7 +4425,7 @@ async function doRegister() {
 
   try {
     // Step 1: Create auth user
-    localStorage.setItem('pendingEmail', email)
+    _lsSet('pendingEmail', email)
     const inviteToken = (document.getElementById('reg-invite')?.value || localStorage.getItem('nexerp_invite_token') || '').trim()
 
     let data, error
@@ -5270,7 +5280,7 @@ function applyTheme(t) {
   document.body.classList.toggle('dark', t==='dark')
   const icon = document.getElementById('theme-icon')
   if(icon) icon.className=t==='dark'?'ti ti-sun':'ti ti-moon'
-  localStorage.setItem('nexerp_theme', t)
+  _lsSet('nexerp_theme', t)
 
   // If the dashboard is currently open, rebuild it fresh (same approach
   // toggleLang() already uses successfully). Re-using the old <canvas>
