@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-planner-ai-scroll">
+<meta name="nexerp-build" content="2026-08-24-planner-ai-db">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6511,7 +6511,14 @@ function _dbRenderPlannerCard() {
     </select>
     ${st.day ? `<button type="button" class="btn btn-sm btn-outline" onclick="window._dbPlannerState.day=null;_dbRenderPlannerCard()">${isBm?'Semua hari':'All days'}</button>` : ''}
   </div>
-  <div id="db-planner-list-scroll" style="max-height:360px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">${listHtml}</div>`
+  <div id="db-planner-list-scroll" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin-bottom:12px">${listHtml}</div>
+  <div style="border-top:1px solid var(--border);padding-top:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--db-text3,var(--text-3))">${isBm ? 'AI idea pemasaran' : 'AI marketing boost'}</div>
+      <button type="button" id="db-planner-ai-btn" class="btn btn-outline btn-sm" onclick="_dbPlannerAiMarketing()" ${(!_planAllowsAi || !_planAllowsAi()) ? 'disabled title="'+(isBm?'Pelan Free — AI tidak termasuk':'Free plan — AI not included')+'"' : ''}><i class="ti ti-sparkles"></i> ${isBm ? 'Jana' : 'Generate'}</button>
+    </div>
+    <div id="db-planner-ai-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:40px">${isBm ? 'Klik Jana — idea sempena event & produk tenant ini.' : 'Click Generate — ideas tied to this tenant’s events & products.'}</div>
+  </div>`
 }
 
 
@@ -9038,16 +9045,12 @@ async function _plannerEnsureMyHolidays() {
 }
 
 
-/** AI marketing boost ideas tied to upcoming planner events + tenant products/services. Paid plans with AI quota. */
-async function _plannerAiEventMarketing() {
+/** Shared: fetch context + marketing_advice for planner events. Returns { ideas:[], text, error }. */
+async function _plannerFetchEventMarketingIdeas() {
   const isBm = APP.language === 'bm'
-  const out = document.getElementById('planner-ai-out')
-  if (!out) return
-  if (!_planAllowsPlanner()) { showToast(isBm ? 'Planner tidak tersedia' : 'Planner not available', 'error'); return }
-  if (typeof _planAllowsAi === 'function' && !_planAllowsAi()) { showToast(isBm ? 'AI tidak termasuk dalam pelan Free' : 'AI not included on Free plan', 'error'); return }
-  if (typeof _guardAiQuota === 'function' && !(await _guardAiQuota())) return
-  out.style.display = 'block'
-  out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner dark" style="display:inline-block;width:14px;height:14px;border-width:2px;vertical-align:middle;margin-right:6px"></div>${isBm ? 'Menganalisis event & produk…' : 'Analysing events & products…'}</div>`
+  if (!_planAllowsPlanner()) return { ideas: [], text: '', error: isBm ? 'Planner tidak tersedia' : 'Planner not available' }
+  if (typeof _planAllowsAi === 'function' && !_planAllowsAi()) return { ideas: [], text: '', error: isBm ? 'AI tidak termasuk dalam pelan Free' : 'AI not included on Free plan' }
+  if (typeof _guardAiQuota === 'function' && !(await _guardAiQuota())) return { ideas: [], text: '', error: 'quota' }
   try {
     const now = new Date()
     const to = new Date(now.getTime() + 60 * 86400000)
@@ -9058,9 +9061,8 @@ async function _plannerAiEventMarketing() {
         .is('deleted_at', null)
         .eq('status', 'open')
         .in('activity_type', ['event', 'appointment', 'follow_up'])
-        .gte('starts_at', now.toISOString())
-        .lte('starts_at', to.toISOString())
-        .order('starts_at', { ascending: true })
+        .or('starts_at.gte.' + now.toISOString() + ',due_at.gte.' + now.toISOString())
+        .order('starts_at', { ascending: true, nullsFirst: false })
         .limit(20),
       sb.from('products')
         .select('name_en,name_bm,unit_price,category,code')
@@ -9068,33 +9070,95 @@ async function _plannerAiEventMarketing() {
         .is('deleted_at', null)
         .limit(25)
     ])
-    const evLines = (events || []).map(e => {
+    const upcoming = (events || []).filter(e => {
+      const ts = e.starts_at || e.due_at
+      if (!ts) return false
+      const t0 = new Date(ts).getTime()
+      return t0 >= now.getTime() - 86400000 && t0 <= to.getTime()
+    })
+    const evLines = upcoming.map(e => {
       const d = e.starts_at || e.due_at || ''
-      return `- ${e.title} (${e.activity_type}) on ${String(d).slice(0, 10)}`
-    }).join('\n') || '(no upcoming events in next 60 days — use public holidays / appointments)'
+      return '- ' + e.title + ' (' + e.activity_type + ') on ' + String(d).slice(0, 10)
+    }).join('\n') || '(no upcoming events — suggest general boosts around nearest public holidays in Malaysia)'
     const prodLines = (products || []).slice(0, 15).map(p => {
       const n = isBm ? (p.name_bm || p.name_en) : (p.name_en || p.name_bm)
-      return `- ${n || p.code || 'item'} @ RM${Number(p.unit_price || 0).toFixed(2)}${p.category ? ' [' + p.category + ']' : ''}`
-    }).join('\n') || '(no products listed yet)'
+      return '- ' + (n || p.code || 'item') + ' @ RM' + Number(p.unit_price || 0).toFixed(2) + (p.category ? ' [' + p.category + ']' : '')
+    }).join('\n') || '(no products listed yet — suggest service packaging ideas)'
     const company = (APP.tenant && (APP.tenant.name || APP.tenant.code)) || 'this business'
     const context =
-      `Company: ${company} (Malaysia SME / M-Core).\n` +
-      `Upcoming planner events (next 60 days):\n${evLines}\n\n` +
-      `Products / services in catalogue:\n${prodLines}\n\n` +
-      `Task: Propose concrete marketing boost ideas that tie specific products/services to these events ` +
-      `(campaigns, promos, WhatsApp blasts, social posts, timing). Be practical for Malaysia. ` +
-      `Max 8 short bullets. ${isBm ? 'Reply in Bahasa Malaysia (DBP style).' : 'Reply in English.'}`
+      'Company: ' + company + ' (Malaysia SME / M-Core).\n' +
+      'Upcoming planner events (next ~60 days):\n' + evLines + '\n\n' +
+      'Products / services in catalogue:\n' + prodLines + '\n\n' +
+      'Task: Propose concrete marketing boost ideas that tie products/services to these events ' +
+      '(campaigns, promos, WhatsApp blasts, social posts, timing). Practical for Malaysia. Max 8 short bullets. ' +
+      (isBm ? 'Reply in Bahasa Malaysia (DBP style).' : 'Reply in English.')
     const { data, error } = await _invokeAiProxy({ action: 'marketing_advice', context, language: APP.language })
     if (error) throw error
-    const text = (data && (data.reply || data.text || data.message || data.result)) || (typeof data === 'string' ? data : '')
-    if (!text || !String(text).trim()) {
-      out.innerHTML = `<div style="color:var(--text-3)">${isBm ? 'Tiada idea dijana. Cuba lagi atau tambah event/produk.' : 'No ideas generated. Try again or add events/products.'}</div>`
-      return
+    if (data && data.success === false) throw new Error(data.error || 'AI failed')
+    try { if (typeof _usageCaptureAi === 'function') _usageCaptureAi() } catch (e) {}
+    const payload = (data && data.data) ? data.data : (data || {})
+    let ideas = payload.ideas || payload.bullets || []
+    if (!Array.isArray(ideas)) ideas = []
+    let text = ''
+    if (ideas.length) text = ideas.map(String).join('\n')
+    else text = String(payload.reply || payload.text || payload.message || payload.result || '').trim()
+    if (!ideas.length && text) {
+      ideas = text.split(/\n+/).map(s => s.replace(/^[-*•\d.)\s]+/, '').trim()).filter(Boolean).slice(0, 8)
     }
-    out.innerHTML = `<div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><i class="ti ti-sparkles" style="color:var(--primary)"></i> ${isBm ? 'Idea pemasaran sempena event' : 'Event-tied marketing ideas'}</div><div style="color:var(--text-2)">${_aiEscapeHtml(String(text)).replace(/\\n/g, '<br>')}</div>`
+    return { ideas, text, error: null }
   } catch (e) {
     console.warn('planner AI marketing', e)
-    out.innerHTML = `<div style="color:var(--danger)">${isBm ? 'Ralat: ' : 'Error: '}${_aiEscapeHtml(e.message || e)}</div>`
+    return { ideas: [], text: '', error: e.message || String(e) }
+  }
+}
+
+async function _plannerAiEventMarketing() {
+  const isBm = APP.language === 'bm'
+  const out = document.getElementById('planner-ai-out')
+  if (!out) return
+  out.style.display = 'block'
+  out.innerHTML = '<div style="color:var(--text-3)"><div class="spinner dark" style="display:inline-block;width:14px;height:14px;border-width:2px;vertical-align:middle;margin-right:6px"></div>' + (isBm ? 'Menganalisis event & produk…' : 'Analysing events & products…') + '</div>'
+  const res = await _plannerFetchEventMarketingIdeas()
+  if (res.error === 'quota') { out.style.display = 'none'; return }
+  if (res.error) {
+    out.innerHTML = '<div style="color:var(--danger)">' + (isBm ? 'Ralat: ' : 'Error: ') + _aiEscapeHtml(res.error) + '</div>'
+    return
+  }
+  if (!res.ideas.length && !res.text) {
+    out.innerHTML = '<div style="color:var(--text-3)">' + (isBm ? 'Tiada idea dijana. Cuba lagi atau tambah event/produk.' : 'No ideas generated. Try again or add events/products.') + '</div>'
+    return
+  }
+  const body = res.ideas.length
+    ? '<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">' + res.ideas.map(i => '<li>' + _aiEscapeHtml(i) + '</li>').join('') + '</ul>'
+    : '<div>' + _aiEscapeHtml(res.text).replace(/\n/g, '<br>') + '</div>'
+  out.innerHTML = '<div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><i class="ti ti-sparkles" style="color:var(--primary)"></i> ' + (isBm ? 'Idea pemasaran sempena event' : 'Event-tied marketing ideas') + '</div><div style="color:var(--text-2)">' + body + '</div>'
+}
+
+async function _dbPlannerAiMarketing() {
+  const isBm = APP.language === 'bm'
+  const out = document.getElementById('db-planner-ai-out')
+  const btn = document.getElementById('db-planner-ai-btn')
+  if (!out) return
+  if (btn) btn.disabled = true
+  out.innerHTML = '<div style="color:var(--db-text4)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>' + (isBm ? 'Menganalisis…' : 'Analysing…') + '</div>'
+  const res = await _plannerFetchEventMarketingIdeas()
+  if (btn) btn.disabled = false
+  if (res.error === 'quota') {
+    out.innerHTML = '<span style="color:var(--db-text4)">' + (isBm ? 'Had AI harian tercapai.' : 'Daily AI quota reached.') + '</span>'
+    return
+  }
+  if (res.error) {
+    out.innerHTML = '<span style="color:var(--danger)">' + _aiEscapeHtml(res.error) + '</span>'
+    return
+  }
+  if (!res.ideas.length && !res.text) {
+    out.innerHTML = '<span style="color:var(--db-text4)">' + (isBm ? 'Tiada idea — tambah event/produk lalu cuba lagi.' : 'No ideas — add events/products then retry.') + '</span>'
+    return
+  }
+  if (res.ideas.length) {
+    out.innerHTML = '<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;color:var(--db-text2)">' + res.ideas.map(i => '<li>' + _aiEscapeHtml(i) + '</li>').join('') + '</ul>'
+  } else {
+    out.innerHTML = '<div style="color:var(--db-text2);line-height:1.5">' + _aiEscapeHtml(res.text).replace(/\n/g, '<br>') + '</div>'
   }
 }
 
