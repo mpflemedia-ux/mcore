@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-planner-embed-fix">
+<meta name="nexerp-build" content="2026-08-24-db-planner">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5345,6 +5345,7 @@ function _dbShortcutsHtml(isBm) {
     ...(isPlatformAdmin() ? [{ id:'db-sec-topref', icon:'ti-gift', en:'Top Referral', bm:'Referral Terbaik' }] : []),
     ...(isPlatformAdmin() ? [{ id:'db-sec-devroadmap', icon:'ti-rocket', en:'System Development', bm:'Pembangunan Sistem' }] : []),
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
+    ...(isPlatformAdmin() ? [{ id:'db-sec-planner', icon:'ti-calendar-event', en:'Planner', bm:'Perancang' }] : []),
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
     { id:'db-sec-ai', icon:'ti-sparkles', en:'AI Insight', bm:'AI Insight' },
@@ -5569,6 +5570,20 @@ function renderDashboard() {
       <div class="db-card-title" style="margin-bottom:10px"><i class="ti ti-package"></i> ${isBm?'Stok Rendah':'Low Stock'}</div>
       <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>
+
+
+    ${isPlatformAdmin() ? `
+    <!-- SA Planner calendar card -->
+    <div class="db-card" style="margin-bottom:14px" id="db-sec-planner">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div>
+          <div class="db-card-title"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</div>
+          <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Janji temu, event & todo':'Appointments, events & todos'}</div>
+        </div>
+        <button type="button" class="db-btn" onclick="openPage('admin',{view:'planner'})"><i class="ti ti-arrow-right"></i> ${isBm?'Buka penuh':'Open full'}</button>
+      </div>
+      <div id="db-planner-body"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+    </div>` : ''}
 
     <!-- People (narrower) + Staff Attendance Tracker (wider) -->
     <div class="db-people-row-2">
@@ -6266,6 +6281,7 @@ async function loadDashboardData() {
   try { _dbRenderPnLChart() } catch(e) { console.warn('chart pnl', e) }
   try { _dbRenderTopCustomers(thisMonth) } catch(e) { console.warn('top cust', e) }
   try { await _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
+  try { if (typeof isPlatformAdmin === 'function' && isPlatformAdmin() && typeof _dbLoadPlanner === 'function') _dbLoadPlanner() } catch(e) { console.warn('planner', e) }
   try { _dbLoadPeople() } catch(e) { console.warn('people', e) }
   try { _dbLoadRecentActivity() } catch(e) { console.warn('activity', e) }
   try { _dbLoadAttTracker() } catch(e) { console.warn('att tracker', e) }
@@ -6287,6 +6303,169 @@ async function loadDashboardData() {
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
+
+
+/** Dashboard Planner card (platform_admin) — month grid + legend + filterable list */
+window._dbPlannerState = window._dbPlannerState || { ym: null, day: null, type: '', sort: 'date', rows: [] }
+
+function _plannerTypeColor(type) {
+  return ({
+    appointment: '#0E7490',
+    todo: '#D97706',
+    reminder: '#7C3AED',
+    follow_up: '#059669',
+    event: '#DB2777'
+  })[type] || '#64748B'
+}
+
+function _dbPlannerYm() {
+  const st = window._dbPlannerState
+  if (st.ym && /^\d{4}-\d{2}$/.test(st.ym)) return st.ym
+  const d = new Date()
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+}
+
+function _dbPlannerDateKey(iso) {
+  if (!iso) return null
+  try {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return null
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+  } catch (e) { return null }
+}
+
+async function _dbLoadPlanner() {
+  const el = document.getElementById('db-planner-body')
+  if (!el || !isPlatformAdmin() || !APP.user?.id) return
+  const isBm = APP.language === 'bm'
+  try {
+    const { data, error } = await sb.from('platform_activities')
+      .select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,notes')
+      .eq('owner_user_id', APP.user.id)
+      .is('deleted_at', null)
+      .order('starts_at', { ascending: true, nullsFirst: false })
+      .limit(300)
+    if (error) throw error
+    window._dbPlannerState.rows = data || []
+    if (!window._dbPlannerState.ym) window._dbPlannerState.ym = _dbPlannerYm()
+    _dbRenderPlannerCard()
+  } catch (e) {
+    console.warn('_dbLoadPlanner', e)
+    el.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:8px 0">${isBm?'Gagal muat planner':'Failed to load planner'}<div style="font-size:11px;color:var(--text-3)">${_aiEscapeHtml(e.message||e).slice(0,120)}</div></div>`
+  }
+}
+
+function _dbRenderPlannerCard() {
+  const el = document.getElementById('db-planner-body')
+  if (!el) return
+  const isBm = APP.language === 'bm'
+  const st = window._dbPlannerState
+  const ym = st.ym || _dbPlannerYm()
+  const [yy, mm] = ym.split('-').map(Number)
+  const rows = st.rows || []
+  const openRows = rows.filter(r => r.status === 'open')
+
+  // Map date -> types present
+  const byDay = {}
+  openRows.forEach(r => {
+    const k = _dbPlannerDateKey(r.starts_at || r.due_at)
+    if (!k || k.slice(0, 7) !== ym) return
+    if (!byDay[k]) byDay[k] = []
+    byDay[k].push(r.activity_type)
+  })
+
+  const first = new Date(yy, mm - 1, 1)
+  const startPad = first.getDay() // 0 Sun
+  const daysInMonth = new Date(yy, mm, 0).getDate()
+  const todayKey = _dbPlannerDateKey(new Date().toISOString())
+  const monthLabel = first.toLocaleString(isBm ? 'ms-MY' : 'en-MY', { month: 'long', year: 'numeric' })
+
+  let cells = ''
+  for (let i = 0; i < startPad; i++) cells += `<div style="min-height:36px"></div>`
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = yy + '-' + String(mm).padStart(2, '0') + '-' + String(d).padStart(2, '0')
+    const types = byDay[key] || []
+    const uniq = types.filter((v, i, a) => a.indexOf(v) === i).slice(0, 3)
+    const sel = st.day === key
+    const isToday = key === todayKey
+    const overdue = types.length && key < todayKey
+    cells += `<button type="button" onclick="window._dbPlannerState.day=window._dbPlannerState.day==='${key}'?null:'${key}';_dbRenderPlannerCard()"
+      style="min-height:40px;border-radius:8px;border:1px solid ${sel ? 'var(--primary)' : (overdue ? 'rgba(239,68,68,.35)' : 'transparent')};
+      background:${sel ? 'rgba(14,116,144,.15)' : (isToday ? 'rgba(14,116,144,.08)' : 'transparent')};
+      padding:4px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px">
+      <span style="font-size:12px;font-weight:${isToday||sel?700:500};color:${overdue?'var(--danger)':'var(--text-1)'}">${d}</span>
+      <span style="display:flex;gap:2px;min-height:6px">${uniq.map(tp => `<span style="width:5px;height:5px;border-radius:50%;background:${_plannerTypeColor(tp)}"></span>`).join('')}</span>
+    </button>`
+  }
+
+  const legend = [
+    ['appointment', isBm ? 'Janji temu' : 'Appointment'],
+    ['event', isBm ? 'Acara' : 'Event'],
+    ['todo', 'Todo'],
+    ['reminder', isBm ? 'Peringatan' : 'Reminder'],
+    ['follow_up', isBm ? 'Susulan' : 'Follow-up']
+  ].map(([k, lab]) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)"><span style="width:8px;height:8px;border-radius:50%;background:${_plannerTypeColor(k)}"></span>${lab}</span>`).join('')
+
+  // List filter
+  let list = openRows.slice()
+  if (st.day) {
+    list = list.filter(r => _dbPlannerDateKey(r.starts_at || r.due_at) === st.day)
+  }
+  if (st.type) list = list.filter(r => r.activity_type === st.type)
+  list.sort((a, b) => {
+    if (st.sort === 'title') return String(a.title||'').localeCompare(String(b.title||''))
+    const ta = new Date(a.starts_at || a.due_at || 0).getTime()
+    const tb = new Date(b.starts_at || b.due_at || 0).getTime()
+    return ta - tb
+  })
+  list = list.slice(0, 8)
+  const now = Date.now()
+  const listHtml = list.length ? list.map(r => {
+    const when = (typeof _plannerFmtWhen === 'function') ? _plannerFmtWhen(r, isBm) : (r.starts_at || r.due_at || '—')
+    const ts = r.starts_at || r.due_at
+    const od = ts && new Date(ts).getTime() < now
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+      <div style="min-width:0;flex:1">
+        <div style="font-size:13px;font-weight:600">${_aiEscapeHtml(r.title)}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px">
+          <span style="color:${_plannerTypeColor(r.activity_type)}">●</span>
+          ${(typeof _plannerTypeLabel === 'function') ? _plannerTypeLabel(r.activity_type, { appointment: isBm?'Janji temu':'Appointment', todo:'Todo', reminder: isBm?'Peringatan':'Reminder', follow_up: isBm?'Susulan':'Follow-up', event: isBm?'Acara':'Event' }) : r.activity_type}
+          · ${when}${od ? ` · <span style="color:var(--danger)">${isBm?'Tertunggak':'Overdue'}</span>` : ''}
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline" onclick="_plannerComplete('${r.id}').then(function(){_dbLoadPlanner()})"><i class="ti ti-check"></i></button>
+    </div>`
+  }).join('') : `<div style="font-size:13px;color:var(--text-3);padding:12px 0;text-align:center">${isBm?'Tiada aktiviti':'No activities'}</div>`
+
+  el.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+    <button type="button" class="btn btn-sm btn-outline" onclick="(function(){var p=window._dbPlannerState.ym.split('-');var y=+p[0],m=+p[1]-1;if(m<1){m=12;y--}window._dbPlannerState.ym=y+'-'+String(m).padStart(2,'0');window._dbPlannerState.day=null;_dbRenderPlannerCard()})()"><i class="ti ti-chevron-left"></i></button>
+    <div style="font-weight:600;font-size:14px">${_aiEscapeHtml(monthLabel)}</div>
+    <button type="button" class="btn btn-sm btn-outline" onclick="(function(){var p=window._dbPlannerState.ym.split('-');var y=+p[0],m=+p[1]+1;if(m>12){m=1;y++}window._dbPlannerState.ym=y+'-'+String(m).padStart(2,'0');window._dbPlannerState.day=null;_dbRenderPlannerCard()})()"><i class="ti ti-chevron-right"></i></button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px;font-size:10px;color:var(--text-3);text-align:center">
+    ${['S','M','T','W','T','F','S'].map(x=>`<div>${x}</div>`).join('')}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px">${cells}</div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">${legend}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <select class="form-input" style="width:auto;min-width:110px;padding:6px 8px;font-size:12px" onchange="window._dbPlannerState.type=this.value;_dbRenderPlannerCard()">
+      <option value="">${isBm?'Semua jenis':'All types'}</option>
+      <option value="appointment" ${st.type==='appointment'?'selected':''}>${isBm?'Janji temu':'Appointment'}</option>
+      <option value="event" ${st.type==='event'?'selected':''}>${isBm?'Acara':'Event'}</option>
+      <option value="todo" ${st.type==='todo'?'selected':''}>Todo</option>
+      <option value="reminder" ${st.type==='reminder'?'selected':''}>${isBm?'Peringatan':'Reminder'}</option>
+      <option value="follow_up" ${st.type==='follow_up'?'selected':''}>${isBm?'Susulan':'Follow-up'}</option>
+    </select>
+    <select class="form-input" style="width:auto;min-width:110px;padding:6px 8px;font-size:12px" onchange="window._dbPlannerState.sort=this.value;_dbRenderPlannerCard()">
+      <option value="date" ${st.sort==='date'?'selected':''}>${isBm?'Tarikh':'Date'}</option>
+      <option value="title" ${st.sort==='title'?'selected':''}>${isBm?'Tajuk':'Title'}</option>
+    </select>
+    ${st.day ? `<button type="button" class="btn btn-sm btn-outline" onclick="window._dbPlannerState.day=null;_dbRenderPlannerCard()">${isBm?'Semua hari':'All days'}</button>` : ''}
+  </div>
+  <div>${listHtml}</div>`
+}
+
 
 // ─── People + Recent Activity helpers ───────────────────────────────────────
 function _dbInitials(name) {
@@ -8804,7 +8983,7 @@ async function renderAdminPlanner() {
     title: 'Perancang', sub: 'Janji temu, todo & peringatan anda',
     add: 'Tambah Aktiviti', empty: 'Tiada aktiviti lagi',
     all: 'Semua', open: 'Aktif', done: 'Selesai',
-    appointment: 'Janji temu', todo: 'Todo', reminder: 'Peringatan', follow_up: 'Susulan',
+    appointment: 'Janji temu', todo: 'Todo', reminder: 'Peringatan', follow_up: 'Susulan', event: 'Acara',
     when: 'Bila', client: 'Client', notes: 'Nota', remind: 'Ingatkan',
     save: 'Simpan', cancel: 'Batal', edit: 'Edit', complete: 'Selesai', del: 'Padam',
     noClient: '— Tiada —', overdue: 'Tertunggak', upcoming: 'Akan datang',
@@ -8815,7 +8994,7 @@ async function renderAdminPlanner() {
     title: 'Planner', sub: 'Your appointments, todos & reminders',
     add: 'Add Activity', empty: 'No activities yet',
     all: 'All', open: 'Open', done: 'Done',
-    appointment: 'Appointment', todo: 'Todo', reminder: 'Reminder', follow_up: 'Follow-up',
+    appointment: 'Appointment', todo: 'Todo', reminder: 'Reminder', follow_up: 'Follow-up', event: 'Event',
     when: 'When', client: 'Client', notes: 'Notes', remind: 'Remind',
     save: 'Save', cancel: 'Cancel', edit: 'Edit', complete: 'Complete', del: 'Delete',
     noClient: '— None —', overdue: 'Overdue', upcoming: 'Upcoming',
@@ -8844,6 +9023,7 @@ async function renderAdminPlanner() {
       <option value="todo" ${f.type==='todo'?'selected':''}>${t.todo}</option>
       <option value="reminder" ${f.type==='reminder'?'selected':''}>${t.reminder}</option>
       <option value="follow_up" ${f.type==='follow_up'?'selected':''}>${t.follow_up}</option>
+      <option value="event" ${f.type==='event'?'selected':''}>${t.event}</option>
     </select>
   </div>
   <div id="planner-list" class="card" style="padding:0;overflow:hidden">
@@ -8863,6 +9043,7 @@ async function renderAdminPlanner() {
               <option value="todo">${t.todo}</option>
               <option value="reminder">${t.reminder}</option>
               <option value="follow_up">${t.follow_up}</option>
+              <option value="event">${t.event}</option>
             </select></div>
           <div class="form-group"><label class="form-label">${t.client}</label>
             <select id="pl-tenant" class="form-input"><option value="">${t.noClient}</option></select></div>
@@ -8914,7 +9095,7 @@ function _plannerFmtWhen(row, isBm) {
   } catch (e) { return String(a).slice(0, 16) }
 }
 function _plannerTypeLabel(type, t) {
-  return ({ appointment: t.appointment, todo: t.todo, reminder: t.reminder, follow_up: t.follow_up })[type] || type
+  return ({ appointment: t.appointment, todo: t.todo, reminder: t.reminder, follow_up: t.follow_up, event: t.event })[type] || type
 }
 
 async function _plannerLoadTenantOptions() {
@@ -8931,8 +9112,8 @@ async function _plannerLoadTenantOptions() {
 
 async function _plannerLoadList(t) {
   const isBm = APP.language === 'bm'
-  t = t || (isBm ? { empty: 'Tiada aktiviti', loadErr: 'Gagal muat', edit: 'Edit', complete: 'Selesai', del: 'Padam', overdue: 'Tertunggak', appointment: 'Janji temu', todo: 'Todo', reminder: 'Peringatan', follow_up: 'Susulan' }
-    : { empty: 'No activities', loadErr: 'Load failed', edit: 'Edit', complete: 'Complete', del: 'Delete', overdue: 'Overdue', appointment: 'Appointment', todo: 'Todo', reminder: 'Reminder', follow_up: 'Follow-up' })
+  t = t || (isBm ? { empty: 'Tiada aktiviti', loadErr: 'Gagal muat', edit: 'Edit', complete: 'Selesai', del: 'Padam', overdue: 'Tertunggak', appointment: 'Janji temu', todo: 'Todo', reminder: 'Peringatan', follow_up: 'Susulan', event: 'Acara' }
+    : { empty: 'No activities', loadErr: 'Load failed', edit: 'Edit', complete: 'Complete', del: 'Delete', overdue: 'Overdue', appointment: 'Appointment', todo: 'Todo', reminder: 'Reminder', follow_up: 'Follow-up', event: 'Event' })
   const wrap = document.getElementById('planner-list')
   if (!wrap) return
   const uid = APP.user && APP.user.id
@@ -9070,7 +9251,10 @@ async function _plannerComplete(id) {
     const { error } = await sb.from('platform_activities').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', id).eq('owner_user_id', APP.user.id)
     if (error) throw error
     showToast(isBm ? 'Ditanda selesai' : 'Marked done', 'success')
-    renderAdminPlanner()
+    try {
+      if (document.getElementById('planner-list')) renderAdminPlanner()
+      else if (typeof _dbLoadPlanner === 'function') _dbLoadPlanner()
+    } catch (e2) {}
   } catch (e) { showToast(String(e.message || e), 'error') }
 }
 
@@ -9081,7 +9265,10 @@ async function _plannerDelete(id) {
     const { error } = await sb.from('platform_activities').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).eq('owner_user_id', APP.user.id)
     if (error) throw error
     showToast(isBm ? 'Dipadam' : 'Deleted', 'success')
-    renderAdminPlanner()
+    try {
+      if (document.getElementById('planner-list')) renderAdminPlanner()
+      else if (typeof _dbLoadPlanner === 'function') _dbLoadPlanner()
+    } catch (e2) {}
   } catch (e) { showToast(String(e.message || e), 'error') }
 }
 
