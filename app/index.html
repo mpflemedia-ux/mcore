@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-25-suspend-hard-lock">
+<meta name="nexerp-build" content="2026-08-25-logistics-new-do">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23025,6 +23025,7 @@ async function renderInvDetail(id) {
     <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     <button class="btn btn-outline btn-sm" onclick="_cnOpenForm('${id}')"><i class="ti ti-receipt-refund"></i> ${APP.language==='bm'?'Nota Kredit':'Credit Note'}</button>
+    <button class="btn btn-outline btn-sm" onclick="openPage('logistics',{view:'do-form',invoiceId:'${id}',customerId:'${inv.customer_id||''}',address:${JSON.stringify(custAddr||'')}})"><i class="ti ti-truck-delivery"></i> ${APP.language==='bm'?'Cipta DO':'Create DO'}</button>
     ${canRecordPayment ? `<button class="btn btn-primary btn-sm" onclick="document.getElementById('inv-pay-section')?.scrollIntoView({behavior:'smooth',block:'start'})"><i class="ti ti-cash"></i> ${t.recordPayment}</button>` : ''}
   </div></div>
 
@@ -23126,26 +23127,52 @@ async function renderInvDetail(id) {
 async function _doCreate(invoiceId, customerId) {
   const isBm = APP.language==='bm'
   const errEl = document.getElementById('do-form-err')
-  const driverName = document.getElementById('do-driver').value.trim()
-  const vehicleNo = document.getElementById('do-vehicle').value.trim()
-  const address = document.getElementById('do-address').value.trim()
-  const notes = document.getElementById('do-notes').value.trim()
+  const driverEl = document.getElementById('do-driver')
+  const vehicleEl = document.getElementById('do-vehicle')
+  const addressEl = document.getElementById('do-address')
+  const notesEl = document.getElementById('do-notes')
+  if(!addressEl) { showToast(isBm?'Buka borang DO dulu.':'Open the DO form first.','warning'); return }
+  const driverName = (driverEl?.value||'').trim()
+  const vehicleNo = (vehicleEl?.value||'').trim()
+  const address = (addressEl.value||'').trim()
+  const notes = (notesEl?.value||'').trim()
   if(errEl) errEl.style.display='none'
   if(!address) { if(errEl){errEl.textContent=isBm?'Alamat penghantaran diperlukan.':'Delivery address is required.'; errEl.style.display='block'} return }
 
-  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'DO'}).then(r=>r, ()=>({data:null}))
-  const doNo = refData || await _genFallbackRefNo('delivery_orders','do_no','DO')
+  const invId = invoiceId || null
+  const custId = customerId || null
+  if(invId) {
+    try {
+      const {data: existing} = await sb.from('delivery_orders').select('id,do_no')
+        .eq('tenant_id', APP.tenant.id).eq('invoice_id', invId).is('deleted_at', null).limit(1)
+      if(existing && existing.length) {
+        const ok = confirm(isBm
+          ? `Invois ini sudah ada DO (${existing[0].do_no||''}). Cipta DO lain juga?`
+          : `This invoice already has a DO (${existing[0].do_no||''}). Create another anyway?`)
+        if(!ok) return
+      }
+    } catch(e) { console.warn('DO exist check', e) }
+  }
 
-  const {data, error} = await sb.from('delivery_orders').insert({
-    tenant_id: APP.tenant.id, invoice_id: invoiceId||null, customer_id: customerId||null,
-    do_no: doNo, driver_name: driverName||null, vehicle_no: vehicleNo||null,
-    delivery_address: address, notes: notes||null, status: 'pending'
-  }).select('id').single()
-  if(error) { if(errEl){errEl.textContent='Error: '+error.message; errEl.style.display='block'} return }
+  const btn = document.getElementById('do-create-btn')
+  if(btn) btn.disabled = true
+  try {
+    const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'DO'}).then(r=>r, ()=>({data:null}))
+    const doNo = refData || await _genFallbackRefNo('delivery_orders','do_no','DO')
 
-  showToast(isBm?'Delivery Order dicipta!':'Delivery Order created!', 'success')
-  auditLog('create','delivery_orders', data.id)
-  openPage('logistics', {view:'do-detail', id:data.id, justCreated:true})
+    const {data, error} = await sb.from('delivery_orders').insert({
+      tenant_id: APP.tenant.id, invoice_id: invId, customer_id: custId || null,
+      do_no: doNo, driver_name: driverName||null, vehicle_no: vehicleNo||null,
+      delivery_address: address, notes: notes||null, status: 'pending'
+    }).select('id').single()
+    if(error) { if(errEl){errEl.textContent='Error: '+error.message; errEl.style.display='block'} else showToast(error.message,'error'); return }
+
+    showToast(isBm?'Delivery Order dicipta!':'Delivery Order created!', 'success')
+    auditLog('create','delivery_orders', data.id)
+    openPage('logistics', {view:'do-detail', id:data.id, justCreated:true})
+  } finally {
+    if(btn) btn.disabled = false
+  }
 }
 
 
@@ -23550,26 +23577,37 @@ async function _quoConvert(quoId) {
 
 function renderLogistics(params={}) {
   if(params.view==='do-detail' && params.id) { renderDODetail(params.id, params.justCreated); return }
+  if(params.view==='do-form') { renderDOForm(params); return }
   renderDOList()
 }
 
 async function renderDOList() {
   const t = APP.language==='bm' ? {
-    title:'Delivery Order', noData:'Tiada delivery order lagi', customer:'Pelanggan', driver:'Pemandu', vehicle:'Kenderaan', status:'Status', date:'Tarikh',
+    title:'Delivery Order', noData:'Tiada delivery order lagi', firstCta:'Cipta DO pertama', newDo:'DO Baharu',
+    customer:'Pelanggan', driver:'Pemandu', vehicle:'Kenderaan', status:'Status', date:'Tarikh',
     pending:'Menunggu', inTransit:'Dalam Perjalanan', delivered:'Dihantar', all:'Semua', cancelled:'Dibatalkan'
   } : {
-    title:'Delivery Orders', noData:'No delivery orders yet', customer:'Customer', driver:'Driver', vehicle:'Vehicle', status:'Status', date:'Date',
+    title:'Delivery Orders', noData:'No delivery orders yet', firstCta:'Create your first DO', newDo:'New DO',
+    customer:'Customer', driver:'Driver', vehicle:'Vehicle', status:'Status', date:'Date',
     pending:'Pending', inTransit:'In Transit', delivered:'Delivered', all:'All', cancelled:'Cancelled'
   }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+  <button type="button" class="btn btn-primary btn-sm" onclick="openPage('logistics',{view:'do-form'})"><i class="ti ti-plus"></i> ${t.newDo}</button>
+  </div>
   <div id="do-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="card"><div id="do-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('do-list-wrap')
   const {data, error} = await sb.from('delivery_orders').select('id,do_no,driver_name,vehicle_no,status,created_at,customers(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
-  if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  if(!data || data.length===0) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px;text-align:center">
+      <p style="margin-bottom:16px">${t.noData}</p>
+      <button type="button" class="btn btn-primary" onclick="openPage('logistics',{view:'do-form'})"><i class="ti ti-plus"></i> ${t.firstCta}</button>
+    </div>`
+    return
+  }
   window._doListCache = data
   window._doListT = t
   if(!window._doStatusFilter) window._doStatusFilter = 'all'
@@ -23632,7 +23670,108 @@ function _doRenderListTable() {
   </tr>`).join('')}</tbody></table>`
 }
 
+async function renderDOForm(params={}) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'DO Baharu', back:'Delivery Order', invoice:'Invois (pilihan)', customer:'Pelanggan',
+    address:'Alamat penghantaran', driver:'Nama pemandu', vehicle:'No. kenderaan', notes:'Nota',
+    create:'Cipta DO', cancel:'Batal', pickInv:'-- Pilih invois --', pickCust:'-- Pilih pelanggan --',
+    addressReq:'Alamat penghantaran diperlukan.', loadErr:'Gagal memuat data.'
+  } : {
+    title:'New DO', back:'Delivery Orders', invoice:'Invoice (optional)', customer:'Customer',
+    address:'Delivery address', driver:'Driver name', vehicle:'Vehicle no.', notes:'Notes',
+    create:'Create DO', cancel:'Cancel', pickInv:'-- Select invoice --', pickCust:'-- Select customer --',
+    addressReq:'Delivery address is required.', loadErr:'Failed to load data.'
+  }
+  const preInv = params.invoiceId || params.invoice_id || ''
+  const preCust = params.customerId || params.customer_id || ''
+  const preAddr = (params.address || '').replace(/"/g, '&quot;')
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('logistics',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:640px;padding:20px">
+    <div id="do-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
+    <div class="form-group">
+      <label class="form-label">${t.invoice}</label>
+      <select id="do-invoice" class="form-select" onchange="_doOnInvoicePick()">
+        <option value="">${t.pickInv}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">${t.customer}</label>
+      <select id="do-customer" class="form-select">
+        <option value="">${t.pickCust}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">${t.address} *</label>
+      <textarea id="do-address" class="form-input" rows="2" placeholder="${isBm?'Alamat penuh penghantaran':'Full delivery address'}">${preAddr}</textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${t.driver}</label><input id="do-driver" class="form-input" type="text" autocomplete="off"></div>
+      <div class="form-group"><label class="form-label">${t.vehicle}</label><input id="do-vehicle" class="form-input" type="text" autocomplete="off"></div>
+    </div>
+    <div class="form-group"><label class="form-label">${t.notes}</label><textarea id="do-notes" class="form-input" rows="2"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button type="button" class="btn btn-primary" id="do-create-btn" onclick="_doCreate(document.getElementById('do-invoice').value||null, document.getElementById('do-customer').value||null)"><i class="ti ti-check"></i> ${t.create}</button>
+      <button type="button" class="btn btn-outline" onclick="openPage('logistics',{})">${t.cancel}</button>
+    </div>
+  </div>`
+
+  try {
+    const [{data: invs}, {data: custs}] = await Promise.all([
+      sb.from('invoices').select('id,ref_no,customer_id,customer_name,status').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false}).limit(100),
+      sb.from('customers').select('id,name,address,city,state,postcode').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name').limit(300)
+    ])
+    window._doFormInvs = invs || []
+    window._doFormCusts = custs || []
+    const invSel = document.getElementById('do-invoice')
+    const custSel = document.getElementById('do-customer')
+    if(invSel) {
+      invSel.innerHTML = `<option value="">${t.pickInv}</option>` + (invs||[]).map(i =>
+        `<option value="${i.id}" data-cust="${i.customer_id||''}" ${String(i.id)===String(preInv)?'selected':''}>${(i.ref_no||i.id.slice(0,8))} · ${(i.customer_name||'-')}</option>`
+      ).join('')
+    }
+    if(custSel) {
+      custSel.innerHTML = `<option value="">${t.pickCust}</option>` + (custs||[]).map(c =>
+        `<option value="${c.id}" ${String(c.id)===String(preCust)?'selected':''}>${c.name||'-'}</option>`
+      ).join('')
+    }
+    if(preInv) _doOnInvoicePick()
+    else if(preCust && !preAddr) {
+      const c = (custs||[]).find(x => String(x.id)===String(preCust))
+      if(c) {
+        const addr = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+        const a = document.getElementById('do-address')
+        if(a && !a.value) a.value = addr
+      }
+    }
+  } catch(e) {
+    console.warn('DO form load', e)
+    const errEl = document.getElementById('do-form-err')
+    if(errEl) { errEl.textContent = t.loadErr; errEl.style.display='block' }
+  }
+}
+
+function _doOnInvoicePick() {
+  const invSel = document.getElementById('do-invoice')
+  const custSel = document.getElementById('do-customer')
+  const addrEl = document.getElementById('do-address')
+  if(!invSel || !invSel.value) return
+  const inv = (window._doFormInvs||[]).find(i => String(i.id)===String(invSel.value))
+  if(!inv) return
+  if(custSel && inv.customer_id) custSel.value = inv.customer_id
+  const c = (window._doFormCusts||[]).find(x => String(x.id)===String(inv.customer_id))
+  if(c && addrEl && !addrEl.value.trim()) {
+    addrEl.value = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+  }
+}
+
 async function renderDODetail(id, justCreated) {
+
   const t = APP.language==='bm' ? {
     back:'Delivery Order', customer:'Pelanggan', invoice:'Invois', driverName:'Nama Pemandu', vehicleNo:'No. Kenderaan', deliveryAddress:'Alamat Penghantaran',
     status:'Status', pending:'Menunggu', inTransit:'Dalam Perjalanan', delivered:'Dihantar', notFound:'Delivery order tidak dijumpai.',
