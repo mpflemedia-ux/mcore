@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-db-planner">
+<meta name="nexerp-build" content="2026-08-24-planner-tenant">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1846,6 +1846,7 @@ const LANG = {
 const NAV_ITEMS = [
   { section:'Main' },
   { id:'dashboard',  icon:'ti-layout-dashboard', label_en:'Dashboard',   label_bm:'Papan Pemuka', module:'core' },
+  { id:'planner',    icon:'ti-calendar-event',   label_en:'Planner',     label_bm:'Perancang',    module:'planner' },
   { section:'Operations' },
   { id:'crm',        icon:'ti-users',             label_en:'Customers',   label_bm:'Pelanggan',    module:'crm' },
   { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },
@@ -2039,8 +2040,20 @@ function _resolveTenantPlanCode() {
   return 'free'
 }
 
+/** Paid plans (Starter+) get Planner; Free does not. */
+function _planAllowsPlanner() {
+  try {
+    if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true
+  } catch (e) {}
+  const code = (typeof _resolveTenantPlanCode === 'function') ? _resolveTenantPlanCode() : ''
+  if (code === 'free') return false
+  // starter / business / pro / unlimited / unknown paid
+  return true
+}
+
 function _planAllowsModule(module) {
   if (!module || module === 'core') return true
+  if (module === 'planner') return _planAllowsPlanner()
   // Only platform HOME tenant skips plan gate — not every platform_admin session
   // (admin role still needed for Admin page; MP Workspace plan is unlimited)
   try { if (typeof _isPlatformHomeTenant === 'function' && _isPlatformHomeTenant(APP.tenant)) return true } catch (e) {}
@@ -3221,6 +3234,7 @@ function openPage(page, params={}) {
           } catch(e) {}
         }, 2500);
         break
+      case 'planner':    _safeRender(() => renderPlanner(params)); break
       case 'crm':        _safeRender(() => renderCRM(params)); break
       case 'sales':      _safeRender(() => renderSales(params)); break
       case 'pos':        _safeRender(() => renderPOS(params)); break
@@ -5345,7 +5359,7 @@ function _dbShortcutsHtml(isBm) {
     ...(isPlatformAdmin() ? [{ id:'db-sec-topref', icon:'ti-gift', en:'Top Referral', bm:'Referral Terbaik' }] : []),
     ...(isPlatformAdmin() ? [{ id:'db-sec-devroadmap', icon:'ti-rocket', en:'System Development', bm:'Pembangunan Sistem' }] : []),
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
-    ...(isPlatformAdmin() ? [{ id:'db-sec-planner', icon:'ti-calendar-event', en:'Planner', bm:'Perancang' }] : []),
+    ...((typeof _planAllowsPlanner === 'function' && _planAllowsPlanner()) ? [{ id:'db-sec-planner', icon:'ti-calendar-event', en:'Planner', bm:'Perancang' }] : []),
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
     { id:'db-sec-ai', icon:'ti-sparkles', en:'AI Insight', bm:'AI Insight' },
@@ -5572,15 +5586,15 @@ function renderDashboard() {
     </div>
 
 
-    ${isPlatformAdmin() ? `
-    <!-- SA Planner calendar card -->
+    ${(typeof _planAllowsPlanner === 'function' && _planAllowsPlanner()) ? `
+    <!-- Planner calendar card (paid plans) -->
     <div class="db-card" style="margin-bottom:14px" id="db-sec-planner">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
         <div>
           <div class="db-card-title"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</div>
           <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Janji temu, event & todo':'Appointments, events & todos'}</div>
         </div>
-        <button type="button" class="db-btn" onclick="openPage('admin',{view:'planner'})"><i class="ti ti-arrow-right"></i> ${isBm?'Buka penuh':'Open full'}</button>
+        <button type="button" class="db-btn" onclick="openPage('planner')"><i class="ti ti-arrow-right"></i> ${isBm?'Buka penuh':'Open full'}</button>
       </div>
       <div id="db-planner-body"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>` : ''}
@@ -6281,7 +6295,7 @@ async function loadDashboardData() {
   try { _dbRenderPnLChart() } catch(e) { console.warn('chart pnl', e) }
   try { _dbRenderTopCustomers(thisMonth) } catch(e) { console.warn('top cust', e) }
   try { await _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
-  try { if (typeof isPlatformAdmin === 'function' && isPlatformAdmin() && typeof _dbLoadPlanner === 'function') _dbLoadPlanner() } catch(e) { console.warn('planner', e) }
+  try { if (typeof _planAllowsPlanner === 'function' && _planAllowsPlanner() && typeof _dbLoadPlanner === 'function') _dbLoadPlanner() } catch(e) { console.warn('planner', e) }
   try { _dbLoadPeople() } catch(e) { console.warn('people', e) }
   try { _dbLoadRecentActivity() } catch(e) { console.warn('activity', e) }
   try { _dbLoadAttTracker() } catch(e) { console.warn('att tracker', e) }
@@ -6336,12 +6350,12 @@ function _dbPlannerDateKey(iso) {
 
 async function _dbLoadPlanner() {
   const el = document.getElementById('db-planner-body')
-  if (!el || !isPlatformAdmin() || !APP.user?.id) return
+  if (!el || !_planAllowsPlanner() || !APP.user?.id || !APP.tenant?.id) return
   const isBm = APP.language === 'bm'
   try {
     const { data, error } = await sb.from('platform_activities')
       .select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,notes')
-      .eq('owner_user_id', APP.user.id)
+      .eq('tenant_id', APP.tenant.id)
       .is('deleted_at', null)
       .order('starts_at', { ascending: true, nullsFirst: false })
       .limit(300)
@@ -8976,8 +8990,9 @@ let _rolePermsState = {}
 // ── Platform Admin Planner (personal calendar activities) ───────────────
 window._plannerFilter = window._plannerFilter || { status: 'open', type: '' }
 
-async function renderAdminPlanner() {
-  if (!isPlatformAdmin()) { renderAccessDenied(); return }
+async function renderPlanner() {
+  if (!_planAllowsPlanner()) { renderAccessDenied(); return }
+  if (!APP.tenant || !APP.tenant.id) { renderAccessDenied(); return }
   const isBm = APP.language === 'bm'
   const t = isBm ? {
     title: 'Perancang', sub: 'Janji temu, todo & peringatan anda',
@@ -9010,14 +9025,14 @@ async function renderAdminPlanner() {
   </div>
   <button type="button" class="btn btn-primary" onclick="_plannerOpenForm()"><i class="ti ti-plus"></i> ${t.add}</button>
   </div>
-  ${_adminTabs('planner')}
+  ${(isPlatformAdmin() || isTenantAdmin()) ? _adminTabs('planner') : ''}
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    <select id="pl-filter-status" class="form-input" style="width:auto;min-width:120px" onchange="window._plannerFilter.status=this.value;renderAdminPlanner()">
+    <select id="pl-filter-status" class="form-input" style="width:auto;min-width:120px" onchange="window._plannerFilter.status=this.value;renderPlanner()">
       <option value="open" ${f.status==='open'?'selected':''}>${t.open}</option>
       <option value="done" ${f.status==='done'?'selected':''}>${t.done}</option>
       <option value="all" ${f.status==='all'?'selected':''}>${t.all}</option>
     </select>
-    <select id="pl-filter-type" class="form-input" style="width:auto;min-width:140px" onchange="window._plannerFilter.type=this.value;renderAdminPlanner()">
+    <select id="pl-filter-type" class="form-input" style="width:auto;min-width:140px" onchange="window._plannerFilter.type=this.value;renderPlanner()">
       <option value="">${t.all} types</option>
       <option value="appointment" ${f.type==='appointment'?'selected':''}>${t.appointment}</option>
       <option value="todo" ${f.type==='todo'?'selected':''}>${t.todo}</option>
@@ -9119,8 +9134,8 @@ async function _plannerLoadList(t) {
   const uid = APP.user && APP.user.id
   if (!uid) { wrap.innerHTML = '<div style="padding:24px;color:var(--danger)">No user</div>'; return }
   try {
-    let q = sb.from('platform_activities').select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,related_tenant_id,notes')
-      .eq('owner_user_id', uid).is('deleted_at', null).order('starts_at', { ascending: true, nullsFirst: false })
+    let q = sb.from('platform_activities').select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,related_tenant_id,notes,owner_user_id')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('starts_at', { ascending: true, nullsFirst: false })
     const f = window._plannerFilter || {}
     if (f.status && f.status !== 'all') q = q.eq('status', f.status)
     if (f.type) q = q.eq('activity_type', f.type)
@@ -9178,6 +9193,10 @@ function _plannerCloseForm() {
 async function _plannerOpenForm(id) {
   const isBm = APP.language === 'bm'
   document.getElementById('pl-id').value = id || ''
+  try {
+    const tenantWrap = document.getElementById('pl-tenant') && document.getElementById('pl-tenant').closest('.form-group')
+    if (tenantWrap) tenantWrap.style.display = isPlatformAdmin() ? '' : 'none'
+  } catch (e) {}
   document.getElementById('pl-title').value = ''
   document.getElementById('pl-type').value = 'todo'
   document.getElementById('pl-tenant').value = ''
@@ -9191,7 +9210,7 @@ async function _plannerOpenForm(id) {
   await _plannerLoadTenantOptions()
   if (id) {
     try {
-      const { data } = await sb.from('platform_activities').select('*').eq('id', id).eq('owner_user_id', APP.user.id).is('deleted_at', null).maybeSingle()
+      const { data } = await sb.from('platform_activities').select('*').eq('id', id).eq('tenant_id', APP.tenant.id).is('deleted_at', null).maybeSingle()
       if (data) {
         document.getElementById('pl-title').value = data.title || ''
         document.getElementById('pl-type').value = data.activity_type || 'todo'
@@ -9214,9 +9233,10 @@ async function _plannerSave() {
   const id = document.getElementById('pl-id').value || null
   const payload = {
     owner_user_id: APP.user.id,
+    tenant_id: APP.tenant.id,
     title,
     activity_type: document.getElementById('pl-type').value || 'todo',
-    related_tenant_id: document.getElementById('pl-tenant').value || null,
+    related_tenant_id: (isPlatformAdmin() && document.getElementById('pl-tenant')) ? (document.getElementById('pl-tenant').value || null) : null,
     starts_at: _plannerFromLocalInput(document.getElementById('pl-start').value),
     ends_at: _plannerFromLocalInput(document.getElementById('pl-end').value),
     due_at: _plannerFromLocalInput(document.getElementById('pl-due').value),
@@ -9229,7 +9249,7 @@ async function _plannerSave() {
   try {
     let error
     if (id) {
-      const r = await sb.from('platform_activities').update(payload).eq('id', id).eq('owner_user_id', APP.user.id)
+      const r = await sb.from('platform_activities').update(payload).eq('id', id).eq('tenant_id', APP.tenant.id)
       error = r.error
     } else {
       payload.status = 'open'
@@ -9239,7 +9259,7 @@ async function _plannerSave() {
     if (error) throw error
     showToast(isBm ? 'Aktiviti disimpan' : 'Activity saved', 'success')
     _plannerCloseForm()
-    renderAdminPlanner()
+    renderPlanner()
   } catch (e) {
     showToast((isBm ? 'Gagal: ' : 'Failed: ') + (e.message || e), 'error')
   }
@@ -9248,11 +9268,11 @@ async function _plannerSave() {
 async function _plannerComplete(id) {
   const isBm = APP.language === 'bm'
   try {
-    const { error } = await sb.from('platform_activities').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', id).eq('owner_user_id', APP.user.id)
+    const { error } = await sb.from('platform_activities').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
     if (error) throw error
     showToast(isBm ? 'Ditanda selesai' : 'Marked done', 'success')
     try {
-      if (document.getElementById('planner-list')) renderAdminPlanner()
+      if (document.getElementById('planner-list')) renderPlanner()
       else if (typeof _dbLoadPlanner === 'function') _dbLoadPlanner()
     } catch (e2) {}
   } catch (e) { showToast(String(e.message || e), 'error') }
@@ -9262,11 +9282,11 @@ async function _plannerDelete(id) {
   const isBm = APP.language === 'bm'
   if (!confirm(isBm ? 'Padam aktiviti ini?' : 'Delete this activity?')) return
   try {
-    const { error } = await sb.from('platform_activities').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).eq('owner_user_id', APP.user.id)
+    const { error } = await sb.from('platform_activities').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
     if (error) throw error
     showToast(isBm ? 'Dipadam' : 'Deleted', 'success')
     try {
-      if (document.getElementById('planner-list')) renderAdminPlanner()
+      if (document.getElementById('planner-list')) renderPlanner()
       else if (typeof _dbLoadPlanner === 'function') _dbLoadPlanner()
     } catch (e2) {}
   } catch (e) { showToast(String(e.message || e), 'error') }
@@ -9275,11 +9295,11 @@ async function _plannerDelete(id) {
 /** Fire due planner reminders → bell + Telegram (once). */
 async function _plannerCheckReminders() {
   try {
-    if (!isPlatformAdmin() || !APP.user?.id) return
+    if (!_planAllowsPlanner() || !APP.user?.id || !APP.tenant?.id) return
     const now = new Date().toISOString()
     const { data, error } = await sb.from('platform_activities')
-      .select('id,title,activity_type,starts_at,due_at,remind_at,related_tenant_id')
-      .eq('owner_user_id', APP.user.id)
+      .select('id,title,activity_type,starts_at,due_at,remind_at,related_tenant_id,owner_user_id')
+      .eq('tenant_id', APP.tenant.id)
       .eq('status', 'open')
       .is('deleted_at', null)
       .is('reminded_at', null)
@@ -9292,11 +9312,12 @@ async function _plannerCheckReminders() {
       const text = (isBm ? 'M-Core · Peringatan planner' : 'M-Core · Planner reminder') + '\n' + row.title + (when !== '—' ? '\n' + when : '')
       try { _notifPushBell(row.title, when) } catch (e) {}
       try {
-        if (typeof _tgNotifySubject === 'function') await _tgNotifySubject('user', APP.user.id, text)
-        else if (typeof _tgSend === 'function') await _tgSend({ subjectType: 'user', subjectId: APP.user.id, text })
+        const uid = row.owner_user_id || APP.user.id
+        if (typeof _tgNotifySubject === 'function') await _tgNotifySubject('user', uid, text)
+        else if (typeof _tgSend === 'function') await _tgSend({ subjectType: 'user', subjectId: uid, text })
       } catch (e) {}
       try {
-        await sb.from('platform_activities').update({ reminded_at: now, updated_at: now }).eq('id', row.id).eq('owner_user_id', APP.user.id)
+        await sb.from('platform_activities').update({ reminded_at: now, updated_at: now }).eq('id', row.id).eq('tenant_id', APP.tenant.id)
       } catch (e) {}
     }
   } catch (e) { console.warn('planner remind', e) }
@@ -9314,7 +9335,7 @@ function renderAdmin(params={}) {
   if(params.view==='referrals' && isPlatformAdmin()) { renderAdminReferrals(); return }
   if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
   if(params.view==='devroadmap' && isPlatformAdmin()) { renderAdminDevRoadmap(); return }
-  if(params.view==='planner' && isPlatformAdmin()) { renderAdminPlanner(); return }
+  if(params.view==='planner') { renderPlanner(); return }
   renderAdminTeam()
 }
 
@@ -9328,7 +9349,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='devroadmap'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'devroadmap'})"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</button>` : ''}
-    ${platform ? `<button class="btn btn-sm ${active==='planner'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'planner'})"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='planner'?'btn-primary':'btn-outline'}" onclick="openPage('planner')"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</button>` : ''}
   </div>`
 }
 
