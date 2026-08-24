@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-planner-scroll">
+<meta name="nexerp-build" content="2026-08-24-planner-ai-scroll">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9037,6 +9037,67 @@ async function _plannerEnsureMyHolidays() {
   } catch (e) { console.warn('holiday seed', e) }
 }
 
+
+/** AI marketing boost ideas tied to upcoming planner events + tenant products/services. Paid plans with AI quota. */
+async function _plannerAiEventMarketing() {
+  const isBm = APP.language === 'bm'
+  const out = document.getElementById('planner-ai-out')
+  if (!out) return
+  if (!_planAllowsPlanner()) { showToast(isBm ? 'Planner tidak tersedia' : 'Planner not available', 'error'); return }
+  if (typeof _planAllowsAi === 'function' && !_planAllowsAi()) { showToast(isBm ? 'AI tidak termasuk dalam pelan Free' : 'AI not included on Free plan', 'error'); return }
+  if (typeof _guardAiQuota === 'function' && !(await _guardAiQuota())) return
+  out.style.display = 'block'
+  out.innerHTML = `<div style="color:var(--text-3)"><div class="spinner dark" style="display:inline-block;width:14px;height:14px;border-width:2px;vertical-align:middle;margin-right:6px"></div>${isBm ? 'Menganalisis event & produk…' : 'Analysing events & products…'}</div>`
+  try {
+    const now = new Date()
+    const to = new Date(now.getTime() + 60 * 86400000)
+    const [{ data: events }, { data: products }] = await Promise.all([
+      sb.from('platform_activities')
+        .select('title,activity_type,starts_at,due_at,notes')
+        .eq('tenant_id', APP.tenant.id)
+        .is('deleted_at', null)
+        .eq('status', 'open')
+        .in('activity_type', ['event', 'appointment', 'follow_up'])
+        .gte('starts_at', now.toISOString())
+        .lte('starts_at', to.toISOString())
+        .order('starts_at', { ascending: true })
+        .limit(20),
+      sb.from('products')
+        .select('name_en,name_bm,unit_price,category,code')
+        .eq('tenant_id', APP.tenant.id)
+        .is('deleted_at', null)
+        .limit(25)
+    ])
+    const evLines = (events || []).map(e => {
+      const d = e.starts_at || e.due_at || ''
+      return `- ${e.title} (${e.activity_type}) on ${String(d).slice(0, 10)}`
+    }).join('\n') || '(no upcoming events in next 60 days — use public holidays / appointments)'
+    const prodLines = (products || []).slice(0, 15).map(p => {
+      const n = isBm ? (p.name_bm || p.name_en) : (p.name_en || p.name_bm)
+      return `- ${n || p.code || 'item'} @ RM${Number(p.unit_price || 0).toFixed(2)}${p.category ? ' [' + p.category + ']' : ''}`
+    }).join('\n') || '(no products listed yet)'
+    const company = (APP.tenant && (APP.tenant.name || APP.tenant.code)) || 'this business'
+    const context =
+      `Company: ${company} (Malaysia SME / M-Core).\n` +
+      `Upcoming planner events (next 60 days):\n${evLines}\n\n` +
+      `Products / services in catalogue:\n${prodLines}\n\n` +
+      `Task: Propose concrete marketing boost ideas that tie specific products/services to these events ` +
+      `(campaigns, promos, WhatsApp blasts, social posts, timing). Be practical for Malaysia. ` +
+      `Max 8 short bullets. ${isBm ? 'Reply in Bahasa Malaysia (DBP style).' : 'Reply in English.'}`
+    const { data, error } = await _invokeAiProxy({ action: 'marketing_advice', context, language: APP.language })
+    if (error) throw error
+    const text = (data && (data.reply || data.text || data.message || data.result)) || (typeof data === 'string' ? data : '')
+    if (!text || !String(text).trim()) {
+      out.innerHTML = `<div style="color:var(--text-3)">${isBm ? 'Tiada idea dijana. Cuba lagi atau tambah event/produk.' : 'No ideas generated. Try again or add events/products.'}</div>`
+      return
+    }
+    out.innerHTML = `<div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><i class="ti ti-sparkles" style="color:var(--primary)"></i> ${isBm ? 'Idea pemasaran sempena event' : 'Event-tied marketing ideas'}</div><div style="color:var(--text-2)">${_aiEscapeHtml(String(text)).replace(/\\n/g, '<br>')}</div>`
+  } catch (e) {
+    console.warn('planner AI marketing', e)
+    out.innerHTML = `<div style="color:var(--danger)">${isBm ? 'Ralat: ' : 'Error: '}${_aiEscapeHtml(e.message || e)}</div>`
+  }
+}
+
 async function renderPlanner() {
   if (!_planAllowsPlanner()) { renderAccessDenied(); return }
   if (!APP.tenant || !APP.tenant.id) { renderAccessDenied(); return }
@@ -9072,6 +9133,10 @@ async function renderPlanner() {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
   </div>
   <button type="button" class="btn btn-primary" onclick="_plannerOpenForm()"><i class="ti ti-plus"></i> ${t.add}</button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button type="button" class="btn btn-outline" style="flex:1;min-width:160px" onclick="_plannerAiEventMarketing()"><i class="ti ti-sparkles"></i> ${isBm?'AI idea pemasaran':'AI marketing ideas'}</button>
+  </div>
+  <div id="planner-ai-out" class="card" style="display:none;padding:14px;margin-bottom:12px;font-size:13px;line-height:1.5;white-space:pre-wrap"></div>
   </div>
   ${(isPlatformAdmin() || isTenantAdmin()) ? _adminTabs('planner') : ''}
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
@@ -33992,16 +34057,30 @@ function obGoToDashboard() {
 function _scrollTopBtnCheck() {
   const btn = document.getElementById('scroll-top-btn')
   if(!btn) return
-  if((window.scrollY || document.documentElement.scrollTop) > 320) btn.classList.add('visible')
+  const main = document.getElementById('main')
+  const yMain = main ? (main.scrollTop || 0) : 0
+  const yWin = window.scrollY || document.documentElement.scrollTop || 0
+  if (Math.max(yMain, yWin) > 200) btn.classList.add('visible')
   else btn.classList.remove('visible')
 }
 function scrollMainToTop() {
-  window.scrollTo({top:0, behavior:'smooth'})
+  const main = document.getElementById('main')
+  try {
+    if (main && main.scrollHeight > main.clientHeight + 8) {
+      main.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  } catch (e) {}
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }) } catch (e) {}
+  setTimeout(_scrollTopBtnCheck, 400)
 }
 
 // INIT
 async function init() {
   window.addEventListener('scroll', _scrollTopBtnCheck, {passive:true})
+  try {
+    const mainEl = document.getElementById('main')
+    if (mainEl) mainEl.addEventListener('scroll', _scrollTopBtnCheck, { passive: true })
+  } catch (e) {}
 
   // Load saved theme immediately to avoid flash
   const savedTheme = localStorage.getItem('nexerp_theme') || 'light'
