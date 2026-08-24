@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-notif-clear">
+<meta name="nexerp-build" content="2026-08-24-my-holidays">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6384,6 +6384,7 @@ async function _dbLoadPlanner() {
   if (!el || !_planAllowsPlanner() || !APP.user?.id || !APP.tenant?.id) return
   const isBm = APP.language === 'bm'
   try {
+    await _plannerEnsureMyHolidays()
     const { data, error } = await sb.from('platform_activities')
       .select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,notes')
       .eq('tenant_id', APP.tenant.id)
@@ -9021,9 +9022,23 @@ let _rolePermsState = {}
 // ── Platform Admin Planner (personal calendar activities) ───────────────
 window._plannerFilter = window._plannerFilter || { status: 'open', type: '' }
 
+
+/** One-shot seed Malaysia public holidays into this tenant planner (RPC; no-op if already seeded). */
+async function _plannerEnsureMyHolidays() {
+  try {
+    if (!APP.tenant?.id || !_planAllowsPlanner()) return
+    const key = 'mcore_my_ph_2026_' + APP.tenant.id
+    if (localStorage.getItem(key) === '1') return
+    const { error } = await sb.rpc('seed_malaysia_public_holidays_2026', { p_tenant_id: APP.tenant.id })
+    if (!error) localStorage.setItem(key, '1')
+    else console.warn('holiday seed', error.message || error)
+  } catch (e) { console.warn('holiday seed', e) }
+}
+
 async function renderPlanner() {
   if (!_planAllowsPlanner()) { renderAccessDenied(); return }
   if (!APP.tenant || !APP.tenant.id) { renderAccessDenied(); return }
+  try { await _plannerEnsureMyHolidays() } catch (e) {}
   const isBm = APP.language === 'bm'
   const t = isBm ? {
     title: 'Perancang', sub: 'Janji temu, todo & peringatan anda',
