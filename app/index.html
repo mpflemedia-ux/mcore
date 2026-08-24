@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-planner-tenant">
+<meta name="nexerp-build" content="2026-08-24-planner-contrast">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6407,7 +6407,7 @@ function _dbRenderPlannerCard() {
       style="min-height:40px;border-radius:8px;border:1px solid ${sel ? 'var(--primary)' : (overdue ? 'rgba(239,68,68,.35)' : 'transparent')};
       background:${sel ? 'rgba(14,116,144,.15)' : (isToday ? 'rgba(14,116,144,.08)' : 'transparent')};
       padding:4px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px">
-      <span style="font-size:12px;font-weight:${isToday||sel?700:500};color:${overdue?'var(--danger)':'var(--text-1)'}">${d}</span>
+      <span style="font-size:12px;font-weight:${isToday||sel?700:500};color:${overdue?'var(--danger)':'var(--db-text,var(--text))'}">${d}</span>
       <span style="display:flex;gap:2px;min-height:6px">${uniq.map(tp => `<span style="width:5px;height:5px;border-radius:50%;background:${_plannerTypeColor(tp)}"></span>`).join('')}</span>
     </button>`
   }
@@ -6418,7 +6418,7 @@ function _dbRenderPlannerCard() {
     ['todo', 'Todo'],
     ['reminder', isBm ? 'Peringatan' : 'Reminder'],
     ['follow_up', isBm ? 'Susulan' : 'Follow-up']
-  ].map(([k, lab]) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)"><span style="width:8px;height:8px;border-radius:50%;background:${_plannerTypeColor(k)}"></span>${lab}</span>`).join('')
+  ].map(([k, lab]) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--db-text3,var(--text-3))"><span style="width:8px;height:8px;border-radius:50%;background:${_plannerTypeColor(k)}"></span>${lab}</span>`).join('')
 
   // List filter
   let list = openRows.slice()
@@ -6440,8 +6440,8 @@ function _dbRenderPlannerCard() {
     const od = ts && new Date(ts).getTime() < now
     return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
       <div style="min-width:0;flex:1">
-        <div style="font-size:13px;font-weight:600">${_aiEscapeHtml(r.title)}</div>
-        <div style="font-size:11px;color:var(--text-3);margin-top:2px">
+        <div style="font-size:13px;font-weight:600;color:var(--db-text,var(--text))">${_aiEscapeHtml(r.title)}</div>
+        <div style="font-size:11px;color:var(--db-text3,var(--text-3));margin-top:2px">
           <span style="color:${_plannerTypeColor(r.activity_type)}">●</span>
           ${(typeof _plannerTypeLabel === 'function') ? _plannerTypeLabel(r.activity_type, { appointment: isBm?'Janji temu':'Appointment', todo:'Todo', reminder: isBm?'Peringatan':'Reminder', follow_up: isBm?'Susulan':'Follow-up', event: isBm?'Acara':'Event' }) : r.activity_type}
           · ${when}${od ? ` · <span style="color:var(--danger)">${isBm?'Tertunggak':'Overdue'}</span>` : ''}
@@ -6449,15 +6449,15 @@ function _dbRenderPlannerCard() {
       </div>
       <button type="button" class="btn btn-sm btn-outline" onclick="_plannerComplete('${r.id}').then(function(){_dbLoadPlanner()})"><i class="ti ti-check"></i></button>
     </div>`
-  }).join('') : `<div style="font-size:13px;color:var(--text-3);padding:12px 0;text-align:center">${isBm?'Tiada aktiviti':'No activities'}</div>`
+  }).join('') : `<div style="font-size:13px;color:var(--db-text3,var(--text-3));padding:12px 0;text-align:center">${isBm?'Tiada aktiviti':'No activities'}</div>`
 
   el.innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
     <button type="button" class="btn btn-sm btn-outline" onclick="(function(){var p=window._dbPlannerState.ym.split('-');var y=+p[0],m=+p[1]-1;if(m<1){m=12;y--}window._dbPlannerState.ym=y+'-'+String(m).padStart(2,'0');window._dbPlannerState.day=null;_dbRenderPlannerCard()})()"><i class="ti ti-chevron-left"></i></button>
-    <div style="font-weight:600;font-size:14px">${_aiEscapeHtml(monthLabel)}</div>
+    <div style="font-weight:600;font-size:14px;color:var(--db-text,var(--text))">${_aiEscapeHtml(monthLabel)}</div>
     <button type="button" class="btn btn-sm btn-outline" onclick="(function(){var p=window._dbPlannerState.ym.split('-');var y=+p[0],m=+p[1]+1;if(m>12){m=1;y++}window._dbPlannerState.ym=y+'-'+String(m).padStart(2,'0');window._dbPlannerState.day=null;_dbRenderPlannerCard()})()"><i class="ti ti-chevron-right"></i></button>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px;font-size:10px;color:var(--text-3);text-align:center">
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px;font-size:10px;color:var(--db-text3,var(--text-3));text-align:center">
     ${['S','M','T','W','T','F','S'].map(x=>`<div>${x}</div>`).join('')}
   </div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px">${cells}</div>
