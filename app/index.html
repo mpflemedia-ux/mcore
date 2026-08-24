@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-planner-ai-db">
+<meta name="nexerp-build" content="2026-08-24-planner-ai-auto">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6401,6 +6401,28 @@ async function _dbLoadPlanner() {
   }
 }
 
+
+function _dbPlannerAiCacheKey() {
+  const tid = (APP.tenant && APP.tenant.id) ? APP.tenant.id : 'x'
+  const d = new Date()
+  const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+  return 'mcore_db_planner_ai_' + tid + '_' + day
+}
+function _dbPlannerAiLoadCache() {
+  try {
+    const raw = sessionStorage.getItem(_dbPlannerAiCacheKey())
+    if (!raw) return null
+    const o = JSON.parse(raw)
+    return (o && o.html) ? o : null
+  } catch (e) { return null }
+}
+function _dbPlannerAiSaveCache(html) {
+  try {
+    if (!html) return
+    sessionStorage.setItem(_dbPlannerAiCacheKey(), JSON.stringify({ html: html, ts: Date.now() }))
+  } catch (e) {}
+}
+
 function _dbRenderPlannerCard() {
   const el = document.getElementById('db-planner-body')
   if (!el) return
@@ -6515,10 +6537,18 @@ function _dbRenderPlannerCard() {
   <div style="border-top:1px solid var(--border);padding-top:12px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--db-text3,var(--text-3))">${isBm ? 'AI idea pemasaran' : 'AI marketing boost'}</div>
-      <button type="button" id="db-planner-ai-btn" class="btn btn-outline btn-sm" onclick="_dbPlannerAiMarketing()" ${(!_planAllowsAi || !_planAllowsAi()) ? 'disabled title="'+(isBm?'Pelan Free — AI tidak termasuk':'Free plan — AI not included')+'"' : ''}><i class="ti ti-sparkles"></i> ${isBm ? 'Jana' : 'Generate'}</button>
+      <button type="button" id="db-planner-ai-btn" class="btn btn-outline btn-sm" onclick="_dbPlannerAiMarketing()" ${(!_planAllowsAi || !_planAllowsAi()) ? 'disabled title="'+(isBm?'Pelan Free — AI tidak termasuk':'Free plan — AI not included')+'"' : ''}><i class="ti ti-sparkles"></i> ${isBm ? 'Jana semula' : 'Regenerate'}</button>
     </div>
-    <div id="db-planner-ai-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:40px">${isBm ? 'Klik Jana — idea sempena event & produk tenant ini.' : 'Click Generate — ideas tied to this tenant’s events & products.'}</div>
+    <div id="db-planner-ai-out" style="font-size:13px;color:var(--db-text2);line-height:1.5;min-height:40px">${(function(){var c=_dbPlannerAiLoadCache();if(c&&c.html)return c.html;if(typeof _planAllowsAi==='function'&&_planAllowsAi())return isBm?'Menjana idea sempena event & produk…':'Generating ideas from events & products…';return isBm?'AI tidak termasuk dalam pelan Free.':'AI not included on Free plan.';})()}</div>
   </div>`
+  // Auto-generate once per dashboard load if no same-day cache (paid AI plans only)
+  try {
+    const _aiCache = _dbPlannerAiLoadCache()
+    if (!_aiCache && typeof _planAllowsAi === 'function' && _planAllowsAi() && !window._dbPlannerState._aiAutoOnce) {
+      window._dbPlannerState._aiAutoOnce = true
+      setTimeout(function () { try { _dbPlannerAiMarketing() } catch (e) {} }, 500)
+    }
+  } catch (e) {}
 }
 
 
@@ -9160,6 +9190,7 @@ async function _dbPlannerAiMarketing() {
   } else {
     out.innerHTML = '<div style="color:var(--db-text2);line-height:1.5">' + _aiEscapeHtml(res.text).replace(/\n/g, '<br>') + '</div>'
   }
+  try { _dbPlannerAiSaveCache(out.innerHTML) } catch (e) {}
 }
 
 async function renderPlanner() {
