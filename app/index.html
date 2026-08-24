@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-prod-ai-upload">
+<meta name="nexerp-build" content="2026-08-24-prod-form-ai">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20887,12 +20887,12 @@ async function renderProductForm(id=null) {
     addTitle:'Tambah Produk', editTitle:'Edit Produk', back:'Inventori',
     sku:'SKU', name:'Nama Produk *', nameBm:'Nama Produk (BM, pilihan)', price:'Harga Jual (RM) *', cost:'Kos (RM)', stock:'Kuantiti Stok', unit:'Unit',
     category:'Kategori', reorderPoint:'Titik Pesan Semula (pilihan, lalai 5)', barcode:'Kod Bar (pilihan)',
-    save:'Simpan', cancel:'Batal', required:'Nama dan harga jual diperlukan (harga 0 dibenarkan).', uploadImage:'Muat naik gambar'
+    save:'Simpan', cancel:'Batal', required:'Nama dan harga jual diperlukan (harga 0 dibenarkan).', uploadImage:'Muat naik', takePhoto:'Ambil gambar'
   } : {
     addTitle:'Add Product', editTitle:'Edit Product', back:'Inventory',
     sku:'SKU', name:'Product Name *', nameBm:'Product Name (BM, optional)', price:'Sell Price (RM) *', cost:'Cost (RM)', stock:'Stock Quantity', unit:'Unit',
     category:'Category', reorderPoint:'Reorder Point (optional, default 5)', barcode:'Barcode (optional)',
-    save:'Save', cancel:'Cancel', required:'Name and sell price are required (price 0 is allowed).', uploadImage:'Upload image'
+    save:'Save', cancel:'Cancel', required:'Name and sell price are required (price 0 is allowed).', uploadImage:'Upload', takePhoto:'Take photo'
   }
   let prod = { unit:'pcs' }
   let fromAiScan = false
@@ -20912,11 +20912,17 @@ async function renderProductForm(id=null) {
       <img id="pf-image-preview" src="${prod.image_url||''}" style="width:100px;height:100px;border-radius:8px;object-fit:cover;background:var(--bg);border:1px solid var(--border);${prod.image_url?'':'display:none'}">
       <div id="pf-image-placeholder" style="width:100px;height:100px;border-radius:8px;background:var(--bg);border:1px dashed var(--border-2);display:flex;align-items:center;justify-content:center;color:var(--text-3);${prod.image_url?'display:none':''}"><i class="ti ti-photo" style="font-size:32px"></i></div>
       <input type="hidden" id="pf-image-url" value="${prod.image_url||''}">
-      <label class="btn btn-outline btn-sm" style="cursor:pointer">
-        <i class="ti ti-upload"></i> ${t.uploadImage}
-        <input type="file" accept="image/*" id="pf-image-input" onchange="_prodUploadImage(event)" style="display:none">
-      </label>
-      <div id="pf-image-status" style="font-size:11px;color:var(--text-3);text-align:center"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">
+        <label class="btn btn-outline btn-sm" style="cursor:pointer">
+          <i class="ti ti-camera"></i> ${t.takePhoto||(APP.language==='bm'?'Ambil gambar':'Take photo')}
+          <input type="file" accept="image/*" capture="environment" id="pf-image-input-cam" onchange="_prodUploadImage(event)" style="display:none">
+        </label>
+        <label class="btn btn-outline btn-sm" style="cursor:pointer">
+          <i class="ti ti-upload"></i> ${t.uploadImage}
+          <input type="file" accept="image/*" id="pf-image-input" onchange="_prodUploadImage(event)" style="display:none">
+        </label>
+      </div>
+      <div id="pf-image-status" style="font-size:11px;color:var(--text-3);text-align:center;max-width:280px"></div>
     </div>
     <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group"><label class="form-label">${t.sku}</label><input id="pf-sku" type="text" class="form-input" value="${prod.code||''}"></div>
@@ -21036,13 +21042,32 @@ function _prodSquareNormalizeBlob(file, size=500) {
   })
 }
 
+/** Fill empty product-form fields from AI scan result (never overwrite typed values). */
+function _prodApplyAiScanToForm(r) {
+  if (!r || typeof r !== 'object') return
+  function fill(id, val) {
+    const el = document.getElementById(id)
+    if (!el || val == null || val === '') return
+    if (String(el.value || '').trim()) return
+    el.value = String(val)
+  }
+  fill('pf-name', r.product_name_en)
+  fill('pf-name-bm', r.product_name_bm)
+  fill('pf-sku', r.sku_suggestion)
+  if (r.unit_guess) {
+    const u = document.getElementById('pf-unit')
+    if (u && (!u.value || u.value === 'pcs')) u.value = String(r.unit_guess)
+  }
+  if (r.category_guess) fill('pf-category', r.category_guess)
+}
+
 async function _prodUploadImage(event) {
   const file = event.target.files[0]
   if(!file) return
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { uploading:'Memuat naik gambar...', done:'Gambar dimuat naik.', err:'Ralat muat naik gambar: ', badFile:'Sila pilih fail imej.' }
-    : { uploading:'Uploading image...', done:'Image uploaded.', err:'Image upload error: ', badFile:'Please select an image file.' }
+    ? { uploading:'Memuat naik gambar...', ai:'AI menganalisis gambar...', done:'Gambar dimuat naik.', doneAi:'Gambar dimuat naik · medan diisi AI (semak sebelum simpan).', err:'Ralat muat naik gambar: ', badFile:'Sila pilih fail imej.', aiFail:'Gambar dimuat naik. AI gagal kenal pasti: ' }
+    : { uploading:'Uploading image...', ai:'AI analyzing image...', done:'Image uploaded.', doneAi:'Image uploaded · AI filled empty fields (review before save).', err:'Image upload error: ', badFile:'Please select an image file.', aiFail:'Image uploaded. AI could not identify: ' }
   if(!file.type.startsWith('image/')) { showToast(t.badFile, 'warning'); event.target.value=''; return }
 
   const statusEl = document.getElementById('pf-image-status')
@@ -21061,10 +21086,33 @@ async function _prodUploadImage(event) {
     document.getElementById('pf-image-preview').style.display = ''
     document.getElementById('pf-image-placeholder').style.display = 'none'
     if(statusEl) statusEl.textContent = t.done
+
+    // AI product identify on same photo (Add/Edit form) — fill empty fields only
+    const allowAi = (typeof _planAllowsAi === 'function') ? _planAllowsAi() : true
+    if (allowAi && typeof _invokeAiProxy === 'function' && typeof _compressImageToBase64 === 'function') {
+      try {
+        if(statusEl) statusEl.textContent = t.ai
+        const compressed = await _compressImageToBase64(file)
+        const {data: aiData, error: aiErr} = await _invokeAiProxy({
+          action: 'scan_product_image',
+          image_base64: compressed.base64,
+          mime_type: compressed.mimeType || 'image/jpeg'
+        })
+        if (aiErr) throw aiErr
+        if (!aiData || !aiData.success) throw new Error((aiData && aiData.error) || 'Unknown error')
+        try { if (typeof _usageCaptureAi === 'function') _usageCaptureAi() } catch (e) {}
+        _prodApplyAiScanToForm(aiData.data || {})
+        if(statusEl) statusEl.textContent = t.doneAi
+      } catch (aiE) {
+        console.warn('_prodUploadImage AI', aiE)
+        if(statusEl) statusEl.textContent = t.aiFail + (aiE.message || '')
+      }
+    }
   } catch(err) {
     console.error('Product image upload error:', err)
     if(statusEl) statusEl.textContent = t.err + (err.message||'')
   }
+  try { event.target.value = '' } catch (e) {}
 }
 
 async function _prodSave(id) {
