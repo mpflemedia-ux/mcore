@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-planner-ai-auto">
+<meta name="nexerp-build" content="2026-08-24-ob-scroll-next">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -355,7 +355,13 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
   --border:rgba(231,233,235,.10);
   --grid-line:rgba(231,233,235,0.045);
 }
-#onboarding-page{display:none;align-items:center;justify-content:center;width:100%;min-height:100vh;background:linear-gradient(135deg,#1E293B 0%,#0F172A 50%,#1a1060 100%);padding:20px;position:relative}
+#onboarding-page{
+  display:none;align-items:flex-start;justify-content:center;width:100%;
+  height:100%;max-height:100%;min-height:100%;
+  overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  background:linear-gradient(135deg,#1E293B 0%,#0F172A 50%,#1a1060 100%);
+  padding:20px 20px 56px;position:relative;box-sizing:border-box;
+}
 #onboarding-page::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:0;
   background-color:var(--bg);
   background-image:
@@ -365,6 +371,18 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
   background-size:48px 48px, 48px 48px, auto}
 #onboarding-page>*{position:relative;z-index:1}
 #onboarding-page.active{display:flex}
+/* Sticky nav so Continue/Back stay reachable on short mobile screens */
+#onboarding-page .ob-actions{
+  position:sticky;bottom:0;z-index:6;
+  margin-top:20px!important;padding:14px 0 6px;
+  background:linear-gradient(to top, #1E293B 55%, rgba(30,41,59,0));
+  flex-wrap:wrap;
+}
+@media (max-width:480px){
+  #onboarding-page{padding:12px 12px 48px}
+  #onboarding-page .ob-card{padding:20px 16px!important}
+  #onboarding-page .ob-btn{flex:1 1 auto;min-width:120px}
+}
 .ob-wrap{width:100%;max-width:520px}.ob-card{border-radius:16px!important}
 .ob-header{text-align:center;margin-bottom:32px}
 .ob-logo{height:40px;width:auto;object-fit:contain;margin-bottom:18px}
@@ -33767,9 +33785,17 @@ function obShowError(msg) {
   el.classList.add('show')
 }
 
+
+function _obScrollActions() {
+  try {
+    const a = document.querySelector('#ob-step-content .ob-actions')
+    if (a) a.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  } catch (e) {}
+}
 function obSelectEntity(id) {
   OB.data.entity_type = id
   obRenderStep()
+  setTimeout(_obScrollActions, 40)
 }
 
 function obSelectIndustry(id) {
@@ -33780,11 +33806,13 @@ function obSelectIndustry(id) {
   else if(id==='services') OB.data.coa_template = 'service'
   else OB.data.coa_template = 'general'
   obRenderStep()
+  setTimeout(_obScrollActions, 40)
 }
 
 function obSelectCOA(id) {
   OB.data.coa_template = id
   obRenderStep()
+  setTimeout(_obScrollActions, 40)
 }
 
 function obSelectFY(preset) {
@@ -33801,6 +33829,7 @@ function obSelectFY(preset) {
   }
   OB.data.currency = 'MYR'
   obRenderStep()
+  setTimeout(_obScrollActions, 40)
 }
 
 function obRenderSteps() {
@@ -33942,6 +33971,8 @@ function obRenderStep() {
   el.innerHTML = body
   // focus company input
   if(OB.step===1) setTimeout(() => document.getElementById('ob-company')?.focus(), 50)
+  // Keep Continue reachable on mobile (content taller than viewport)
+  if(OB.step >= 1) setTimeout(_obScrollActions, 60)
 }
 
 function obNext() {
