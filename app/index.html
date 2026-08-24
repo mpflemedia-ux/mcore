@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-25-logistics-new-do">
+<meta name="nexerp-build" content="2026-08-25-do-open-from-inv">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23025,7 +23025,7 @@ async function renderInvDetail(id) {
     <button class="btn btn-outline btn-sm" onclick="_invExportEInvoice('${id}')"><i class="ti ti-file-code"></i> e-Invoice JSON</button>
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     <button class="btn btn-outline btn-sm" onclick="_cnOpenForm('${id}')"><i class="ti ti-receipt-refund"></i> ${APP.language==='bm'?'Nota Kredit':'Credit Note'}</button>
-    <button class="btn btn-outline btn-sm" onclick="openPage('logistics',{view:'do-form',invoiceId:'${id}',customerId:'${inv.customer_id||''}',address:${JSON.stringify(custAddr||'')}})"><i class="ti ti-truck-delivery"></i> ${APP.language==='bm'?'Cipta DO':'Create DO'}</button>
+    <button class="btn btn-outline btn-sm" onclick="_doOpenFromInvoice('${id}')"><i class="ti ti-truck-delivery"></i> ${APP.language==='bm'?'Cipta DO':'Create DO'}</button>
     ${canRecordPayment ? `<button class="btn btn-primary btn-sm" onclick="document.getElementById('inv-pay-section')?.scrollIntoView({behavior:'smooth',block:'start'})"><i class="ti ti-cash"></i> ${t.recordPayment}</button>` : ''}
   </div></div>
 
@@ -23668,6 +23668,23 @@ function _doRenderListTable() {
     <td>${d.created_at ? formatDate(d.created_at.slice(0,10)) : '-'}</td>
     <td><span style="color:${statusColor(d.status)};font-weight:600">${statusLabel(d.status)}</span></td>
   </tr>`).join('')}</tbody></table>`
+}
+
+async function _doOpenFromInvoice(invoiceId) {
+  if(!invoiceId) { openPage('logistics',{view:'do-form'}); return }
+  try {
+    const {data: inv} = await sb.from('invoices').select('id,customer_id,customer_name').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
+    let address = ''
+    const custId = inv?.customer_id || ''
+    if(custId) {
+      const {data: c} = await sb.from('customers').select('address,city,state,postcode').eq('id',custId).eq('tenant_id',APP.tenant.id).single()
+      if(c) address = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+    }
+    openPage('logistics', {view:'do-form', invoiceId: invoiceId, customerId: custId, address: address})
+  } catch(e) {
+    console.warn('DO open from invoice', e)
+    openPage('logistics', {view:'do-form', invoiceId: invoiceId})
+  }
 }
 
 async function renderDOForm(params={}) {
