@@ -46,7 +46,7 @@ BEGIN
     SELECT up.id INTO owner
     FROM public.user_profiles up
     WHERE up.tenant_id = tid
-    ORDER BY CASE WHEN lower(coalesce(up.role,'')) IN ('owner','admin','platform_admin') THEN 0 ELSE 1 END, up.created_at NULLS LAST
+    ORDER BY up.id
     LIMIT 1;
 
     IF owner IS NULL THEN
@@ -94,3 +94,6 @@ SELECT public.seed_malaysia_public_holidays_2026(NULL);
 
 COMMENT ON FUNCTION public.seed_malaysia_public_holidays_2026(uuid) IS
   'Seed MY federal public holidays 2026 as planner events; pass tenant_id or NULL=all';
+
+GRANT EXECUTE ON FUNCTION public.seed_malaysia_public_holidays_2026(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.seed_malaysia_public_holidays_2026(uuid) TO service_role;
