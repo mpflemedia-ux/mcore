@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-sticky-header">
+<meta name="nexerp-build" content="2026-08-24-fix-scroll">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -109,11 +109,13 @@ input,select,textarea{font-family:inherit}
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size:48px 48px;
-  background-attachment:local}
+  background-attachment:local;
+  /* scroll lives here — paired with flex:1 1 0 below */
+}
 #main-area{background:var(--bg)}
 #shell.active{background:var(--bg)}
-#shell{display:none;flex:1;overflow:hidden}
-#shell.active{display:flex}
+#shell{display:none;flex:1;min-width:0;min-height:0;overflow:hidden}
+#shell.active{display:flex;height:100%;min-height:0;width:100%;overflow:hidden}
 
 /* SIDEBAR */
 #sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--bg-sidebar);display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.05);overflow:hidden;transition:width var(--transition);z-index:100}
@@ -160,8 +162,8 @@ input,select,textarea{font-family:inherit}
 #sidebar.collapsed .user-info{display:none}
 
 /* MAIN */
-#main-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
-#header{height:var(--header-h);background:var(--bg-card);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;flex-shrink:0;position:sticky;top:0;z-index:90;/* stay visible while #main scrolls / mobile TWA */}
+#main-area{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#header{height:var(--header-h);background:var(--bg-card);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;flex-shrink:0;z-index:90}
 .header-title{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .header-spacer{flex:1}
 .header-search{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;width:220px}
@@ -252,7 +254,7 @@ input,select,textarea{font-family:inherit}
 @media (max-width:400px){
   .tenant-chip{max-width:min(70px,24vw);font-size:9px;padding:3px 6px}
 }
-#main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px}
+#main{flex:1 1 0;min-height:0;height:auto;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px;overscroll-behavior:contain}
 
 /* AUTH */
 .auth-card{background:#22262B;border-radius:var(--radius-lg);border:1px solid rgba(231,233,235,.10);padding:40px;width:100%;max-width:420px;box-shadow:0 24px 48px rgba(0,0,0,.35)}
@@ -869,6 +871,8 @@ html[data-skip-intro="1"] #intro-skip {
 #main-area{
   display:flex;
   flex-direction:column;
+  flex:1;
+  min-width:0;
   min-height:0;
   overflow:hidden;
 }
