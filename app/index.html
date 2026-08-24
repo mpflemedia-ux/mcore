@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-25-do-open-from-inv">
+<meta name="nexerp-build" content="2026-08-25-do-cust-new">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23693,16 +23693,20 @@ async function renderDOForm(params={}) {
     title:'DO Baharu', back:'Delivery Order', invoice:'Invois (pilihan)', customer:'Pelanggan',
     address:'Alamat penghantaran', driver:'Nama pemandu', vehicle:'No. kenderaan', notes:'Nota',
     create:'Cipta DO', cancel:'Batal', pickInv:'-- Pilih invois --', pickCust:'-- Pilih pelanggan --',
-    addressReq:'Alamat penghantaran diperlukan.', loadErr:'Gagal memuat data.'
+    newCust:'+ Pelanggan baharu', newName:'Nama pelanggan baharu', newPhone:'Telefon (pilihan)',
+    addressReq:'Alamat penghantaran diperlukan.', nameReq:'Nama pelanggan diperlukan untuk rekod baharu.',
+    loadErr:'Gagal memuat data.', pickMode:'Pilih sedia ada atau pelanggan baharu'
   } : {
     title:'New DO', back:'Delivery Orders', invoice:'Invoice (optional)', customer:'Customer',
     address:'Delivery address', driver:'Driver name', vehicle:'Vehicle no.', notes:'Notes',
     create:'Create DO', cancel:'Cancel', pickInv:'-- Select invoice --', pickCust:'-- Select customer --',
-    addressReq:'Delivery address is required.', loadErr:'Failed to load data.'
+    newCust:'+ New customer', newName:'New customer name', newPhone:'Phone (optional)',
+    addressReq:'Delivery address is required.', nameReq:'Customer name is required for a new record.',
+    loadErr:'Failed to load data.', pickMode:'Pick existing or add new customer'
   }
   const preInv = params.invoiceId || params.invoice_id || ''
   const preCust = params.customerId || params.customer_id || ''
-  const preAddr = (params.address || '').replace(/"/g, '&quot;')
+  const preAddr = (params.address || '').replace(/</g,'&lt;')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
@@ -23719,9 +23723,21 @@ async function renderDOForm(params={}) {
     </div>
     <div class="form-group">
       <label class="form-label">${t.customer}</label>
-      <select id="do-customer" class="form-select">
+      <select id="do-customer" class="form-select" onchange="_doOnCustomerPick()">
         <option value="">${t.pickCust}</option>
+        <option value="__new__">${t.newCust}</option>
       </select>
+      <div style="font-size:11px;color:var(--text-3);margin-top:4px">${t.pickMode}</div>
+    </div>
+    <div id="do-new-cust-wrap" style="display:none;padding:12px;margin-bottom:12px;border:1px dashed var(--border);border-radius:8px;background:var(--bg)">
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label">${t.newName} *</label>
+        <input id="do-new-name" class="form-input" type="text" autocomplete="organization">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">${t.newPhone}</label>
+        <input id="do-new-phone" class="form-input" type="text" autocomplete="tel">
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">${t.address} *</label>
@@ -23733,7 +23749,7 @@ async function renderDOForm(params={}) {
     </div>
     <div class="form-group"><label class="form-label">${t.notes}</label><textarea id="do-notes" class="form-input" rows="2"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-      <button type="button" class="btn btn-primary" id="do-create-btn" onclick="_doCreate(document.getElementById('do-invoice').value||null, document.getElementById('do-customer').value||null)"><i class="ti ti-check"></i> ${t.create}</button>
+      <button type="button" class="btn btn-primary" id="do-create-btn" onclick="_doCreateSubmit()"><i class="ti ti-check"></i> ${t.create}</button>
       <button type="button" class="btn btn-outline" onclick="openPage('logistics',{})">${t.cancel}</button>
     </div>
   </div>`
@@ -23741,7 +23757,7 @@ async function renderDOForm(params={}) {
   try {
     const [{data: invs}, {data: custs}] = await Promise.all([
       sb.from('invoices').select('id,ref_no,customer_id,customer_name,status').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false}).limit(100),
-      sb.from('customers').select('id,name,address,city,state,postcode').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name').limit(300)
+      sb.from('customers').select('id,name,phone,address,city,state,postcode').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name').limit(500)
     ])
     window._doFormInvs = invs || []
     window._doFormCusts = custs || []
@@ -23749,27 +23765,45 @@ async function renderDOForm(params={}) {
     const custSel = document.getElementById('do-customer')
     if(invSel) {
       invSel.innerHTML = `<option value="">${t.pickInv}</option>` + (invs||[]).map(i =>
-        `<option value="${i.id}" data-cust="${i.customer_id||''}" ${String(i.id)===String(preInv)?'selected':''}>${(i.ref_no||i.id.slice(0,8))} · ${(i.customer_name||'-')}</option>`
+        `<option value="${i.id}" data-cust="${i.customer_id||''}" ${String(i.id)===String(preInv)?'selected':''}>${_aiEscapeHtml((i.ref_no||i.id.slice(0,8))+' · '+(i.customer_name||'-'))}</option>`
       ).join('')
     }
     if(custSel) {
-      custSel.innerHTML = `<option value="">${t.pickCust}</option>` + (custs||[]).map(c =>
-        `<option value="${c.id}" ${String(c.id)===String(preCust)?'selected':''}>${c.name||'-'}</option>`
-      ).join('')
+      let opts = `<option value="">${t.pickCust}</option>` + (custs||[]).map(c =>
+        `<option value="${c.id}" ${String(c.id)===String(preCust)?'selected':''}>${_aiEscapeHtml(c.name||'-')}</option>`
+      ).join('') + `<option value="__new__">${t.newCust}</option>`
+      // If preCust not in list but invoice has name, inject temporary option
+      if(preCust && !(custs||[]).some(c => String(c.id)===String(preCust))) {
+        const inv = (invs||[]).find(i => String(i.id)===String(preInv))
+        const label = (inv && inv.customer_name) || preCust.slice(0,8)
+        opts = `<option value="">${t.pickCust}</option><option value="${preCust}" selected>${_aiEscapeHtml(label)}</option>` + (custs||[]).map(c =>
+          `<option value="${c.id}">${_aiEscapeHtml(c.name||'-')}</option>`
+        ).join('') + `<option value="__new__">${t.newCust}</option>`
+      }
+      custSel.innerHTML = opts
     }
     if(preInv) _doOnInvoicePick()
-    else if(preCust && !preAddr) {
-      const c = (custs||[]).find(x => String(x.id)===String(preCust))
-      if(c) {
-        const addr = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
-        const a = document.getElementById('do-address')
-        if(a && !a.value) a.value = addr
-      }
-    }
+    else if(preCust) _doOnCustomerPick()
+    _doOnCustomerPick()
   } catch(e) {
     console.warn('DO form load', e)
     const errEl = document.getElementById('do-form-err')
     if(errEl) { errEl.textContent = t.loadErr; errEl.style.display='block' }
+  }
+}
+
+function _doOnCustomerPick() {
+  const custSel = document.getElementById('do-customer')
+  const wrap = document.getElementById('do-new-cust-wrap')
+  const addrEl = document.getElementById('do-address')
+  if(!custSel) return
+  const v = custSel.value
+  if(wrap) wrap.style.display = (v === '__new__') ? 'block' : 'none'
+  if(v && v !== '__new__') {
+    const c = (window._doFormCusts||[]).find(x => String(x.id)===String(v))
+    if(c && addrEl && !addrEl.value.trim()) {
+      addrEl.value = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+    }
   }
 }
 
@@ -23780,11 +23814,62 @@ function _doOnInvoicePick() {
   if(!invSel || !invSel.value) return
   const inv = (window._doFormInvs||[]).find(i => String(i.id)===String(invSel.value))
   if(!inv) return
-  if(custSel && inv.customer_id) custSel.value = inv.customer_id
-  const c = (window._doFormCusts||[]).find(x => String(x.id)===String(inv.customer_id))
-  if(c && addrEl && !addrEl.value.trim()) {
-    addrEl.value = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+  if(custSel && inv.customer_id) {
+    // Ensure option exists
+    const has = Array.from(custSel.options).some(o => String(o.value)===String(inv.customer_id))
+    if(!has && inv.customer_id) {
+      const opt = document.createElement('option')
+      opt.value = inv.customer_id
+      opt.textContent = inv.customer_name || inv.customer_id.slice(0,8)
+      custSel.insertBefore(opt, custSel.options[1] || null)
+    }
+    custSel.value = inv.customer_id
   }
+  const c = (window._doFormCusts||[]).find(x => String(x.id)===String(inv.customer_id))
+  if(c && addrEl) {
+    const built = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+    if(built) addrEl.value = built
+  }
+  _doOnCustomerPick()
+}
+
+async function _doCreateSubmit() {
+  const isBm = APP.language==='bm'
+  const errEl = document.getElementById('do-form-err')
+  const invId = document.getElementById('do-invoice')?.value || null
+  let custId = document.getElementById('do-customer')?.value || null
+  if(errEl) errEl.style.display='none'
+
+  if(custId === '__new__') {
+    const name = (document.getElementById('do-new-name')?.value || '').trim()
+    const phone = (document.getElementById('do-new-phone')?.value || '').trim()
+    if(!name) {
+      if(errEl){ errEl.textContent = isBm?'Nama pelanggan diperlukan untuk rekod baharu.':'Customer name is required for a new record.'; errEl.style.display='block' }
+      return
+    }
+    const code = 'C' + Date.now().toString(36).toUpperCase().slice(-6)
+    const addr = (document.getElementById('do-address')?.value || '').trim()
+    const payload = {
+      tenant_id: APP.tenant.id,
+      code,
+      name,
+      phone: phone || null,
+      address: addr || null,
+      type: 'company',
+      is_active: true
+    }
+    const {data: newC, error: cErr} = await sb.from('customers').insert(payload).select('id').single()
+    if(cErr) {
+      if(errEl){ errEl.textContent = 'Error: '+cErr.message; errEl.style.display='block' }
+      return
+    }
+    custId = newC.id
+    try { auditLog('create','customers', custId) } catch(e) {}
+  } else if(!custId) {
+    custId = null
+  }
+
+  await _doCreate(invId, custId)
 }
 
 async function renderDODetail(id, justCreated) {
