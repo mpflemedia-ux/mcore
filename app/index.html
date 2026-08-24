@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-revert-google">
+<meta name="nexerp-build" content="2026-08-24-sa-planner">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5173,6 +5173,7 @@ function showShell() {
     try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
     openPage(localStorage.getItem('nexerp_last_page') || 'dashboard', lastParams)
     setTimeout(() => { try { loadNotifications() } catch(e) {} }, 800)
+    setTimeout(() => { try { if (typeof _plannerCheckReminders === 'function') _plannerCheckReminders() } catch(e) {} }, 1500)
   }
 }
 
@@ -8792,6 +8793,318 @@ let _rolePermsState = {}
 // ═══════════════════════════════════════════════════════════════════════════
 // ADMIN — Tenant team + (platform) client list
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ── Platform Admin Planner (personal calendar activities) ───────────────
+window._plannerFilter = window._plannerFilter || { status: 'open', type: '' }
+
+async function renderAdminPlanner() {
+  if (!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language === 'bm'
+  const t = isBm ? {
+    title: 'Perancang', sub: 'Janji temu, todo & peringatan anda',
+    add: 'Tambah Aktiviti', empty: 'Tiada aktiviti lagi',
+    all: 'Semua', open: 'Aktif', done: 'Selesai',
+    appointment: 'Janji temu', todo: 'Todo', reminder: 'Peringatan', follow_up: 'Susulan',
+    when: 'Bila', client: 'Client', notes: 'Nota', remind: 'Ingatkan',
+    save: 'Simpan', cancel: 'Batal', edit: 'Edit', complete: 'Selesai', del: 'Padam',
+    noClient: '— Tiada —', overdue: 'Tertunggak', upcoming: 'Akan datang',
+    type: 'Jenis', titleLbl: 'Tajuk', start: 'Mula', end: 'Tamat', due: 'Tarikh akhir',
+    needTitle: 'Tajuk diperlukan', saved: 'Aktiviti disimpan', deleted: 'Dipadam',
+    completed: 'Ditanda selesai', loadErr: 'Gagal muat planner (jalankan SQL migration dulu?)'
+  } : {
+    title: 'Planner', sub: 'Your appointments, todos & reminders',
+    add: 'Add Activity', empty: 'No activities yet',
+    all: 'All', open: 'Open', done: 'Done',
+    appointment: 'Appointment', todo: 'Todo', reminder: 'Reminder', follow_up: 'Follow-up',
+    when: 'When', client: 'Client', notes: 'Notes', remind: 'Remind',
+    save: 'Save', cancel: 'Cancel', edit: 'Edit', complete: 'Complete', del: 'Delete',
+    noClient: '— None —', overdue: 'Overdue', upcoming: 'Upcoming',
+    type: 'Type', titleLbl: 'Title', start: 'Start', end: 'End', due: 'Due',
+    needTitle: 'Title required', saved: 'Activity saved', deleted: 'Deleted',
+    completed: 'Marked done', loadErr: 'Failed to load planner (run SQL migration first?)'
+  }
+  const f = window._plannerFilter
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div>
+  <button type="button" class="btn btn-primary" onclick="_plannerOpenForm()"><i class="ti ti-plus"></i> ${t.add}</button>
+  </div>
+  ${_adminTabs('planner')}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    <select id="pl-filter-status" class="form-input" style="width:auto;min-width:120px" onchange="window._plannerFilter.status=this.value;renderAdminPlanner()">
+      <option value="open" ${f.status==='open'?'selected':''}>${t.open}</option>
+      <option value="done" ${f.status==='done'?'selected':''}>${t.done}</option>
+      <option value="all" ${f.status==='all'?'selected':''}>${t.all}</option>
+    </select>
+    <select id="pl-filter-type" class="form-input" style="width:auto;min-width:140px" onchange="window._plannerFilter.type=this.value;renderAdminPlanner()">
+      <option value="">${t.all} types</option>
+      <option value="appointment" ${f.type==='appointment'?'selected':''}>${t.appointment}</option>
+      <option value="todo" ${f.type==='todo'?'selected':''}>${t.todo}</option>
+      <option value="reminder" ${f.type==='reminder'?'selected':''}>${t.reminder}</option>
+      <option value="follow_up" ${f.type==='follow_up'?'selected':''}>${t.follow_up}</option>
+    </select>
+  </div>
+  <div id="planner-list" class="card" style="padding:0;overflow:hidden">
+    <div style="padding:24px;text-align:center;color:var(--text-3)"><div class="spinner dark" style="margin:0 auto"></div></div>
+  </div>
+  <div class="modal-overlay" id="planner-modal">
+    <div class="modal-box" style="max-width:480px">
+      <div class="modal-box-header" id="planner-modal-title"><i class="ti ti-calendar-event"></i> ${t.add}</div>
+      <div class="modal-box-body">
+        <input type="hidden" id="pl-id" value="">
+        <div class="form-group"><label class="form-label">${t.titleLbl} *</label>
+          <input type="text" id="pl-title" class="form-input" maxlength="200"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">${t.type}</label>
+            <select id="pl-type" class="form-input">
+              <option value="appointment">${t.appointment}</option>
+              <option value="todo">${t.todo}</option>
+              <option value="reminder">${t.reminder}</option>
+              <option value="follow_up">${t.follow_up}</option>
+            </select></div>
+          <div class="form-group"><label class="form-label">${t.client}</label>
+            <select id="pl-tenant" class="form-input"><option value="">${t.noClient}</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">${t.start}</label>
+            <input type="datetime-local" id="pl-start" class="form-input"></div>
+          <div class="form-group"><label class="form-label">${t.end}</label>
+            <input type="datetime-local" id="pl-end" class="form-input"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">${t.due}</label>
+            <input type="datetime-local" id="pl-due" class="form-input"></div>
+          <div class="form-group"><label class="form-label">${t.remind}</label>
+            <input type="datetime-local" id="pl-remind" class="form-input"></div>
+        </div>
+        <div class="form-group"><label class="form-label">${t.notes}</label>
+          <textarea id="pl-notes" class="form-input" rows="3" maxlength="2000"></textarea></div>
+      </div>
+      <div class="modal-box-footer">
+        <button type="button" class="btn btn-primary" onclick="_plannerSave()">${t.save}</button>
+        <button type="button" class="btn btn-outline" onclick="_plannerCloseForm()">${t.cancel}</button>
+      </div>
+    </div>
+  </div>`
+  await _plannerLoadList(t)
+  try { _plannerLoadTenantOptions() } catch (e) {}
+}
+
+function _plannerToLocalInput(iso) {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    const pad = n => String(n).padStart(2, '0')
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+  } catch (e) { return '' }
+}
+function _plannerFromLocalInput(val) {
+  if (!val) return null
+  const d = new Date(val)
+  return isNaN(d.getTime()) ? null : d.toISOString()
+}
+function _plannerFmtWhen(row, isBm) {
+  const a = row.starts_at || row.due_at
+  if (!a) return '—'
+  try {
+    return new Date(a).toLocaleString(isBm ? 'ms-MY' : 'en-MY', { dateStyle: 'medium', timeStyle: 'short' })
+  } catch (e) { return String(a).slice(0, 16) }
+}
+function _plannerTypeLabel(type, t) {
+  return ({ appointment: t.appointment, todo: t.todo, reminder: t.reminder, follow_up: t.follow_up })[type] || type
+}
+
+async function _plannerLoadTenantOptions() {
+  const sel = document.getElementById('pl-tenant')
+  if (!sel) return
+  try {
+    const { data } = await sb.from('tenants').select('id,name,code').is('deleted_at', null).order('name').limit(200)
+    const cur = sel.value
+    sel.innerHTML = '<option value="">—</option>' + (data || []).map(x =>
+      `<option value="${x.id}">${_aiEscapeHtml(x.name || x.code || x.id)}</option>`).join('')
+    if (cur) sel.value = cur
+  } catch (e) { console.warn('planner tenants', e) }
+}
+
+async function _plannerLoadList(t) {
+  const isBm = APP.language === 'bm'
+  t = t || (isBm ? { empty: 'Tiada aktiviti', loadErr: 'Gagal muat', edit: 'Edit', complete: 'Selesai', del: 'Padam', overdue: 'Tertunggak', appointment: 'Janji temu', todo: 'Todo', reminder: 'Peringatan', follow_up: 'Susulan' }
+    : { empty: 'No activities', loadErr: 'Load failed', edit: 'Edit', complete: 'Complete', del: 'Delete', overdue: 'Overdue', appointment: 'Appointment', todo: 'Todo', reminder: 'Reminder', follow_up: 'Follow-up' })
+  const wrap = document.getElementById('planner-list')
+  if (!wrap) return
+  const uid = APP.user && APP.user.id
+  if (!uid) { wrap.innerHTML = '<div style="padding:24px;color:var(--danger)">No user</div>'; return }
+  try {
+    let q = sb.from('platform_activities').select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,related_tenant_id,notes,tenants:related_tenant_id(name,code)')
+      .eq('owner_user_id', uid).is('deleted_at', null).order('starts_at', { ascending: true, nullsFirst: false })
+    const f = window._plannerFilter || {}
+    if (f.status && f.status !== 'all') q = q.eq('status', f.status)
+    if (f.type) q = q.eq('activity_type', f.type)
+    const { data, error } = await q.limit(200)
+    if (error) throw error
+    const rows = data || []
+    if (!rows.length) {
+      wrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-3)">${t.empty}</div>`
+      return
+    }
+    const now = Date.now()
+    wrap.innerHTML = `<div style="display:flex;flex-direction:column;divide-y:1px solid var(--border)">` + rows.map(r => {
+      const when = _plannerFmtWhen(r, isBm)
+      const ts = r.starts_at || r.due_at
+      const overdue = r.status === 'open' && ts && new Date(ts).getTime() < now
+      const client = r.tenants ? (r.tenants.name || r.tenants.code) : ''
+      return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:180px">
+          <div style="font-weight:600;font-size:14px">${_aiEscapeHtml(r.title)}</div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:4px">
+            <span class="badge" style="margin-right:6px">${_plannerTypeLabel(r.activity_type, t)}</span>
+            ${when}${client ? ' · ' + _aiEscapeHtml(client) : ''}
+            ${overdue ? ` · <span style="color:var(--danger)">${t.overdue}</span>` : ''}
+          </div>
+          ${r.notes ? `<div style="font-size:12px;color:var(--text-2);margin-top:6px">${_aiEscapeHtml(r.notes).slice(0, 160)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${r.status === 'open' ? `<button type="button" class="btn btn-sm btn-outline" onclick="_plannerComplete('${r.id}')"><i class="ti ti-check"></i> ${t.complete}</button>` : ''}
+          <button type="button" class="btn btn-sm btn-outline" onclick="_plannerOpenForm('${r.id}')"><i class="ti ti-pencil"></i> ${t.edit}</button>
+          <button type="button" class="btn btn-sm btn-outline" style="color:var(--danger)" onclick="_plannerDelete('${r.id}')"><i class="ti ti-trash"></i> ${t.del}</button>
+        </div>
+      </div>`
+    }).join('') + `</div>`
+  } catch (e) {
+    console.warn('planner load', e)
+    wrap.innerHTML = `<div style="padding:24px;color:var(--danger)">${t.loadErr}<br><small>${_aiEscapeHtml(e.message || e)}</small></div>`
+  }
+}
+
+function _plannerCloseForm() {
+  document.getElementById('planner-modal')?.classList.remove('active')
+}
+
+async function _plannerOpenForm(id) {
+  const isBm = APP.language === 'bm'
+  document.getElementById('pl-id').value = id || ''
+  document.getElementById('pl-title').value = ''
+  document.getElementById('pl-type').value = 'todo'
+  document.getElementById('pl-tenant').value = ''
+  document.getElementById('pl-start').value = ''
+  document.getElementById('pl-end').value = ''
+  document.getElementById('pl-due').value = ''
+  document.getElementById('pl-remind').value = ''
+  document.getElementById('pl-notes').value = ''
+  const titleEl = document.getElementById('planner-modal-title')
+  if (titleEl) titleEl.innerHTML = `<i class="ti ti-calendar-event"></i> ${id ? (isBm ? 'Edit Aktiviti' : 'Edit Activity') : (isBm ? 'Tambah Aktiviti' : 'Add Activity')}`
+  await _plannerLoadTenantOptions()
+  if (id) {
+    try {
+      const { data } = await sb.from('platform_activities').select('*').eq('id', id).eq('owner_user_id', APP.user.id).is('deleted_at', null).maybeSingle()
+      if (data) {
+        document.getElementById('pl-title').value = data.title || ''
+        document.getElementById('pl-type').value = data.activity_type || 'todo'
+        document.getElementById('pl-tenant').value = data.related_tenant_id || ''
+        document.getElementById('pl-start').value = _plannerToLocalInput(data.starts_at)
+        document.getElementById('pl-end').value = _plannerToLocalInput(data.ends_at)
+        document.getElementById('pl-due').value = _plannerToLocalInput(data.due_at)
+        document.getElementById('pl-remind').value = _plannerToLocalInput(data.remind_at)
+        document.getElementById('pl-notes').value = data.notes || ''
+      }
+    } catch (e) { console.warn(e) }
+  }
+  document.getElementById('planner-modal')?.classList.add('active')
+}
+
+async function _plannerSave() {
+  const isBm = APP.language === 'bm'
+  const title = (document.getElementById('pl-title').value || '').trim()
+  if (!title) { showToast(isBm ? 'Tajuk diperlukan' : 'Title required', 'warning'); return }
+  const id = document.getElementById('pl-id').value || null
+  const payload = {
+    owner_user_id: APP.user.id,
+    title,
+    activity_type: document.getElementById('pl-type').value || 'todo',
+    related_tenant_id: document.getElementById('pl-tenant').value || null,
+    starts_at: _plannerFromLocalInput(document.getElementById('pl-start').value),
+    ends_at: _plannerFromLocalInput(document.getElementById('pl-end').value),
+    due_at: _plannerFromLocalInput(document.getElementById('pl-due').value),
+    remind_at: _plannerFromLocalInput(document.getElementById('pl-remind').value),
+    notes: (document.getElementById('pl-notes').value || '').trim() || null,
+    updated_at: new Date().toISOString()
+  }
+  // Default due for todo if only remind set
+  if (!payload.starts_at && !payload.due_at && payload.remind_at) payload.due_at = payload.remind_at
+  try {
+    let error
+    if (id) {
+      const r = await sb.from('platform_activities').update(payload).eq('id', id).eq('owner_user_id', APP.user.id)
+      error = r.error
+    } else {
+      payload.status = 'open'
+      const r = await sb.from('platform_activities').insert(payload)
+      error = r.error
+    }
+    if (error) throw error
+    showToast(isBm ? 'Aktiviti disimpan' : 'Activity saved', 'success')
+    _plannerCloseForm()
+    renderAdminPlanner()
+  } catch (e) {
+    showToast((isBm ? 'Gagal: ' : 'Failed: ') + (e.message || e), 'error')
+  }
+}
+
+async function _plannerComplete(id) {
+  const isBm = APP.language === 'bm'
+  try {
+    const { error } = await sb.from('platform_activities').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', id).eq('owner_user_id', APP.user.id)
+    if (error) throw error
+    showToast(isBm ? 'Ditanda selesai' : 'Marked done', 'success')
+    renderAdminPlanner()
+  } catch (e) { showToast(String(e.message || e), 'error') }
+}
+
+async function _plannerDelete(id) {
+  const isBm = APP.language === 'bm'
+  if (!confirm(isBm ? 'Padam aktiviti ini?' : 'Delete this activity?')) return
+  try {
+    const { error } = await sb.from('platform_activities').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).eq('owner_user_id', APP.user.id)
+    if (error) throw error
+    showToast(isBm ? 'Dipadam' : 'Deleted', 'success')
+    renderAdminPlanner()
+  } catch (e) { showToast(String(e.message || e), 'error') }
+}
+
+/** Fire due planner reminders → bell + Telegram (once). */
+async function _plannerCheckReminders() {
+  try {
+    if (!isPlatformAdmin() || !APP.user?.id) return
+    const now = new Date().toISOString()
+    const { data, error } = await sb.from('platform_activities')
+      .select('id,title,activity_type,starts_at,due_at,remind_at,related_tenant_id')
+      .eq('owner_user_id', APP.user.id)
+      .eq('status', 'open')
+      .is('deleted_at', null)
+      .is('reminded_at', null)
+      .lte('remind_at', now)
+      .limit(20)
+    if (error || !data || !data.length) return
+    const isBm = APP.language === 'bm'
+    for (const row of data) {
+      const when = _plannerFmtWhen(row, isBm)
+      const text = (isBm ? 'M-Core · Peringatan planner' : 'M-Core · Planner reminder') + '\n' + row.title + (when !== '—' ? '\n' + when : '')
+      try { _notifPushBell(row.title, when) } catch (e) {}
+      try {
+        if (typeof _tgNotifySubject === 'function') await _tgNotifySubject('user', APP.user.id, text)
+        else if (typeof _tgSend === 'function') await _tgSend({ subjectType: 'user', subjectId: APP.user.id, text })
+      } catch (e) {}
+      try {
+        await sb.from('platform_activities').update({ reminded_at: now, updated_at: now }).eq('id', row.id).eq('owner_user_id', APP.user.id)
+      } catch (e) {}
+    }
+  } catch (e) { console.warn('planner remind', e) }
+}
+
+
 function renderAdmin(params={}) {
   if(!(isTenantAdmin() || isPlatformAdmin())) {
     renderAccessDenied(); return
@@ -8803,6 +9116,7 @@ function renderAdmin(params={}) {
   if(params.view==='referrals' && isPlatformAdmin()) { renderAdminReferrals(); return }
   if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
   if(params.view==='devroadmap' && isPlatformAdmin()) { renderAdminDevRoadmap(); return }
+  if(params.view==='planner' && isPlatformAdmin()) { renderAdminPlanner(); return }
   renderAdminTeam()
 }
 
@@ -8816,6 +9130,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='devroadmap'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'devroadmap'})"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='planner'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'planner'})"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</button>` : ''}
   </div>`
 }
 
