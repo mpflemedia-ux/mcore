@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-event-no-overdue">
+<meta name="nexerp-build" content="2026-08-24-planner-scroll">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6467,7 +6467,6 @@ function _dbRenderPlannerCard() {
     const tb = new Date(b.starts_at || b.due_at || 0).getTime()
     return ta - tb
   })
-  list = list.slice(0, 8)
   const now = Date.now()
   const listHtml = list.length ? list.map(r => {
     const when = (typeof _plannerFmtWhen === 'function') ? _plannerFmtWhen(r, isBm) : (r.starts_at || r.due_at || '—')
@@ -6512,7 +6511,7 @@ function _dbRenderPlannerCard() {
     </select>
     ${st.day ? `<button type="button" class="btn btn-sm btn-outline" onclick="window._dbPlannerState.day=null;_dbRenderPlannerCard()">${isBm?'Semua hari':'All days'}</button>` : ''}
   </div>
-  <div>${listHtml}</div>`
+  <div id="db-planner-list-scroll" style="max-height:360px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">${listHtml}</div>`
 }
 
 
@@ -9217,7 +9216,7 @@ async function _plannerLoadList(t) {
       }
     } catch (e) {}
     const now = Date.now()
-    wrap.innerHTML = `<div style="display:flex;flex-direction:column;divide-y:1px solid var(--border)">` + rows.map(r => {
+    wrap.innerHTML = `<div style="display:flex;flex-direction:column;max-height:min(70vh,560px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">` + rows.map(r => {
       const when = _plannerFmtWhen(r, isBm)
       const overdue = _plannerIsOverdue(r)
       const pastEvent = r.activity_type === 'event' && r.status === 'open' && (r.starts_at || r.due_at) && new Date(r.starts_at || r.due_at).getTime() < now
