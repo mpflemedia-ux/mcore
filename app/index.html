@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-24-suspend-auth-lock">
+<<meta name="nexerp-build" content="2026-08-25-suspend-hard-lock">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5061,30 +5061,40 @@ async function loadUserSession(user, opts={}) {
     // once profile.tenants is actually populated from one of the two
     // branches above; is_active===false specifically (not falsy) since a
     // legacy/missing value on this column must not be treated as suspended.
-    const tenantSuspended = !!(profile.tenants && profile.tenants.is_active === false)
-    const userInactive = profile.is_active === false
-    if(tenantSuspended || userInactive) {
+        const _truthyActive = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 't'
+    const tenantSuspended = !!(profile.tenants && profile.tenants.is_active != null && !_truthyActive(profile.tenants.is_active))
+    const userInactive = profile.is_active != null && !_truthyActive(profile.is_active)
+    if (tenantSuspended || userInactive) {
+      window._mcoreAuthBlocked = true
+      try {
+        const obEl = document.getElementById('onboarding-page')
+        if (obEl) {
+          obEl.classList.remove('active')
+          obEl.style.display = 'none'
+        }
+      } catch (e) {}
       try { await sb.auth.signOut() } catch (e) {}
       _sessionLoadPromise = null
       _sessionLoadUserId = null
-      try { if (typeof hideOnboarding === 'function') hideOnboarding() } catch (e) {}
-      const obEl = document.getElementById('onboarding-page')
-      if (obEl) obEl.classList.remove('active')
       showAuthPage()
-      const msgBm = tenantSuspended
-        ? 'Akaun / syarikat anda digantung. Sila hubungi sokongan.'
-        : 'Akaun pengguna anda tidak aktif. Sila hubungi admin.'
-      const msgEn = tenantSuspended
-        ? 'Your account is suspended, contact support.'
-        : 'Your user account is inactive. Contact admin.'
-      const msg = (APP.language==='bm') ? msgBm : msgEn
+      const msg = (APP.language === 'bm')
+        ? (tenantSuspended ? 'Akaun / syarikat anda digantung. Sila hubungi sokongan.' : 'Akaun pengguna anda tidak aktif. Sila hubungi admin.')
+        : (tenantSuspended ? 'Your account is suspended, contact support.' : 'Your user account is inactive. Contact admin.')
       try {
         const errEl = document.getElementById('login-error')
         if (errEl) { errEl.textContent = msg; errEl.classList.add('show') }
       } catch (e) {}
       showToast(msg, 'error')
+      let n = 0
+      const t = setInterval(function () {
+        n++
+        const ob = document.getElementById('onboarding-page')
+        if (ob) { ob.classList.remove('active'); ob.style.display = 'none' }
+        if (n > 20) clearInterval(t)
+      }, 100)
       return
     }
+    window._mcoreAuthBlocked = false
     if(APP.tenant.id) {
       try { localStorage.setItem('nexerp_pending_tenant_id', APP.tenant.id) } catch(e) {}
     }
@@ -33749,7 +33759,10 @@ const OB_COA_TEMPLATES = [
   { id:'fnb', icon:'ti-tools-kitchen-2', en:'F&B', bm:'F&B', desc_en:'Outlets & daily sales', desc_bm:'Cawangan & jualan harian' },
 ]
 
-function showOnboarding() {
+function showOnboarding() {  if (window._mcoreAuthBlocked) {
+    try { showAuthPage() } catch (e) {}
+    return
+  }
   document.getElementById('auth-page').style.display = 'none'
   document.getElementById('shell').classList.remove('active')
   const obPage = document.getElementById('onboarding-page')
