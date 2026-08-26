@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-26-do-addr-autofill">
+<meta name="nexerp-build" content="2026-08-26-content-planner">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9632,6 +9632,7 @@ function renderAdmin(params={}) {
   if(params.view==='referrals' && isPlatformAdmin()) { renderAdminReferrals(); return }
   if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
   if(params.view==='devroadmap' && isPlatformAdmin()) { renderAdminDevRoadmap(); return }
+  if(params.view==='content-planner' && isPlatformAdmin()) { renderAdminContentPlanner(); return }
   if(params.view==='planner') { renderPlanner(); return }
   renderAdminTeam()
 }
@@ -9646,6 +9647,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='devroadmap'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'devroadmap'})"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='content-planner'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'content-planner'})"><i class="ti ti-brand-tiktok"></i> ${isBm?'Perancang Kandungan':'Content Planner'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='planner'?'btn-primary':'btn-outline'}" onclick="openPage('planner')"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</button>` : ''}
   </div>`
 }
@@ -12049,6 +12051,353 @@ async function doDeleteDevRoadmapItem(itemId) {
   const overlay = document.getElementById('admin-devroadmap-modal-overlay')
   if(overlay) overlay.classList.remove('active')
   await renderAdminDevRoadmap()
+}
+
+// ─── Content Planner (Platform Admin) — TikTok/social content performance ──
+// content_posts: id, platform, title, category
+//   ('demo'|'pain_point'|'comparison'|'seasonal'|'other'), status
+//   ('idea'|'planned'|'posted'), post_url, views, likes, posted_at, notes,
+//   created_at. views/likes/posted_at are NULL until a post actually goes
+//   live — NULL must never be treated as 0 in any average.
+let _adminContentPosts = []
+const _CONTENT_CATEGORIES = ['demo', 'pain_point', 'comparison', 'seasonal', 'other']
+const _CONTENT_STATUSES = ['idea', 'planned', 'posted']
+let _adminContentState = { platform: 'all', category: 'all', status: 'all' }
+
+function _contentCategoryLabels(isBm) {
+  return isBm
+    ? { demo: 'Demo', pain_point: 'Titik Kesakitan', comparison: 'Perbandingan', seasonal: 'Bermusim', other: 'Lain-lain' }
+    : { demo: 'Demo', pain_point: 'Pain Point', comparison: 'Comparison', seasonal: 'Seasonal', other: 'Other' }
+}
+function _contentStatusLabels(isBm) {
+  return isBm ? { idea: 'Idea', planned: 'Dirancang', posted: 'Disiarkan' } : { idea: 'Idea', planned: 'Planned', posted: 'Posted' }
+}
+const _CONTENT_CATEGORY_COLORS = { demo: '#0E7490', pain_point: '#DC2626', comparison: '#D97706', seasonal: '#7C3AED', other: '#64748B' }
+const _CONTENT_STATUS_COLORS = { idea: 'var(--text-3)', planned: 'var(--warning)', posted: 'var(--success)' }
+
+async function renderAdminContentPlanner() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title: 'Perancang Kandungan', sub: 'Jejak & analisa prestasi kandungan TikTok/social',
+    close: 'Tutup', save: 'Simpan', add: '+ Tambah Post'
+  } : {
+    title: 'Content Planner', sub: 'Track & analyze TikTok/social content performance',
+    close: 'Close', save: 'Save', add: '+ Add Post'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('content-planner')}
+  <div id="admin-content-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  <div class="modal-overlay" id="admin-content-modal-overlay">
+    <div class="modal-box" style="max-width:520px">
+      <div class="modal-box-header"><i class="ti ti-brand-tiktok"></i> <span id="admin-content-modal-title">${t.add}</span></div>
+      <div class="modal-box-body" id="admin-content-modal-body"></div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('admin-content-modal-overlay').classList.remove('active')">${t.close}</button>
+        <button type="button" class="btn btn-primary" onclick="doSaveContentPost()">${t.save}</button>
+      </div>
+    </div>
+  </div>`
+
+  const wrap = document.getElementById('admin-content-wrap')
+  const { data, error } = await sb.from('content_posts').select('*').order('created_at', { ascending: true })
+  if(error) {
+    wrap.innerHTML = `<div class="card" style="padding:24px">
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Pastikan jadual content_posts dan RLS platform_admin dah disediakan.'
+        : 'Make sure the content_posts table and platform_admin RLS are set up.'}</p>
+    </div>`
+    return
+  }
+  _adminContentPosts = data || []
+  _adminContentRenderAll()
+}
+
+/** Average views per category, EXCLUDING posts with a NULL views (not-yet-posted
+    idea/planned drafts) — a NULL must never be treated as 0 here. */
+function _adminContentComputeStats(items) {
+  const withViews = items.filter(p => p.views !== null && p.views !== undefined)
+  const totalViews = withViews.reduce((sum, p) => sum + Number(p.views || 0), 0)
+  const avgViewsPerPost = withViews.length ? Math.round(totalViews / withViews.length) : 0
+
+  const categoryStats = _CONTENT_CATEGORIES.map(cat => {
+    const catViews = withViews.filter(p => p.category === cat)
+    const avg = catViews.length ? Math.round(catViews.reduce((s, p) => s + Number(p.views || 0), 0) / catViews.length) : 0
+    return { category: cat, avg, count: catViews.length }
+  })
+  const withData = categoryStats.filter(c => c.count > 0)
+  const best = withData.length ? withData.reduce((a, b) => b.avg > a.avg ? b : a) : null
+
+  return { totalPosts: items.length, totalViews, avgViewsPerPost, categoryStats, bestCategory: best }
+}
+
+function _adminContentStatsHtml(stats) {
+  const isBm = APP.language==='bm'
+  const catLabels = _contentCategoryLabels(isBm)
+  const statBox = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-3)">${label}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${val}</div>
+    </div>`
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+    ${statBox(isBm?'Jumlah Post':'Total Posts', stats.totalPosts)}
+    ${statBox(isBm?'Jumlah Views':'Total Views', stats.totalViews.toLocaleString())}
+    ${statBox(isBm?'Purata Views/Post':'Avg Views/Post', stats.avgViewsPerPost.toLocaleString())}
+    ${statBox(isBm?'Kategori Terbaik':'Best Category', stats.bestCategory ? _aiEscapeHtml(catLabels[stats.bestCategory.category]) + ` (${stats.bestCategory.avg.toLocaleString()})` : (isBm?'Tiada data':'No data yet'))}
+  </div>`
+}
+
+function _adminContentChartRender(stats) {
+  const canvas = document.getElementById('content-planner-chart')
+  if(!canvas || typeof Chart === 'undefined') return
+  window._adminContentChart = window._adminContentChart || null
+  if(window._adminContentChart) { try { window._adminContentChart.destroy() } catch(e) {} }
+  if(typeof Chart.getChart === 'function') { const existing = Chart.getChart(canvas); if(existing) { try { existing.destroy() } catch(e) {} } }
+  const isBm = APP.language==='bm'
+  const catLabels = _contentCategoryLabels(isBm)
+  const tick = _dbChartTickColor()
+  const labels = stats.categoryStats.map(c => catLabels[c.category])
+  const data = stats.categoryStats.map(c => c.avg)
+  const colors = stats.categoryStats.map(c => _CONTENT_CATEGORY_COLORS[c.category])
+  window._adminContentChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: isBm?'Purata Views':'Avg Views', data, backgroundColor: colors, borderRadius: 6, maxBarThickness: 48 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: tick, font: { size: 11 } }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: tick }, grid: { color: 'rgba(148,163,184,.12)' } }
+      }
+    }
+  })
+}
+
+async function _adminContentInsight(stats) {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('content-planner-insight')
+  if(!el) return
+  const catLabels = _contentCategoryLabels(false)
+  const facts = { total_posts: stats.totalPosts, categories: stats.categoryStats.map(c => ({ category: catLabels[c.category], avg_views: c.avg, post_count: c.count })) }
+  const fallback = () => {
+    if(!stats.bestCategory) return isBm ? 'Belum cukup data (views) untuk cadangkan kategori.' : 'Not enough data (views) yet to recommend a category.'
+    const bl = _contentCategoryLabels(isBm)
+    return isBm
+      ? `Kategori "${bl[stats.bestCategory.category]}" catat purata ${stats.bestCategory.avg.toLocaleString()} views seposting (${stats.bestCategory.count} post) — paling tinggi setakat ini. Buat lagi content jenis ni.`
+      : `"${bl[stats.bestCategory.category]}" content averages ${stats.bestCategory.avg.toLocaleString()} views per post (${stats.bestCategory.count} posts) — highest so far. Make more of this type next.`
+  }
+  try {
+    const message = `Write ONE fresh Gen Z paragraph (max 60 words) analyzing this Malaysian SME's TikTok/social content performance data (average views per content category).\n`
+      + `Language: ${isBm?'Bahasa Melayu Malaysia, casual Gen Z':'English, casual Gen Z'}.\n`
+      + `Voice: address as ${isBm?'"anda"':'"you"'} only.\n`
+      + `Recommend ONE specific content category to make next based ONLY on the real numbers given — do not invent categories or numbers not in the data. If there isn't enough data, say so plainly. No labels, no hashtags, no emoji spam, creative & different each time.\n`
+      + `Facts JSON: ${JSON.stringify(facts)}`
+    const { data, error } = await _invokeAiProxy({ action:'chat', message, context:'Platform-internal content marketing performance tracker. Not tenant data.' }, { silent:true })
+    if(error || !data?.success) throw new Error('ai failed')
+    let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
+    if(!reply || reply.length<12) throw new Error('empty')
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'&lt;') + '</div>'
+  } catch(e) {
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + fallback() + '</div>'
+  }
+}
+
+function _adminContentFilterChanged() {
+  _adminContentState.platform = document.getElementById('admin-content-f-platform')?.value || 'all'
+  _adminContentState.category = document.getElementById('admin-content-f-category')?.value || 'all'
+  _adminContentState.status = document.getElementById('admin-content-f-status')?.value || 'all'
+  const host = document.getElementById('content-planner-table-host')
+  if(host) host.innerHTML = _adminContentTableHtml(_adminContentFiltered())
+}
+
+function _adminContentFiltered() {
+  const st = _adminContentState
+  let rows = _adminContentPosts.slice()
+  if(st.platform !== 'all') rows = rows.filter(p => p.platform === st.platform)
+  if(st.category !== 'all') rows = rows.filter(p => p.category === st.category)
+  if(st.status !== 'all') rows = rows.filter(p => p.status === st.status)
+  // posted_at DESC, not-yet-posted (NULL) sorts after everything with a real date
+  rows.sort((a, b) => {
+    const av = a.posted_at ? new Date(a.posted_at).getTime() : -1
+    const bv = b.posted_at ? new Date(b.posted_at).getTime() : -1
+    return bv - av
+  })
+  return rows
+}
+
+function _adminContentTableHtml(rows) {
+  const isBm = APP.language==='bm'
+  const catLabels = _contentCategoryLabels(isBm)
+  const statusLabels = _contentStatusLabels(isBm)
+  const t = isBm
+    ? { title:'Tajuk', category:'Kategori', status:'Status', platform:'Platform', views:'Views', likes:'Likes', posted:'Disiarkan', noData:'Tiada post sepadan.' }
+    : { title:'Title', category:'Category', status:'Status', platform:'Platform', views:'Views', likes:'Likes', posted:'Posted', noData:'No matching posts.' }
+  if(!rows.length) return `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`
+  const badge = (label, color) => `<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${color}">${_aiEscapeHtml(label)}</span>`
+  return `<table><thead><tr>
+    <th>${t.title}</th><th>${t.category}</th><th>${t.status}</th><th>${t.platform}</th><th>${t.views}</th><th>${t.likes}</th><th>${t.posted}</th>
+  </tr></thead><tbody>
+  ${rows.map(p => `<tr style="cursor:pointer" onclick="openContentPostModal('${p.id}')">
+    <td>${_aiEscapeHtml(p.title||'—')}</td>
+    <td>${badge(catLabels[p.category]||p.category||'—', _CONTENT_CATEGORY_COLORS[p.category]||'#64748B')}</td>
+    <td>${badge(statusLabels[p.status]||p.status||'—', _CONTENT_STATUS_COLORS[p.status]||'var(--text-3)')}</td>
+    <td>${_aiEscapeHtml(p.platform||'—')}</td>
+    <td>${p.views!==null && p.views!==undefined ? Number(p.views).toLocaleString() : '—'}</td>
+    <td>${p.likes!==null && p.likes!==undefined ? Number(p.likes).toLocaleString() : '—'}</td>
+    <td style="white-space:nowrap">${p.posted_at ? formatDate(p.posted_at) : '—'}</td>
+  </tr>`).join('')}
+  </tbody></table>`
+}
+
+function _adminContentPlatformOptions() {
+  // Built from the actual distinct platform values on file, not a hardcoded
+  // guess — new platforms added via "+ Add Post" show up here automatically.
+  return Array.from(new Set(_adminContentPosts.map(p => p.platform).filter(Boolean))).sort()
+}
+
+function _adminContentRenderAll() {
+  const wrap = document.getElementById('admin-content-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const catLabels = _contentCategoryLabels(isBm)
+  const statusLabels = _contentStatusLabels(isBm)
+  const t = isBm
+    ? { platform:'Platform', category:'Kategori', status:'Status', all:'Semua', addPost:'+ Tambah Post', chartTitle:'Purata Views ikut Kategori' }
+    : { platform:'Platform', category:'Category', status:'Status', all:'All', addPost:'+ Add Post', chartTitle:'Avg Views by Category' }
+  const items = _adminContentPosts
+  const stats = _adminContentComputeStats(items)
+  const platformOpts = _adminContentPlatformOptions()
+
+  wrap.innerHTML = `
+    ${_adminContentStatsHtml(stats)}
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${t.chartTitle}</div>
+      <div class="db-chart-slot"><canvas id="content-planner-chart"></canvas></div>
+      <div class="db-ai-insight" id="content-planner-insight" style="margin-top:12px">
+        <span class="db-ai-tag">AI</span> <div>${isBm?'Menganalisis…':'Analyzing…'}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">${t.platform}</label>
+        <select id="admin-content-f-platform" class="form-select" onchange="_adminContentFilterChanged()">
+          <option value="all">${t.all}</option>
+          ${platformOpts.map(p => `<option value="${_aiEscapeHtml(p)}" ${_adminContentState.platform===p?'selected':''}>${_aiEscapeHtml(p)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">${t.category}</label>
+        <select id="admin-content-f-category" class="form-select" onchange="_adminContentFilterChanged()">
+          <option value="all">${t.all}</option>
+          ${_CONTENT_CATEGORIES.map(c => `<option value="${c}" ${_adminContentState.category===c?'selected':''}>${_aiEscapeHtml(catLabels[c])}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">${t.status}</label>
+        <select id="admin-content-f-status" class="form-select" onchange="_adminContentFilterChanged()">
+          <option value="all">${t.all}</option>
+          ${_CONTENT_STATUSES.map(s => `<option value="${s}" ${_adminContentState.status===s?'selected':''}>${_aiEscapeHtml(statusLabels[s])}</option>`).join('')}
+        </select>
+      </div>
+      <div style="flex:1"></div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="openContentPostModal(null)">${t.addPost}</button>
+    </div>
+    <div class="card"><div id="content-planner-table-host" style="overflow-x:auto;padding:8px"></div></div>
+  `
+
+  const host = document.getElementById('content-planner-table-host')
+  if(host) host.innerHTML = _adminContentTableHtml(_adminContentFiltered())
+  _adminContentChartRender(stats)
+  _adminContentInsight(stats)
+}
+
+function openContentPostModal(postId) {
+  const isBm = APP.language==='bm'
+  const post = postId ? _adminContentPosts.find(p => String(p.id)===String(postId)) : null
+  const catLabels = _contentCategoryLabels(isBm)
+  const statusLabels = _contentStatusLabels(isBm)
+  const t = isBm
+    ? { edit:'Sunting Post', add:'Tambah Post', title:'Tajuk', platform:'Platform', category:'Kategori', status:'Status',
+        postUrl:'Link Post (pilihan)', views:'Views (kosongkan jika belum siar)', likes:'Likes (pilihan)', postedAt:'Tarikh Disiarkan (pilihan)',
+        notes:'Nota', delete:'Padam Post Ini' }
+    : { edit:'Edit Post', add:'Add Post', title:'Title', platform:'Platform', category:'Category', status:'Status',
+        postUrl:'Post Link (optional)', views:'Views (leave blank if not posted yet)', likes:'Likes (optional)', postedAt:'Posted Date (optional)',
+        notes:'Notes', delete:'Delete This Post' }
+
+  const overlay = document.getElementById('admin-content-modal-overlay')
+  overlay.dataset.postId = post ? post.id : ''
+  document.getElementById('admin-content-modal-title').textContent = post ? t.edit : t.add
+  document.getElementById('admin-content-modal-body').innerHTML = `
+    <div class="form-group"><label class="form-label">${t.title} *</label><input type="text" id="content-post-title" class="form-input" value="${_aiEscapeHtml(post?.title||'')}"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${t.platform}</label><input type="text" id="content-post-platform" class="form-input" list="content-post-platform-list" value="${_aiEscapeHtml(post?.platform||'')}"></div>
+      <div class="form-group"><label class="form-label">${t.category}</label>
+        <select id="content-post-category" class="form-select">
+          ${_CONTENT_CATEGORIES.map(c => `<option value="${c}" ${(post?.category||'demo')===c?'selected':''}>${_aiEscapeHtml(catLabels[c])}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <datalist id="content-post-platform-list">${_adminContentPlatformOptions().map(p=>`<option value="${_aiEscapeHtml(p)}">`).join('')}</datalist>
+    <div class="form-group"><label class="form-label">${t.status}</label>
+      <select id="content-post-status" class="form-select">
+        ${_CONTENT_STATUSES.map(s => `<option value="${s}" ${(post?.status||'idea')===s?'selected':''}>${_aiEscapeHtml(statusLabels[s])}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">${t.postUrl}</label><input type="url" id="content-post-url" class="form-input" placeholder="https://tiktok.com/..." value="${_aiEscapeHtml(post?.post_url||'')}"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">${t.views}</label><input type="number" min="0" id="content-post-views" class="form-input" value="${post && post.views!==null && post.views!==undefined ? post.views : ''}"></div>
+      <div class="form-group"><label class="form-label">${t.likes}</label><input type="number" min="0" id="content-post-likes" class="form-input" value="${post && post.likes!==null && post.likes!==undefined ? post.likes : ''}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">${t.postedAt}</label><input type="date" id="content-post-posted-at" class="form-input" value="${post?.posted_at ? String(post.posted_at).slice(0,10) : ''}"></div>
+    <div class="form-group"><label class="form-label">${t.notes}</label><textarea id="content-post-notes" class="form-input" rows="3">${_aiEscapeHtml(post?.notes||'')}</textarea></div>
+    ${post ? `<button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="doDeleteContentPost('${post.id}')">${t.delete}</button>` : ''}`
+  overlay.classList.add('active')
+}
+
+async function doSaveContentPost() {
+  const isBm = APP.language==='bm'
+  const overlay = document.getElementById('admin-content-modal-overlay')
+  const postId = overlay.dataset.postId || null
+  const title = document.getElementById('content-post-title').value.trim()
+  if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
+  const platform = document.getElementById('content-post-platform').value.trim()
+  const category = document.getElementById('content-post-category').value
+  const status = document.getElementById('content-post-status').value
+  const postUrl = document.getElementById('content-post-url').value.trim() || null
+  const viewsRaw = document.getElementById('content-post-views').value
+  const likesRaw = document.getElementById('content-post-likes').value
+  const postedAtRaw = document.getElementById('content-post-posted-at').value
+  const notes = document.getElementById('content-post-notes').value.trim() || null
+  const payload = {
+    title, platform: platform || null, category, status,
+    post_url: postUrl,
+    views: viewsRaw === '' ? null : Math.max(0, parseInt(viewsRaw, 10) || 0),
+    likes: likesRaw === '' ? null : Math.max(0, parseInt(likesRaw, 10) || 0),
+    posted_at: postedAtRaw || null,
+    notes
+  }
+  const { error } = postId
+    ? await sb.from('content_posts').update(payload).eq('id', postId)
+    : await sb.from('content_posts').insert(payload)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Post disimpan.':'Post saved.', 'success')
+  overlay.classList.remove('active')
+  await renderAdminContentPlanner()
+}
+
+async function doDeleteContentPost(postId) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm?'Padam post ini? Tindakan ni TIDAK BOLEH DIUNDUR.':'Delete this post? This CANNOT be undone.')) return
+  const { error } = await sb.from('content_posts').delete().eq('id', postId)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Post dipadam.':'Post deleted.', 'success')
+  const overlay = document.getElementById('admin-content-modal-overlay')
+  if(overlay) overlay.classList.remove('active')
+  await renderAdminContentPlanner()
 }
 
 async function renderAdminTenantDetail(tenantId) {
