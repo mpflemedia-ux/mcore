@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-26-content-planner">
+<meta name="nexerp-build" content="2026-08-26-content-planner-dashboard-card">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5469,6 +5469,7 @@ function _dbShortcutsHtml(isBm) {
     ...(isPlatformAdmin() ? [{ id:'db-sec-topref', icon:'ti-gift', en:'Top Referral', bm:'Referral Terbaik' }] : []),
     ...(isPlatformAdmin() ? [{ id:'db-sec-devroadmap', icon:'ti-rocket', en:'System Development', bm:'Pembangunan Sistem' }] : []),
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
+    ...(isPlatformAdmin() ? [{ id:'db-sec-content', icon:'ti-brand-tiktok', en:'Content Planner', bm:'Perancang Kandungan' }] : []),
     ...((typeof _planAllowsPlanner === 'function' && _planAllowsPlanner()) ? [{ id:'db-sec-planner', icon:'ti-calendar-event', en:'Planner', bm:'Perancang' }] : []),
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
@@ -5695,6 +5696,16 @@ function renderDashboard() {
       <div id="db-low-stock"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>
 
+
+    ${isPlatformAdmin() ? `
+    <div class="db-ops-row" style="grid-template-columns:1fr;margin-top:16px;margin-bottom:14px">
+      <div class="db-card db-card-glow" id="db-sec-content">
+        <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-brand-tiktok"></i> ${isBm?'Perancang Kandungan':'Content Planner'}</div>
+        <div id="db-content-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px"></div>
+        <div class="db-chart-slot" style="min-height:160px"><canvas id="db-content-chart"></canvas></div>
+        <div class="db-ai-insight" id="db-ai-content"><span class="db-ai-tag">AI</span> …</div>
+      </div>
+    </div>` : ''}
 
     ${(typeof _planAllowsPlanner === 'function' && _planAllowsPlanner()) ? `
     <!-- Planner calendar card (paid plans) -->
@@ -6359,6 +6370,7 @@ async function loadDashboardData() {
   if (isPlatformAdmin()) {
     try { await _dbRenderTopReferral() } catch(e) { console.warn('top referral', e) }
     try { await _dbRenderDevRoadmap() } catch(e) { console.warn('dev roadmap', e) }
+    try { await _dbRenderContentPlanner() } catch(e) { console.warn('content planner', e) }
   }
 
   // Zone Power + Business Health scores (tenant-scoped, no extra schema)
@@ -7846,6 +7858,19 @@ function _dbInsightFallbackBody(card, ctx, isBm) {
       ? `Setakat ni ${r.completedCount} item siap, ${r.inProgressCount} tengah jalan, ${r.plannedCount} dirancang. ${r.completedThisMonth} selesai bulan ni.`
       : `${r.completedCount} items shipped so far, ${r.inProgressCount} in progress, ${r.plannedCount} planned. ${r.completedThisMonth} completed this month.`
   }
+  if(card === 'content') {
+    const r = ctx.content
+    if(!r) return isBm ? 'Data masih loading…' : 'Data still loading…'
+    if(!r.bestCategory) {
+      return isBm
+        ? `${r.totalPosts} post direkod, tapi belum cukup data (views) untuk cadangkan kategori.`
+        : `${r.totalPosts} posts logged, but not enough data (views) yet to recommend a category.`
+    }
+    const bl = _contentCategoryLabels(isBm)
+    return isBm
+      ? `Kategori "${bl[r.bestCategory.category]}" catat purata ${r.bestCategory.avg.toLocaleString()} views seposting — paling tinggi setakat ini (${r.totalPosts} post, ${r.totalViews.toLocaleString()} views jumlah). Buat lagi content jenis ni.`
+      : `"${bl[r.bestCategory.category]}" content averages ${r.bestCategory.avg.toLocaleString()} views per post — highest so far (${r.totalPosts} posts, ${r.totalViews.toLocaleString()} total views). Make more of this type next.`
+  }
   return isBm ? 'Data masih loading…' : 'Still loading data…'
 }
 
@@ -7940,6 +7965,18 @@ function _dbInsightFacts(card, ctx) {
       existing_modules: ['Accounting','HR & Payroll','POS','Inventory','CRM','Referral Program','Logistics','Purchasing']
     }
   }
+  if(card === 'content') {
+    const r = ctx.content
+    if(!r) return { card: 'content_planner', has_data: false }
+    return {
+      card: 'content_planner',
+      total_posts: r.totalPosts,
+      total_views: r.totalViews,
+      avg_views_per_post: r.avgViewsPerPost,
+      best_category: r.bestCategory ? r.bestCategory.category : null,
+      best_category_avg: r.bestCategory ? r.bestCategory.avg : null
+    }
+  }
   return { card }
 }
 
@@ -7970,7 +8007,15 @@ async function _dbInsightAI(card, ctx, isBm) {
         `- PART 2 (idea): suggest exactly ONE new feature idea this ERP product doesn't have yet, inspired by current real-world ERP/SaaS industry trends (e.g. AI automation, embedded fintech, predictive analytics, workflow automation) — make it relevant to a Malaysian SME ERP context and distinct from the existing_modules list given\n` +
         `Rules: creative & different each time; no corporate fluff; no labels; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
         `Facts JSON: ${JSON.stringify(facts)}`
-      : (card === 'zone' || card === 'health')
+      : card === 'content'
+        ? `Write ONE fresh Gen Z paragraph (max 60 words) for a Malaysian SME's "Content Planner" dashboard card, analyzing their TikTok/social content marketing performance.\n` +
+          `Language: ${lang}.\n` +
+          `Voice: ${voice}\n` +
+          `facts.best_category / facts.best_category_avg are the content category with the highest average views per post (null if not enough data yet — say so plainly, do not invent a category or number).\n` +
+          `Recommend ONE specific content idea/type to make next, grounded ONLY in the real numbers given.\n` +
+          `Rules: creative & different each time; no corporate fluff; no labels; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
+          `Facts JSON: ${JSON.stringify(facts)}`
+        : (card === 'zone' || card === 'health')
         ? `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard "${card === 'zone' ? 'Zone Power' : 'Business Health Radar'}" card.\n` +
           `Language: ${lang}.\n` +
           `Voice: ${voice}\n` +
@@ -8013,7 +8058,8 @@ async function _dbFillCardInsights(ctx) {
     { id: 'db-ai-attendance', key: 'attendance', titleIdx: 1 },
     { id: 'db-ai-topsp', key: 'topsp', titleIdx: 7 },
     { id: 'db-ai-topreferral', key: 'topreferral', titleIdx: 4 },
-    { id: 'db-ai-devroadmap', key: 'devroadmap', titleIdx: 3 }
+    { id: 'db-ai-devroadmap', key: 'devroadmap', titleIdx: 3 },
+    { id: 'db-ai-content', key: 'content', titleIdx: 6 }
   ]
 
   const paint = (bodies) => {
@@ -8949,6 +8995,65 @@ async function _dbRenderDevRoadmap() {
     }
   } catch(e) {
     console.warn('dev roadmap', e)
+  }
+}
+
+/** Dashboard mini-card version of the Content Planner Admin tab — same
+    fetch + single source of truth (_adminContentComputeStats), platform_admin
+    only (gated at call site + HTML render). */
+async function _dbRenderContentPlanner() {
+  const isBm = APP.language === 'bm'
+  try {
+    const canvas = document.getElementById('db-content-chart')
+    const statsEl = document.getElementById('db-content-stats')
+    if(!canvas) return
+
+    const { data, error } = await sb.from('content_posts').select('*').order('created_at', { ascending: true })
+    if(error) {
+      window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, { content: null })
+      return
+    }
+    const items = data || []
+    const stats = _adminContentComputeStats(items)
+    const catLabels = _contentCategoryLabels(isBm)
+
+    if(statsEl) {
+      const box = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:var(--text-3)">${label}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px">${val}</div>
+      </div>`
+      statsEl.innerHTML = box(isBm?'Jumlah Post':'Total Posts', stats.totalPosts)
+        + box(isBm?'Jumlah Views':'Total Views', stats.totalViews.toLocaleString())
+        + box(isBm?'Purata Views':'Avg Views', stats.avgViewsPerPost.toLocaleString())
+        + box(isBm?'Kategori Terbaik':'Best Category', stats.bestCategory ? _aiEscapeHtml(catLabels[stats.bestCategory.category]) : (isBm?'—':'—'))
+    }
+
+    window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
+      content: { totalPosts: stats.totalPosts, totalViews: stats.totalViews, avgViewsPerPost: stats.avgViewsPerPost, bestCategory: stats.bestCategory }
+    })
+
+    if(typeof Chart === 'undefined') return
+    const tick = _dbChartTickColor()
+    window._dbCharts = window._dbCharts || {}
+    _dbDestroy('contentPlanner', canvas)
+    const labels = stats.categoryStats.map(c => catLabels[c.category])
+    const chartData = stats.categoryStats.map(c => c.avg)
+    const colors = stats.categoryStats.map(c => _CONTENT_CATEGORY_COLORS[c.category])
+    window._dbCharts.contentPlanner = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets: [{ data: chartData, backgroundColor: colors, borderRadius: 4, maxBarThickness: 32 }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tick, font:{size:9} }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: tick, font:{size:9} }, grid: { color: 'rgba(148,163,184,.12)' } }
+        }
+      }
+    })
+  } catch(e) {
+    console.warn('content planner card', e)
   }
 }
 
