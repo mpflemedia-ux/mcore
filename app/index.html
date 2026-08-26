@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-26-quota-safe-login">
+<meta name="nexerp-build" content="2026-08-26-do-addr-autofill">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23198,6 +23198,17 @@ async function _doCreate(invoiceId, customerId) {
     }).select('id').single()
     if(error) { if(errEl){errEl.textContent='Error: '+error.message; errEl.style.display='block'} else showToast(error.message,'error'); return }
 
+    // Best-effort: user opted (via the "save this address" checkbox) to
+    // update the customer's on-file address with what was typed here. Never
+    // blocks DO creation — the DO itself is already saved above.
+    try {
+      const saveCb = document.getElementById('do-save-addr')
+      if(saveCb && saveCb.checked && custId) {
+        await sb.from('customers').update({ address: address, city: null, state: null, postcode: null })
+          .eq('id', custId).eq('tenant_id', APP.tenant.id)
+      }
+    } catch(e) { console.warn('DO save address to customer', e) }
+
     showToast(isBm?'Delivery Order dicipta!':'Delivery Order created!', 'success')
     auditLog('create','delivery_orders', data.id)
     openPage('logistics', {view:'do-detail', id:data.id, justCreated:true})
@@ -23726,14 +23737,16 @@ async function renderDOForm(params={}) {
     create:'Cipta DO', cancel:'Batal', pickInv:'-- Pilih invois --', pickCust:'-- Pilih pelanggan --',
     newCust:'+ Pelanggan baharu', newName:'Nama pelanggan baharu', newPhone:'Telefon (pilihan)',
     addressReq:'Alamat penghantaran diperlukan.', nameReq:'Nama pelanggan diperlukan untuk rekod baharu.',
-    loadErr:'Gagal memuat data.', pickMode:'Pilih sedia ada atau pelanggan baharu'
+    loadErr:'Gagal memuat data.', pickMode:'Pilih sedia ada atau pelanggan baharu',
+    saveAddr:'Simpan alamat ini pada rekod pelanggan untuk kegunaan akan datang'
   } : {
     title:'New DO', back:'Delivery Orders', invoice:'Invoice (optional)', customer:'Customer',
     address:'Delivery address', driver:'Driver name', vehicle:'Vehicle no.', notes:'Notes',
     create:'Create DO', cancel:'Cancel', pickInv:'-- Select invoice --', pickCust:'-- Select customer --',
     newCust:'+ New customer', newName:'New customer name', newPhone:'Phone (optional)',
     addressReq:'Delivery address is required.', nameReq:'Customer name is required for a new record.',
-    loadErr:'Failed to load data.', pickMode:'Pick existing or add new customer'
+    loadErr:'Failed to load data.', pickMode:'Pick existing or add new customer',
+    saveAddr:'Save this address to the customer record for future use'
   }
   const preInv = params.invoiceId || params.invoice_id || ''
   const preCust = params.customerId || params.customer_id || ''
@@ -23772,7 +23785,13 @@ async function renderDOForm(params={}) {
     </div>
     <div class="form-group">
       <label class="form-label">${t.address} *</label>
-      <textarea id="do-address" class="form-input" rows="2" placeholder="${isBm?'Alamat penuh penghantaran':'Full delivery address'}">${preAddr}</textarea>
+      <textarea id="do-address" class="form-input" rows="2" placeholder="${isBm?'Alamat penuh penghantaran':'Full delivery address'}" oninput="_doUpdateSaveAddrCheckbox()">${preAddr}</textarea>
+    </div>
+    <div class="form-group" id="do-save-addr-wrap" style="display:none">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:400">
+        <input type="checkbox" id="do-save-addr" style="width:auto">
+        <span>${t.saveAddr}</span>
+      </label>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group"><label class="form-label">${t.driver}</label><input id="do-driver" class="form-input" type="text" autocomplete="off"></div>
@@ -23830,12 +23849,34 @@ function _doOnCustomerPick() {
   if(!custSel) return
   const v = custSel.value
   if(wrap) wrap.style.display = (v === '__new__') ? 'block' : 'none'
+  window._doFormCustOnFileAddr = ''
   if(v && v !== '__new__') {
     const c = (window._doFormCusts||[]).find(x => String(x.id)===String(v))
-    if(c && addrEl && !addrEl.value.trim()) {
-      addrEl.value = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+    if(c) {
+      const built = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+      window._doFormCustOnFileAddr = built
+      if(addrEl && !addrEl.value.trim()) addrEl.value = built
     }
   }
+  _doUpdateSaveAddrCheckbox()
+}
+
+/* Shows/hides the "save this address to the customer record" checkbox —
+   only relevant when an existing customer is attached to the form (a brand
+   new customer already gets its address saved at creation, see
+   _doCreateSubmit). Defaults checked when the typed address differs from
+   what's currently on file for that customer (i.e. there's something new
+   worth saving), left unchecked when it's identical. */
+function _doUpdateSaveAddrCheckbox() {
+  const custSel = document.getElementById('do-customer')
+  const wrap = document.getElementById('do-save-addr-wrap')
+  const cb = document.getElementById('do-save-addr')
+  const addrEl = document.getElementById('do-address')
+  if(!custSel || !wrap || !cb || !addrEl) return
+  const v = custSel.value
+  if(!v || v === '__new__') { wrap.style.display = 'none'; return }
+  wrap.style.display = 'block'
+  cb.checked = addrEl.value.trim() !== (window._doFormCustOnFileAddr||'').trim()
 }
 
 function _doOnInvoicePick() {
