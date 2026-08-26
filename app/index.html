@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-25-do-cust-new">
+<meta name="nexerp-build" content="2026-08-26-quota-safe-login">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1798,8 +1798,39 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
   }
 })();
 
+/* Quota-safe storage for the Supabase auth session. The SDK writes the
+   session (sb-<ref>-auth-token) straight to localStorage internally; on a
+   browser whose localStorage is already near-full from long-term app usage,
+   that raw setItem() throws QuotaExceededError uncaught, which surfaces to
+   the user as a raw DOM exception and blocks login entirely (works in
+   incognito only because incognito starts with empty storage). This wraps
+   localStorage so a failed write purges non-essential keys and retries, and
+   falls back to an in-memory session for this tab if even that isn't enough
+   — login always completes instead of throwing. */
+function _safeAuthStorage() {
+  var mem = {}
+  return {
+    getItem: function (key) {
+      try {
+        var v = localStorage.getItem(key)
+        if (v !== null) return v
+      } catch (e) {}
+      return Object.prototype.hasOwnProperty.call(mem, key) ? mem[key] : null
+    },
+    setItem: function (key, value) {
+      try { localStorage.setItem(key, value); delete mem[key]; return } catch (e1) {}
+      try { _lsPurgeNonEssential(false) } catch (e2) {}
+      try { localStorage.setItem(key, value); delete mem[key]; return } catch (e3) {}
+      mem[key] = value
+    },
+    removeItem: function (key) {
+      try { localStorage.removeItem(key) } catch (e) {}
+      delete mem[key]
+    }
+  }
+}
 const { createClient } = supabase
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implicit', detectSessionInUrl: true } })
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implicit', detectSessionInUrl: true, storage: _safeAuthStorage() } })
 
 
 // GLOBAL STATE
