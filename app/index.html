@@ -15548,6 +15548,7 @@ const DEFAULT_ACCOUNT_MAPPING_KEYS = [
   { key:'eis_payable',       accountType:'liability', en:'EIS Payable',              bm:'EIS Belum Bayar',           required:true  },
   { key:'pcb_payable',       accountType:'liability', en:'PCB Payable',              bm:'PCB Belum Bayar',           required:true  },
   { key:'commission_expense', accountType:'expense',  en:'Commission Expense',       bm:'Perbelanjaan Komisen',      required:false },
+  { key:'employee_advance',   accountType:'asset',    en:'Employee Advance',         bm:'Pendahuluan Pekerja',       required:false },
 ]
 
 /** Free plan gets basic accounting only: Chart of Accounts + Journal Entries.
@@ -27088,6 +27089,7 @@ function renderHR(params={}) {
   if(!hrAdmin) {
     const v = params.view || 'attendance'
     if(v === 'leave') { renderLeave(params); return }
+    if(v === 'advance') { renderAdvance(params); return }
     if(v === 'attendance' || !v) { renderAttendance(params); return }
     if(v === 'my-payslips' || v === 'payroll-history') { renderMyPayslips(params); return }
     if(v === 'payslip' && params.id) { renderPayslipDetail(params.id); return }
@@ -27101,6 +27103,7 @@ function renderHR(params={}) {
   if(params.view==='my-payslips' || params.view==='payroll-history') { renderMyPayslips(params); return }
   if(params.view==='attendance') { renderAttendance(params); return }
   if(params.view==='leave') { renderLeave(params); return }
+  if(params.view==='advance') { renderAdvance(params); return }
   renderEmployeeList()
 }
 
@@ -27124,6 +27127,7 @@ async function renderEmployeeList() {
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'payroll-run'})"><i class="ti ti-cash"></i> ${t.runPayroll}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.attendance}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.leave}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${isBm?'Pendahuluan':'Advance'}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'employee-form'})"><i class="ti ti-plus"></i> ${t.addEmployee}</button>
     </div>
   </div>
@@ -27995,14 +27999,26 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
     return null
   }
   const totalAllowance = Number(calc.allowance_1||0) + Number(calc.allowance_2||0) + Number(calc.allowance_3||0)
-  const totalDeduction = Number(calc.advance||0) + Number(calc.deduction_1||0) + Number(calc.deduction_2||0)
+  // Advance (calc.advance, from Cash Advance/Panjar recovery — see
+  // _sdRowValues) gets its OWN dedicated credit line against Employee
+  // Advance when that account is configured, instead of netting against
+  // Salary Expense: the advance was already booked as an asset (Dr Employee
+  // Advance / Cr Cash) at disbursement time, so recovering it via payroll
+  // must reduce that same asset, not quietly understate the period's true
+  // salary cost. Falls back to the old net-against-Salary-Expense behavior
+  // (folded into totalDeduction) only when no employee_advance account is
+  // configured yet, same "no dedicated account yet" fallback used below for
+  // commission — never drops the amount or posts an unbalanced entry.
+  const advance = Number(calc.advance||0)
+  const employeeAdvanceAcc = advance > 0 ? await _getDefaultAccountId('employee_advance') : null
+  const totalDeduction = Number(calc.deduction_1||0) + Number(calc.deduction_2||0) + (advance > 0 && !employeeAdvanceAcc ? advance : 0)
   // Commission (calc.commission, from Sales Commission — see _sdRowValues) is
   // already baked into calc.net_pay, so it must be balanced by an equal debit
   // somewhere. A dedicated commission_expense account gets its OWN line
   // (cleaner GL); if the tenant hasn't configured one, fold it into Salary
   // Expense instead of dropping it — same "no dedicated account yet, so net
-  // it against Salary Expense" fallback already used above for advance/deduction,
-  // rather than silently posting an unbalanced entry.
+  // it against Salary Expense" fallback used above for advance, rather than
+  // silently posting an unbalanced entry.
   const commission = Number(calc.commission||0)
   const commissionAcc = commission > 0 ? await _getDefaultAccountId('commission_expense') : null
   let totalExpense = Number(calc.basic_salary||0) + totalAllowance + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0) - totalDeduction
@@ -28012,6 +28028,7 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
   const eisTotal = Number(calc.eis_employee||0) + Number(calc.eis_employer||0)
   const lines = [{ account_id: salaryAcc, debit: totalExpense, credit: 0 }]
   if(commission > 0 && commissionAcc) lines.push({ account_id: commissionAcc, debit: commission, credit: 0 })
+  if(advance > 0 && employeeAdvanceAcc) lines.push({ account_id: employeeAdvanceAcc, debit: 0, credit: advance })
   if(calc.net_pay > 0) lines.push({ account_id: cashAcc, debit: 0, credit: calc.net_pay })
   if(epfTotal > 0) lines.push({ account_id: epfAcc, debit: 0, credit: epfTotal })
   if(socsoTotal > 0) lines.push({ account_id: socsoAcc, debit: 0, credit: socsoTotal })
@@ -29129,6 +29146,22 @@ async function renderSalaryDisbursement(month, year) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p><p style="font-size:12px;color:#64748B">${t.runPayrollFirst}</p></div>`
     return
   }
+  // Cash Advance / Panjar picker source: approved advances still owed, for
+  // the employees on this period's payslips — lets the admin pick which
+  // advance (and how much, up to what's still outstanding) to recover this
+  // run instead of guessing a number into the free-text Advance field.
+  window._sdAdvanceSelections = {}
+  window._sdAdvancesByEmployee = {}
+  try {
+    const empIds = [...new Set(data.map(r => r.employee_id).filter(Boolean))]
+    if(empIds.length) {
+      const {data: advRows} = await sb.from('cash_advances').select('id,employee_id,outstanding_amount,disbursed_at')
+        .eq('tenant_id',APP.tenant.id).eq('status','approved').gt('outstanding_amount',0).is('deleted_at',null).in('employee_id', empIds)
+      ;(advRows||[]).forEach(a => {
+        (window._sdAdvancesByEmployee[a.employee_id] = window._sdAdvancesByEmployee[a.employee_id] || []).push(a)
+      })
+    }
+  } catch(e) { console.warn('SD cash advance fetch', e) }
   // Auto-fill statutory from current employee calc when record is empty/stale
   // (user can still edit; Save persists). Keeps SD in sync with Run Payroll rules.
   ;(data||[]).forEach(r => {
@@ -29275,6 +29308,12 @@ async function renderSalaryDisbursement(month, year) {
       <td>
         <div class="pdoc-sd-stack">
           <div class="pdoc-sd-line"><label>${isBm?'Pend.':'Adv.'}</label><span class="print-only pdoc-sd-print-line" id="sd-print-adv-${r.id}">${_sdPrintAmt(r.advance)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" value="${r.advance||0}" oninput="_sdRecalc()"></div>
+          ${(window._sdAdvancesByEmployee[r.employee_id]||[]).length ? `<div class="pdoc-sd-line no-print">
+            <select class="form-select" id="sd-advsel-${r.id}" style="font-size:11px" onchange="_sdAdvancePick('${r.id}')">
+              <option value="">${isBm?'-- Potong Panjar --':'-- Deduct Advance --'}</option>
+              ${(window._sdAdvancesByEmployee[r.employee_id]||[]).map(a=>`<option value="${a.id}" data-outstanding="${a.outstanding_amount}">${formatDate(a.disbursed_at)} · ${formatRM(a.outstanding_amount)}</option>`).join('')}
+            </select>
+          </div>` : ''}
           <div class="pdoc-sd-line">
             <span class="print-only pdoc-sd-print-line" id="sd-print-dtype1-${r.id}">${Number(r.deduction_1)>0?_sdPrintType(SD_DEDUCTION_TYPES,r.deduction_type_1,r.deduction_1)+': <strong>'+_sdPrintAmt(r.deduction_1)+'</strong>':''}</span>
             <select class="form-select no-print" id="sd-dtype1-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select>
@@ -29509,6 +29548,24 @@ function _sdRowValues(r) {
   return { epf_employee, socso_employee, eis_employee, pcb, zakat, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, commission, net_pay }
 }
 
+// Picking an advance from the Cash Advance/Panjar dropdown fills the
+// existing free-text Advance amount with that advance's outstanding
+// balance (still fully editable afterward for a partial deduction) and
+// arms this row for the recovery posting _sdSaveAll does after saving —
+// see window._sdAdvanceSelections there.
+function _sdAdvancePick(rowId) {
+  const sel = document.getElementById(`sd-advsel-${rowId}`)
+  const advInput = document.getElementById(`sd-adv-${rowId}`)
+  if(!sel || !advInput) return
+  window._sdAdvanceSelections = window._sdAdvanceSelections || {}
+  if(!sel.value) { delete window._sdAdvanceSelections[rowId]; return }
+  const opt = sel.options[sel.selectedIndex]
+  const outstanding = Number(opt?.getAttribute('data-outstanding')||0)
+  advInput.value = outstanding
+  window._sdAdvanceSelections[rowId] = { cashAdvanceId: sel.value, outstanding }
+  _sdRecalc()
+}
+
 function _sdMarkAmended(inputId, originalValue) {
   const el = document.getElementById(inputId)
   if(!el) return
@@ -29602,6 +29659,61 @@ async function _sdSaveAll() {
   }
   if(result) result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} rekod disimpan`:`${okCount} record(s) saved`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
   showToast(isBm?'Penyaluran gaji disimpan!':'Salary disbursement saved!', 'success')
+  await _sdApplyAdvanceSelections()
+}
+
+// Cash Advance/Panjar recovery for rows where the admin picked an advance
+// via the dropdown next to sd-adv (see _sdAdvancePick). Run Payroll already
+// posted this payroll_records row's main journal entry earlier (basic +
+// statutory), before any advance was chosen here — so rather than reopen
+// or repost that entry, this posts a small, separate, self-balancing
+// correcting entry: Dr Cash / Cr Employee Advance for just the recovered
+// amount (less cash actually left the company than that original entry
+// assumed, because part of it was withheld to settle the advance instead).
+// Then reduces the cash_advances row's outstanding_amount by the same
+// amount. Only runs for rows the admin explicitly armed via the picker —
+// never infers a recovery just because the Advance field has a number in
+// it (that number may be an unrelated manual deduction).
+async function _sdApplyAdvanceSelections() {
+  const isBm = APP.language==='bm'
+  const selections = window._sdAdvanceSelections || {}
+  const rowIds = Object.keys(selections)
+  if(!rowIds.length) return
+  const cashAcc = await _getDefaultAccountId('cash')
+  const employeeAdvanceAcc = await _getDefaultAccountId('employee_advance')
+  if(!cashAcc || !employeeAdvanceAcc) {
+    _damToastMissing(['cash','employee_advance'], isBm?'pemulihan panjar':'advance recovery')
+    return
+  }
+  for(const rowId of rowIds) {
+    const sel = selections[rowId]
+    const r = _sdRecords.find(x => String(x.id)===String(rowId))
+    const advInput = document.getElementById(`sd-adv-${rowId}`)
+    const amount = Math.min(Number(advInput?.value)||0, Number(sel.outstanding)||0)
+    if(amount <= 0) { delete window._sdAdvanceSelections[rowId]; continue }
+    try {
+      const posted = await _postJournalEntry({
+        description: `Cash Advance Recovery - ${r?.employees?.name || r?.employee_id || ''}`,
+        entryDate: new Date().toISOString().slice(0,10),
+        entryType: 'auto',
+        lines: [
+          { account_id: cashAcc, debit: amount, credit: 0 },
+          { account_id: employeeAdvanceAcc, debit: 0, credit: amount },
+        ],
+        sourceTable: 'cash_advances', sourceId: sel.cashAdvanceId,
+      })
+      if(!posted) continue // period-locked date already toasted by _postJournalEntry — retry next save
+      delete window._sdAdvanceSelections[rowId]
+      const {data: advRow} = await sb.from('cash_advances').select('outstanding_amount').eq('id', sel.cashAdvanceId).eq('tenant_id', APP.tenant.id).maybeSingle()
+      if(advRow) {
+        const newOutstanding = Math.max(0, Number(advRow.outstanding_amount||0) - amount)
+        await sb.from('cash_advances').update({ outstanding_amount: newOutstanding }).eq('id', sel.cashAdvanceId).eq('tenant_id', APP.tenant.id)
+      }
+    } catch(e) {
+      console.error('Cash advance recovery post failed:', e)
+      showToast((isBm?'Pemulihan panjar gagal: ':'Advance recovery failed: ')+(e.message||e), 'error')
+    }
+  }
 }
 
 async function renderPayslipsPrint(month, year) {
@@ -29799,6 +29911,7 @@ async function renderAttendance(params={}) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.title}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${APP.language==='bm'?'Cuti':'Leave'}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${APP.language==='bm'?'Pendahuluan':'Advance'}</button>
       ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Slip Gaji Saya':'My Payslips'}</button>`:''}
       ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
     </div>`
@@ -31592,6 +31705,7 @@ async function renderLeave(params={}) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${APP.language==='bm'?'Kehadiran':'Attendance'}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.title}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${APP.language==='bm'?'Pendahuluan':'Advance'}</button>
       ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Slip Gaji Saya':'My Payslips'}</button>`:''}
       ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
     </div>`
@@ -31821,6 +31935,251 @@ async function _leaveSetStatus(id, status) {
 }
 async function _leaveApprove(id) { await _leaveSetStatus(id, 'approved') }
 async function _leaveReject(id) { await _leaveSetStatus(id, 'rejected') }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CASH ADVANCE / PANJAR (mirrors Leave Request's apply → approve/reject flow;
+// approval additionally disburses: posts a journal entry (Dr Employee
+// Advance, Cr Cash) and opens outstanding_amount = amount. Recovery against
+// outstanding_amount happens later, per payroll run, via the Salary
+// Disbursement screen — see _sdApplyAdvanceSelections.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function renderAdvance(params={}) {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Pendahuluan Tunai / Panjar', back:'SDM & Gaji', applyTitle:'Mohon Pendahuluan', employee:'Pekerja',
+    amount:'Jumlah (RM)', reason:'Sebab', save:'Hantar Permohonan', selectEmployee:'-- Pilih Pekerja --',
+  } : {
+    title:'Cash Advance / Panjar', back:'HR & Payroll', applyTitle:'Request Advance', employee:'Employee',
+    amount:'Amount (RM)', reason:'Reason', save:'Submit Request', selectEmployee:'-- Select Employee --',
+  }
+
+  const {data: employees} = await sb.from('employees').select('id,name,email')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+
+  const isStaffOnly = !canManageHR()
+  const norm = s => String(s||'').trim().toLowerCase()
+  const myEmail = norm(APP.user.email), myName = norm(APP.user.name)
+  let selfEmp = null
+  let empRows = employees || []
+  try {
+    const {data: mine} = await sb.rpc('my_employee_row')
+    if(mine && mine.length) selfEmp = mine[0]
+  } catch(e) {}
+  if(!selfEmp && empRows.length) {
+    selfEmp = empRows.find(e => myEmail && norm(e.email)===myEmail)
+      || empRows.find(e => myName && norm(e.name)===myName)
+  }
+  if(selfEmp && !empRows.find(e=>e.id===selfEmp.id)) empRows = [selfEmp, ...empRows]
+  const empList = (isStaffOnly && selfEmp) ? [selfEmp] : empRows
+
+  const advTabs = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${isBm?'Kehadiran':'Attendance'}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${isBm?'Cuti':'Leave'}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${t.title}</button>
+      ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${isBm?'Slip Gaji Saya':'My Payslips'}</button>`:''}
+      ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
+    </div>`
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  ${advTabs}
+  <div class="card" style="max-width:700px;padding:20px;margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:12px">${t.applyTitle}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="form-group"><label class="form-label">${t.employee}</label>
+        <select id="adv-employee" class="form-select">
+          <option value="">${t.selectEmployee}</option>
+          ${empList.map(e=>`<option value="${e.id}" ${selfEmp&&e.id===selfEmp.id?'selected':''}>${_aiEscapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${t.amount}</label><input id="adv-amount" type="number" step="0.01" min="0" class="form-input"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.reason}</label><textarea id="adv-reason" class="form-input" rows="2"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="_advSave()"><i class="ti ti-check"></i> ${t.save}</button>
+    </div>
+  </div>
+  <div id="adv-status-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+  <div class="card"><div id="adv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+
+  if(!window._advStatusFilter) window._advStatusFilter = 'all'
+  await _advLoadTable()
+}
+
+async function _advSave() {
+  const isBm = APP.language==='bm'
+  const employeeId = document.getElementById('adv-employee').value
+  const amount = Number(document.getElementById('adv-amount').value)
+  const reason = document.getElementById('adv-reason').value.trim()
+  if(!employeeId) { showToast(isBm?'Sila pilih pekerja':'Please select an employee', 'error'); return }
+  if(!(amount > 0)) { showToast(isBm?'Sila masukkan jumlah yang sah':'Please enter a valid amount', 'error'); return }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    employee_id: employeeId,
+    amount,
+    reason: reason || null,
+    status: 'pending',
+    requested_by: APP.user.id,
+  }
+  const {error} = await sb.from('cash_advances').insert(payload)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('create', 'cash_advances', null)
+  showToast(isBm?'Permohonan pendahuluan dihantar!':'Cash advance request submitted!', 'success')
+  try { _tgActivity('hr', (isBm?'M-Core · Pendahuluan menunggu':'M-Core · Advance pending')+'\n'+formatRM(amount)) } catch(e) {}
+  openPage('hr',{view:'advance'})
+}
+
+async function _advLoadTable() {
+  const isBm = APP.language==='bm'
+  const isAdminOwner = isTenantAdmin()
+  const t = isBm ? {
+    employee:'Pekerja', amount:'Jumlah', outstanding:'Baki Belum Jelas', status:'Status', actionedBy:'Diluluskan/Ditolak Oleh',
+    pending:'Menunggu', approved:'Diluluskan', rejected:'Ditolak', approve:'Lulus', reject:'Tolak',
+    noData:'Tiada permohonan pendahuluan lagi'
+  } : {
+    employee:'Employee', amount:'Amount', outstanding:'Outstanding', status:'Status', actionedBy:'Approved/Rejected By',
+    pending:'Pending', approved:'Approved', rejected:'Rejected', approve:'Approve', reject:'Reject',
+    noData:'No advance requests yet'
+  }
+  const wrap = document.getElementById('adv-table-wrap')
+  const {data, error} = await sb.from('cash_advances').select('id,amount,status,outstanding_amount,approved_by,employee_id,employees(name)')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('created_at',{ascending:false})
+  if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
+  // Staff: only own advance rows
+  let allRows = data || []
+  if(!canManageHR()) {
+    let selfId = null
+    try {
+      const {data: mine} = await sb.rpc('my_employee_row')
+      if(mine && mine.length) selfId = mine[0].id
+    } catch(e) {}
+    if(!selfId && APP.user) {
+      const nm = String(APP.user.name||'').trim().toLowerCase()
+      const hit = allRows.find(r => r.employees && String(r.employees.name||'').trim().toLowerCase()===nm)
+      if(hit) selfId = hit.employee_id
+    }
+    if(selfId) allRows = allRows.filter(r => String(r.employee_id)===String(selfId))
+    else allRows = []
+  }
+  // status filter chips
+  const bar = document.getElementById('adv-status-filters')
+  if(bar) {
+    const counts = { all:0, pending:0, approved:0, rejected:0 }
+    allRows.forEach(a => {
+      counts.all++
+      const s = String(a.status||'pending').toLowerCase()
+      if(counts[s] !== undefined) counts[s]++
+      else counts.pending++
+    })
+    const tabs = [
+      {k:'all', label: isBm?'Semua':'All'},
+      {k:'pending', label:t.pending},
+      {k:'approved', label:t.approved},
+      {k:'rejected', label:t.rejected},
+    ]
+    bar.innerHTML = tabs.map(tab => {
+      const active = (window._advStatusFilter||'all') === tab.k
+      return `<button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="border-radius:20px"
+        onclick="window._advStatusFilter='${tab.k}';_advLoadTable()">
+        ${tab.label} <span style="opacity:.75;font-size:11px">(${counts[tab.k]||0})</span>
+      </button>`
+    }).join('')
+  }
+  const filter = window._advStatusFilter || 'all'
+  const filtered = filter==='all' ? allRows : allRows.filter(a => String(a.status||'pending').toLowerCase()===filter)
+  if(allRows.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
+  if(filtered.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData}</p></div>`; return }
+
+  const approverIds = [...new Set(filtered.map(a=>a.approved_by).filter(Boolean))]
+  const {data: approvers} = approverIds.length
+    ? await sb.from('user_profiles').select('id,full_name').in('id', approverIds)
+    : {data:[]}
+  const approverMap = {}
+  ;(approvers||[]).forEach(p=>{ approverMap[p.id] = p.full_name })
+
+  const statusColor = s => s==='approved'?'var(--success)':s==='rejected'?'var(--danger)':'var(--warning)'
+  const statusLabel = s => s==='approved'?t.approved:s==='rejected'?t.rejected:t.pending
+  wrap.innerHTML = `<table><thead><tr>
+    <th>${t.employee}</th><th style="text-align:right">${t.amount}</th><th style="text-align:right">${t.outstanding}</th><th>${t.status}</th><th>${t.actionedBy}</th><th></th>
+  </tr></thead>
+  <tbody>${filtered.map(a=>`<tr>
+    <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
+    <td style="text-align:right">${formatRM(a.amount)}</td>
+    <td style="text-align:right">${a.status==='approved' ? formatRM(a.outstanding_amount) : '-'}</td>
+    <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
+    <td>${a.approved_by ? _aiEscapeHtml(approverMap[a.approved_by]||'-') : '-'}</td>
+    <td style="white-space:nowrap">${(isAdminOwner && a.status==='pending') ? `
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px;color:var(--success);border-color:var(--success)" onclick="_advApprove('${a.id}')"><i class="ti ti-check"></i> ${t.approve}</button>
+      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_advReject('${a.id}')"><i class="ti ti-x"></i> ${t.reject}</button>
+    ` : ''}</td>
+  </tr>`).join('')}</tbody></table>`
+}
+
+async function _advSetStatus(id, status) {
+  const isBm = APP.language==='bm'
+  const isAdminOwner = isTenantAdmin()
+  if(!isAdminOwner) { showToast(isBm?'Tiada kebenaran':'Not permitted', 'error'); return }
+  let advRow = null
+  try {
+    const { data } = await sb.from('cash_advances').select('id,employee_id,amount,employees(name)').eq('id',id).eq('tenant_id',APP.tenant.id).maybeSingle()
+    advRow = data
+  } catch(e) {}
+  if(!advRow) { showToast('Not found', 'error'); return }
+
+  if(status === 'approved') {
+    // Disburse: post Dr Employee Advance / Cr Cash, then open outstanding_amount.
+    // Missing accounts (or a locked period) must block the approval outright —
+    // status must never flip to 'approved' without the money actually moving.
+    const employeeAdvanceAcc = await _getDefaultAccountId('employee_advance')
+    const cashAcc = await _getDefaultAccountId('cash')
+    if(!employeeAdvanceAcc || !cashAcc) {
+      showToast(isBm
+        ? 'Diluluskan dilangkau: tetapkan akaun lalai (Pendahuluan Pekerja/Tunai) di Tetapan.'
+        : 'Approval skipped: set default accounts (Employee Advance/Cash) in Settings.',
+        'warning')
+      return
+    }
+    let posted = null
+    try {
+      posted = await _postJournalEntry({
+        description: `Cash Advance - ${advRow.employees?.name || advRow.employee_id}`,
+        entryDate: new Date().toISOString().slice(0,10),
+        entryType: 'auto',
+        lines: [
+          { account_id: employeeAdvanceAcc, debit: Number(advRow.amount), credit: 0 },
+          { account_id: cashAcc, debit: 0, credit: Number(advRow.amount) },
+        ],
+        sourceTable: 'cash_advances', sourceId: id,
+      })
+    } catch(e) {
+      showToast('Error: '+(e.message||e), 'error')
+      return
+    }
+    if(!posted) return // period-locked date already toasted by _postJournalEntry
+    const {error} = await sb.from('cash_advances').update({
+      status: 'approved', approved_by: APP.user.id, disbursed_at: new Date().toISOString(), outstanding_amount: Number(advRow.amount)
+    }).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    auditLog('update', 'cash_advances', id)
+    showToast(isBm?'Pendahuluan diluluskan & dikeluarkan!':'Advance approved & disbursed!', 'success')
+    try { await _tgNotifyEmployee(advRow.employee_id, (isBm?'M-Core · Pendahuluan diluluskan':'M-Core · Advance approved')+'\n'+formatRM(advRow.amount)) } catch(e) {}
+  } else {
+    const {error} = await sb.from('cash_advances').update({status, approved_by:APP.user.id}).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) { showToast('Error: '+error.message, 'error'); return }
+    auditLog('update', 'cash_advances', id)
+    showToast(isBm?'Pendahuluan ditolak.':'Advance rejected.', 'success')
+    try { await _tgNotifyEmployee(advRow.employee_id, (isBm?'M-Core · Pendahuluan ditolak':'M-Core · Advance rejected')+'\n'+formatRM(advRow.amount)) } catch(e) {}
+  }
+  try { if(typeof loadNotifications==='function') loadNotifications() } catch(e) {}
+  await _advLoadTable()
+}
+async function _advApprove(id) { await _advSetStatus(id, 'approved') }
+async function _advReject(id) { await _advSetStatus(id, 'rejected') }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POS MODULE
