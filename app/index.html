@@ -13157,10 +13157,9 @@ async function renderSettings(params={}) {
           ? 'Buat pindahan bank ke akaun di bawah, kemudian maklumkan kami dengan kod rujukan anda — kami akan sahkan dalam masa 1 hari bekerja.'
           : 'Make a bank transfer to the account below, then notify us with your reference code — we will confirm within 1 business day.'}</p>
         <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin:12px 0;font-size:13px;line-height:1.8">
-          <div style="color:var(--warning);font-weight:600;font-size:11px;margin-bottom:4px">TODO: Mike to fill in real bank details</div>
-          <div>${isBm?'Bank':'Bank'}: <strong>—</strong></div>
-          <div>${isBm?'No. Akaun':'Account No.'}: <strong>—</strong></div>
-          <div>${isBm?'Nama Akaun':'Account Name'}: <strong>Phion Sdn Bhd</strong></div>
+          <div>${isBm?'Bank':'Bank'}: <strong>GX Bank Berhad</strong></div>
+          <div>${isBm?'No. Akaun':'Account No.'}: <strong>8888 0002 980 34</strong></div>
+          <div>${isBm?'Nama Akaun':'Account Name'}: <strong>Ahmad Muhaimin Putera</strong></div>
         </div>
         <div style="background:var(--primary-light);border-radius:10px;padding:12px;margin-bottom:12px">
           <div style="font-size:11px;color:var(--text-3)">${isBm?'Kod Rujukan Anda':'Your Reference Code'}</div>
@@ -14497,8 +14496,10 @@ async function _calcCOGS(table, idColumn, id) {
 // sourceTable/sourceId/dryRun pass straight through to _postJournalEntry —
 // see that function for what they do (source tracking + the historical
 // backfill's dry-run mode reuse this same function unchanged).
-async function _postSaleJournal({ description, entryDate, amount, cogsAmount, sourceTable, sourceId, dryRun }) {
-  const cashAcc = await _getDefaultAccountId('cash')
+async function _postSaleJournal({ description, entryDate, amount, cogsAmount, sourceTable, sourceId, dryRun, paymentMethod }) {
+  const debitKey = (paymentMethod && paymentMethod !== 'cash') ? 'bank' : 'cash'
+  let cashAcc = await _getDefaultAccountId(debitKey)
+  if(!cashAcc && debitKey === 'bank') cashAcc = await _getDefaultAccountId('cash') // fallback
   const revenueAcc = await _getDefaultAccountId('sales_revenue')
   if(!cashAcc || !revenueAcc) {
     const miss = []
@@ -15536,6 +15537,7 @@ async function _coaSeedDefaults() {
 // makes sense for a rare action like Fixed Assets depreciation).
 const DEFAULT_ACCOUNT_MAPPING_KEYS = [
   { key:'cash',              accountType:'asset',     en:'Cash / Bank',              bm:'Tunai / Bank',              required:true  },
+  { key:'bank',              accountType:'asset',     en:'Bank',                     bm:'Bank',                      required:false },
   { key:'petty_cash',        accountType:'asset',     en:'Petty Cash',               bm:'Petty Cash / Wang Kecil',   required:false },
   { key:'sales_revenue',     accountType:'revenue',   en:'Sales Revenue',            bm:'Hasil Jualan',              required:true  },
   { key:'cogs',              accountType:'expense',   en:'Cost of Goods Sold',       bm:'Kos Barang Dijual',         required:false },
@@ -23757,6 +23759,7 @@ async function _paySave(invoiceId, balance) {
       entryDate: document.getElementById('pay-date').value,
       amount, cogsAmount: cogs,
       sourceTable: 'invoices', sourceId: invoiceId,
+      paymentMethod: document.getElementById('pay-method').value,
     })
     if(posted === null) {
       /* toast already from _damToastMissing if defaults missing */
@@ -33367,6 +33370,7 @@ async function _posCheckout() {
       entryDate: new Date().toISOString().slice(0,10),
       amount: total, cogsAmount: cogs,
       sourceTable: 'pos_transactions', sourceId: trans.id,
+      paymentMethod: method,
     })
   } catch(e) {
     console.error('POS sale journal post failed:', e)
