@@ -12595,8 +12595,8 @@ const _PLATFORM_PAYEE = {
   email: 'hello@mpflemedia.my'
 }
 
-function openMyPlanUpgradeInfo() {
-  _renderMyPlanUpgradeModal()
+async function openMyPlanUpgradeInfo() {
+  await _renderMyPlanUpgradeModal()
   document.getElementById('my-plan-upgrade-modal-overlay')?.classList.add('active')
 }
 
@@ -13156,10 +13156,8 @@ async function renderSettings(params={}) {
         <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
           ? 'Buat pindahan bank ke akaun di bawah, kemudian maklumkan kami dengan kod rujukan anda — kami akan sahkan dalam masa 1 hari bekerja.'
           : 'Make a bank transfer to the account below, then notify us with your reference code — we will confirm within 1 business day.'}</p>
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin:12px 0;font-size:13px;line-height:1.8">
-          <div>${isBm?'Bank':'Bank'}: <strong>GX Bank Berhad</strong></div>
-          <div>${isBm?'No. Akaun':'Account No.'}: <strong>8888 0002 980 34</strong></div>
-          <div>${isBm?'Nama Akaun':'Account Name'}: <strong>Ahmad Muhaimin Putera</strong></div>
+        <div id="my-plan-upgrade-bank-details" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin:12px 0;font-size:13px;line-height:1.8">
+          <div style="color:var(--text-3)">${isBm?'Memuatkan...':'Loading...'}</div>
         </div>
         <div style="background:var(--primary-light);border-radius:10px;padding:12px;margin-bottom:12px">
           <div style="font-size:11px;color:var(--text-3)">${isBm?'Kod Rujukan Anda':'Your Reference Code'}</div>
