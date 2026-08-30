@@ -25029,20 +25029,21 @@ async function _poSave(id) {
 
 // ─── Purchase Orders: Detail ────────────────────────────────────────────────
 async function renderPODetail(id) {
-  const t = APP.language==='bm' ? {
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
     back:'Pesanan Belian', edit:'Edit', supplier:'Pembekal', orderDate:'Tarikh Pesanan', expectedDate:'Tarikh Dijangka',
     items:'Item', qty:'Kuantiti', qtyReceived:'Diterima', cost:'Kos Unit', amount:'Jumlah', total:'Jumlah Besar',
-    status:'Status', notes:'Nota', receiveGoods:'Terima Barang',
+    status:'Status', notes:'Nota', receiveGoods:'Terima Barang', print:'Cetak', changeStatus:'Tukar Status...',
     draft:'Draf', sent:'Dihantar', partial:'Sebahagian', received:'Diterima', cancelled:'Dibatalkan',
     grnHistory:'Sejarah Penerimaan', noGrn:'Tiada penerimaan lagi', notFound:'PO tidak dijumpai.', grnNo:'No. GRN', date:'Tarikh'
   } : {
     back:'Purchase Orders', edit:'Edit', supplier:'Supplier', orderDate:'Order Date', expectedDate:'Expected Date',
     items:'Items', qty:'Qty', qtyReceived:'Received', cost:'Unit Cost', amount:'Amount', total:'Grand Total',
-    status:'Status', notes:'Notes', receiveGoods:'Receive Goods',
+    status:'Status', notes:'Notes', receiveGoods:'Receive Goods', print:'Print', changeStatus:'Change Status...',
     draft:'Draft', sent:'Sent', partial:'Partial', received:'Received', cancelled:'Cancelled',
     grnHistory:'Receiving History', noGrn:'No receipts yet', notFound:'PO not found.', grnNo:'GRN No.', date:'Date'
   }
-  const {data: po} = await sb.from('purchase_orders').select('*,suppliers(name)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  const {data: po} = await sb.from('purchase_orders').select('*,suppliers(name,phone,email,address)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!po) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const {data: items} = await sb.from('purchase_order_items').select('*,products(name_en,name_bm)').eq('po_id',id)
   const {data: grns} = await sb.from('goods_received_notes').select('id,grn_no,received_date').eq('po_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('received_date',{ascending:false})
@@ -25050,22 +25051,37 @@ async function renderPODetail(id) {
   const statusColor = s => s==='received'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--danger)':'var(--text-3)'
   const statusLabel = s => t[s]||s
   const canReceive = ['draft','sent','partial'].includes(po.status)
+  const canChangeStatus = ['draft','sent'].includes(po.status)
+  const printFilename = `PO_${_pdocSlug(po.po_no)}_${_pdocSlug(po.suppliers?.name||'')}_${_pdocDateStamp(po.order_date)}`.replace(/'/g,"\\'")
+  const tn = await _pdocGetTenant()
+  const companyAddr = _pdocAddressLine(tn)
+  const suppAddr = po.suppliers?.address || ''
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
     <div class="page-title">${po.po_no}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('purchasing',{})">← ${t.back}</div>
   </div>
-  <div style="display:flex;gap:8px">
+  <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap">
     ${po.status==='draft' ? `<button class="btn btn-outline btn-sm" onclick="openPage('purchasing',{view:'po-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>` : ''}
+    <button class="btn btn-outline btn-sm" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFilename}');window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     ${canReceive ? `<button class="btn btn-primary btn-sm" onclick="openPage('purchasing',{view:'grn-form',poId:'${id}'})"><i class="ti ti-truck-delivery"></i> ${t.receiveGoods}</button>` : ''}
   </div></div>
-  <div class="card" style="max-width:900px;padding:20px">
+  <div class="card no-print" style="max-width:900px;padding:20px">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px">
       <div><div style="color:var(--text-3);font-size:12px">${t.supplier}</div><strong>${po.suppliers?.name||'-'}</strong></div>
       <div><div style="color:var(--text-3);font-size:12px">${t.orderDate}</div>${formatDate(po.order_date)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.expectedDate}</div>${formatDate(po.expected_date)}</div>
-      <div><span style="color:${statusColor(po.status)};font-weight:700">${statusLabel(po.status)}</span></div>
+      <div>
+        <div style="color:var(--text-3);font-size:12px">${t.status}</div>
+        <span style="color:${statusColor(po.status)};font-weight:700">${statusLabel(po.status)}</span>
+        ${canChangeStatus ? `<select id="po-status-change" class="form-select" style="margin-top:6px;font-size:12px" onchange="doChangePOStatus('${id}', this.value)">
+          <option value="">${t.changeStatus}</option>
+          ${po.status !== 'draft' ? `<option value="draft">${t.draft}</option>` : ''}
+          ${po.status !== 'sent' ? `<option value="sent">${t.sent}</option>` : ''}
+          <option value="cancelled">${t.cancelled}</option>
+        </select>` : ''}
+      </div>
     </div>
     <div style="overflow-x:auto"><table><thead><tr><th>${t.items}</th><th style="text-align:right">${t.qty}</th><th style="text-align:right">${t.qtyReceived}</th><th style="text-align:right">${t.cost}</th><th style="text-align:right">${t.amount}</th></tr></thead>
     <tbody>${(items||[]).map(it=>`<tr>
@@ -25078,12 +25094,92 @@ async function renderPODetail(id) {
     <div style="text-align:right;margin-top:16px;font-weight:700;font-size:16px">${t.total}: ${formatRM(po.total)}</div>
     ${po.notes ? `<div style="margin-top:12px;color:var(--text-2);font-size:13px">${t.notes}: ${_aiEscapeHtml(po.notes)}</div>` : ''}
   </div>
-  <div class="card" style="max-width:900px;margin-top:16px">
+  <div class="card no-print" style="max-width:900px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.grnHistory}</div>
     ${(!grns||grns.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noGrn}</p></div>` :
     `<table><thead><tr><th>${t.grnNo}</th><th>${t.date}</th></tr></thead>
     <tbody>${grns.map(g=>`<tr><td>${g.grn_no}</td><td>${formatDate(g.received_date)}</td></tr>`).join('')}</tbody></table>`}
+  </div>
+
+  <div class="pdoc print-only" style="--pdoc-accent:#0E7490;max-width:820px;margin:24px auto">
+    <div class="pdoc-header">
+      <div class="pdoc-logo-row">
+        ${_pdocLogoHtml(tn)}
+        <div>
+          <div class="pdoc-company-name">${_aiEscapeHtml(tn.name||APP.tenant.name||'-')}</div>
+          ${companyAddr?`<div class="pdoc-company-sub">${_aiEscapeHtml(companyAddr)}</div>`:''}
+        </div>
+      </div>
+      <div class="pdoc-meta">
+        ${isBm?'No. PO':'PO No.'}: <strong style="color:#0F172A">${_aiEscapeHtml(po.po_no||'-')}</strong><br>
+        ${t.orderDate}: ${formatDate(po.order_date)}<br>
+        ${t.expectedDate}: ${formatDate(po.expected_date)}<br>
+        ${t.status}: <strong style="color:${statusColor(po.status)}">${statusLabel(po.status)}</strong>
+      </div>
+    </div>
+    <div class="pdoc-title-bar">${isBm?'PESANAN BELIAN':'PURCHASE ORDER'}</div>
+    <div class="pdoc-band">
+      <div class="pdoc-band-name">${_aiEscapeHtml(po.suppliers?.name||'-')}</div>
+      ${suppAddr?`<div class="pdoc-band-sub">${_aiEscapeHtml(suppAddr)}</div>`:''}
+      ${po.suppliers?.phone?`<div class="pdoc-band-sub">${_aiEscapeHtml(po.suppliers.phone)}${po.suppliers?.email?' · '+_aiEscapeHtml(po.suppliers.email):''}</div>`:''}
+    </div>
+    <div style="padding:0 0 8px">
+      <table class="pdoc-table" style="width:100%">
+        <thead>
+          <tr style="background:#F8FAFC">
+            <th style="text-align:left;padding:10px 24px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0">${t.items}</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:70px">${t.qty}</th>
+            <th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:110px">${t.cost}</th>
+            <th style="text-align:right;padding:10px 24px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;border-bottom:1px solid #E2E8F0;width:120px">${t.amount}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(items||[]).map(it=>`<tr>
+            <td style="padding:10px 24px;border-bottom:1px solid #F1F5F9">${_aiEscapeHtml(it.description||prodName(it.products)||'')}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${it.qty}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${formatRM(it.unit_cost)}</td>
+            <td style="text-align:right;padding:10px 24px;border-bottom:1px solid #F1F5F9;font-weight:600">${formatRM(it.line_total)}</td>
+          </tr>`).join('')||`<tr><td colspan="4" style="padding:16px 24px;color:#94A3B8">${isBm?'Tiada item':'No items'}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
+      <div style="min-width:220px;font-size:13px">
+        <div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;padding:10px 0 6px;border-top:2px solid #0E7490;margin-top:6px;font-weight:700;font-size:16px;font-family:'Space Grotesk',sans-serif">
+          <span>${t.total}</span><span style="color:#0E7490">${formatRM(po.total)}</span>
+        </div>
+      </div>
+    </div>
+    ${po.notes ? `<div style="padding:0 24px 12px;font-size:12px;color:#475569">${t.notes}: ${_aiEscapeHtml(po.notes)}</div>` : ''}
+    <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
+    <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · M-Core</div>
   </div>`
+}
+
+async function doChangePOStatus(id, newStatus) {
+  if(!newStatus) return
+  const isBm = APP.language==='bm'
+  const sel = document.getElementById('po-status-change')
+  const label = { draft:isBm?'Draf':'Draft', sent:isBm?'Dihantar':'Sent', cancelled:isBm?'Dibatalkan':'Cancelled' }[newStatus] || newStatus
+  if(!confirm(isBm ? `Tukar status ke "${label}"?` : `Change status to "${label}"?`)) {
+    if(sel) sel.value = ''
+    return
+  }
+  // Re-check current status server-side before writing — a GRN recorded in
+  // another tab/session since this page loaded (flipping status to
+  // partial/received) must block this manual change, not get silently
+  // overwritten by a stale dropdown.
+  const {data: current} = await sb.from('purchase_orders').select('status').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(!current || !['draft','sent'].includes(current.status)) {
+    showToast(isBm?'Status dah berubah — sila muat semula.':'Status has already changed — please reload.', 'error')
+    renderPODetail(id)
+    return
+  }
+  const {error} = await sb.from('purchase_orders').update({status:newStatus}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  if(error) { showToast(error.message,'error'); return }
+  auditLog('update', 'purchase_orders', id)
+  showToast(isBm?'Status dikemaskini.':'Status updated.', 'success')
+  renderPODetail(id)
 }
 
 // ─── Goods Received Note (GRN) ──────────────────────────────────────────────
