@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-08-26-content-planner-dashboard-card">
+<meta name="nexerp-build" content="2026-09-01-insight-kl-calendar">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6417,9 +6417,11 @@ async function loadDashboardData() {
       revenue: plThis && plThis.revenue,
       expense: plThis && plThis.expense,
       netPL: plThis && plThis.net,
-      periodLabel: (typeof bounds !== 'undefined' && bounds && bounds.start)
-        ? (bounds.start + ' → ' + bounds.end)
-        : (isBm ? 'tempoh semasa' : 'current period')
+      periodLabel: (typeof _dbPeriodLabelHuman === 'function')
+        ? _dbPeriodLabelHuman(bounds, isBm)
+        : ((typeof bounds !== 'undefined' && bounds && bounds.start)
+          ? (bounds.start + ' → ' + bounds.end)
+          : (isBm ? 'tempoh semasa' : 'current period'))
     })
     try { _dbFillCardInsights() } catch(e) { console.warn('insights health', e) }
   } catch(e) { console.warn('health charts', e) }
@@ -7381,23 +7383,57 @@ function _dbSyncGlobalTheme() {
 function _dbFmtYMD(d) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
-// Converts a UTC timestamptz ISO string (eg. pos_transactions.created_at)
-// to a local-timezone YYYY-MM-DD date — new Date(iso) auto-converts to the
-// device's local time, so this stays 100% consistent with how _dbFmtYMD()
-// itself computes "today"/period boundaries. Using iso.slice(0,10) instead
-// (raw UTC date) misses transactions made in the early-morning local hours
-// that are still "yesterday" in UTC (eg. Malaysia UTC+8, 2am local = 6pm
-// UTC the previous day).
+/** Malaysia calendar parts (Asia/Kuala_Lumpur). Never use UTC slice for "today". */
+function _dbKlParts(d) {
+  d = (d instanceof Date) ? d : (d ? new Date(d) : new Date())
+  if(isNaN(d.getTime())) d = new Date()
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(d)
+    const g = (t) => Number(parts.find(p => p.type === t)?.value)
+    return { year: g('year'), month: g('month'), day: g('day'), hour: g('hour'), minute: g('minute') }
+  } catch(e) {
+    const kl = new Date(d.getTime() + 8*3600000)
+    return { year: kl.getUTCFullYear(), month: kl.getUTCMonth()+1, day: kl.getUTCDate(), hour: kl.getUTCHours(), minute: kl.getUTCMinutes() }
+  }
+}
+function _dbKlYMD(d) {
+  const k = _dbKlParts(d)
+  return k.year + '-' + String(k.month).padStart(2,'0') + '-' + String(k.day).padStart(2,'0')
+}
+// POS created_at (UTC timestamptz) → Malaysia calendar date, same as KPI bounds.
 function _localDateFromISO(iso) {
   if(!iso) return ''
-  return _dbFmtYMD(new Date(iso))
+  return _dbKlYMD(iso)
 }
 function _dbAnchorDate() {
   if(window._dbAnchor && /^\d{4}-\d{2}-\d{2}$/.test(window._dbAnchor)) {
     const p = window._dbAnchor.split('-').map(Number)
-    return new Date(p[0], p[1]-1, p[2])
+    return new Date(p[0], p[1]-1, p[2], 12, 0, 0)
   }
-  return new Date()
+  const k = _dbKlParts()
+  return new Date(k.year, k.month-1, k.day, 12, 0, 0)
+}
+function _dbPeriodLabelHuman(bounds, isBm) {
+  if(!bounds || !bounds.start) return isBm ? 'tempoh semasa' : 'current period'
+  const range = bounds.label || (typeof _dbRange !== 'undefined' ? _dbRange : 'month')
+  const monthsEn = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const monthsBm = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember']
+  const months = isBm ? monthsBm : monthsEn
+  const parse = (s) => { const p = String(s).split('-').map(Number); return { y:p[0], m:p[1], d:p[2] } }
+  const a = parse(bounds.start), b = parse(bounds.end)
+  if(!a.y || !b.y) return bounds.start + ' → ' + bounds.end
+  if(range === 'day' || bounds.start === bounds.end) {
+    return (isBm ? 'hari ini, ' : 'today, ') + b.d + ' ' + months[b.m-1] + ' ' + b.y
+  }
+  if(range === 'month' && a.y === b.y && a.m === b.m) return months[a.m-1] + ' ' + a.y
+  if(range === 'year' && a.y === b.y) return String(a.y)
+  try {
+    if(typeof formatDate === 'function') return formatDate(bounds.start) + ' — ' + formatDate(bounds.end)
+  } catch(e) {}
+  return bounds.start + ' — ' + bounds.end
 }
 function _dbRangeBounds() {
   const range = _dbRange || 'month'
@@ -7457,7 +7493,7 @@ function _dbRenderRangePicker() {
   if(!slot) return
   const range = _dbRange || 'month'
   const isBm = APP.language==='bm'
-  const today = _dbFmtYMD(new Date())
+  const today = (typeof _dbKlYMD === 'function') ? _dbKlYMD() : _dbFmtYMD(new Date())
   const anchor = window._dbAnchor || today
   if(range === 'custom') {
     // Custom range is picked via the "Filter by Week/Month/Year"-style
@@ -7585,25 +7621,16 @@ const _DB_INSIGHT_SLOTS = [
   { id: 'isyak', hour: 20, minute: 30 }
 ]
 function _dbInsightTzNow() {
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    }).formatToParts(new Date())
-    const g = (t) => parts.find(p => p.type === t)?.value
+  const k = (typeof _dbKlParts === 'function') ? _dbKlParts() : null
+  if(k) {
     return {
-      day: `${g('year')}-${g('month')}-${g('day')}`,
-      hour: Number(g('hour')),
-      minute: Number(g('minute'))
-    }
-  } catch(e) {
-    const d = new Date()
-    return {
-      day: d.toISOString().slice(0,10),
-      hour: d.getHours(),
-      minute: d.getMinutes()
+      day: k.year + '-' + String(k.month).padStart(2,'0') + '-' + String(k.day).padStart(2,'0'),
+      hour: k.hour,
+      minute: k.minute
     }
   }
+  const d = new Date()
+  return { day: _dbFmtYMD(d), hour: d.getHours(), minute: d.getMinutes() }
 }
 function _dbInsightActiveSlot(now) {
   now = now || _dbInsightTzNow()
@@ -7615,7 +7642,7 @@ function _dbInsightActiveSlot(now) {
   return active // null = before Zohor
 }
 function _dbInsightStoreKey() {
-  return 'nexerp_db_insights_v2_' + (APP.tenant?.id || 'none')
+  return 'nexerp_db_insights_v3_' + (APP.tenant?.id || 'none')
 }
 function _dbInsightNotifKey() {
   return 'nexerp_db_insight_notifs_' + (APP.tenant?.id || 'none')
@@ -7648,7 +7675,9 @@ function _dbInsightFingerprint(ctx) {
     Number(ctx && ctx.netPL || 0).toFixed(2),
     st.paid||0, st.partial||0, st.unpaid||0, st.cancelled||0,
     d.sales, d.collection, d.payroll, d.expenses, d.stock, d.overdue,
-    hs.zoneAvg
+    hs.zoneAvg,
+    (ctx && ctx.periodLabel) || '',
+    (typeof _dbInsightTzNow === 'function' ? _dbInsightTzNow().day : '')
   ]
   return parts.join('|')
 }
@@ -8049,6 +8078,7 @@ async function _dbInsightAI(card, ctx, isBm) {
         : `Write ONE fresh Gen Z paragraph (max 55 words) for a Malaysian SME ERP dashboard card.\n` +
           `Language: ${lang}.\n` +
           `Voice: ${voice}\n` +
+          `Calendar: Malaysia (Asia/Kuala_Lumpur). facts.period is the human period label — use it if you mention dates. NEVER print ISO dates like 2026-08-31 or ranges with arrows.\n` +
           `Rules: creative & different each time; no corporate fluff; no labels like What/Why/How/Who; must weave the situation, reason, and next move; MUST include the numeric facts given; no hashtags; no emoji spam; return ONLY the paragraph plain text.\n` +
           `Facts JSON: ${JSON.stringify(facts)}`
   const { data, error } = await _invokeAiProxy({
@@ -8062,6 +8092,9 @@ async function _dbInsightAI(card, ctx, isBm) {
   reply = String(reply).trim().replace(/^["']|["']$/g, '')
   if(!reply || reply.length < 12) throw new Error('empty AI reply')
   reply = _dbInsightToSecondPerson(reply, isBm)
+  const humanPeriod = (ctx && ctx.periodLabel) || ''
+  reply = reply.replace(/\d{4}-\d{2}-\d{2}(?:\s*[→\-]\s*\d{4}-\d{2}-\d{2})?/g, humanPeriod || '')
+  reply = reply.replace(/\s{2,}/g, ' ').replace(/\s+([.,])/g, '$1').trim()
   // hard cap length for UI
   if(reply.length > 420) reply = reply.slice(0, 417) + '…'
   return reply
