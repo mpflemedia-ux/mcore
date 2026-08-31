@@ -1720,6 +1720,7 @@ html[data-skip-intro="1"] #intro-skip {
             <div class="notif-prefs" id="notif-prefs-panel" onclick="event.stopPropagation()" hidden></div>
           </div>
         </div>
+        <button class="header-btn" onclick="refreshCurrentPage()" title="Muat semula"><i class="ti ti-refresh"></i></button>
         <button class="header-btn" onclick="toggleTheme()" title="Toggle tema"><i class="ti ti-moon" id="theme-icon"></i></button>
         <button class="header-btn" onclick="toggleLang()" title="Tukar bahasa"><i class="ti ti-language"></i></button>
         <div class="tenant-chip">
@@ -5434,6 +5435,15 @@ async function toggleLang() {
   if(APP.user?.id) {
     await sb.from('user_profiles').update({language: APP.language}).eq('id', APP.user.id)
   }
+}
+// Header refresh button — reuses the same nexerp_last_params reconstruction
+// toggleLang() uses (see above) so a manual refresh stays on the current
+// sub-tab/sub-view instead of falling back to that page's default view.
+function refreshCurrentPage() {
+  let lastParams = {}
+  try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
+  openPage(APP.currentPage||'dashboard', lastParams)
+  showToast(APP.language==='bm'?'Dimuat semula.':'Refreshed.', 'info')
 }
 function closeUserDropdown() {
   document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('open'))
