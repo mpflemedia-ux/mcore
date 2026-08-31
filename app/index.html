@@ -6032,18 +6032,19 @@ async function loadDashboardData() {
     const pos = posRows || []
     const inMonth = (iso, start, end) => {
       if(!iso) return false
-      const d = iso.slice(0,10)
+      const d = _localDateFromISO(iso)
       return d >= start && (!end || d < end)
     }
     pos.forEach(p => {
       if(p.txn_type && p.txn_type !== 'sale') return
       const t = Number(p.total||0)
-      if(inMonth(p.created_at, ms, null) && p.created_at.slice(0,10) <= periodEnd) { posThis += t; posPaidThis += t }
-      else if(inMonth(p.created_at, lms, null) && p.created_at.slice(0,10) <= prevEnd && p.created_at.slice(0,10) >= lms) { posLast += t; posPaidLast += t }
+      const pd = _localDateFromISO(p.created_at)
+      if(inMonth(p.created_at, ms, null) && pd <= periodEnd) { posThis += t; posPaidThis += t }
+      else if(inMonth(p.created_at, lms, null) && pd <= prevEnd && pd >= lms) { posLast += t; posPaidLast += t }
     })
     // POS COGS from line items × product unit_cost
-    const posIdsThis = pos.filter(p => p.created_at && p.created_at.slice(0,10) >= ms && p.created_at.slice(0,10) <= periodEnd).map(p=>p.id)
-    const posIdsLast = pos.filter(p => p.created_at && p.created_at.slice(0,10) >= lms && p.created_at.slice(0,10) <= prevEnd).map(p=>p.id)
+    const posIdsThis = pos.filter(p => p.created_at && _localDateFromISO(p.created_at) >= ms && _localDateFromISO(p.created_at) <= periodEnd).map(p=>p.id)
+    const posIdsLast = pos.filter(p => p.created_at && _localDateFromISO(p.created_at) >= lms && _localDateFromISO(p.created_at) <= prevEnd).map(p=>p.id)
     const posIds = [...posIdsThis, ...posIdsLast]
     if(posIds.length) {
       const {data: pItems} = await sb.from('pos_transaction_items')
@@ -7379,6 +7380,17 @@ function _dbSyncGlobalTheme() {
 
 function _dbFmtYMD(d) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+}
+// Converts a UTC timestamptz ISO string (eg. pos_transactions.created_at)
+// to a local-timezone YYYY-MM-DD date — new Date(iso) auto-converts to the
+// device's local time, so this stays 100% consistent with how _dbFmtYMD()
+// itself computes "today"/period boundaries. Using iso.slice(0,10) instead
+// (raw UTC date) misses transactions made in the early-morning local hours
+// that are still "yesterday" in UTC (eg. Malaysia UTC+8, 2am local = 6pm
+// UTC the previous day).
+function _localDateFromISO(iso) {
+  if(!iso) return ''
+  return _dbFmtYMD(new Date(iso))
 }
 function _dbAnchorDate() {
   if(window._dbAnchor && /^\d{4}-\d{2}-\d{2}$/.test(window._dbAnchor)) {
