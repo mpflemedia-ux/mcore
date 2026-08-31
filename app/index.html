@@ -9738,6 +9738,7 @@ function renderAdmin(params={}) {
   if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
   if(params.view==='devroadmap' && isPlatformAdmin()) { renderAdminDevRoadmap(); return }
   if(params.view==='content-planner' && isPlatformAdmin()) { renderAdminContentPlanner(); return }
+  if(params.view==='progress' && isPlatformAdmin()) { renderAdminProgress(); return }
   if(params.view==='planner') { renderPlanner(); return }
   renderAdminTeam()
 }
@@ -9753,6 +9754,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='devroadmap'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'devroadmap'})"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='content-planner'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'content-planner'})"><i class="ti ti-brand-tiktok"></i> ${isBm?'Perancang Kandungan':'Content Planner'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='progress'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'progress'})"><i class="ti ti-chart-donut-3"></i> ${isBm?'Progress Projek':'Project Progress'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='planner'?'btn-primary':'btn-outline'}" onclick="openPage('planner')"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</button>` : ''}
   </div>`
 }
@@ -12503,6 +12505,278 @@ async function doDeleteContentPost(postId) {
   const overlay = document.getElementById('admin-content-modal-overlay')
   if(overlay) overlay.classList.remove('active')
   await renderAdminContentPlanner()
+}
+
+// ─── Progress Projek (Platform Admin) — blueprint vs real system tracker ───
+// project_progress: id, title, category, status
+//   ('belum'|'sedang'|'siap'|'rosak'), story, cause, impact, plan_description,
+//   real_description, delta ('sama'|'beza'|'tiada'), note, linked_task_id,
+//   created_at. A DB trigger (trg_progress_sync_from_task) auto-sets
+//   status='siap' when the linked dev_roadmap_items row reaches
+//   stage='completed' — this file never needs to mirror that itself.
+let _adminProgressData = []
+let _adminProgressMode = 'list' // 'list' | 'compare'
+const _PROGRESS_STATUSES = ['belum','sedang','siap','rosak']
+function _progressStatusLabels(isBm) {
+  return isBm
+    ? { belum:'Belum', sedang:'Sedang', siap:'Siap', rosak:'Rosak' }
+    : { belum:'Not Started', sedang:'In Progress', siap:'Done', rosak:'Fixed Bug' }
+}
+const _PROGRESS_STATUS_ICON = { belum:'ti-circle-dashed', sedang:'ti-clock', siap:'ti-circle-check', rosak:'ti-tool' }
+const _PROGRESS_STATUS_COLOR = { belum:'var(--text-3)', sedang:'var(--warning)', siap:'var(--success)', rosak:'var(--danger)' }
+function _progressDeltaLabels(isBm) {
+  return isBm
+    ? { sama:'Sepadan', beza:'Berbeza', tiada:'Tiada dalam sistem' }
+    : { sama:'Matches', beza:'Different', tiada:'Not in system' }
+}
+const _PROGRESS_DELTA_COLOR = { sama:'var(--success)', beza:'var(--warning)', tiada:'var(--danger)' }
+
+async function renderAdminProgress() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Progress Projek', sub:'Bandingkan blueprint dengan sistem sebenar — apa dah siap, apa ada gap, apa bug dah dibaiki',
+  } : {
+    title:'Project Progress', sub:"Compare the blueprint against the real system — what's done, what's a gap, what bugs got fixed",
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('progress')}
+  <div id="admin-progress-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  <div class="modal-overlay" id="admin-progress-modal-overlay">
+    <div class="modal-box" style="max-width:420px">
+      <div class="modal-box-header"><i class="ti ti-plus"></i> ${isBm?'Tambah Item':'Add Item'}</div>
+      <div class="modal-box-body">
+        <div class="form-group"><label class="form-label">${isBm?'Tajuk':'Title'}</label><input type="text" id="pg-add-title" class="form-input"></div>
+      </div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('admin-progress-modal-overlay').classList.remove('active')">${isBm?'Tutup':'Close'}</button>
+        <button type="button" class="btn btn-primary" onclick="doSaveProgressItem()">${isBm?'Simpan':'Save'}</button>
+      </div>
+    </div>
+  </div>`
+
+  const wrap = document.getElementById('admin-progress-wrap')
+  const { data, error } = await sb.from('project_progress').select('*').order('created_at', { ascending: true })
+  if(error) {
+    wrap.innerHTML = `<div class="card" style="padding:24px">
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Pastikan jadual project_progress dan RLS platform_admin dah disediakan.'
+        : 'Make sure the project_progress table and platform_admin RLS are set up.'}</p>
+    </div>`
+    return
+  }
+  _adminProgressData = data || []
+  _adminProgressRenderAll()
+}
+
+/** Progress = (siap + rosak) / total — 'rosak' counts as settled: a bug
+    that's already fixed is a closed loop, not an open gap. */
+function _adminProgressComputeStats(items) {
+  const total = items.length
+  const settled = items.filter(i => i.status==='siap' || i.status==='rosak').length
+  const pct = total ? Math.round((settled/total)*100) : 0
+  return { total, settled, pct }
+}
+
+/** Groups preserve first-appearance order in the data (not alphabetical) —
+    matches how the seed data was authored (V1 — Launch, V1.5 — 3 bulan,
+    V2 — 6 bulan, Extra, Isu Dibaiki, in that reading order). */
+function _adminProgressGroups(items) {
+  const order = []
+  const map = {}
+  items.forEach(it => {
+    const cat = it.category || '—'
+    if(!map[cat]) { map[cat] = []; order.push(cat) }
+    map[cat].push(it)
+  })
+  return order.map(cat => ({ category: cat, items: map[cat] }))
+}
+
+function openAddProgressItem() {
+  const input = document.getElementById('pg-add-title')
+  if(input) input.value = ''
+  document.getElementById('admin-progress-modal-overlay')?.classList.add('active')
+}
+
+async function doSaveProgressItem() {
+  const isBm = APP.language==='bm'
+  const title = document.getElementById('pg-add-title').value.trim()
+  if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
+  const { error } = await sb.from('project_progress').insert({ title, category: 'Lain-lain', status: 'belum' })
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Item ditambah.':'Item added.', 'success')
+  document.getElementById('admin-progress-modal-overlay')?.classList.remove('active')
+  await renderAdminProgress()
+}
+
+function _adminProgressSetMode(mode) {
+  _adminProgressMode = mode
+  _adminProgressRenderAll()
+}
+
+function _adminProgressRenderAll() {
+  const wrap = document.getElementById('admin-progress-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const t = isBm
+    ? { of:'siap daripada', list:'Senarai', compare:'Perbandingan', add:'+ Tambah Item' }
+    : { of:'done out of', list:'List', compare:'Comparison', add:'+ Add Item' }
+  const stats = _adminProgressComputeStats(_adminProgressData)
+  const groups = _adminProgressGroups(_adminProgressData)
+
+  wrap.innerHTML = `
+    <div class="card" style="padding:20px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:30px">${stats.pct}%</div>
+        <div style="font-size:13px;color:var(--text-3)">${stats.settled} ${t.of} ${stats.total}</div>
+      </div>
+      <div style="height:10px;border-radius:5px;background:var(--bg);overflow:hidden">
+        <div style="height:100%;width:${stats.pct}%;background:var(--success);transition:width .3s"></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm ${_adminProgressMode==='list'?'btn-primary':'btn-outline'}" onclick="_adminProgressSetMode('list')"><i class="ti ti-list"></i> ${t.list}</button>
+        <button class="btn btn-sm ${_adminProgressMode==='compare'?'btn-primary':'btn-outline'}" onclick="_adminProgressSetMode('compare')"><i class="ti ti-arrows-left-right"></i> ${t.compare}</button>
+      </div>
+      ${_adminProgressMode==='list' ? `<button class="btn btn-outline btn-sm" onclick="openAddProgressItem()"><i class="ti ti-plus"></i> ${t.add}</button>` : ''}
+    </div>
+    ${groups.map(g => _adminProgressGroupHtml(g)).join('')}
+    <div class="db-ai-insight" id="admin-progress-insight" style="margin-top:8px"></div>
+  `
+  _adminProgressInsightRender()
+}
+
+function _adminProgressGroupHtml(group) {
+  const isBm = APP.language==='bm'
+  const cards = group.items.map(it => _adminProgressMode==='list' ? _adminProgressListCardHtml(it, isBm) : _adminProgressCompareCardHtml(it, isBm)).join('')
+  return `<div style="margin-bottom:20px">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin-bottom:8px">${_aiEscapeHtml(group.category)}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">${cards}</div>
+  </div>`
+}
+
+function _adminProgressListCardHtml(it, isBm) {
+  const labels = _progressStatusLabels(isBm)
+  const icon = _PROGRESS_STATUS_ICON[it.status] || _PROGRESS_STATUS_ICON.belum
+  const color = _PROGRESS_STATUS_COLOR[it.status] || _PROGRESS_STATUS_COLOR.belum
+  const label = labels[it.status] || it.status || '—'
+  return `<div class="card" style="padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer" onclick="_pgToggleExpand('${it.id}')">
+      <i class="ti ${icon}" style="font-size:20px;color:${color}"></i>
+      <div style="flex:1;font-weight:600">${_aiEscapeHtml(it.title||'—')}</div>
+      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${color}">${_aiEscapeHtml(label)}</span>
+      <i class="ti ti-chevron-down" id="pg-chev-${it.id}" style="color:var(--text-3);transition:transform .2s"></i>
+    </div>
+    <div id="pg-details-${it.id}" style="display:none;padding:0 16px 16px;border-top:1px solid var(--border)">
+      ${_adminProgressDetailHtml(it, isBm)}
+    </div>
+  </div>`
+}
+
+function _adminProgressDetailHtml(it, isBm) {
+  const labels = _progressStatusLabels(isBm)
+  const t = isBm
+    ? { story:'Apa yang berlaku', cause:'Punca', impact:'Kesan', note:'Nota kau', makeTask:'Jadikan Task' }
+    : { story:'What happened', cause:'Cause', impact:'Impact', note:'Your notes', makeTask:'Make Task' }
+  return `
+    <div style="padding-top:14px;font-size:13px;color:var(--text-2);line-height:1.55">
+      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.story}</div>${_aiEscapeHtml(it.story||'—')}</div>
+      ${it.cause ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.cause}</div>${_aiEscapeHtml(it.cause)}</div>` : ''}
+      ${it.impact ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.impact}</div>${_aiEscapeHtml(it.impact)}</div>` : ''}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">
+      ${_PROGRESS_STATUSES.map(s => `<button type="button" class="btn btn-sm ${it.status===s?'btn-primary':'btn-outline'}" onclick="_pgSetStatus('${it.id}','${s}')">${_aiEscapeHtml(labels[s])}</button>`).join('')}
+    </div>
+    <div class="form-group" style="margin-bottom:${it.status!=='siap'?'10px':'0'}">
+      <label class="form-label">${t.note}</label>
+      <textarea class="form-input" rows="2" id="pg-note-${it.id}" onchange="_pgSaveNote('${it.id}', this.value)">${_aiEscapeHtml(it.note||'')}</textarea>
+    </div>
+    ${it.status!=='siap' ? `<button type="button" class="btn btn-outline btn-sm" onclick="_pgMakeTask('${it.id}')"><i class="ti ti-rocket"></i> ${t.makeTask}</button>` : ''}
+  `
+}
+
+function _adminProgressCompareCardHtml(it, isBm) {
+  const dLabels = _progressDeltaLabels(isBm)
+  const dKey = it.delta && dLabels[it.delta] ? it.delta : 'tiada'
+  const dColor = _PROGRESS_DELTA_COLOR[dKey]
+  const t = isBm ? { blueprint:'Blueprint', real:'Sistem sebenar' } : { blueprint:'Blueprint', real:'Real system' }
+  return `<div class="card" style="padding:14px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="font-weight:600">${_aiEscapeHtml(it.title||'—')}</div>
+      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${dColor};white-space:nowrap">${_aiEscapeHtml(dLabels[dKey])}</span>
+    </div>
+    <div style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.blueprint}</div>
+      ${_aiEscapeHtml(it.plan_description||'—')}
+    </div>
+    <div style="font-size:13px;color:var(--text-2);line-height:1.5">
+      <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.real}</div>
+      ${_aiEscapeHtml(it.real_description||'—')}
+    </div>
+  </div>`
+}
+
+function _pgToggleExpand(id) {
+  const el = document.getElementById(`pg-details-${id}`)
+  const chev = document.getElementById(`pg-chev-${id}`)
+  if(!el) return
+  const show = el.style.display === 'none' || !el.style.display
+  el.style.display = show ? 'block' : 'none'
+  if(chev) chev.style.transform = show ? 'rotate(180deg)' : ''
+}
+
+async function _pgSetStatus(id, status) {
+  const isBm = APP.language==='bm'
+  const { error } = await sb.from('project_progress').update({ status }).eq('id', id)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Status dikemaskini.':'Status updated.', 'success')
+  await renderAdminProgress()
+}
+
+async function _pgSaveNote(id, note) {
+  const { error } = await sb.from('project_progress').update({ note: note || null }).eq('id', id)
+  if(error) { showToast(error.message, 'error'); return }
+  const item = _adminProgressData.find(i => String(i.id)===String(id))
+  if(item) item.note = note || null
+}
+
+async function _pgMakeTask(id) {
+  const isBm = APP.language==='bm'
+  const item = _adminProgressData.find(i => String(i.id)===String(id))
+  if(!item) return
+  const { data: task, error } = await sb.from('dev_roadmap_items')
+    .insert({ title: item.title, module: item.category, stage: 'idea' }).select('id').single()
+  if(error) { showToast(error.message, 'error'); return }
+  const { error: linkErr } = await sb.from('project_progress').update({ linked_task_id: task.id }).eq('id', id)
+  if(linkErr) { showToast(linkErr.message, 'error'); return }
+  showToast(isBm?'Task dicipta & dipautkan.':'Task created & linked.', 'success')
+  await renderAdminProgress()
+}
+
+/** Rule-based for now (real numbers, no AI call) — same visual slot
+    (db-ai-insight/db-ai-tag) as _devZoneRadarInsight()/_devBurnupInsight(),
+    so wiring this to _invokeAiProxy later is a drop-in swap, not a redesign. */
+function _adminProgressInsightRender() {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('admin-progress-insight')
+  if(!el) return
+  const labels = _progressStatusLabels(isBm)
+  const items = _adminProgressData
+  const next = items.find(i => i.status==='belum') || items.find(i => i.status==='sedang')
+  const text = next
+    ? (isBm
+        ? `Perkara paling penting sekarang: "${next.title}" (${labels[next.status]}). Cadang fokus sini dulu sebelum tambah kerja baru.`
+        : `Most important thing right now: "${next.title}" (${labels[next.status]}). Focus here before adding new work.`)
+    : (isBm
+        ? 'Semua item dalam senarai dah siap atau dalam pembaikan — tiada gap besar buat masa ni.'
+        : 'Every item in the list is done or already fixed — no major gaps right now.')
+  el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + _aiEscapeHtml(text) + '</div>'
 }
 
 async function renderAdminTenantDetail(tenantId) {
