@@ -11787,7 +11787,7 @@ function _adminDevRoadmapListHtml(items) {
       <div style="font-weight:600;font-size:14px">${isBm?'Semua Tugasan':'All Tasks'} (${items.length})</div>
       <button type="button" class="btn btn-primary btn-sm" onclick="openDevRoadmapModal(null)">${addLabel}</button>
     </div>
-    <div style="padding:14px">
+    <div style="padding:14px;max-height:340px;overflow-y:auto">
       ${items.length ? sorted.map(rowHtml).join('') : `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 0">${noItems}</div>`}
     </div>
   </div>`
@@ -11827,7 +11827,7 @@ function _adminDevRoadmapRenderAll() {
     <div class="card" style="padding:16px;margin-bottom:16px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px"><i class="ti ti-chart-gantt"></i> ${isBm?'Garis Masa':'Timeline'}</div>
       <div id="devroadmap-gantt-legend"></div>
-      <div id="devroadmap-gantt-rows"></div>
+      <div id="devroadmap-gantt-rows" style="max-height:170px;overflow-y:auto"></div>
     </div>
     ${_adminDevRoadmapListHtml(items)}
   `
