@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-insight-kl-calendar">
+<meta name="nexerp-build" content="2026-09-01-pos-journal-kl-date">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6124,7 +6124,7 @@ async function loadDashboardData() {
   const prevNetPL = plLast.net
 
   // Overdue invoices (unpaid/partial past due_date)
-  const todayStrDash = now.toISOString().slice(0,10)
+  const todayStrDash = (typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(now)
   let overdueCount = 0, overdueAmt = 0
   let overdueList = []
   try {
@@ -7402,6 +7402,9 @@ function _dbKlParts(d) {
 function _dbKlYMD(d) {
   const k = _dbKlParts(d)
   return k.year + '-' + String(k.month).padStart(2,'0') + '-' + String(k.day).padStart(2,'0')
+}
+function _dbTodayYMD() {
+  return (typeof _dbKlYMD === 'function') ? _dbKlYMD() : _dbFmtYMD(new Date())
 }
 // POS created_at (UTC timestamptz) → Malaysia calendar date, same as KPI bounds.
 function _localDateFromISO(iso) {
@@ -14899,7 +14902,7 @@ async function _postJournalEntry({ description, entryDate, entryType, lines, sou
   const entryPayload = {
     tenant_id: APP.tenant.id,
     ref_no: refData || await _genFallbackRefNo('journal_entries','ref_no','JNL'),
-    entry_date: entryDate,
+    entry_date: entryDate || ((typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(new Date())),
     description,
     entry_type: entryType || 'auto',
     created_by: APP.user.id,
@@ -15009,7 +15012,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
       const cogs = await _calcCOGS('pos_transaction_items','txn_id',txn.id)
       return _postSaleJournal({
         description: `POS Sale ${txn.receipt_no} (backfill)`,
-        entryDate: (txn.created_at||'').slice(0,10), amount: Number(txn.total), cogsAmount: cogs,
+        entryDate: (typeof _dbKlYMD === 'function' && txn.created_at) ? _dbKlYMD(txn.created_at) : (txn.created_at||'').slice(0,10), amount: Number(txn.total), cogsAmount: cogs,
         sourceTable: 'pos_transactions', sourceId: txn.id, dryRun,
       })
     })
@@ -16954,7 +16957,7 @@ async function _pcCloseFloat(floatId, suggestedReturn) {
       if(cashAcc && pettyAcc && !(await _journalAlreadyPosted('petty_cash_floats_close', floatId))) {
         await _postJournalEntry({
           description: `Petty cash return`,
-          entryDate: new Date().toISOString().slice(0,10),
+          entryDate: (typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(new Date()),
           entryType: 'auto',
           lines: [
             { account_id: cashAcc, debit: returned, credit: 0 },
@@ -30134,7 +30137,7 @@ async function _sdApplyAdvanceSelections() {
     try {
       const posted = await _postJournalEntry({
         description: `Cash Advance Recovery - ${r?.employees?.name || r?.employee_id || ''}`,
-        entryDate: new Date().toISOString().slice(0,10),
+        entryDate: (typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(new Date()),
         entryType: 'auto',
         lines: [
           { account_id: cashAcc, debit: amount, credit: 0 },
@@ -32588,7 +32591,7 @@ async function _advSetStatus(id, status) {
     try {
       posted = await _postJournalEntry({
         description: `Cash Advance - ${advRow.employees?.name || advRow.employee_id}`,
-        entryDate: new Date().toISOString().slice(0,10),
+        entryDate: (typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(new Date()),
         entryType: 'auto',
         lines: [
           { account_id: employeeAdvanceAcc, debit: Number(advRow.amount), credit: 0 },
@@ -32888,7 +32891,7 @@ async function _posConfirmVoid() {
         }
         await _postJournalEntry({
           description: `POS Void ${original.receipt_no}`,
-          entryDate: new Date().toISOString().slice(0,10),
+          entryDate: (typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(new Date()),
           entryType: 'auto', lines,
           sourceTable: 'pos_refund', sourceId: refundTxn.id,
         })
@@ -34164,7 +34167,7 @@ async function _posCheckout() {
     const cogs = await _calcCOGS('pos_transaction_items','txn_id',trans.id)
     await _postSaleJournal({
       description: `POS Sale ${receiptNo}`,
-      entryDate: new Date().toISOString().slice(0,10),
+      entryDate: (typeof _dbTodayYMD === 'function') ? _dbTodayYMD() : _dbFmtYMD(new Date()),
       amount: total, cogsAmount: cogs,
       sourceTable: 'pos_transactions', sourceId: trans.id,
       paymentMethod: method,
