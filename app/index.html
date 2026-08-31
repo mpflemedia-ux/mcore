@@ -12508,11 +12508,13 @@ async function doDeleteContentPost(postId) {
 }
 
 // ─── Progress Projek (Platform Admin) — blueprint vs real system tracker ───
-// project_progress: id, title, category, status
-//   ('belum'|'sedang'|'siap'|'rosak'), story, cause, impact, plan_description,
-//   real_description, delta ('sama'|'beza'|'tiada'), note, linked_task_id,
-//   created_at. A DB trigger (trg_progress_sync_from_task) auto-sets
-//   status='siap' when the linked dev_roadmap_items row reaches
+// project_progress: id, category, status ('belum'|'sedang'|'siap'|'rosak'),
+//   title_bm/title_en, story_bm/story_en, cause_bm/cause_en,
+//   impact_bm/impact_en, plan_description_bm/plan_description_en,
+//   real_description_bm/real_description_en (each bilingual pair read via
+//   _pgField(it, field, isBm) below), delta ('sama'|'beza'|'tiada'), note,
+//   linked_task_id, created_at. A DB trigger (trg_progress_sync_from_task)
+//   auto-sets status='siap' when the linked dev_roadmap_items row reaches
 //   stage='completed' — this file never needs to mirror that itself.
 let _adminProgressData = []
 let _adminProgressMode = 'list' // 'list' | 'compare'
@@ -12530,6 +12532,16 @@ function _progressDeltaLabels(isBm) {
     : { sama:'Matches', beza:'Different', tiada:'Not in system' }
 }
 const _PROGRESS_DELTA_COLOR = { sama:'var(--success)', beza:'var(--warning)', tiada:'var(--danger)' }
+
+// Bilingual item content: title/story/cause/impact/plan_description/
+// real_description each live in a _bm and _en column. Falls back to
+// whichever language actually has content (bm, then en) so a record
+// missing one language's translation never renders blank.
+function _pgField(it, field, isBm) {
+  const en = it[field + '_en']
+  const bm = it[field + '_bm']
+  return (isBm ? bm : en) || bm || en || ''
+}
 
 async function renderAdminProgress() {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
@@ -12607,7 +12619,7 @@ async function doSaveProgressItem() {
   const isBm = APP.language==='bm'
   const title = document.getElementById('pg-add-title').value.trim()
   if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
-  const { error } = await sb.from('project_progress').insert({ title, category: 'Lain-lain', status: 'belum' })
+  const { error } = await sb.from('project_progress').insert({ title_bm: title, category: 'Lain-lain', status: 'belum' })
   if(error) { showToast(error.message, 'error'); return }
   showToast(isBm?'Item ditambah.':'Item added.', 'success')
   document.getElementById('admin-progress-modal-overlay')?.classList.remove('active')
@@ -12669,7 +12681,7 @@ function _adminProgressListCardHtml(it, isBm) {
   return `<div class="card" style="padding:0;overflow:hidden">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer" onclick="_pgToggleExpand('${it.id}')">
       <i class="ti ${icon}" style="font-size:20px;color:${color}"></i>
-      <div style="flex:1;font-weight:600">${_aiEscapeHtml(it.title||'—')}</div>
+      <div style="flex:1;font-weight:600">${_aiEscapeHtml(_pgField(it,'title',isBm)||'—')}</div>
       <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${color}">${_aiEscapeHtml(label)}</span>
       <i class="ti ti-chevron-down" id="pg-chev-${it.id}" style="color:var(--text-3);transition:transform .2s"></i>
     </div>
@@ -12684,11 +12696,12 @@ function _adminProgressDetailHtml(it, isBm) {
   const t = isBm
     ? { story:'Apa yang berlaku', cause:'Punca', impact:'Kesan', note:'Nota kau', makeTask:'Jadikan Task' }
     : { story:'What happened', cause:'Cause', impact:'Impact', note:'Your notes', makeTask:'Make Task' }
+  const story = _pgField(it,'story',isBm), cause = _pgField(it,'cause',isBm), impact = _pgField(it,'impact',isBm)
   return `
     <div style="padding-top:14px;font-size:13px;color:var(--text-2);line-height:1.55">
-      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.story}</div>${_aiEscapeHtml(it.story||'—')}</div>
-      ${it.cause ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.cause}</div>${_aiEscapeHtml(it.cause)}</div>` : ''}
-      ${it.impact ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.impact}</div>${_aiEscapeHtml(it.impact)}</div>` : ''}
+      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.story}</div>${_aiEscapeHtml(story||'—')}</div>
+      ${cause ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.cause}</div>${_aiEscapeHtml(cause)}</div>` : ''}
+      ${impact ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.impact}</div>${_aiEscapeHtml(impact)}</div>` : ''}
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">
       ${_PROGRESS_STATUSES.map(s => `<button type="button" class="btn btn-sm ${it.status===s?'btn-primary':'btn-outline'}" onclick="_pgSetStatus('${it.id}','${s}')">${_aiEscapeHtml(labels[s])}</button>`).join('')}
@@ -12708,16 +12721,16 @@ function _adminProgressCompareCardHtml(it, isBm) {
   const t = isBm ? { blueprint:'Blueprint', real:'Sistem sebenar' } : { blueprint:'Blueprint', real:'Real system' }
   return `<div class="card" style="padding:14px 16px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
-      <div style="font-weight:600">${_aiEscapeHtml(it.title||'—')}</div>
+      <div style="font-weight:600">${_aiEscapeHtml(_pgField(it,'title',isBm)||'—')}</div>
       <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${dColor};white-space:nowrap">${_aiEscapeHtml(dLabels[dKey])}</span>
     </div>
     <div style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:8px">
       <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.blueprint}</div>
-      ${_aiEscapeHtml(it.plan_description||'—')}
+      ${_aiEscapeHtml(_pgField(it,'plan_description',isBm)||'—')}
     </div>
     <div style="font-size:13px;color:var(--text-2);line-height:1.5">
       <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">${t.real}</div>
-      ${_aiEscapeHtml(it.real_description||'—')}
+      ${_aiEscapeHtml(_pgField(it,'real_description',isBm)||'—')}
     </div>
   </div>`
 }
@@ -12751,7 +12764,7 @@ async function _pgMakeTask(id) {
   const item = _adminProgressData.find(i => String(i.id)===String(id))
   if(!item) return
   const { data: task, error } = await sb.from('dev_roadmap_items')
-    .insert({ title: item.title, module: item.category, stage: 'idea' }).select('id').single()
+    .insert({ title: _pgField(item,'title',isBm), module: item.category, stage: 'idea' }).select('id').single()
   if(error) { showToast(error.message, 'error'); return }
   const { error: linkErr } = await sb.from('project_progress').update({ linked_task_id: task.id }).eq('id', id)
   if(linkErr) { showToast(linkErr.message, 'error'); return }
@@ -12771,8 +12784,8 @@ function _adminProgressInsightRender() {
   const next = items.find(i => i.status==='belum') || items.find(i => i.status==='sedang')
   const text = next
     ? (isBm
-        ? `Perkara paling penting sekarang: "${next.title}" (${labels[next.status]}). Cadang fokus sini dulu sebelum tambah kerja baru.`
-        : `Most important thing right now: "${next.title}" (${labels[next.status]}). Focus here before adding new work.`)
+        ? `Perkara paling penting sekarang: "${_pgField(next,'title',isBm)}" (${labels[next.status]}). Cadang fokus sini dulu sebelum tambah kerja baru.`
+        : `Most important thing right now: "${_pgField(next,'title',isBm)}" (${labels[next.status]}). Focus here before adding new work.`)
     : (isBm
         ? 'Semua item dalam senarai dah siap atau dalam pembaikan — tiada gap besar buat masa ni.'
         : 'Every item in the list is done or already fixed — no major gaps right now.')
