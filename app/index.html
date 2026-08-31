@@ -5426,7 +5426,9 @@ async function toggleLang() {
   if(authTag) authTag.textContent = tagline
   _applyAuthPageLang()
   buildSidebar()
-  openPage(APP.currentPage||'dashboard')
+  let lastParams = {}
+  try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
+  openPage(APP.currentPage||'dashboard', lastParams)
   showToast(APP.language==='bm'?'Bahasa ditukar ke Melayu':'Language changed to English','info')
 
   if(APP.user?.id) {
