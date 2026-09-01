@@ -12688,8 +12688,8 @@ function _adminContentTableHtml(rows) {
   const badge = (label, color) => `<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${color}">${_aiEscapeHtml(label)}</span>`
   const st = _adminContentState
   const arrow = (col) => st.sortCol === col ? (st.sortDir==='asc'?' ▲':' ▼') : ''
-  const th = (col, label) => `<th style="cursor:pointer;user-select:none" onclick="_adminContentSortBy('${col}')">${label}${arrow(col)}</th>`
-  return `<div style="max-height:370px;overflow-y:auto"><table><thead><tr>
+  const th = (col, label) => `<th style="cursor:pointer;user-select:none;position:sticky;top:0;z-index:3;background:var(--bg-card,#1e242c);box-shadow:0 1px 0 var(--border,rgba(255,255,255,.08))" onclick="_adminContentSortBy('${col}')">${label}${arrow(col)}</th>`
+  return `<div class="admin-content-table-scroll" style="max-height:370px;overflow:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:separate;border-spacing:0;width:100%"><thead><tr>
     ${th('title', t.title)}${th('category', t.category)}${th('status', t.status)}${th('platform', t.platform)}${th('views', t.views)}${th('likes', t.likes)}${th('posted_at', t.posted)}
   </tr></thead><tbody>
   ${rows.map(p => `<tr style="cursor:pointer" onclick="openContentPostModal('${p.id}')">
