@@ -150,8 +150,10 @@ async function listAllVideos(token: string) {
       body: JSON.stringify({ max_count: 20, cursor }),
     })
     const data = await res.json()
-    if (!res.ok || data.error?.code) {
-      throw new Error(data.error?.message || data.message || 'video.list failed')
+    const errCode = String(data?.error?.code || '').toLowerCase()
+    // TikTok returns { error: { code: "ok" } } on SUCCESS — do not treat as failure.
+    if (!res.ok || (errCode && errCode !== 'ok')) {
+      throw new Error(data?.error?.message || data?.message || errCode || 'video.list failed')
     }
     const videos = data?.data?.videos || []
     out.push(...videos)
