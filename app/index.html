@@ -12271,6 +12271,135 @@ const _CONTENT_STATUSES = ['idea', 'planned', 'published']
 let _adminContentState = { platform: 'all', category: 'all', status: 'all', sortCol: 'posted_at', sortDir: 'desc' }
 let _adminTikTokStatus = { connected: false, display_name: null, last_synced_at: null }
 
+// ─── AI Content Generator (Platform Admin) — Hook/Caption/Song/Demo Flow ───
+// AI only ever writes hook/caption_body/hashtags/song/demo_flow — the
+// WhatsApp CTA is appended by CODE after the AI response, never generated
+// by the AI, to remove any risk of a wrong/hallucinated phone number.
+const MCORE_BUSINESS_CONTEXT = `M-Core is a Malaysian SME ERP SaaS (by Phion Sdn Bhd) — vanilla JS web app, Supabase backend, sold direct to small/medium Malaysian business owners (kedai, F&B, retail, services) who currently juggle Excel/WhatsApp/paper for their business.
+Tagline: "ERP Yang Faham Bisnes Anda" / "The ERP That Understands Your Business".
+Target audience: Malaysian SME owners — not techies, price-sensitive, tired of messy spreadsheets and manual bookkeeping, want to see real numbers fast.
+Real modules (use ONLY these when referencing product features): Dashboard, Planner, Customers (CRM), Sales (Invoice/Quotation), POS, Sales Commission, Inventory, Logistics, Purchasing, Production, HR & Payroll, Job Applicants, Accounting (Chart of Accounts/Journal Entries), Payment Vouchers, Reports (P&L/Balance Sheet).
+Brand voice: casual Gen Z Bahasa Melayu Malaysia mixed with English (like a young Malaysian SME owner talking to a friend), relatable pain points, no corporate jargon, no overpromising.`
+
+const _CONTENT_AI_SONGS_KEY = 'mcore_content_ai_songs'
+let _contentAiResult = null
+
+function _contentAiRecentSongs() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_CONTENT_AI_SONGS_KEY) || '[]')
+    return Array.isArray(arr) ? arr : []
+  } catch (e) { return [] }
+}
+
+function _contentAiSaveSong(song) {
+  if (!song) return
+  try {
+    let arr = _contentAiRecentSongs().filter(s => s !== song)
+    arr.unshift(song)
+    localStorage.setItem(_CONTENT_AI_SONGS_KEY, JSON.stringify(arr.slice(0, 10)))
+  } catch (e) {}
+}
+
+function _contentAiCopy(id) {
+  const isBm = APP.language==='bm'
+  const el = document.getElementById('content-ai-box-' + id)
+  if (!el || !navigator.clipboard || !navigator.clipboard.writeText) { showToast(isBm?'Gagal salin.':'Copy failed.', 'error'); return }
+  navigator.clipboard.writeText(el.textContent)
+    .then(() => showToast(isBm?'Disalin.':'Copied.', 'success'))
+    .catch(() => showToast(isBm?'Gagal salin.':'Copy failed.', 'error'))
+}
+
+async function _contentAiGenerate() {
+  if (!_guardAiAccess()) return
+  const isBm = APP.language==='bm'
+  const btn = document.getElementById('content-ai-generate-btn')
+  const out = document.getElementById('content-ai-output')
+  const themeInput = (document.getElementById('content-ai-theme')?.value || '').trim()
+  let theme = themeInput
+  let categoryId = 'other'
+  if (!theme) {
+    const stats = _adminContentComputeStats(_adminContentPosts)
+    if (stats.bestCategory) {
+      categoryId = stats.bestCategory.category
+      theme = _contentCategoryLabels(isBm)[stats.bestCategory.category]
+    }
+  }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Menjana...':'Generating...'}` }
+  if (out) out.innerHTML = ''
+  try {
+    const avoidSongs = _contentAiRecentSongs()
+    const message = `${MCORE_BUSINESS_CONTEXT}\n\n`
+      + `Generate ONE TikTok/social content idea for M-Core.\n`
+      + `Theme/idea to focus on: ${theme || (isBm ? '(bebas — pilih apa yang paling relevan untuk M-Core)' : '(open — pick whatever is most relevant for M-Core)')}\n`
+      + `Language: ${isBm ? 'Bahasa Melayu Malaysia, santai/Gen Z' : 'English, casual/Gen Z'}.\n`
+      + (avoidSongs.length ? `Do NOT reuse these recently-used songs — pick a DIFFERENT trending song: ${avoidSongs.join(', ')}\n` : '')
+      + `Reply with ONLY valid JSON, no markdown code fences, no extra commentary, in EXACTLY this shape:\n`
+      + `{"hook": ["hook line 1", "hook line 2", "hook line 3"], "caption_body": "caption text WITHOUT any call-to-action and WITHOUT hashtags", "hashtags": ["#tag1", "#tag2"], "song": "trending song name - artist", "demo_flow": ["step 1", "step 2", "step 3"]}\n`
+      + `IMPORTANT: caption_body must NOT contain any call-to-action, phone number, or website link — that is added separately by code.\n`
+      + `IMPORTANT: demo_flow steps must reference ONLY real M-Core modules from this exact list: Dashboard, Planner, Customers (CRM), Sales, POS, Sales Commission, Inventory, Logistics, Purchasing, Production, HR & Payroll, Job Applicants, Accounting, Payment Vouchers, Reports. Do not invent module names.`
+
+    const { data, error } = await _invokeAiProxy({ action:'chat', message, context:'Platform-internal M-Core marketing content generator. Not tenant data.' })
+    if (error) throw new Error(error.message || 'AI request failed')
+    if (!data?.success) throw new Error(data?.error || 'AI request failed')
+    let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
+    reply = reply.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+    let parsed
+    try { parsed = JSON.parse(reply) } catch (e) { throw new Error(isBm?'AI pulangkan format tak sah.':'AI returned an invalid format.') }
+
+    const hook = Array.isArray(parsed.hook) ? parsed.hook.filter(Boolean).map(String) : (parsed.hook ? [String(parsed.hook)] : [])
+    const captionBody = String(parsed.caption_body || '').trim()
+    const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.filter(Boolean).map(String) : []
+    const song = String(parsed.song || '').trim()
+    const demoFlow = Array.isArray(parsed.demo_flow) ? parsed.demo_flow.filter(Boolean).map(String) : []
+    if (!hook.length || !captionBody) throw new Error(isBm?'AI pulangkan data tak lengkap.':'AI returned incomplete data.')
+
+    const cta = 'Chat WhatsApp sekarang +60 11 6998 0433 @ layari www.mpflemedia.my'
+    const fullCaption = captionBody + (hashtags.length ? '\n\n' + hashtags.join(' ') : '') + '\n\n' + cta
+
+    if (song) _contentAiSaveSong(song)
+    _contentAiResult = { hook, fullCaption, song, demoFlow, category: categoryId }
+
+    const box = (id, label, icon, text) => `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div class="db-card-title" style="font-size:12px"><i class="ti ${icon}"></i> ${label}</div>
+          <button type="button" class="btn btn-outline btn-sm" onclick="_contentAiCopy('${id}')"><i class="ti ti-copy"></i> ${isBm?'Salin':'Copy'}</button>
+        </div>
+        <pre id="content-ai-box-${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;font-family:inherit">${_aiEscapeHtml(text)}</pre>
+      </div>`
+
+    if (out) out.innerHTML = `
+      ${box('hook', isBm?'Hook':'Hook', 'ti-bolt', hook.map((h,i)=>`${i+1}. ${h}`).join('\n'))}
+      ${box('caption', isBm?'Caption':'Caption', 'ti-message-circle', fullCaption)}
+      ${box('song', isBm?'Lagu':'Song', 'ti-music', song || (isBm?'(tiada cadangan)':'(no suggestion)'))}
+      ${box('demo', isBm?'Demo Flow':'Demo Flow', 'ti-device-desktop', demoFlow.map((d,i)=>`${i+1}. ${d}`).join('\n'))}
+      <button type="button" class="btn btn-primary btn-sm" onclick="_contentAiSaveDraft()"><i class="ti ti-device-floppy"></i> ${isBm?'Simpan sebagai Draf':'Save as Draft'}</button>
+    `
+  } catch (err) {
+    console.error('Content AI generate error:', err)
+    if (out) out.innerHTML = `<div style="color:var(--danger);font-size:13px"><i class="ti ti-alert-triangle"></i> ${isBm?'Ralat: ':'Error: '}${_aiEscapeHtml(err.message||String(err))}</div>`
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = `<i class="ti ti-wand"></i> ${isBm?'Jana Kandungan':'Generate Content'}` }
+}
+
+async function _contentAiSaveDraft() {
+  const isBm = APP.language==='bm'
+  if (!_contentAiResult) return
+  const { hook, fullCaption, song, demoFlow, category } = _contentAiResult
+  let title = (hook[0] || '').trim()
+  if (title.length > 120) title = title.slice(0, 117) + '...'
+  if (!title) title = isBm ? 'Draf Kandungan AI' : 'AI Content Draft'
+  const notes = fullCaption
+    + (song ? `\n\n${isBm?'Lagu':'Song'}: ${song}` : '')
+    + (demoFlow.length ? `\n\n${isBm?'Demo Flow':'Demo Flow'}:\n` + demoFlow.map((d,i)=>`${i+1}. ${d}`).join('\n') : '')
+  const payload = { title, platform: 'tiktok', category: _CONTENT_CATEGORIES.includes(category) ? category : 'other', status: 'idea', notes }
+  const { error } = await sb.from('content_posts').insert(payload)
+  if (error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Draf disimpan.':'Draft saved.', 'success')
+  _contentAiResult = null
+  await renderAdminContentPlanner()
+}
+
 async function _tiktokFn(action) {
   const { data, error } = await sb.functions.invoke('tiktok-sync', { body: { action } })
   if (error) {
@@ -12630,6 +12759,17 @@ function _adminContentRenderAll() {
       <button type="button" class="btn btn-primary btn-sm" onclick="openContentPostModal(null)">${t.addPost}</button>
     </div>
     <div class="card"><div id="content-planner-table-host" style="overflow-x:auto;padding:8px"></div></div>
+    <div class="card" style="padding:16px;margin-top:16px">
+      <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-sparkles"></i> ${isBm?'Penjana Kandungan AI':'AI Content Generator'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div class="form-group" style="margin:0;flex:1;min-width:220px">
+          <label class="form-label">${isBm?'Tema/Idea (pilihan)':'Theme/Idea (optional)'}</label>
+          <input type="text" id="content-ai-theme" class="form-input" placeholder="${isBm?'Kosongkan untuk AI pilih ikut kategori paling berkesan':'Leave blank for AI to pick the best-performing category'}">
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="content-ai-generate-btn" onclick="_contentAiGenerate()"><i class="ti ti-wand"></i> ${isBm?'Jana Kandungan':'Generate Content'}</button>
+      </div>
+      <div id="content-ai-output"></div>
+    </div>
   `
 
   const host = document.getElementById('content-planner-table-host')
