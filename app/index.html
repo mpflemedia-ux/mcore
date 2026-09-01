@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-tiktok-sync">
+<meta name="nexerp-build" content="2026-09-02-tiktok-sync-ok">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12273,7 +12273,19 @@ let _adminTikTokStatus = { connected: false, display_name: null, last_synced_at:
 
 async function _tiktokFn(action) {
   const { data, error } = await sb.functions.invoke('tiktok-sync', { body: { action } })
-  if (error) throw new Error(error.message || 'tiktok-sync failed')
+  if (error) {
+    let msg = error.message || 'tiktok-sync failed'
+    try {
+      const ctx = error.context
+      if (ctx && typeof ctx.json === 'function') {
+        const body = await ctx.json()
+        if (body && body.error) msg = String(body.error)
+      } else if (data && data.error) {
+        msg = String(data.error)
+      }
+    } catch (_) { /* keep gateway message */ }
+    throw new Error(msg)
+  }
   if (data && data.success === false) throw new Error(data.error || 'tiktok-sync failed')
   return data || {}
 }
