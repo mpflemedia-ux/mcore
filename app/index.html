@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-pos-kpi-utc8">
+<meta name="nexerp-build" content="2026-09-01-dash-top-pos">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6023,10 +6023,11 @@ async function loadDashboardData() {
   // - Accrual revenue (full invoice total when issued) is NOT used for these KPIs.
   let posThis = 0, posLast = 0, posPaidThis = 0, posPaidLast = 0
   let posCogsThis = 0, posCogsLast = 0
+  let posIdsThis = [], posThisRows = []
   try {
     const posFromIso = new Date(Date.now() - 200*86400000).toISOString()
     const {data: posRows, error: posErr} = await sb.from('pos_transactions')
-      .select('id,total,status,txn_type,created_at')
+      .select('id,total,status,txn_type,created_at,receipt_no')
       .eq('tenant_id', APP.tenant.id)
       .eq('status', 'completed')
       .gte('created_at', posFromIso)
@@ -6045,7 +6046,8 @@ async function loadDashboardData() {
       else if(inMonth(p.created_at, lms, prevEnd)) { posLast += t; posPaidLast += t }
     })
     // POS COGS from line items × product unit_cost
-    const posIdsThis = pos.filter(p => p.created_at && _localDateFromISO(p.created_at) >= ms && _localDateFromISO(p.created_at) <= periodEnd).map(p=>p.id)
+    posIdsThis = pos.filter(p => p.created_at && _localDateFromISO(p.created_at) >= ms && _localDateFromISO(p.created_at) <= periodEnd).map(p=>p.id)
+    posThisRows = pos.filter(p => posIdsThis.includes(p.id))
     const posIdsLast = pos.filter(p => p.created_at && _localDateFromISO(p.created_at) >= lms && _localDateFromISO(p.created_at) <= prevEnd).map(p=>p.id)
     const posIds = [...posIdsThis, ...posIdsLast]
     if(posIds.length) {
@@ -6183,11 +6185,16 @@ async function loadDashboardData() {
     custValue = custCount ? (curPaid / custCount) : 0
   } catch(e) { console.warn('dashboard customers', e) }
 
-  // Top product (by line amount) + top invoice (highest total) in period
+  // Top product (invoice lines + POS lines) + top invoice / POS receipt in period
   let topProductName = '-', topProductAmt = 0
   let topInvLabel = '-', topInvAmt = 0
   try {
     const periodInvs = nonCancel(thisMonthAll)
+    const byKey = {}
+    const addProd = (name, amt) => {
+      const key = String(name||'').trim() || (isBm ? 'Item' : 'Item')
+      byKey[key] = (byKey[key]||0) + Number(amt||0)
+    }
     if(periodInvs.length) {
       const topInv = [...periodInvs].sort((a,b)=>Number(b.total||0)-Number(a.total||0))[0]
       if(topInv) {
@@ -6199,18 +6206,33 @@ async function loadDashboardData() {
         const {data: items} = await sb.from('invoice_items')
           .select('description,qty,unit_price,product_id,products(name_en,name_bm),invoice_id')
           .in('invoice_id', ids.slice(0,200))
-        const byKey = {}
         ;(items||[]).forEach(it => {
           const pname = (it.products && (APP.language==='bm' ? (it.products.name_bm||it.products.name_en) : (it.products.name_en||it.products.name_bm))) || it.description || 'Item'
-          const key = String(pname).trim() || 'Item'
-          const amt = Number(it.qty||0) * Number(it.unit_price||0)
-          byKey[key] = (byKey[key]||0) + amt
+          addProd(pname, Number(it.qty||0) * Number(it.unit_price||0))
         })
-        const ranked = Object.entries(byKey).sort((a,b)=>b[1]-a[1])
-        if(ranked.length) {
-          topProductName = ranked[0][0]
-          topProductAmt = ranked[0][1]
-        }
+      }
+    }
+    if(posIdsThis.length) {
+      const {data: pItems} = await sb.from('pos_transaction_items')
+        .select('name,qty,unit_price,line_total,product_id,products(name_en,name_bm)')
+        .in('txn_id', posIdsThis.slice(0,200))
+      ;(pItems||[]).forEach(it => {
+        const pname = (it.products && (APP.language==='bm' ? (it.products.name_bm||it.products.name_en) : (it.products.name_en||it.products.name_bm))) || it.name || 'Item'
+        const amt = Number(it.line_total||0) || (Number(it.qty||0)*Number(it.unit_price||0))
+        addProd(pname, amt)
+      })
+    }
+    const ranked = Object.entries(byKey).sort((a,b)=>b[1]-a[1])
+    if(ranked.length) {
+      topProductName = ranked[0][0]
+      topProductAmt = ranked[0][1]
+    }
+    if(!(topInvAmt > 0.005) && posThisRows.length) {
+      const topPos = [...posThisRows].sort((a,b)=>Number(b.total||0)-Number(a.total||0))[0]
+      if(topPos && Number(topPos.total||0) > 0.005) {
+        topInvAmt = Number(topPos.total||0)
+        const rec = topPos.receipt_no || String(topPos.id||'').slice(0,8)
+        topInvLabel = 'POS · ' + rec
       }
     }
   } catch(e) { console.warn('dashboard top product/inv', e) }
@@ -6272,7 +6294,7 @@ async function loadDashboardData() {
       valueColor: ''
     },
     topInvoice: {
-      label: isBm?'Invois Teratas':'Top Invoice',
+      label: isBm?'Invois / jualan teratas':'Top invoice / sale',
       value: topInvLabel,
       delta: null,
       sub: formatRM(topInvAmt),
