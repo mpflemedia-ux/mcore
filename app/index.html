@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-content-status-published">
+<meta name="nexerp-build" content="2026-09-01-tiktok-sync">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12269,6 +12269,56 @@ let _adminContentPosts = []
 const _CONTENT_CATEGORIES = ['demo', 'pain_point', 'comparison', 'seasonal', 'other']
 const _CONTENT_STATUSES = ['idea', 'planned', 'published']
 let _adminContentState = { platform: 'all', category: 'all', status: 'all' }
+let _adminTikTokStatus = { connected: false, display_name: null, last_synced_at: null }
+
+async function _tiktokFn(action) {
+  const { data, error } = await sb.functions.invoke('tiktok-sync', { body: { action } })
+  if (error) throw new Error(error.message || 'tiktok-sync failed')
+  if (data && data.success === false) throw new Error(data.error || 'tiktok-sync failed')
+  return data || {}
+}
+
+function _contentTikTokBarHtml() {
+  const isBm = APP.language==='bm'
+  const st = _adminTikTokStatus || {}
+  const name = st.display_name ? '@' + String(st.display_name).replace(/^@/, '') : ''
+  const when = st.last_synced_at ? formatDate(st.last_synced_at) : ''
+  const status = st.connected
+    ? (isBm ? ('Disambung' + (name ? ' ' + name : '') + (when ? ' · tarik ' + when : '')) : ('Connected' + (name ? ' ' + name : '') + (when ? ' · synced ' + when : '')))
+    : (isBm ? 'TikTok belum disambung' : 'TikTok not connected')
+  const connectLbl = st.connected ? (isBm ? 'Sambung semula' : 'Reconnect') : (isBm ? 'Sambung TikTok' : 'Connect TikTok')
+  return `<div class="card" style="padding:12px 14px;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+    <div style="font-size:13px;color:var(--text-2)"><i class="ti ti-brand-tiktok"></i> ${status}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline btn-sm" onclick="doConnectTikTok()">${connectLbl}</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="doSyncTikTok()" ${st.connected?'':'disabled'}>${isBm?'Tarik sekarang':'Sync now'}</button>
+    </div>
+  </div>`
+}
+
+async function doConnectTikTok() {
+  const isBm = APP.language==='bm'
+  try {
+    const data = await _tiktokFn('start')
+    if (!data.url) throw new Error(isBm ? 'URL TikTok tiada' : 'No TikTok URL')
+    location.href = data.url
+  } catch (e) {
+    showToast((isBm?'Gagal sambung TikTok: ':'Connect TikTok failed: ') + (e.message||e), 'error')
+  }
+}
+
+async function doSyncTikTok() {
+  const isBm = APP.language==='bm'
+  try {
+    showToast(isBm ? 'Menarik video TikTok…' : 'Pulling TikTok videos…', 'info')
+    const data = await _tiktokFn('sync')
+    const n = Number(data.fetched||0), ins = Number(data.inserted||0), upd = Number(data.updated||0)
+    showToast(isBm ? `TikTok: ${n} video (${upd} dikemaskini, ${ins} baru)` : `TikTok: ${n} videos (${upd} updated, ${ins} new)`, 'success')
+    await renderAdminContentPlanner()
+  } catch (e) {
+    showToast((isBm?'Gagal tarik TikTok: ':'TikTok sync failed: ') + (e.message||e), 'error')
+  }
+}
 
 function _contentCategoryLabels(isBm) {
   return isBm
@@ -12309,6 +12359,12 @@ async function renderAdminContentPlanner() {
     </div>
   </div>`
 
+  try {
+    const hash = String(location.hash||'')
+    if (hash.includes('tiktok=ok')) showToast(APP.language==='bm'?'TikTok disambung.':'TikTok connected.', 'success')
+    if (hash.includes('tiktok=err')) showToast(APP.language==='bm'?'Sambungan TikTok gagal. Semak Redirect URI + Target users.':'TikTok connect failed. Check Redirect URI + Target users.', 'error')
+  } catch (e) {}
+  try { _adminTikTokStatus = await _tiktokFn('status') } catch (e) { _adminTikTokStatus = { connected:false } }
   const wrap = document.getElementById('admin-content-wrap')
   const { data, error } = await sb.from('content_posts').select('*').order('created_at', { ascending: true })
   if(error) {
@@ -12322,6 +12378,14 @@ async function renderAdminContentPlanner() {
   }
   _adminContentPosts = data || []
   _adminContentRenderAll()
+  try {
+    const last = _adminTikTokStatus && _adminTikTokStatus.last_synced_at
+    const stale = !last || (Date.now() - new Date(last).getTime() > 4*60*60*1000)
+    if (_adminTikTokStatus && _adminTikTokStatus.connected && stale && !_adminContentState._autoSynced) {
+      _adminContentState._autoSynced = true
+      await doSyncTikTok()
+    }
+  } catch (e) {}
 }
 
 /** Average views per category, EXCLUDING posts with a NULL views (not-yet-posted
@@ -12479,6 +12543,7 @@ function _adminContentRenderAll() {
   const platformOpts = _adminContentPlatformOptions()
 
   wrap.innerHTML = `
+    ${_contentTikTokBarHtml()}
     ${_adminContentStatsHtml(stats)}
     <div class="card" style="padding:16px;margin-bottom:16px">
       <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-chart-bar"></i> ${t.chartTitle}</div>
