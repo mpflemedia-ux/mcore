@@ -9107,6 +9107,9 @@ async function _dbRenderContentPlanner() {
     const statsEl = document.getElementById('db-content-stats')
     if(!canvas) return
 
+    if (!_adminTikTokStatus || _adminTikTokStatus.follower_count == null) {
+      try { _adminTikTokStatus = await _tiktokFn('status') } catch (_) {}
+    }
     const { data, error } = await sb.from('content_posts').select('*').order('created_at', { ascending: true })
     if(error) {
       window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, { content: null })
@@ -9121,8 +9124,12 @@ async function _dbRenderContentPlanner() {
         <div style="font-size:10px;color:var(--text-3)">${label}</div>
         <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px">${val}</div>
       </div>`
+      const followers = (_adminTikTokStatus && _adminTikTokStatus.follower_count != null)
+        ? Number(_adminTikTokStatus.follower_count) : null
       statsEl.innerHTML = box(isBm?'Jumlah Post':'Total Posts', stats.totalPosts)
         + box(isBm?'Jumlah Views':'Total Views', stats.totalViews.toLocaleString())
+        + box(isBm?'Jumlah Like':'Total Likes', Number(stats.totalLikes||0).toLocaleString())
+        + box(isBm?'Pengikut':'Followers', followers===null ? '—' : followers.toLocaleString())
         + box(isBm?'Purata Views':'Avg Views', stats.avgViewsPerPost.toLocaleString())
         + box(isBm?'Kategori Terbaik':'Best Category', stats.bestCategory ? _aiEscapeHtml(catLabels[stats.bestCategory.category]) : (isBm?'—':'—'))
     }
@@ -12537,6 +12544,7 @@ function _adminContentComputeStats(items) {
   const withViews = items.filter(p => p.views !== null && p.views !== undefined)
   const totalViews = withViews.reduce((sum, p) => sum + Number(p.views || 0), 0)
   const avgViewsPerPost = withViews.length ? Math.round(totalViews / withViews.length) : 0
+  const totalLikes = items.reduce((sum, p) => sum + Number(p.likes || 0), 0)
 
   const categoryStats = _CONTENT_CATEGORIES.map(cat => {
     const catViews = withViews.filter(p => p.category === cat)
@@ -12546,7 +12554,7 @@ function _adminContentComputeStats(items) {
   const withData = categoryStats.filter(c => c.count > 0)
   const best = withData.length ? withData.reduce((a, b) => b.avg > a.avg ? b : a) : null
 
-  return { totalPosts: items.length, totalViews, avgViewsPerPost, categoryStats, bestCategory: best }
+  return { totalPosts: items.length, totalViews, totalLikes, avgViewsPerPost, categoryStats, bestCategory: best }
 }
 
 function _adminContentStatsHtml(stats) {
@@ -12559,6 +12567,8 @@ function _adminContentStatsHtml(stats) {
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
     ${statBox(isBm?'Jumlah Post':'Total Posts', stats.totalPosts)}
     ${statBox(isBm?'Jumlah Views':'Total Views', stats.totalViews.toLocaleString())}
+    ${statBox(isBm?'Jumlah Like':'Total Likes', Number(stats.totalLikes||0).toLocaleString())}
+    ${statBox(isBm?'Pengikut':'Followers', (stats.followers===null||stats.followers===undefined) ? '—' : Number(stats.followers).toLocaleString())}
     ${statBox(isBm?'Purata Views/Post':'Avg Views/Post', stats.avgViewsPerPost.toLocaleString())}
     ${statBox(isBm?'Kategori Terbaik':'Best Category', stats.bestCategory ? _aiEscapeHtml(catLabels[stats.bestCategory.category]) + ` (${stats.bestCategory.avg.toLocaleString()})` : (isBm?'Tiada data':'No data yet'))}
   </div>`
@@ -12721,6 +12731,8 @@ function _adminContentRenderAll() {
     : { platform:'Platform', category:'Category', status:'Status', all:'All', addPost:'+ Add Post', chartTitle:'Avg Views by Category' }
   const items = _adminContentPosts
   const stats = _adminContentComputeStats(items)
+  if (_adminTikTokStatus && _adminTikTokStatus.follower_count != null) stats.followers = Number(_adminTikTokStatus.follower_count)
+  else stats.followers = null
   const platformOpts = _adminContentPlatformOptions()
 
   wrap.innerHTML = `

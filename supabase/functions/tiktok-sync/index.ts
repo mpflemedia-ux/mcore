@@ -140,7 +140,7 @@ async function refreshAccess(sb: ReturnType<typeof sbAdmin>, row: Record<string,
 }
 
 async function tiktokUser(token: string) {
-  const res = await fetch('https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url', {
+  const res = await fetch('https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url,follower_count,likes_count,video_count', {
     headers: { Authorization: `Bearer ${token}` },
   })
   const data = await res.json()
@@ -275,7 +275,12 @@ Deno.serve(async (req) => {
         expires_at: new Date(Date.now() + Number(tok.expires_in || 86400) * 1000).toISOString(),
         open_id: tok.open_id || user.open_id || null,
         display_name: user.display_name || null,
-        meta: { avatar_url: user.avatar_url || null },
+        meta: {
+          avatar_url: user.avatar_url || null,
+          follower_count: user.follower_count ?? null,
+          likes_count: user.likes_count ?? null,
+          video_count: user.video_count ?? null,
+        },
       })
       try { await syncVideos(sb, tok.access_token) } catch (_) { /* first sync optional */ }
       return redirect(appReturn('tiktok=ok'))
@@ -292,7 +297,7 @@ Deno.serve(async (req) => {
       const auth = new URL('https://www.tiktok.com/v2/auth/authorize/')
       auth.searchParams.set('client_key', clientKey())
       auth.searchParams.set('response_type', 'code')
-      auth.searchParams.set('scope', 'user.info.basic,video.list')
+      auth.searchParams.set('scope', 'user.info.basic,user.info.stats,video.list')
       auth.searchParams.set('redirect_uri', redirectUri())
       auth.searchParams.set('state', state)
       return json({ success: true, url: auth.toString() })
@@ -300,11 +305,15 @@ Deno.serve(async (req) => {
 
     if (action === 'status') {
       const row = await loadTikTokRow(sb)
+      const meta = (row && row.meta && typeof row.meta === 'object') ? row.meta : {}
       return json({
         success: true,
         connected: !!(row && row.refresh_token),
         display_name: row?.display_name || null,
         last_synced_at: row?.last_synced_at || null,
+        follower_count: meta.follower_count ?? null,
+        likes_count: meta.likes_count ?? null,
+        video_count: meta.video_count ?? null,
       })
     }
 
@@ -312,8 +321,25 @@ Deno.serve(async (req) => {
       const row = await loadTikTokRow(sb)
       if (!row?.refresh_token && !row?.access_token) return json({ success: false, error: 'Connect TikTok first' }, 400)
       const token = await refreshAccess(sb, row as Record<string, unknown>)
+      const user = await tiktokUser(token)
+      const prevMeta = (row.meta && typeof row.meta === 'object') ? row.meta as Record<string, unknown> : {}
+      await upsertTikTokRow(sb, {
+        display_name: user.display_name || row.display_name,
+        meta: {
+          ...prevMeta,
+          avatar_url: user.avatar_url || prevMeta.avatar_url || null,
+          follower_count: user.follower_count ?? prevMeta.follower_count ?? null,
+          likes_count: user.likes_count ?? prevMeta.likes_count ?? null,
+          video_count: user.video_count ?? prevMeta.video_count ?? null,
+        },
+      })
       const stats = await syncVideos(sb, token)
-      return json({ success: true, ...stats })
+      return json({
+        success: true,
+        ...stats,
+        follower_count: user.follower_count ?? prevMeta.follower_count ?? null,
+        likes_count: user.likes_count ?? prevMeta.likes_count ?? null,
+      })
     }
 
     if (action === 'disconnect') {
