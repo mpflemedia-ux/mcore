@@ -12526,7 +12526,7 @@ function _adminContentTableHtml(rows) {
     <th>${t.title}</th><th>${t.category}</th><th>${t.status}</th><th>${t.platform}</th><th>${t.views}</th><th>${t.likes}</th><th>${t.posted}</th>
   </tr></thead><tbody>
   ${rows.map(p => `<tr style="cursor:pointer" onclick="openContentPostModal('${p.id}')">
-    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal" title="${_aiEscapeHtml(p.title||'')}">${_aiEscapeHtml(p.title||'—')}</td>
+    <td style="max-width:220px"><div style="overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal" title="${_aiEscapeHtml(p.title||'')}">${_aiEscapeHtml(p.title||'—')}</div></td>
     <td>${badge(catLabels[p.category]||p.category||'—', _CONTENT_CATEGORY_COLORS[p.category]||'#64748B')}</td>
     <td>${badge(statusLabels[p.status]||p.status||'—', _CONTENT_STATUS_COLORS[p.status]||'var(--text-3)')}</td>
     <td>${_aiEscapeHtml(p.platform||'—')}</td>
