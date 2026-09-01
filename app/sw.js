@@ -1,5 +1,5 @@
 /* M-Core service worker — HTML always network; bump CACHE to drop bad shells */
-const CACHE = 'mcore-shell-v11'
+const CACHE = 'mcore-shell-v12'
 self.addEventListener('install', e => {
   e.waitUntil(self.skipWaiting())
 })

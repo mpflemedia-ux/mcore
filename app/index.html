@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-dash-top-pos">
+<meta name="nexerp-build" content="2026-09-01-dash-top-pos-v2">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6026,12 +6026,26 @@ async function loadDashboardData() {
   let posIdsThis = [], posThisRows = []
   try {
     const posFromIso = new Date(Date.now() - 200*86400000).toISOString()
-    const {data: posRows, error: posErr} = await sb.from('pos_transactions')
-      .select('id,total,status,txn_type,created_at,receipt_no')
-      .eq('tenant_id', APP.tenant.id)
-      .eq('status', 'completed')
-      .gte('created_at', posFromIso)
-    if(posErr) console.warn('loadDashboardData POS query', posErr)
+    let posRows = null
+    {
+      const q1 = await sb.from('pos_transactions')
+        .select('id,total,status,txn_type,created_at,receipt_no')
+        .eq('tenant_id', APP.tenant.id)
+        .eq('status', 'completed')
+        .gte('created_at', posFromIso)
+      if(q1.error) {
+        console.warn('loadDashboardData POS query', q1.error)
+        const q2 = await sb.from('pos_transactions')
+          .select('id,total,status,txn_type,created_at')
+          .eq('tenant_id', APP.tenant.id)
+          .eq('status', 'completed')
+          .gte('created_at', posFromIso)
+        if(q2.error) console.warn('loadDashboardData POS retry', q2.error)
+        posRows = q2.data
+      } else {
+        posRows = q1.data
+      }
+    }
     const pos = posRows || []
     const inMonth = (iso, start, end) => {
       if(!iso) return false
@@ -6213,11 +6227,13 @@ async function loadDashboardData() {
       }
     }
     if(posIdsThis.length) {
-      const {data: pItems} = await sb.from('pos_transaction_items')
-        .select('name,qty,unit_price,line_total,product_id,products(name_en,name_bm)')
+      const qItems = await sb.from('pos_transaction_items')
+        .select('name,qty,unit_price,line_total,product_id')
+        .eq('tenant_id', APP.tenant.id)
         .in('txn_id', posIdsThis.slice(0,200))
-      ;(pItems||[]).forEach(it => {
-        const pname = (it.products && (APP.language==='bm' ? (it.products.name_bm||it.products.name_en) : (it.products.name_en||it.products.name_bm))) || it.name || 'Item'
+      if(qItems.error) console.warn('dashboard POS items', qItems.error)
+      ;(qItems.data||[]).forEach(it => {
+        const pname = it.name || 'Item'
         const amt = Number(it.line_total||0) || (Number(it.qty||0)*Number(it.unit_price||0))
         addProd(pname, amt)
       })
@@ -36121,7 +36137,7 @@ if('serviceWorker' in navigator){
       refreshing = true
       try { location.reload() } catch(e) {}
     })
-    navigator.serviceWorker.register('./sw.js?v=11').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=12').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
