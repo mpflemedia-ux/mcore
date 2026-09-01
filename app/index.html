@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-pos-journal-kl-date">
+<meta name="nexerp-build" content="2026-09-01-pos-kpi-utc8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6024,23 +6024,25 @@ async function loadDashboardData() {
   let posThis = 0, posLast = 0, posPaidThis = 0, posPaidLast = 0
   let posCogsThis = 0, posCogsLast = 0
   try {
-    const {data: posRows} = await sb.from('pos_transactions')
+    const posFromIso = new Date(Date.now() - 200*86400000).toISOString()
+    const {data: posRows, error: posErr} = await sb.from('pos_transactions')
       .select('id,total,status,txn_type,created_at')
       .eq('tenant_id', APP.tenant.id)
       .eq('status', 'completed')
-      .gte('created_at', sixMonthsAgo.toISOString())
+      .gte('created_at', posFromIso)
+    if(posErr) console.warn('loadDashboardData POS query', posErr)
     const pos = posRows || []
     const inMonth = (iso, start, end) => {
       if(!iso) return false
       const d = _localDateFromISO(iso)
-      return d >= start && (!end || d < end)
+      return d >= start && d <= end
     }
     pos.forEach(p => {
-      if(p.txn_type && p.txn_type !== 'sale') return
+      const tt = String(p.txn_type||'sale').toLowerCase()
+      if(tt && tt !== 'sale') return
       const t = Number(p.total||0)
-      const pd = _localDateFromISO(p.created_at)
-      if(inMonth(p.created_at, ms, null) && pd <= periodEnd) { posThis += t; posPaidThis += t }
-      else if(inMonth(p.created_at, lms, null) && pd <= prevEnd && pd >= lms) { posLast += t; posPaidLast += t }
+      if(inMonth(p.created_at, ms, periodEnd)) { posThis += t; posPaidThis += t }
+      else if(inMonth(p.created_at, lms, prevEnd)) { posLast += t; posPaidLast += t }
     })
     // POS COGS from line items × product unit_cost
     const posIdsThis = pos.filter(p => p.created_at && _localDateFromISO(p.created_at) >= ms && _localDateFromISO(p.created_at) <= periodEnd).map(p=>p.id)
@@ -7383,21 +7385,20 @@ function _dbSyncGlobalTheme() {
 function _dbFmtYMD(d) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
-/** Malaysia calendar parts (Asia/Kuala_Lumpur). Never use UTC slice for "today". */
+/** Malaysia calendar parts. Always UTC+8 arithmetic — Android WebView often ignores Intl timeZone. MY has no DST. */
+function _dbParseInstant(v) {
+  if(v instanceof Date) return v
+  if(v == null || v === '') return new Date()
+  let s = String(v).trim().replace(' ', 'T')
+  if(/[+-]\d{2}$/.test(s)) s += ':00'
+  let d = new Date(s)
+  if(isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2}T/.test(s) && !/[Zz]|[+-]\d{2}:?\d{0,2}$/.test(s)) d = new Date(s + 'Z')
+  return isNaN(d.getTime()) ? new Date() : d
+}
 function _dbKlParts(d) {
-  d = (d instanceof Date) ? d : (d ? new Date(d) : new Date())
-  if(isNaN(d.getTime())) d = new Date()
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    }).formatToParts(d)
-    const g = (t) => Number(parts.find(p => p.type === t)?.value)
-    return { year: g('year'), month: g('month'), day: g('day'), hour: g('hour'), minute: g('minute') }
-  } catch(e) {
-    const kl = new Date(d.getTime() + 8*3600000)
-    return { year: kl.getUTCFullYear(), month: kl.getUTCMonth()+1, day: kl.getUTCDate(), hour: kl.getUTCHours(), minute: kl.getUTCMinutes() }
-  }
+  d = _dbParseInstant(d === undefined ? new Date() : d)
+  const kl = new Date(d.getTime() + 8*3600000)
+  return { year: kl.getUTCFullYear(), month: kl.getUTCMonth()+1, day: kl.getUTCDate(), hour: kl.getUTCHours(), minute: kl.getUTCMinutes() }
 }
 function _dbKlYMD(d) {
   const k = _dbKlParts(d)
