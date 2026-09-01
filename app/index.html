@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-01-dash-top-pos-v2">
+<meta name="nexerp-build" content="2026-09-01-content-status-published">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12262,12 +12262,12 @@ async function doDeleteDevRoadmapItem(itemId) {
 // ─── Content Planner (Platform Admin) — TikTok/social content performance ──
 // content_posts: id, platform, title, category
 //   ('demo'|'pain_point'|'comparison'|'seasonal'|'other'), status
-//   ('idea'|'planned'|'posted'), post_url, views, likes, posted_at, notes,
+//   ('idea'|'planned'|'published'), post_url, views, likes, posted_at, notes,
 //   created_at. views/likes/posted_at are NULL until a post actually goes
 //   live — NULL must never be treated as 0 in any average.
 let _adminContentPosts = []
 const _CONTENT_CATEGORIES = ['demo', 'pain_point', 'comparison', 'seasonal', 'other']
-const _CONTENT_STATUSES = ['idea', 'planned', 'posted']
+const _CONTENT_STATUSES = ['idea', 'planned', 'published']
 let _adminContentState = { platform: 'all', category: 'all', status: 'all' }
 
 function _contentCategoryLabels(isBm) {
@@ -12276,10 +12276,10 @@ function _contentCategoryLabels(isBm) {
     : { demo: 'Demo', pain_point: 'Pain Point', comparison: 'Comparison', seasonal: 'Seasonal', other: 'Other' }
 }
 function _contentStatusLabels(isBm) {
-  return isBm ? { idea: 'Idea', planned: 'Dirancang', posted: 'Disiarkan' } : { idea: 'Idea', planned: 'Planned', posted: 'Posted' }
+  return isBm ? { idea: 'Idea', planned: 'Dirancang', published: 'Disiarkan' } : { idea: 'Idea', planned: 'Planned', published: 'Posted' }
 }
 const _CONTENT_CATEGORY_COLORS = { demo: '#0E7490', pain_point: '#DC2626', comparison: '#D97706', seasonal: '#7C3AED', other: '#64748B' }
-const _CONTENT_STATUS_COLORS = { idea: 'var(--text-3)', planned: 'var(--warning)', posted: 'var(--success)' }
+const _CONTENT_STATUS_COLORS = { idea: 'var(--text-3)', planned: 'var(--warning)', published: 'var(--success)' }
 
 async function renderAdminContentPlanner() {
   if(!isPlatformAdmin()) { renderAccessDenied(); return }
@@ -12572,7 +12572,8 @@ async function doSaveContentPost() {
   if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
   const platform = document.getElementById('content-post-platform').value.trim()
   const category = document.getElementById('content-post-category').value
-  const status = document.getElementById('content-post-status').value
+  const statusRaw = document.getElementById('content-post-status').value
+  const status = statusRaw === 'posted' ? 'published' : statusRaw
   const postUrl = document.getElementById('content-post-url').value.trim() || null
   const viewsRaw = document.getElementById('content-post-views').value
   const likesRaw = document.getElementById('content-post-likes').value
