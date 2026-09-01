@@ -48,10 +48,10 @@ function appReturn(qs: string) {
 
 function guessCategory(title: string) {
   const t = (title || '').toLowerCase()
-  if (/(raya|maulid|merdeka|kebangsaan|ramadan|ramadhan|hari raya|cny|tahun baru)/.test(t)) return 'seasonal'
-  if (/\bvs\b|banding|bandingan|bandingkan/.test(t)) return 'comparison'
-  if (/(menyesal|masalah|kenapa|tak siap|terburu|sakit|lejar merapu|dalam kepala)/.test(t)) return 'pain_point'
-  if (/(demo|log masuk|login|modul|cara |mula kerja|penyelesaian)/.test(t)) return 'demo'
+  if (/(raya|maulid|merdeka|kebangsaan|ramadan|ramadhan|hari raya|cny|tahun baru|cuti umum|holiday)/.test(t)) return 'seasonal'
+  if (/\bvs\b|banding|bandingan|bandingkan|5 app/.test(t)) return 'comparison'
+  if (/(menyesal|masalah|kenapa|tak siap|terburu|sakit|lejar merapu|dalam kepala|stok habis|jualan hilang|tak nampak|tragedi|roti habis|ssm|seller center)/.test(t)) return 'pain_point'
+  if (/(demo|log masuk|login|modul|cara |mula kerja|mulakan|penyelesaian|payroll|epf|socso|pos |bayaran masuk|staff nampak)/.test(t)) return 'demo'
   return 'other'
 }
 
@@ -170,13 +170,15 @@ function titleOf(v: Record<string, unknown>) {
 
 async function syncVideos(sb: ReturnType<typeof sbAdmin>, token: string) {
   const videos = await listAllVideos(token)
-  const { data: existing } = await sb.from('content_posts').select('id, title, post_url, tiktok_video_id, category, notes')
+  const { data: existing } = await sb.from('content_posts').select('id, title, post_url, tiktok_video_id, category, notes, platform, status')
   const rows = existing || []
-  let inserted = 0, updated = 0
+  const touched = new Set<string>()
+  let inserted = 0, updated = 0, removed = 0
   for (const v of videos) {
     const vid = String(v.id || '')
     if (!vid) continue
     const title = titleOf(v)
+    const category = guessCategory(`${title} ${v.video_description || ''}`)
     const postedAt = v.create_time
       ? new Date(Number(v.create_time) * 1000).toISOString().slice(0, 10)
       : new Date().toISOString().slice(0, 10)
@@ -193,6 +195,7 @@ async function syncVideos(sb: ReturnType<typeof sbAdmin>, token: string) {
         tiktok_video_id: vid,
         platform: 'TikTok',
         title,
+        category,
         status: 'published',
         views,
         likes,
@@ -200,26 +203,48 @@ async function syncVideos(sb: ReturnType<typeof sbAdmin>, token: string) {
         posted_at: postedAt,
       }).eq('id', hit.id)
       if (error) throw error
+      touched.add(String(hit.id))
       updated++
     } else {
-      const { error } = await sb.from('content_posts').insert({
+      const { data: ins, error } = await sb.from('content_posts').insert({
         tiktok_video_id: vid,
         platform: 'TikTok',
         title,
-        category: guessCategory(title),
+        category,
         status: 'published',
         views,
         likes,
         post_url: url,
         posted_at: postedAt,
         notes: 'TikTok auto-sync',
-      })
+      }).select('id').maybeSingle()
       if (error) throw error
+      if (ins?.id) touched.add(String(ins.id))
       inserted++
     }
   }
+  // Live TikTok is source of truth. Drop published TikTok rows not in this pull.
+  // Never prune if the API returned 0 videos (sandbox often does that).
+  if (videos.length > 0) {
+    const staleIds = rows
+      .filter((r: { id?: string; platform?: string; status?: string }) => {
+        if (touched.has(String(r.id || ''))) return false
+        const plat = String(r.platform || 'TikTok').toLowerCase()
+        if (plat !== 'tiktok') return false
+        const st = String(r.status || '').toLowerCase()
+        if (st === 'idea' || st === 'planned') return false
+        return true
+      })
+      .map((r: { id?: string }) => r.id)
+      .filter(Boolean)
+    if (staleIds.length) {
+      const { error } = await sb.from('content_posts').delete().in('id', staleIds)
+      if (error) throw error
+      removed = staleIds.length
+    }
+  }
   await upsertTikTokRow(sb, { last_synced_at: new Date().toISOString() })
-  return { fetched: videos.length, inserted, updated }
+  return { fetched: videos.length, inserted, updated, removed }
 }
 
 Deno.serve(async (req) => {

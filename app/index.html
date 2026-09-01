@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="nexerp-build" content="2026-09-02-tiktok-sync-ok">
+<meta name="nexerp-build" content="2026-09-02-content-recat">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12324,8 +12324,10 @@ async function doSyncTikTok() {
   try {
     showToast(isBm ? 'Menarik video TikTok…' : 'Pulling TikTok videos…', 'info')
     const data = await _tiktokFn('sync')
-    const n = Number(data.fetched||0), ins = Number(data.inserted||0), upd = Number(data.updated||0)
-    showToast(isBm ? `TikTok: ${n} video (${upd} dikemaskini, ${ins} baru)` : `TikTok: ${n} videos (${upd} updated, ${ins} new)`, 'success')
+    const n = Number(data.fetched||0), ins = Number(data.inserted||0), upd = Number(data.updated||0), rm = Number(data.removed||0)
+    showToast(isBm
+      ? `TikTok: ${n} video (${upd} dikemaskini, ${ins} baru${rm ? ', '+rm+' dibuang' : ''})`
+      : `TikTok: ${n} videos (${upd} updated, ${ins} new${rm ? ', '+rm+' removed' : ''})`, 'success')
     await renderAdminContentPlanner()
   } catch (e) {
     showToast((isBm?'Gagal tarik TikTok: ':'TikTok sync failed: ') + (e.message||e), 'error')
