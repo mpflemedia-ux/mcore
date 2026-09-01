@@ -12522,11 +12522,11 @@ function _adminContentTableHtml(rows) {
     : { title:'Title', category:'Category', status:'Status', platform:'Platform', views:'Views', likes:'Likes', posted:'Posted', noData:'No matching posts.' }
   if(!rows.length) return `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`
   const badge = (label, color) => `<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;color:#fff;background:${color}">${_aiEscapeHtml(label)}</span>`
-  return `<table><thead><tr>
+  return `<div style="max-height:370px;overflow-y:auto"><table><thead><tr>
     <th>${t.title}</th><th>${t.category}</th><th>${t.status}</th><th>${t.platform}</th><th>${t.views}</th><th>${t.likes}</th><th>${t.posted}</th>
   </tr></thead><tbody>
   ${rows.map(p => `<tr style="cursor:pointer" onclick="openContentPostModal('${p.id}')">
-    <td>${_aiEscapeHtml(p.title||'—')}</td>
+    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal" title="${_aiEscapeHtml(p.title||'')}">${_aiEscapeHtml(p.title||'—')}</td>
     <td>${badge(catLabels[p.category]||p.category||'—', _CONTENT_CATEGORY_COLORS[p.category]||'#64748B')}</td>
     <td>${badge(statusLabels[p.status]||p.status||'—', _CONTENT_STATUS_COLORS[p.status]||'var(--text-3)')}</td>
     <td>${_aiEscapeHtml(p.platform||'—')}</td>
@@ -12534,7 +12534,7 @@ function _adminContentTableHtml(rows) {
     <td>${p.likes!==null && p.likes!==undefined ? Number(p.likes).toLocaleString() : '—'}</td>
     <td style="white-space:nowrap">${p.posted_at ? formatDate(p.posted_at) : '—'}</td>
   </tr>`).join('')}
-  </tbody></table>`
+  </tbody></table></div>`
 }
 
 function _adminContentPlatformOptions() {
