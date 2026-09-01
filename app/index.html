@@ -5713,7 +5713,7 @@ function renderDashboard() {
     <div class="db-ops-row" style="grid-template-columns:1fr;margin-top:16px;margin-bottom:14px">
       <div class="db-card db-card-glow" id="db-sec-content">
         <div class="db-card-title" style="margin-bottom:12px"><i class="ti ti-brand-tiktok"></i> ${isBm?'Perancang Kandungan':'Content Planner'}</div>
-        <div id="db-content-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px"></div>
+        <div id="db-content-stats" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px"></div>
         <div class="db-chart-slot" style="min-height:160px"><canvas id="db-content-chart"></canvas></div>
         <div class="db-ai-insight" id="db-ai-content"><span class="db-ai-tag">AI</span> …</div>
       </div>
@@ -9120,9 +9120,9 @@ async function _dbRenderContentPlanner() {
     const catLabels = _contentCategoryLabels(isBm)
 
     if(statsEl) {
-      const box = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
-        <div style="font-size:10px;color:var(--text-3)">${label}</div>
-        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px">${val}</div>
+      const box = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;min-height:58px;display:flex;flex-direction:column;justify-content:center;gap:2px">
+        <div style="font-size:9px;color:var(--text-3);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${val}</div>
       </div>`
       const followers = (_adminTikTokStatus && _adminTikTokStatus.follower_count != null)
         ? Number(_adminTikTokStatus.follower_count) : null
@@ -12560,11 +12560,11 @@ function _adminContentComputeStats(items) {
 function _adminContentStatsHtml(stats) {
   const isBm = APP.language==='bm'
   const catLabels = _contentCategoryLabels(isBm)
-  const statBox = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
-      <div style="font-size:11px;color:var(--text-3)">${label}</div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px">${val}</div>
+  const statBox = (label, val) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 8px;text-align:center;min-height:64px;display:flex;flex-direction:column;justify-content:center;gap:2px">
+      <div style="font-size:10px;color:var(--text-3);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${val}</div>
     </div>`
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+  return `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:16px">
     ${statBox(isBm?'Jumlah Post':'Total Posts', stats.totalPosts)}
     ${statBox(isBm?'Jumlah Views':'Total Views', stats.totalViews.toLocaleString())}
     ${statBox(isBm?'Jumlah Like':'Total Likes', Number(stats.totalLikes||0).toLocaleString())}
