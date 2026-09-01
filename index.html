@@ -9,10 +9,24 @@
 </script>
 <title>M-Core by MPFLE Media — One login for your shop</title>
 <meta name="description" content="One login for your shop. Sales, stock, Malaysian payroll, and the books. Built for Malaysia, not a foreign template.">
+<meta name="robots" content="index,follow">
+<meta name="author" content="MPFLE Media">
+<link rel="canonical" href="https://mpflemedia.my/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="M-Core by MPFLE Media">
+<meta property="og:locale" content="en_MY">
+<meta property="og:locale:alternate" content="ms_MY">
 <meta property="og:title" content="M-Core by MPFLE Media">
 <meta property="og:description" content="One login for your shop. Sales, stock, Malaysian payroll, and the books.">
-<meta property="og:url" content="https://mpflemedia.my">
-<meta property="og:image" content="https://mpflemedia.my/assets/apple-touch-icon.png">
+<meta property="og:url" content="https://mpflemedia.my/">
+<meta property="og:image" content="https://mpflemedia.my/assets/icon-512.png">
+<meta property="og:image:width" content="512">
+<meta property="og:image:height" content="512">
+<meta property="og:image:alt" content="M-Core">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="M-Core by MPFLE Media">
+<meta name="twitter:description" content="One login for your shop. Sales, stock, Malaysian payroll, and the books.">
+<meta name="twitter:image" content="https://mpflemedia.my/assets/icon-512.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png">
@@ -650,6 +664,58 @@ footer a:hover { color: var(--cyan); }
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://mpflemedia.my/#org",
+      "name": "MPFLE Media",
+      "url": "https://mpflemedia.my/",
+      "email": "hello@mpflemedia.my",
+      "telephone": "+601169980433",
+      "logo": "https://mpflemedia.my/assets/icon-512.png",
+      "areaServed": "MY"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://mpflemedia.my/#app",
+      "name": "M-Core",
+      "url": "https://mpflemedia.my/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "inLanguage": [
+        "en",
+        "ms"
+      ],
+      "description": "One login for your shop. Sales, stock, Malaysian payroll, and the books. Built for Malaysia.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "MYR",
+        "description": "Free plan available"
+      },
+      "publisher": {
+        "@id": "https://mpflemedia.my/#org"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://mpflemedia.my/#website",
+      "url": "https://mpflemedia.my/",
+      "name": "M-Core by MPFLE Media",
+      "inLanguage": [
+        "en",
+        "ms"
+      ],
+      "publisher": {
+        "@id": "https://mpflemedia.my/#org"
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <div class="ambient" aria-hidden="true"></div>
