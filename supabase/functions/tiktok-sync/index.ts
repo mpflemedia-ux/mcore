@@ -48,11 +48,21 @@ function appReturn(qs: string) {
 
 function guessCategory(title: string) {
   const t = (title || '').toLowerCase()
-  if (/(raya|maulid|merdeka|kebangsaan|ramadan|ramadhan|hari raya|cny|tahun baru|cuti umum|holiday)/.test(t)) return 'seasonal'
-  if (/\bvs\b|banding|bandingan|bandingkan|5 app/.test(t)) return 'comparison'
-  if (/(menyesal|masalah|kenapa|tak siap|terburu|sakit|lejar merapu|dalam kepala|stok habis|jualan hilang|tak nampak|tragedi|roti habis|ssm|seller center)/.test(t)) return 'pain_point'
-  if (/(demo|log masuk|login|modul|cara |mula kerja|mulakan|penyelesaian|payroll|epf|socso|pos |bayaran masuk|staff nampak)/.test(t)) return 'demo'
+  if (/(raya|maulid|merdeka|kebangsaan|ramadan|ramadhan|hari raya|cny|tahun baru|cuti umum|holiday|puasa|aidilfitri|deepavali|christmas)/.test(t)) return 'seasonal'
+  if (/\bvs\b|banding|bandingan|bandingkan|5 app|lima app|spreadsheet vs|excel vs/.test(t)) return 'comparison'
+  if (/(menyesal|masalah|kenapa|tak siap|terburu|sakit|lejar merapu|dalam kepala|stok habis|jualan hilang|tak nampak|tragedi|roti habis|ssm|seller center|chaos|kucar|kacau|hilang duit|tak cukup|leceh)/.test(t)) return 'pain_point'
+  if (/(demo|log masuk|login|modul|cara |mula kerja|mulakan|penyelesaian|payroll|epf|socso|eis|pcb|pos |bayaran masuk|staff nampak|one workspace|satu sistem|m-core)/.test(t)) return 'demo'
   return 'other'
+}
+
+function titleOf(v: Record<string, unknown>) {
+  const rawTitle = String(v.title || '').trim()
+  const rawDesc = String(v.video_description || '').trim()
+  let t = rawTitle
+  if (!t || t.length < 8) t = rawDesc
+  t = t.split('\n')[0] || t
+  t = t.replace(/\s+/g, ' ').trim()
+  return t.slice(0, 180) || `TikTok ${v.id}`
 }
 
 async function requirePlatformAdmin(req: Request) {
@@ -161,11 +171,6 @@ async function listAllVideos(token: string) {
     cursor = Number(data?.data?.cursor || 0)
   }
   return out
-}
-
-function titleOf(v: Record<string, unknown>) {
-  const t = String(v.title || v.video_description || '').trim()
-  return t.slice(0, 180) || `TikTok ${v.id}`
 }
 
 async function syncVideos(sb: ReturnType<typeof sbAdmin>, token: string) {
