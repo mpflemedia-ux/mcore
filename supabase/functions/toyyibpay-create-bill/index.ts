@@ -1,9 +1,19 @@
 // M-Core — ToyyibPay Fasa A: create a subscription payment bill.
 // Trigger: tenant clicks "Bayar Online" in Settings/My Plan.
-// Deploy with verify_jwt ON (default) — this is a normal authenticated
-// tenant call, not a public callback (contrast with toyyibpay-webhook).
+// Deploy with verify_jwt OFF — this function has its own custom auth logic
+// (userClient.auth.getUser() against the caller's Authorization header,
+// below) and the platform's gateway-level "Verify JWT with legacy secret"
+// check rejects valid current-session JWTs on this project, which fails
+// the request before it even reaches this code (client sees "Failed to
+// send a request to the Edge Function", not a 401 from our own check).
 // Secrets: none of its own — reads provider secret_key/category_code from
 // platform_payment_config (service role only, RLS locks it from clients).
+//
+// GOTCHA: Supabase resets "Verify JWT with legacy secret" back to ON on
+// every redeploy of this function — it must be toggled OFF + Save changes
+// again in Dashboard > Edge Functions > toyyibpay-create-bill > Settings
+// after EVERY deploy (CLI or Dashboard editor), or every request gets
+// rejected before this code runs.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -13,9 +23,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// SANDBOX base — switch to https://toyyibpay.com once Fasa A is verified
-// end-to-end and Mike is ready to go live.
-const TOYYIBPAY_BASE = 'https://dev.toyyibpay.com'
+const TOYYIBPAY_BASE = 'https://toyyibpay.com'
 const APP_BASE_URL = 'https://mpflemedia.my/app/'
 
 function json(body: unknown, status = 200) {
@@ -120,6 +128,7 @@ Deno.serve(async (req: Request) => {
       body: form,
     })
     const data = await res.json().catch(() => null) as unknown
+    console.log('toyyibpay-create-bill: createBill response', JSON.stringify(data))
     const first = Array.isArray(data) ? (data[0] as Record<string, unknown>) : (data as Record<string, unknown> | null)
     const billCode = first && typeof first.BillCode === 'string' ? first.BillCode : null
     if (!res.ok || !billCode) {
@@ -142,6 +151,7 @@ Deno.serve(async (req: Request) => {
 
     return json({ success: true, data: { bill_code: billCode, payment_url: `${TOYYIBPAY_BASE}/${billCode}` } })
   } catch (e) {
+    console.error('toyyibpay-create-bill error:', e)
     return json({ success: false, error: (e as Error).message || 'error' }, 500)
   }
 })
