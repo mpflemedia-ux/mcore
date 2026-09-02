@@ -1,19 +1,10 @@
 // M-Core — ToyyibPay Fasa A: create a subscription payment bill.
 // Trigger: tenant clicks "Bayar Online" in Settings/My Plan.
-// Deploy with verify_jwt OFF — this function has its own custom auth logic
-// (userClient.auth.getUser() against the caller's Authorization header,
-// below) and the platform's gateway-level "Verify JWT with legacy secret"
-// check rejects valid current-session JWTs on this project, which fails
-// the request before it even reaches this code (client sees "Failed to
-// send a request to the Edge Function", not a 401 from our own check).
+// Deploy with verify_jwt OFF — this function has its own custom auth
+// logic (Authorization header + auth.getUser() below); ON causes Supabase
+// platform to reject requests before they reach this code.
 // Secrets: none of its own — reads provider secret_key/category_code from
 // platform_payment_config (service role only, RLS locks it from clients).
-//
-// GOTCHA: Supabase resets "Verify JWT with legacy secret" back to ON on
-// every redeploy of this function — it must be toggled OFF + Save changes
-// again in Dashboard > Edge Functions > toyyibpay-create-bill > Settings
-// after EVERY deploy (CLI or Dashboard editor), or every request gets
-// rejected before this code runs.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -23,6 +14,8 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+// PRODUCTION base — switched from https://dev.toyyibpay.com after Fasa A
+// verified end-to-end in sandbox on 2 Sep 2026. Real money moves now.
 const TOYYIBPAY_BASE = 'https://toyyibpay.com'
 const APP_BASE_URL = 'https://mpflemedia.my/app/'
 
@@ -50,8 +43,6 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ success: false, error: 'POST only' }, 405)
 
   try {
-    // Defense in depth: confirm the caller is a real authenticated Supabase
-    // user, on top of the platform's own verify_jwt check on this function.
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return json({ success: false, error: 'Missing Authorization header' }, 401)
     const userClient = createClient(
@@ -64,9 +55,6 @@ Deno.serve(async (req: Request) => {
 
     const sb = sbAdmin()
 
-    // tenant_id is ALWAYS derived server-side from the caller's own profile
-    // — never trusted from the request body — so one tenant can never pay
-    // (or record a payment) for another tenant's subscription.
     const { data: profile } = await sb.from('user_profiles').select('tenant_id').eq('id', user.id).maybeSingle()
     const tenantId = profile?.tenant_id
     if (!tenantId) return json({ success: false, error: 'No tenant for this user' }, 400)
@@ -81,8 +69,6 @@ Deno.serve(async (req: Request) => {
       .eq('id', planId).maybeSingle()
     if (!plan) return json({ success: false, error: 'Plan not found' }, 404)
 
-    // Amount computed SERVER-SIDE from the plan row — never trust a
-    // client-supplied amount for a payment bill.
     const monthly = Number(plan.monthly_price || 0)
     const annual = Number(plan.annual_price || 0)
     const amount = periodMonths === 12 ? (annual || monthly * 10) : monthly
@@ -100,7 +86,6 @@ Deno.serve(async (req: Request) => {
 
     const refNo = `SUB-${tenantId}-${Date.now()}`.slice(0, 50)
     const planName = plan.name_en || plan.code || 'M-Core Plan'
-    // ToyyibPay caps billName at 30 chars.
     const billName = `M-Core ${planName}`.slice(0, 30)
     const billDescription = `M-Core subscription — ${planName}, ${periodMonths} month(s)`.slice(0, 100)
 
@@ -111,28 +96,36 @@ Deno.serve(async (req: Request) => {
       billDescription,
       billPriceSetting: '1',
       billPayorInfo: '1',
-      billAmount: String(Math.round(amount * 100)), // sen
+      billAmount: String(Math.round(amount * 100)),
       billReturnUrl: `${APP_BASE_URL}#settings?toyyibpay=return`,
       billCallbackUrl: webhookUrl(),
       billExternalReferenceNo: refNo,
       billTo,
       billEmail,
       billPhone,
-      billPaymentChannel: '2', // FPX + card
+      billPaymentChannel: '2',
       billChargeToCustomer: '1',
     })
 
-    const res = await fetch(`${TOYYIBPAY_BASE}/index.php/api/createBill`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form,
-    })
-    const data = await res.json().catch(() => null) as unknown
-    console.log('toyyibpay-create-bill: createBill response', JSON.stringify(data))
+    let res: Response
+    try {
+      res = await fetch(`${TOYYIBPAY_BASE}/index.php/api/createBill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form,
+      })
+    } catch (fetchErr) {
+      console.error('toyyibpay-create-bill: fetch to ToyyibPay failed', fetchErr)
+      throw new Error('Fetch to ToyyibPay failed: ' + ((fetchErr as Error).message || String(fetchErr)))
+    }
+    const rawText = await res.text()
+    let data: unknown
+    try { data = JSON.parse(rawText) } catch { data = null }
+    console.log('toyyibpay-create-bill: createBill response', res.status, rawText.slice(0, 300))
     const first = Array.isArray(data) ? (data[0] as Record<string, unknown>) : (data as Record<string, unknown> | null)
     const billCode = first && typeof first.BillCode === 'string' ? first.BillCode : null
     if (!res.ok || !billCode) {
-      const msg = (first && (first.msg as string)) || 'createBill failed'
+      const msg = (first && (first.msg as string)) || rawText.slice(0, 200) || 'createBill failed'
       throw new Error(String(msg))
     }
 
@@ -147,11 +140,14 @@ Deno.serve(async (req: Request) => {
       amount,
       status: 'pending',
     })
-    if (insErr) throw insErr
+    if (insErr) {
+      console.error('toyyibpay-create-bill: insert payment_transactions failed', insErr)
+      throw insErr
+    }
 
     return json({ success: true, data: { bill_code: billCode, payment_url: `${TOYYIBPAY_BASE}/${billCode}` } })
   } catch (e) {
-    console.error('toyyibpay-create-bill error:', e)
+    console.error('toyyibpay-create-bill: error', e)
     return json({ success: false, error: (e as Error).message || 'error' }, 500)
   }
 })
