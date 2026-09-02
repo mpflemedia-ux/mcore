@@ -4,17 +4,15 @@
 // carries no Supabase JWT, same reason tiktok-sync's GET OAuth callback is
 // verify_jwt OFF.
 //
+// ToyyibPay sends this callback as multipart/form-data (confirmed via log
+// inspection 2 Sep 2026) — NOT application/x-www-form-urlencoded despite
+// most docs implying otherwise. req.formData() parses both correctly.
+//
 // ToyyibPay does NOT sign this callback, so its payload is NEVER trusted
 // directly — the billcode from the payload is only used to look up which
 // bill we're talking about, then getBillTransactions() is called back to
 // ToyyibPay (with OUR OWN secret_key) to read the REAL status server-side.
 // Idempotent: a bill already 'paid' is never re-processed.
-//
-// GOTCHA: Supabase resets "Verify JWT with legacy secret" back to ON on
-// every redeploy of this function — it must be toggled OFF + Save changes
-// again in Dashboard > Edge Functions > toyyibpay-webhook > Settings after
-// EVERY deploy (CLI or Dashboard editor), or ToyyibPay's callback (which
-// carries no Supabase JWT at all) gets rejected before this code runs.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -24,6 +22,8 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+// PRODUCTION base — switched from https://dev.toyyibpay.com after Fasa A
+// verified end-to-end in sandbox on 2 Sep 2026. Real money moves now.
 const TOYYIBPAY_BASE = 'https://toyyibpay.com'
 
 function json(body: unknown, status = 200) {
@@ -45,19 +45,16 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ success: false, error: 'POST only' }, 405)
 
   try {
-    // ToyyibPay posts multipart/form-data, NOT application/x-www-form-
-    // urlencoded (confirmed via log inspection 2 Sep 2026, live sandbox
-    // test — URLSearchParams over req.text() silently failed to parse it,
-    // which is why the webhook never updated payment_transactions to
-    // 'paid' during that debug session even though the RM99 payment went
-    // through). formData() handles both formats.
+    // req.formData() handles both application/x-www-form-urlencoded AND
+    // multipart/form-data (which is what ToyyibPay actually sends).
     const form = await req.formData()
     const rawCallback: Record<string, string> = {}
     for (const [key, value] of form.entries()) {
       if (typeof value === 'string') rawCallback[key] = value
     }
+    console.log('toyyibpay-webhook: parsed fields', JSON.stringify(rawCallback))
+
     const billCode = rawCallback['billcode'] || rawCallback['billCode'] || ''
-    console.log('toyyibpay-webhook: callback received', JSON.stringify(rawCallback))
     if (!billCode) return json({ success: false, error: 'billcode missing' }, 400)
 
     const sb = sbAdmin()
@@ -65,9 +62,6 @@ Deno.serve(async (req: Request) => {
     const { data: txn } = await sb.from('payment_transactions').select('*').eq('bill_code', billCode).maybeSingle()
     if (!txn) return json({ success: false, error: 'Unknown bill_code' }, 404)
 
-    // Idempotency: already recorded paid — never re-process (avoids
-    // double-crediting the tenant's plan if ToyyibPay fires the callback
-    // more than once for the same bill).
     if (txn.status === 'paid') return json({ success: true, already_processed: true })
 
     const { data: cfg } = await sb.from('platform_payment_config')
@@ -75,19 +69,19 @@ Deno.serve(async (req: Request) => {
       .eq('provider', 'toyyibpay').eq('is_active', true).maybeSingle()
     if (!cfg?.secret_key) return json({ success: false, error: 'ToyyibPay not configured' }, 503)
 
-    // Server-side verification — never trust the callback payload's own
-    // status field.
     const verifyForm = new URLSearchParams({ billCode, userSecretKey: String(cfg.secret_key) })
     const vres = await fetch(`${TOYYIBPAY_BASE}/index.php/api/getBillTransactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: verifyForm,
     })
-    const vdata = await vres.json().catch(() => null) as unknown
+    const vrawText = await vres.text()
+    console.log('toyyibpay-webhook: getBillTransactions response', vres.status, vrawText.slice(0, 500))
+    let vdata: unknown
+    try { vdata = JSON.parse(vrawText) } catch { vdata = null }
     const list = Array.isArray(vdata) ? (vdata as Record<string, unknown>[]) : []
     const latest = list.length ? list[list.length - 1] : null
     const verifiedStatus = latest ? String(latest.billpaymentStatus ?? '') : ''
-    console.log('toyyibpay-webhook: getBillTransactions verified status', verifiedStatus, JSON.stringify(vdata))
 
     if (verifiedStatus === '1') {
       const { error: updErr } = await sb.from('payment_transactions').update({
@@ -98,11 +92,6 @@ Deno.serve(async (req: Request) => {
       if (updErr) throw updErr
 
       if (txn.plan_id && txn.period_months) {
-        // record_tenant_payment() now also accepts service_role calls (see
-        // 20260902110000_record_tenant_payment_service_role.sql) — this is
-        // the same RPC the Admin UI uses for a manual bank-transfer
-        // payment, so plan/expiry upgrade logic has exactly one source of
-        // truth regardless of payment method.
         const { error: rpcErr } = await sb.rpc('record_tenant_payment', {
           p_tenant_id: txn.tenant_id,
           p_plan_id: txn.plan_id,
@@ -115,7 +104,7 @@ Deno.serve(async (req: Request) => {
         if (rpcErr) throw rpcErr
       }
     } else {
-      const failedStatuses = new Set(['3', '4']) // 3=fail, 4=cancelled
+      const failedStatuses = new Set(['3', '4'])
       const { error: updErr } = await sb.from('payment_transactions').update({
         status: failedStatuses.has(verifiedStatus) ? 'failed' : 'pending',
         raw_callback: rawCallback,
@@ -125,7 +114,7 @@ Deno.serve(async (req: Request) => {
 
     return json({ success: true })
   } catch (e) {
-    console.error('toyyibpay-webhook error:', e)
+    console.error('toyyibpay-webhook: error', e)
     return json({ success: false, error: (e as Error).message || 'error' }, 500)
   }
 })
