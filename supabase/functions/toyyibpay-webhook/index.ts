@@ -9,6 +9,12 @@
 // bill we're talking about, then getBillTransactions() is called back to
 // ToyyibPay (with OUR OWN secret_key) to read the REAL status server-side.
 // Idempotent: a bill already 'paid' is never re-processed.
+//
+// GOTCHA: Supabase resets "Verify JWT with legacy secret" back to ON on
+// every redeploy of this function — it must be toggled OFF + Save changes
+// again in Dashboard > Edge Functions > toyyibpay-webhook > Settings after
+// EVERY deploy (CLI or Dashboard editor), or ToyyibPay's callback (which
+// carries no Supabase JWT at all) gets rejected before this code runs.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -18,7 +24,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const TOYYIBPAY_BASE = 'https://dev.toyyibpay.com'
+const TOYYIBPAY_BASE = 'https://toyyibpay.com'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -39,10 +45,19 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ success: false, error: 'POST only' }, 405)
 
   try {
-    // ToyyibPay posts application/x-www-form-urlencoded, not JSON.
-    const raw = await req.text()
-    const params = new URLSearchParams(raw)
-    const billCode = params.get('billcode') || params.get('billCode') || ''
+    // ToyyibPay posts multipart/form-data, NOT application/x-www-form-
+    // urlencoded (confirmed via log inspection 2 Sep 2026, live sandbox
+    // test — URLSearchParams over req.text() silently failed to parse it,
+    // which is why the webhook never updated payment_transactions to
+    // 'paid' during that debug session even though the RM99 payment went
+    // through). formData() handles both formats.
+    const form = await req.formData()
+    const rawCallback: Record<string, string> = {}
+    for (const [key, value] of form.entries()) {
+      if (typeof value === 'string') rawCallback[key] = value
+    }
+    const billCode = rawCallback['billcode'] || rawCallback['billCode'] || ''
+    console.log('toyyibpay-webhook: callback received', JSON.stringify(rawCallback))
     if (!billCode) return json({ success: false, error: 'billcode missing' }, 400)
 
     const sb = sbAdmin()
@@ -72,7 +87,7 @@ Deno.serve(async (req: Request) => {
     const list = Array.isArray(vdata) ? (vdata as Record<string, unknown>[]) : []
     const latest = list.length ? list[list.length - 1] : null
     const verifiedStatus = latest ? String(latest.billpaymentStatus ?? '') : ''
-    const rawCallback = Object.fromEntries(params.entries())
+    console.log('toyyibpay-webhook: getBillTransactions verified status', verifiedStatus, JSON.stringify(vdata))
 
     if (verifiedStatus === '1') {
       const { error: updErr } = await sb.from('payment_transactions').update({
@@ -110,6 +125,7 @@ Deno.serve(async (req: Request) => {
 
     return json({ success: true })
   } catch (e) {
+    console.error('toyyibpay-webhook error:', e)
     return json({ success: false, error: (e as Error).message || 'error' }, 500)
   }
 })
