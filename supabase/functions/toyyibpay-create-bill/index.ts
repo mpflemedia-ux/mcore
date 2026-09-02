@@ -81,7 +81,14 @@ Deno.serve(async (req: Request) => {
 
     const { data: tenantRow } = await sb.from('tenants').select('name, email, phone').eq('id', tenantId).maybeSingle()
     const billTo = String(tenantRow?.name || 'M-Core Tenant').slice(0, 100)
-    const billEmail = String(tenantRow?.email || user.email || 'billing@mpflemedia.my').slice(0, 100)
+    // tenants.email (Settings > Company Profile) is a free-text field with
+    // no format constraint in the DB, unlike user.email which Supabase
+    // Auth already validated at signup — so only the company-profile value
+    // needs the same billEmail format check as Fasa A's tenant-invoice
+    // create-bill (customers.email has the identical risk there).
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const rawTenantEmail = String(tenantRow?.email || '').trim()
+    const billEmail = String((EMAIL_RE.test(rawTenantEmail) ? rawTenantEmail : null) || user.email || 'billing@mpflemedia.my').slice(0, 100)
     const billPhone = String(tenantRow?.phone || '').replace(/[^\d]/g, '').slice(0, 15) || '0110000000'
 
     const refNo = `SUB-${tenantId}-${Date.now()}`.slice(0, 50)
