@@ -80,7 +80,13 @@ Deno.serve(async (req: Request) => {
       ? await sb.from('customers').select('name, email, phone').eq('id', inv.customer_id).maybeSingle()
       : { data: null }
     const billTo = String(inv.customer_name || customer?.name || 'Customer').slice(0, 100)
-    const billEmail = String(customer?.email || 'noreply@example.com').slice(0, 100)
+    // customers.email has no format constraint in the DB — bad data (e.g.
+    // a phone number typed into the email field) reaches here as-is.
+    // ToyyibPay rejects a malformed billEmail outright, so validate before
+    // sending rather than passing it straight through.
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const rawEmail = String(customer?.email || '').trim()
+    const billEmail = (EMAIL_RE.test(rawEmail) ? rawEmail : 'noreply@example.com').slice(0, 100)
     const billPhone = String(customer?.phone || '').replace(/[^\d]/g, '').slice(0, 15) || '0110000000'
 
     const refNo = `INV-${inv.id}-${Date.now()}`.slice(0, 50)
