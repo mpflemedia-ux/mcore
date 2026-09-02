@@ -24086,6 +24086,17 @@ async function _tryShowPublicInvoice() {
     }
     const inv = data
     const items = inv.items || []
+    const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
+    let showPayOnline = false
+    if (balance > 0.005) {
+      try {
+        const { data: hasCfg } = await sb.rpc('has_active_toyyibpay_config_for_invoice', { p_token: token })
+        showPayOnline = !!hasCfg
+      } catch (e) { showPayOnline = false }
+    }
+    if (params.get('toyyibpay') === 'return') {
+      showToast("Thanks. We're confirming your payment — this page will update automatically once confirmed.", 'info')
+    }
     root.innerHTML = `
     <div style="max-width:720px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,.06)">
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px">
@@ -24124,6 +24135,7 @@ async function _tryShowPublicInvoice() {
         <div style="color:#dc2626">Balance: MYR ${(Number(inv.total||0)-Number(inv.paid_amt||0)).toFixed(2)}</div>
       </div>
       <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap" class="no-print">
+        ${showPayOnline ? `<button id="public-inv-pay-online-btn" onclick="_publicInvPayOnline('${token.replace(/'/g,"\\'")}')" style="padding:10px 16px;border-radius:8px;border:none;background:#0E7490;color:#fff;cursor:pointer;font-size:13px;font-weight:600">💳 Pay Online</button>` : ''}
         <button onclick="_pdocSetPrintFilename('Invoice_${_pdocSlug(inv.ref_no)}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
       </div>
       <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
@@ -24132,6 +24144,29 @@ async function _tryShowPublicInvoice() {
   } catch(e) {
     console.error(e)
     return false
+  }
+}
+
+/** ToyyibPay Fasa B — "Pay Online" on the PUBLIC invoice page
+    (?public_inv=<token>). No Supabase session exists here at all, so the
+    invoice is identified only by its public_token (never a raw
+    invoice_id) — same as get_public_invoice() above. Amount is computed
+    server-side in toyyibpay-tenant-invoice-create-bill from the invoice
+    row, never sent from here. */
+async function _publicInvPayOnline(token) {
+  const btn = document.getElementById('public-inv-pay-online-btn')
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…' }
+  try {
+    const { data, error } = await sb.functions.invoke('toyyibpay-tenant-invoice-create-bill', { body: { token } })
+    if (error) throw new Error(error.message || 'Payment request failed')
+    if (!data?.success) throw new Error(data?.error || 'Payment request failed')
+    const payUrl = data.data && data.data.payment_url
+    if (!payUrl) throw new Error('No payment URL')
+    window.location.href = payUrl
+  } catch (e) {
+    console.error('ToyyibPay tenant invoice create-bill error:', e)
+    showToast('Online payment failed: ' + (e.message||e), 'error')
+    if (btn) { btn.disabled = false; btn.textContent = '💳 Pay Online' }
   }
 }
 
