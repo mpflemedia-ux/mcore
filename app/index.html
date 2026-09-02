@@ -13385,6 +13385,31 @@ function _upgradeOpenWhatsApp() {
   showToast(isBm ? 'WhatsApp dibuka — hantar mesej untuk pengesahan.' : 'WhatsApp opened — send the message for confirmation.', 'success')
 }
 
+/** ToyyibPay Fasa A — pays for a 1-month renewal of the tenant's CURRENT
+    plan (planId = myPlan.id from the My Plan widget). Plan CHANGES + manual
+    bank transfer stay in the existing Upgrade/Renew modal above; this is
+    the direct online-pay path for the common case (renew as-is). Amount is
+    computed server-side in toyyibpay-create-bill from plan_id — never sent
+    from here — so nothing money-related is trusted from the client. */
+async function _payOnlineToyyibPay(planId) {
+  const isBm = APP.language==='bm'
+  if (!planId) { showToast(isBm?'Tiada pelan semasa.':'No current plan.', 'error'); return }
+  const btn = document.getElementById('my-plan-pay-online-btn')
+  if (btn) { btn.disabled = true; btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div>${isBm?'Menyediakan...':'Preparing...'}` }
+  try {
+    const { data, error } = await sb.functions.invoke('toyyibpay-create-bill', { body: { plan_id: planId, period_months: 1 } })
+    if (error) throw new Error(error.message || 'Payment request failed')
+    if (!data?.success) throw new Error(data?.error || 'Payment request failed')
+    const payUrl = data.data && data.data.payment_url
+    if (!payUrl) throw new Error(isBm?'URL bayaran tiada.':'No payment URL.')
+    window.location.href = payUrl
+  } catch (e) {
+    console.error('ToyyibPay create-bill error:', e)
+    showToast((isBm?'Gagal bayar online: ':'Online payment failed: ') + (e.message||e), 'error')
+    if (btn) { btn.disabled = false; btn.innerHTML = `<i class="ti ti-credit-card"></i> ${isBm?'Bayar Online':'Pay Online'}` }
+  }
+}
+
 
 // ── Learning Center: module_key -> canAccess() module mapping ──────────────
 const _LEARNING_MODULE_MAP = {
@@ -13549,6 +13574,14 @@ async function doMarkLessonUnderstood(lessonId) {
 async function renderSettings(params={}) {
   if(params.view==='audit') { renderAuditLogViewer(); return }
   _obcMarkChecklist('profile_reviewed')
+  try {
+    const hash = String(location.hash||'')
+    if (hash.includes('toyyibpay=return')) {
+      showToast(APP.language==='bm'
+        ? 'Terima kasih. Kami sedang sahkan bayaran anda — My Plan akan kemas kini automatik sebaik disahkan.'
+        : "Thanks. We're confirming your payment — My Plan will update automatically once confirmed.", 'info')
+    }
+  } catch (e) {}
   const t = LANG[APP.language].settings
   const c = LANG[APP.language].common
   const isAdmin = isTenantAdmin()
@@ -13754,12 +13787,12 @@ async function renderSettings(params={}) {
       title:'Pelan Saya', plan:'Pelan', trialLeft:'hari lagi dalam percubaan percuma', trialExpired:'Percubaan tamat',
       expiresOn:'Diperbaharui/tamat pada', usage:'Penggunaan Bulan Ini', tx:'Transaksi', ai:'Proses AI (hari ini)',
       history:'Sejarah Bayaran', noPayments:'Tiada bayaran lagi', date:'Tarikh', amount:'Jumlah', method:'Kaedah', coverage:'Liputan',
-      upgrade:'Naik Taraf / Perbaharui', methodCash:'Tunai', methodBank:'Pindahan Bank', methodOnline:'Perbankan Online', methodCard:'Kad',
+      upgrade:'Naik Taraf / Perbaharui', payOnline:'Bayar Online', methodCash:'Tunai', methodBank:'Pindahan Bank', methodOnline:'Perbankan Online', methodCard:'Kad',
     } : {
       title:'My Plan', plan:'Plan', trialLeft:'days left in free trial', trialExpired:'Trial expired',
       expiresOn:'Renews/expires on', usage:"This Month's Usage", tx:'Transactions', ai:"AI Queries (today)",
       history:'Payment History', noPayments:'No payments yet', date:'Date', amount:'Amount', method:'Method', coverage:'Coverage',
-      upgrade:'Upgrade / Renew', methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card',
+      upgrade:'Upgrade / Renew', payOnline:'Pay Online', methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card',
     }
     const planName = myPlan ? (isBm?myPlan.name_bm:myPlan.name_en) : '—'
     // Trial banner only for real trials — not Unlimited Legacy / platform home
@@ -13780,7 +13813,10 @@ async function renderSettings(params={}) {
           ${trialInfo ? `<div style="font-size:12px;color:${trialInfo.color};margin-top:2px">${trialInfo.days>=0 ? `${trialInfo.days} ${mp.trialLeft}` : mp.trialExpired}</div>` : ''}
           ${expiryInfo ? `<div style="font-size:12px;color:${expiryInfo.color};margin-top:2px">${mp.expiresOn} ${expiryInfo.dateFmt} (${expiryInfo.label})</div>` : ''}
         </div>
-        ${showUpgrade ? `<button type="button" class="btn btn-primary btn-sm" onclick="openMyPlanUpgradeInfo()"><i class="ti ti-arrow-up-circle"></i> ${mp.upgrade}</button>` : ''}
+        ${showUpgrade ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary btn-sm" onclick="openMyPlanUpgradeInfo()"><i class="ti ti-arrow-up-circle"></i> ${mp.upgrade}</button>
+          ${myPlan && myPlan.id ? `<button type="button" class="btn btn-outline btn-sm" id="my-plan-pay-online-btn" onclick="_payOnlineToyyibPay('${myPlan.id}')"><i class="ti ti-credit-card"></i> ${mp.payOnline}</button>` : ''}
+        </div>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
         <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
