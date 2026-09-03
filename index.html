@@ -7,8 +7,8 @@
 <script>
 (function(){try{var t=localStorage.getItem('mcore_theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
 </script>
-<title>M-Core by MPFLE Media — One login for your shop</title>
-<meta name="description" content="One login for your shop. Sales, stock, Malaysian payroll, and the books. Built for Malaysia, not a foreign template.">
+<title>M-Core by MPFLE Media — One login for your business</title>
+<meta name="description" content="One login for your business. Sales, stock, payroll, and the books.">
 <meta name="robots" content="index,follow">
 <meta name="author" content="MPFLE Media">
 <link rel="canonical" href="https://mpflemedia.my/">
@@ -17,7 +17,7 @@
 <meta property="og:locale" content="en_MY">
 <meta property="og:locale:alternate" content="ms_MY">
 <meta property="og:title" content="M-Core by MPFLE Media">
-<meta property="og:description" content="One login for your shop. Sales, stock, Malaysian payroll, and the books.">
+<meta property="og:description" content="One login for your business. Sales, stock, payroll, and the books.">
 <meta property="og:url" content="https://mpflemedia.my/">
 <meta property="og:image" content="https://mpflemedia.my/assets/icon-512.png">
 <meta property="og:image:width" content="512">
@@ -25,7 +25,7 @@
 <meta property="og:image:alt" content="M-Core">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="M-Core by MPFLE Media">
-<meta name="twitter:description" content="One login for your shop. Sales, stock, Malaysian payroll, and the books.">
+<meta name="twitter:description" content="One login for your business. Sales, stock, payroll, and the books.">
 <meta name="twitter:image" content="https://mpflemedia.my/assets/icon-512.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
@@ -689,7 +689,7 @@ footer a:hover { color: var(--cyan); }
         "en",
         "ms"
       ],
-      "description": "One login for your shop. Sales, stock, Malaysian payroll, and the books. Built for Malaysia.",
+      "description": "One login for your business. Sales, stock, payroll, and the books.",
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -743,9 +743,9 @@ footer a:hover { color: var(--cyan); }
   <section class="hero" id="hero">
     <div class="hero-wash" aria-hidden="true"></div>
     <div class="hero-copy">
-      <div class="hero-badge"><i></i><span data-i18n="hero_badge">Built for Malaysian shops</span></div>
-      <h1 data-i18n="hero_title">One login for your shop.<br><em>Sales, stock, Malaysian payroll, and the books.</em></h1>
-      <p class="sub" data-i18n="hero_sub">Built for Malaysia, not a foreign template. Run it yourself, or let MPFLE run it.</p>
+      <div class="hero-badge"><i></i><span data-i18n="hero_badge">For your business</span></div>
+      <h1 data-i18n="hero_title">One login for your business.<br><em>Sales, stock, payroll, and the books.</em></h1>
+      <p class="sub" data-i18n="hero_sub">Not a foreign template. Run it yourself, or let MPFLE run it.</p>
       <p class="proof" data-i18n="hero_proof">EPF, SOCSO, EIS, PCB. Roles so staff only see what you allow.</p>
       <div class="btn-row">
         <a class="btn btn-primary" href="https://mpflemedia.my/app/" data-i18n="hero_cta_primary">Open M-Core</a>
@@ -841,11 +841,11 @@ footer a:hover { color: var(--cyan); }
   <section class="block" id="usp">
     <div class="eyebrow reveal" data-i18n="usp_eyebrow">Why M-Core</div>
     <h2 class="h2 reveal" data-i18n="usp_title">Three reasons owners switch</h2>
-    <p class="lede reveal" data-i18n="usp_lede">Malaysia-ready, one system, control stays with you.</p>
+    <p class="lede reveal" data-i18n="usp_lede">One system. Control stays with you.</p>
     <div class="usp-grid">
       <div class="card reveal">
-        <span class="usp-label" data-i18n="usp_1_label">MY compliance</span>
-        <h3 data-i18n="usp_1_t">Built for Malaysia</h3>
+        <span class="usp-label" data-i18n="usp_1_label">Local rules</span>
+        <h3 data-i18n="usp_1_t">Local payroll & books</h3>
         <p data-i18n="usp_1_d">EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.</p>
       </div>
       <div class="card reveal">
@@ -999,7 +999,7 @@ const softwarePlans = [
     features:{en:['POS + invoicing','Basic inventory','Sales reports','1 branch','Community support'],ms:['POS + invois','Inventori asas','Laporan jualan','1 cawangan','Sokongan komuniti']}},
   {id:'starter',popular:false,
     name:{en:'Starter',ms:'Starter'},
-    for:{en:'Growing shops that need full modules.',ms:'Kedai berkembang yang perlukan modul penuh.'},
+    for:{en:'Growing businesses that need full modules.',ms:'Perniagaan berkembang yang perlukan modul penuh.'},
     monthly:{price:'RM 99',period:{en:'/ month',ms:'/ bulan'},setup:{en:'+ Setup RM 300',ms:'+ Setup RM 300'}},
     yearly:{price:'RM 990',period:{en:'/ year',ms:'/ tahun'},setup:{en:'Save 2 months · setup waived',ms:'Jimat 2 bulan · setup digugurkan'}},
     features:{en:['Full modules','500 txn / month','1 branch','100 AI queries / day'],ms:['Modul penuh','500 transaksi / bulan','1 cawangan','100 pertanyaan AI / hari']}},
@@ -1036,9 +1036,9 @@ try {
 const I18N = {
   en: {
     nav_modules:'Modules', nav_pricing:'Pricing', nav_services:'Services', nav_referral:'Referral Program', cta_mini:'Client login',
-    hero_badge:'Built for Malaysian shops',
-    hero_title:'One login for your shop.<br><em>Sales, stock, Malaysian payroll, and the books.</em>',
-    hero_sub:'Built for Malaysia, not a foreign template. Run it yourself, or let MPFLE run it.',
+    hero_badge:'For your business',
+    hero_title:'One login for your business.<br><em>Sales, stock, payroll, and the books.</em>',
+    hero_sub:'Not a foreign template. Run it yourself, or let MPFLE run it.',
     hero_proof:'EPF, SOCSO, EIS, PCB. Roles so staff only see what you allow.',
     hero_cta_primary:'Open M-Core', hero_cta_plans:'See plans', hero_cta_talk:'Talk to us',
     mock_cap:'M-Core preview', mock_kpi1_l:'Sales', mock_kpi2_l:'Collected', mock_kpi3_l:'Payroll',
@@ -1053,8 +1053,8 @@ const I18N = {
     pain_2_t:'Payroll fear &amp; time sink', pain_2_d:'EPF, SOCSO, PCB, easy to get wrong, expensive to fix, painful every month.',
     pain_3_t:'Tools that don’t talk', pain_3_d:'Sales in one app, stock in another, accounts somewhere else. Nothing lines up.',
     usp_eyebrow:'Why M-Core', usp_title:'Three reasons owners switch',
-    usp_lede:'Malaysia-ready, one system, control stays with you.',
-    usp_1_label:'MY compliance', usp_1_t:'Built for Malaysia', usp_1_d:'EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.',
+    usp_lede:'One system. Control stays with you.',
+    usp_1_label:'Local rules', usp_1_t:'Local payroll & books', usp_1_d:'EPF, SOCSO, EIS, PCB and local payroll/ledger practice, not a foreign template.',
     usp_2_label:'One login', usp_2_t:'One workspace', usp_2_d:'Sales, stock, payroll and ledger together, one source of numbers, not five apps.',
     usp_3_label:'Roles &amp; HR', usp_3_t:'Owner control', usp_3_d:'Roles and permissions, with attendance and outstation-style control so staff only see what you allow.',
     mock_section_eyebrow:'Product', mock_section_title:'See it in the product',
@@ -1093,9 +1093,9 @@ const I18N = {
   },
   ms: {
     nav_modules:'Modul', nav_pricing:'Harga', nav_services:'Perkhidmatan', nav_referral:'Program Referral', cta_mini:'Log masuk klien',
-    hero_badge:'Untuk kedai Malaysia',
-    hero_title:'Satu log masuk untuk kedai anda.<br><em>Jualan, stok, gaji Malaysia, dan lejar.</em>',
-    hero_sub:'Dibina untuk Malaysia, bukan templat asing. Kendalikan sendiri, atau biar MPFLE mengendalikannya.',
+    hero_badge:'Untuk perniagaan anda',
+    hero_title:'Satu log masuk untuk perniagaan anda.<br><em>Jualan, stok, gaji, dan lejar.</em>',
+    hero_sub:'Bukan templat asing. Kendalikan sendiri, atau biar MPFLE mengendalikannya.',
     hero_proof:'EPF, SOCSO, EIS, PCB. Peranan supaya staf nampak hanya apa yang anda benarkan.',
     hero_cta_primary:'Buka M-Core', hero_cta_plans:'Lihat pelan', hero_cta_talk:'Hubungi kami',
     mock_cap:'Pratonton M-Core', mock_kpi1_l:'Jualan', mock_kpi2_l:'Kutipan', mock_kpi3_l:'Gaji',
@@ -1110,8 +1110,8 @@ const I18N = {
     pain_2_t:'Takut gaji &amp; buang masa', pain_2_d:'EPF, SOCSO, PCB, mudah silap, mahal betulkan, menyakitkan setiap bulan.',
     pain_3_t:'Alat yang tak bercakap', pain_3_d:'Jualan satu app, stok satu lagi, akaun di tempat lain. Tiada yang selari.',
     usp_eyebrow:'Kenapa M-Core', usp_title:'Tiga sebab owner bertukar',
-    usp_lede:'Sedia Malaysia, satu sistem, kawalan kekal milik anda.',
-    usp_1_label:'Pematuhan MY', usp_1_t:'Dibina untuk Malaysia', usp_1_d:'EPF, SOCSO, EIS, PCB dan amalan gaji/lejar tempatan, bukan templat asing.',
+    usp_lede:'Satu sistem. Kawalan kekal milik anda.',
+    usp_1_label:'Amalan tempatan', usp_1_t:'Gaji & lejar tempatan', usp_1_d:'EPF, SOCSO, EIS, PCB dan amalan gaji/lejar tempatan, bukan templat asing.',
     usp_2_label:'Satu log masuk', usp_2_t:'Satu ruang kerja', usp_2_d:'Jualan, stok, gaji dan lejar bersama, satu sumber nombor, bukan lima app.',
     usp_3_label:'Peranan &amp; HR', usp_3_t:'Kawalan owner', usp_3_d:'Peranan dan kebenaran, dengan kawalan kehadiran/luar stesen supaya staf nampak apa yang anda benarkan sahaja.',
     mock_section_eyebrow:'Produk', mock_section_title:'Lihat dalam produk',
