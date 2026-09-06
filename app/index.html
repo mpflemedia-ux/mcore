@@ -30281,9 +30281,9 @@ function _sdBuildPrintSigsHtml() {
     items.push(
       '<div style="display:inline-block;width:150px;text-align:center;vertical-align:top;margin:0 16px">' +
         '<div style="height:36px"></div>' +
-        '<div style="width:130px;margin:0 auto 6px;border-top:1.5px solid #334155;height:0"></div>' +
-        '<div style="font-size:12px;font-weight:600;color:#0F172A;margin-bottom:2px">'+esc(s.name)+'</div>' +
-        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">'+esc(s.role)+'</div>' +
+        '<div style="width:130px;margin:0 auto 4px;border-top:1.5px solid #334155;height:0"></div>' +
+        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B;margin-bottom:2px">'+esc(s.role)+'</div>' +
+        '<div style="font-size:12px;font-weight:600;color:#0F172A">'+esc(s.name)+'</div>' +
       '</div>'
     )
   })
@@ -30297,8 +30297,8 @@ function _sdBuildPrintOnlySigsHtml() {
     '<td style="text-align:center;vertical-align:bottom;padding:8px 10px 4px;border:none;background:transparent">' +
       '<div style="height:22px"></div>' +
       '<div style="width:128px;margin:0 auto;border-top:1.5px solid #111827"></div>' +
-      '<div style="font-size:11px;font-weight:700;color:#111827;margin-top:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+esc(s.name)+'</div>' +
-      '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#334155;margin-top:1px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+esc(s.role)+'</div>' +
+      '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#334155;margin-top:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+esc(s.role)+'</div>' +
+      '<div style="font-size:11px;font-weight:700;color:#111827;margin-top:1px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+esc(s.name)+'</div>' +
     '</td>'
   ).join('')
   return '<table class="pdoc-sig-print-table" style="width:100%;margin:8px 0 0;border-collapse:collapse;table-layout:fixed"><tr>'+cells+'</tr></table>'
