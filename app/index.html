@@ -1412,8 +1412,29 @@ html[data-skip-intro="1"] #intro-skip {
 }
 
 @media print {
-  .pdoc-sd-sig-print { display:block !important; page-break-inside:avoid; break-inside:avoid; margin-top:18px; }
-  .sd-sig-row { display:none !important; }
+  .pdoc-sd-sig-print, .pdoc-sd-sig-print.print-only {
+    display: block !important;
+    visibility: visible !important;
+    height: auto !important;
+    overflow: visible !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-top: 8px !important;
+  }
+  .pdoc-sd-sig-print, .pdoc-sd-sig-print * {
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .pdoc-sd-sum-table tr.sd-sig-row,
+  .sd-sig-row { display: none !important; }
+  .pdoc-sig-grid.pdoc-sd-sig,
+  .pdoc-sd-sig {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
 }
 </style>
 </head>
@@ -30197,7 +30218,7 @@ async function renderSalaryDisbursement(month, year) {
       </tr>
       </tbody>
     </table>
-    <div id="sd-sig-print" class="pdoc-sd-sig-print" style="display:none"></div>
+    <div id="sd-sig-print" class="pdoc-sd-sig-print print-only"></div>
     <div class="pdoc-sig-grid pdoc-sd-sig no-print" style="margin:20px 12px 12px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
@@ -30259,7 +30280,7 @@ function _sdBuildPrintSigsHtml() {
     if(!s.name) return
     items.push(
       '<div style="display:inline-block;width:150px;text-align:center;vertical-align:top;margin:0 16px">' +
-        '<div style="height:56px"></div>' +
+        '<div style="height:36px"></div>' +
         '<div style="width:130px;margin:0 auto 6px;border-top:1.5px solid #334155;height:0"></div>' +
         '<div style="font-size:12px;font-weight:600;color:#0F172A;margin-bottom:2px">'+esc(s.name)+'</div>' +
         '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">'+esc(s.role)+'</div>' +
@@ -30268,6 +30289,20 @@ function _sdBuildPrintSigsHtml() {
   })
   return items.join('')
 }
+function _sdBuildPrintOnlySigsHtml() {
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const filled = _sdSigSlots().filter(s => s.name)
+  if(!filled.length) return ''
+  const cells = filled.map(s =>
+    '<td style="text-align:center;vertical-align:bottom;padding:8px 10px 4px;border:none;background:transparent">' +
+      '<div style="height:22px"></div>' +
+      '<div style="width:128px;margin:0 auto;border-top:1.5px solid #111827"></div>' +
+      '<div style="font-size:11px;font-weight:700;color:#111827;margin-top:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+esc(s.name)+'</div>' +
+      '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#334155;margin-top:1px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+esc(s.role)+'</div>' +
+    '</td>'
+  ).join('')
+  return '<table class="pdoc-sig-print-table" style="width:100%;margin:8px 0 0;border-collapse:collapse;table-layout:fixed"><tr>'+cells+'</tr></table>'
+}
 function _sdRefreshSigRow() {
   const cell = document.getElementById('sd-sig-cell')
   const row = document.getElementById('sd-sig-row')
@@ -30275,10 +30310,7 @@ function _sdRefreshSigRow() {
   const screenHtml = _sdBuildPrintSigsHtml()
   if(cell) cell.innerHTML = screenHtml
   if(row) row.style.display = screenHtml ? '' : 'none'
-  if(printBox) {
-    printBox.innerHTML = _pdocSigPrintHtml(_sdSigSlots())
-    printBox.style.display = printBox.innerHTML ? '' : 'none'
-  }
+  if(printBox) printBox.innerHTML = _sdBuildPrintOnlySigsHtml()
 }
 
 function _sdPreparePrint() {
