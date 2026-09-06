@@ -1410,6 +1410,11 @@ html[data-skip-intro="1"] #intro-skip {
   }
   table { min-width: 520px; }
 }
+
+@media print {
+  .pdoc-sd-sig-print { display:block !important; page-break-inside:avoid; break-inside:avoid; margin-top:18px; }
+  .sd-sig-row { display:none !important; }
+}
 </style>
 </head>
 <body>
@@ -30187,11 +30192,12 @@ async function renderSalaryDisbursement(month, year) {
         <td id="sd-grand-zakat">${formatRM(sumZakat)}</td>
         <td class="budget" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
       </tr>
-      <tr class="sd-sig-row" id="sd-sig-row">
+      <tr class="sd-sig-row no-print" id="sd-sig-row">
         <td colspan="7" id="sd-sig-cell" style="padding-top:28px;text-align:center"></td>
       </tr>
       </tbody>
     </table>
+    <div id="sd-sig-print" class="pdoc-sd-sig-print" style="display:none"></div>
     <div class="pdoc-sig-grid pdoc-sd-sig no-print" style="margin:20px 12px 12px">
       <div class="form-group" id="sig-preparedBy"><label class="form-label">${t.preparedBy}</label><input id="sig-input-preparedBy" class="form-input" value="${_aiEscapeHtml(_sigPrep)}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
       <div class="form-group" id="sig-checkedBy"><label class="form-label">${t.checkedBy}</label><input id="sig-input-checkedBy" class="form-input" value="${_aiEscapeHtml(_sdSigsPrefill.checkedBy||'')}" onchange="_sdSaveSigs()" onblur="_sdSaveSigs()"></div>
@@ -30228,8 +30234,7 @@ async function renderSalaryDisbursement(month, year) {
 // render time) — a user may edit a value and print before hitting Save.
 
 // Build HTML for print signatures — only entries with a non-empty name.
-function _sdBuildPrintSigsHtml() {
-  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+function _sdSigSlots() {
   const roles = [
     { k:'preparedBy', fallback:'Prepared By' },
     { k:'checkedBy', fallback:'Checked By' },
@@ -30238,20 +30243,26 @@ function _sdBuildPrintSigsHtml() {
   ]
   let pref = {}
   try { pref = JSON.parse(localStorage.getItem('nexerp_sd_sigs_'+(APP.tenant&&APP.tenant.id||'x'))||'{}')||{} } catch(e) {}
-  const items = []
-  roles.forEach(r => {
+  return roles.map(r => {
     const inp = document.getElementById('sig-input-'+r.k)
     let name = (inp && inp.value) ? String(inp.value).trim() : ''
     if(!name) name = String(pref[r.k]||'').trim()
-    if(!name) return
     const lab = document.querySelector('#sig-'+r.k+' .form-label')
-    const label = (lab && lab.textContent.trim()) || r.fallback
+    const role = (lab && lab.textContent.trim()) || r.fallback
+    return { name, role }
+  })
+}
+function _sdBuildPrintSigsHtml() {
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const items = []
+  _sdSigSlots().forEach(s => {
+    if(!s.name) return
     items.push(
       '<div style="display:inline-block;width:150px;text-align:center;vertical-align:top;margin:0 16px">' +
         '<div style="height:56px"></div>' +
         '<div style="width:130px;margin:0 auto 6px;border-top:1.5px solid #334155;height:0"></div>' +
-        '<div style="font-size:12px;font-weight:600;color:#0F172A;margin-bottom:2px">'+esc(name)+'</div>' +
-        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">'+esc(label)+'</div>' +
+        '<div style="font-size:12px;font-weight:600;color:#0F172A;margin-bottom:2px">'+esc(s.name)+'</div>' +
+        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">'+esc(s.role)+'</div>' +
       '</div>'
     )
   })
@@ -30260,10 +30271,14 @@ function _sdBuildPrintSigsHtml() {
 function _sdRefreshSigRow() {
   const cell = document.getElementById('sd-sig-cell')
   const row = document.getElementById('sd-sig-row')
-  if(!cell || !row) return
-  const html = _sdBuildPrintSigsHtml()
-  cell.innerHTML = html
-  row.style.display = html ? '' : 'none'
+  const printBox = document.getElementById('sd-sig-print')
+  const screenHtml = _sdBuildPrintSigsHtml()
+  if(cell) cell.innerHTML = screenHtml
+  if(row) row.style.display = screenHtml ? '' : 'none'
+  if(printBox) {
+    printBox.innerHTML = _pdocSigPrintHtml(_sdSigSlots())
+    printBox.style.display = printBox.innerHTML ? '' : 'none'
+  }
 }
 
 function _sdPreparePrint() {
