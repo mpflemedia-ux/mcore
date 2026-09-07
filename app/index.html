@@ -27968,7 +27968,7 @@ async function renderEmployeeList() {
     title:'HR & Payroll', addEmployee:'Add Employee', runPayroll:'Run Payroll', noData:'No employee records yet',
     name:'Name', position:'Position', salary:'Basic Salary', ic:'IC No.', payrollHistory:'Payroll History',
     period:'Period', netPay:'Net Pay', noPayroll:'No payroll generated yet', salaryDisbursement:'Salary Disbursement', del:'Delete', delConfirm:'Delete this payroll record? Related journal entries (if any) will also be removed.', delOk:'Payroll record deleted.',
-    attendance:'Attendance', leave:'Leave'
+    attendance:'Attendance', leave:'Leave', selectAll:'Select all', deleteSelected:'Delete selected', deleteSelectedConfirm:'Delete selected employees? Records will be hidden (soft-delete).'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
@@ -28005,8 +28005,12 @@ async function renderEmployeeList() {
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!empRows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
   window._hrEmployeesCache = empRows
-  wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.ic}</th><th>${t.position}</th><th style="text-align:right">${t.salary}</th><th></th></tr></thead>
+  wrap.innerHTML = `<div style="display:flex;justify-content:flex-end;margin:0 0 8px">
+    <button id="hr-emp-bulk-del" class="btn btn-outline btn-sm" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_hrEmpBulkDelete()"><i class="ti ti-trash"></i> ${t.deleteSelected}</button>
+  </div>
+  <table><thead><tr><th><input type="checkbox" id="hr-emp-all" title="${t.selectAll}" onchange="_hrEmpToggleAll(this)"></th><th>${t.name}</th><th>${t.ic}</th><th>${t.position}</th><th style="text-align:right">${t.salary}</th><th></th></tr></thead>
   <tbody>${empRows.map(e=>`<tr>
+    <td><input type="checkbox" class="hr-emp-check" value="${e.id}" onchange="_hrEmpSyncAllBox()"></td>
     <td>${_aiEscapeHtml(e.name)}</td>
     <td>${e.ic_no||'-'}</td>
     <td>${_aiEscapeHtml(e.position||'-')}</td>
@@ -28308,6 +28312,46 @@ async function _payrollRecordDelete(id, name, month, year) {
   } catch(e) {
     showToast('Error: '+(e.message||e), 'error')
   }
+}
+
+
+function _hrEmpSelectedIds() {
+  return Array.from(document.querySelectorAll('.hr-emp-check:checked')).map(c => c.value).filter(Boolean)
+}
+function _hrEmpToggleAll(src) {
+  document.querySelectorAll('.hr-emp-check').forEach(c => { c.checked = !!src.checked })
+  const all = document.getElementById('hr-emp-all')
+  if(all) all.indeterminate = false
+  _hrEmpSyncAllBox()
+}
+function _hrEmpSyncAllBox() {
+  const boxes = Array.from(document.querySelectorAll('.hr-emp-check'))
+  const all = document.getElementById('hr-emp-all')
+  const btn = document.getElementById('hr-emp-bulk-del')
+  const n = boxes.filter(c => c.checked).length
+  if(all && boxes.length) {
+    all.checked = n === boxes.length
+    all.indeterminate = n > 0 && n < boxes.length
+  }
+  if(btn) {
+    btn.style.display = n ? '' : 'none'
+    const isBm = APP.language==='bm'
+    const base = isBm ? 'Padam dipilih' : 'Delete selected'
+    btn.innerHTML = '<i class="ti ti-trash"></i> ' + base + ' (' + n + ')'
+  }
+}
+async function _hrEmpBulkDelete() {
+  const isBm = APP.language==='bm'
+  const ids = _hrEmpSelectedIds()
+  if(!ids.length) { showToast(isBm?'Tiada pekerja dipilih':'No employees selected', 'error'); return }
+  if(!confirm((isBm?'Padam ':'Delete ') + ids.length + (isBm?' pekerja yang dipilih? Rekod akan disembunyikan.':' selected employee(s)? Records will be hidden.'))) return
+  const tid = APP.tenant && APP.tenant.id
+  if(!tid) { showToast('No tenant', 'error'); return }
+  const {error} = await sb.from('employees').update({deleted_at:new Date().toISOString()}).in('id', ids).eq('tenant_id', tid)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  ids.forEach(id => { try { auditLog('delete','employees', id) } catch(e) {} })
+  showToast((isBm?ids.length+' pekerja dipadam.':ids.length+' employee(s) deleted.'), 'success')
+  renderEmployeeList()
 }
 
 async function _employeeDelete(id, name) {
