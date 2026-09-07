@@ -30342,7 +30342,7 @@ async function renderSalaryDisbursement(month, year) {
         <th>EIS</th>
         <th>PCB</th>
         <th>Zakat</th>
-        <th class="budget">${isBm?'Bajet Diperlukan':'Budget Required'}</th>
+        <th class="budget">${isBm?'Bajet Diperlukan':'Budget Required'}<div style="font-size:10px;font-weight:500;opacity:.65;letter-spacing:0;margin-top:2px">${isBm?'termasuk caruman majikan':'incl. employer EPF+SOCSO+EIS'}</div></th>
       </tr></thead>
       <tbody>
       <tr>
@@ -30353,10 +30353,6 @@ async function renderSalaryDisbursement(month, year) {
         <td id="sd-grand-pcb">${formatRM(sumPCB)}</td>
         <td id="sd-grand-zakat">${formatRM(sumZakat)}</td>
         <td class="budget" id="sd-grand-budget">${formatRM(budgetRequired)}</td>
-      </tr>
-      <tr class="sd-er-row">
-        <td colspan="6" id="sd-er-label" style="text-align:right;font-size:11px;font-weight:600;letter-spacing:.02em;color:#64748B;padding:8px 10px;border:none;background:transparent">${isBm?'Caruman majikan (EPF+SOCSO+EIS) — termasuk dalam bajet':'Employer contrib. (EPF+SOCSO+EIS) — included in budget'}</td>
-        <td class="budget" id="sd-grand-employer" style="font-size:13px">${formatRM(sumEmployer)}</td>
       </tr>
       <tr class="sd-sig-row no-print" id="sd-sig-row">
         <td colspan="7" id="sd-sig-cell" style="padding-top:28px;text-align:center"></td>
@@ -30650,7 +30646,6 @@ function _sdRecalc() {
   setTxt('sd-grand-eis', formatRM(sumEIS))
   setTxt('sd-grand-pcb', formatRM(sumPCB))
   setTxt('sd-grand-budget', formatRM(budgetRequired))
-  setTxt('sd-grand-employer', formatRM(sumEmployer))
   setTxt('sd-budget-net', formatRM(grand))
   setTxt('sd-budget-required', formatRM(budgetRequired))
   setTxt('sd-budget-epf', formatRM(sumEPF))
