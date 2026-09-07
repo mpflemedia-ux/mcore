@@ -3,8 +3,8 @@
 async function renderPVDDetail(id) {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { back:'Disbursement', print:'Cetak (Landscape)', convert:'Convert ke Single PV', edit:'Edit', notFound:'Tidak dijumpai' }
-    : { back:'Disbursement', print:'Print (Landscape)', convert:'Convert to Single PVs', edit:'Edit', notFound:'Not found' }
+    ? { back:'Disbursement', print:'Cetak', convert:'Convert ke Single PV', edit:'Edit', notFound:'Tidak dijumpai' }
+    : { back:'Disbursement', print:'Print', convert:'Convert to Single PVs', edit:'Edit', notFound:'Not found' }
   const {data: b} = await sb.from('payment_voucher_batches').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!b) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const {data: lines} = await sb.from('payment_voucher_batch_lines').select('*').eq('batch_id',id).order('sort_order')
@@ -95,7 +95,7 @@ function _pvdDocHtml(b, lines, tn, isBm, accent) {
       { name: b.first_approved_by||'', role: isBm?'Kelulusan Pertama':'First Approval' },
       { name: b.approved_by||'', role: isBm?'Kelulusan Kedua':'Second Approval' },
     ])}</div>
-    <div class="pdoc-footer-note">${isBm?'Baucar bayaran (penyaluran) · Landskap · NexERP / Phion':'Payment voucher disbursement · Landscape · NexERP / Phion'}</div>
+    <div class="pdoc-footer-note">${isBm?'Baucar bayaran (penyaluran)':'Payment voucher disbursement'}</div>
   </div>`
 }
 
