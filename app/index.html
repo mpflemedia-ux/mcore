@@ -28748,13 +28748,13 @@ async function renderPayrollRun() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Jalankan Payroll', back:'SDM & Gaji', month:'Bulan', year:'Tahun', run:'Jalankan Payroll',
-    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana — tanda untuk jana semula)',
+    noData:'Tiada pekerja aktif.', name:'Nama', salary:'Gaji Pokok', already:'(sudah dijana — tanda untuk jana semula)', selectAll:'Pilih semua',
     noIc:'(tiada IC — anggap bawah 60 tahun untuk EPF/SOCSO/EIS)',
     pcbNote:'PCB dikira ikut jadual bertingkat asas sahaja — TIDAK mengambil kira relief individu (pasangan, anak, insurans, dll). Sila semak dengan akauntan sebelum penyerahan rasmi.',
     regenWarn:'Menanda pekerja yang "sudah dijana" akan OVERWRITE rekod payroll sedia ada untuk period ini (basic salary + semua kalkulasi EPF/SOCSO/EIS/PCB dikira semula dari data pekerja terkini).'
   } : {
     title:'Run Payroll', back:'HR & Payroll', month:'Month', year:'Year', run:'Run Payroll',
-    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated — check to regenerate)',
+    noData:'No active employees.', name:'Name', salary:'Basic Salary', already:'(already generated — check to regenerate)', selectAll:'Select all',
     noIc:'(no IC on file — assumed under 60 for EPF/SOCSO/EIS)',
     pcbNote:'PCB is calculated using basic progressive brackets only — does NOT account for individual reliefs (spouse, child, insurance, etc). Please verify with an accountant before official submission.',
     regenWarn:'Checking an "already generated" employee will OVERWRITE their existing payroll record for this period (basic salary + all EPF/SOCSO/EIS/PCB figures recalculated from current employee data).'
@@ -28784,9 +28784,9 @@ async function renderPayrollRun() {
     </div>
     <div id="payroll-emp-wrap" style="overflow-x:auto">
       ${(!employees || employees.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
-      <table><thead><tr><th></th><th>${t.name}</th><th style="text-align:right">${t.salary}</th></tr></thead>
+      <table><thead><tr><th><input type="checkbox" id="payroll-emp-all" title="${t.selectAll}" onchange="_payrollToggleAll(this)" ${(employees||[]).length && (employees||[]).every(e=>!existingIds.has(String(e.id)))?'checked':''}></th><th>${t.name}</th><th style="text-align:right">${t.salary}</th></tr></thead>
       <tbody>${employees.map(e=>`<tr>
-        <td><input type="checkbox" class="payroll-emp-check" value="${e.id}" ${existingIds.has(String(e.id))?'':'checked'}></td>
+        <td><input type="checkbox" class="payroll-emp-check" value="${e.id}" ${existingIds.has(String(e.id))?'':'checked'} onchange="_payrollSyncAllBox()"></td>
         <td>${_aiEscapeHtml(e.name)}${existingIds.has(String(e.id))?` <span style="color:var(--warning);font-size:12px">${t.already}</span>`:''}${!e.ic_no?` <span style="color:var(--warning);font-size:12px">${t.noIc}</span>`:''}</td>
         <td style="text-align:right">${formatRM(e.basic_salary)}</td>
       </tr>`).join('')}</tbody></table>`}
@@ -28893,7 +28893,22 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
   })
 }
 
-async function _payrollRunExecute() {
+async 
+function _payrollToggleAll(src) {
+  document.querySelectorAll('.payroll-emp-check').forEach(c => { c.checked = !!src.checked })
+  const all = document.getElementById('payroll-emp-all')
+  if(all) all.indeterminate = false
+}
+function _payrollSyncAllBox() {
+  const boxes = Array.from(document.querySelectorAll('.payroll-emp-check'))
+  const all = document.getElementById('payroll-emp-all')
+  if(!all || !boxes.length) return
+  const n = boxes.filter(c => c.checked).length
+  all.checked = n === boxes.length
+  all.indeterminate = n > 0 && n < boxes.length
+}
+
+function _payrollRunExecute() {
   const isBm = APP.language==='bm'
   const month = Number(document.getElementById('payroll-month').value)
   const year = Number(document.getElementById('payroll-year').value)
