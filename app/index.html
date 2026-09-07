@@ -24016,7 +24016,7 @@ async function _tryShowPublicQuotation() {
       </table>
       <div style="margin-top:16px;text-align:right;font-size:18px;font-weight:700">Total: MYR ${Number(q.total||0).toFixed(2)}</div>
       <div style="margin-top:20px;text-align:center"><button onclick="_pdocSetPrintFilename('Quotation_${_pdocSlug(q.ref_no)}_${_pdocSlug(q.customer_name)}_${_pdocDateStamp(q.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer">Print</button></div>
-      <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
+      <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only</p>
     </div>`
     return true
   } catch(e) { console.error(e); return false }
@@ -24165,7 +24165,7 @@ async function _tryShowPublicInvoice() {
         ${showPayOnline ? `<button id="public-inv-pay-online-btn" onclick="_publicInvPayOnline('${token.replace(/'/g,"\\'")}')" style="padding:10px 16px;border-radius:8px;border:none;background:#0E7490;color:#fff;cursor:pointer;font-size:13px;font-weight:600">💳 Pay Online</button>` : ''}
         <button onclick="_pdocSetPrintFilename('Invoice_${_pdocSlug(inv.ref_no)}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
       </div>
-      <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only · Powered by NexERP / Phion</p>
+      <p style="margin-top:24px;font-size:11px;color:#94a3b8;text-align:center">View-only</p>
     </div>`
     return true
   } catch(e) {
@@ -24324,7 +24324,7 @@ async function renderInvDetail(id) {
       </div>
     </div>
     <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
-    <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · NexERP</div>
+    <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')}</div>
   </div>
 
   ${canRecordPayment ? `
@@ -24753,7 +24753,7 @@ async function renderQuoForm(id=null) {
       </div>
     </div>
     <div style="padding:0 16px 8px">${_pdocNoSigNote(isBmQ)}</div>
-    <div class="pdoc-footer-note">${_aiEscapeHtml((tn&&tn.name)||APP.tenant.name||'')} · NexERP</div>
+    <div class="pdoc-footer-note">${_aiEscapeHtml((tn&&tn.name)||APP.tenant.name||'')}</div>
   </div>`:''}`
   _slRenderItems()
 }
@@ -25906,7 +25906,7 @@ async function renderPODetail(id) {
     </div>
     ${po.notes ? `<div style="padding:0 24px 12px;font-size:12px;color:#475569">${t.notes}: ${_aiEscapeHtml(po.notes)}</div>` : ''}
     <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
-    <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')} · M-Core</div>
+    <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')}</div>
   </div>`
 }
 
@@ -27084,7 +27084,7 @@ function _pvDocHtml(v, tn, isBm, accent) {
       { name: v.checked_by||'', role: isBm?'Disemak':'Checked By' },
       { name: v.approved_by||'', role: isBm?'Diluluskan':'Approved By' },
     ])}</div>
-    <div class="pdoc-footer-note">${isBm?'Baucar bayaran janaan komputer · NexERP / Phion':'Computer-generated payment voucher · NexERP / Phion'}</div>
+    <div class="pdoc-footer-note">${isBm?'Baucar bayaran janaan komputer':'Computer-generated payment voucher'}</div>
   </div>`
 }
 
@@ -27398,8 +27398,8 @@ async function _pvdSave(id) {
 async function renderPVDDetail(id) {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { back:'Disbursement', print:'Cetak (Landscape)', convert:'Convert ke Single PV', edit:'Edit', notFound:'Tidak dijumpai' }
-    : { back:'Disbursement', print:'Print (Landscape)', convert:'Convert to Single PVs', edit:'Edit', notFound:'Not found' }
+    ? { back:'Disbursement', print:'Cetak', convert:'Convert ke Single PV', edit:'Edit', notFound:'Tidak dijumpai' }
+    : { back:'Disbursement', print:'Print', convert:'Convert to Single PVs', edit:'Edit', notFound:'Not found' }
   const {data: b} = await sb.from('payment_voucher_batches').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!b) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const {data: lines} = await sb.from('payment_voucher_batch_lines').select('*').eq('batch_id',id).order('sort_order')
@@ -27480,7 +27480,7 @@ function _pvdDocHtml(b, lines, tn, isBm, accent) {
       { name: b.checked_by||'', role: isBm?'Disemak':'Checked By' },
       { name: b.approved_by||'', role: isBm?'Diluluskan':'Approved By' },
     ])}</div>
-    <div class="pdoc-footer-note">${isBm?'Baucar bayaran (penyaluran) · Landskap · NexERP / Phion':'Payment voucher disbursement · Landscape · NexERP / Phion'}</div>
+    <div class="pdoc-footer-note">${isBm?'Baucar bayaran (penyaluran)':'Payment voucher disbursement'}</div>
   </div>`
 }
 
