@@ -24090,6 +24090,41 @@ async function _copyPublicLink() {
   }
 }
 
+
+function _publicPayBlock(doc) {
+  const logo = doc.logo_url || ''
+  const qr = doc.payment_qr_url || ''
+  const bank = doc.bank_name || ''
+  const accNo = doc.account_number || ''
+  const accName = doc.account_name || ''
+  const ssm = doc.ssm_no || ''
+  const phone = doc.phone || ''
+  const email = doc.email || ''
+  const addr = [doc.address, doc.address_line2, [doc.postcode, doc.city].filter(Boolean).join(' '), doc.state].filter(Boolean).join(', ')
+  const hasCo = !!(logo || ssm || addr || phone)
+  const hasPay = !!(qr || bank || accNo || accName)
+  if(!hasCo && !hasPay) return ''
+  const co = hasCo ? `<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">
+      ${logo ? `<img src="${_aiEscapeHtml(logo)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0">` : ''}
+      <div style="min-width:0">
+        <div style="font-weight:800;font-size:18px;color:#0E7490">${_aiEscapeHtml(doc.tenant_name||'')}</div>
+        ${ssm ? `<div style="font-size:12px;color:#64748b">SSM ${_aiEscapeHtml(ssm)}</div>` : ''}
+        ${addr ? `<div style="font-size:12px;color:#64748b;word-break:break-word">${_aiEscapeHtml(addr)}</div>` : ''}
+        ${phone || email ? `<div style="font-size:12px;color:#64748b">${_aiEscapeHtml([phone, email].filter(Boolean).join(' · '))}</div>` : ''}
+      </div>
+    </div>` : ''
+  const pay = hasPay ? `<div style="margin-top:18px;padding:14px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#0E7490;margin-bottom:10px;text-align:center">Payment</div>
+      ${qr ? `<div style="text-align:center"><img src="${_aiEscapeHtml(qr)}" alt="Payment QR" style="width:168px;max-width:70vw;height:auto;border-radius:8px;background:#fff"></div>` : ''}
+      <div style="margin-top:${qr?'12px':'0'};font-size:13px;color:#0f172a;text-align:center;word-break:break-word">
+        ${bank ? `<div style="font-weight:700">${_aiEscapeHtml(bank)}</div>` : ''}
+        ${accName ? `<div>${_aiEscapeHtml(accName)}</div>` : ''}
+        ${accNo ? `<div style="font-size:16px;font-weight:800;letter-spacing:.04em;margin-top:4px">${_aiEscapeHtml(accNo)}</div>` : ''}
+      </div>
+    </div>` : ''
+  return { co, pay }
+}
+
 async function _tryShowPublicInvoice() {
   try {
     const params = new URLSearchParams(location.search)
@@ -24119,6 +24154,7 @@ async function _tryShowPublicInvoice() {
     }
     const inv = data
     const items = inv.items || []
+    const _pub = _publicPayBlock(inv)
     const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
     let showPayOnline = false
     if (balance > 0.005) {
@@ -24132,15 +24168,10 @@ async function _tryShowPublicInvoice() {
     }
     root.innerHTML = `
     <div style="max-width:720px;width:100%;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px 16px;box-sizing:border-box;overflow-x:hidden;box-shadow:0 4px 20px rgba(0,0,0,.06)">
-      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-        <div>
-          <div style="font-size:12px;color:#94a3b8">From</div>
-          <div style="font-weight:700;font-size:18px;color:#0E7490">${_aiEscapeHtml(inv.tenant_name||'NexERP')}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:12px;color:#94a3b8">Invoice</div>
-          <div style="font-weight:700;font-size:18px">${_aiEscapeHtml(inv.ref_no||'-')}</div>
-        </div>
+      ${_pub.co || `<div style="margin-bottom:12px"><div style="font-size:12px;color:#94a3b8">From</div><div style="font-weight:700;font-size:18px;color:#0E7490">${_aiEscapeHtml(inv.tenant_name||'')}</div></div>`}
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <div style="font-size:12px;color:#94a3b8">Invoice</div>
+        <div style="font-weight:700;font-size:18px">${_aiEscapeHtml(inv.ref_no||'-')}</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;font-size:13px">
         <div><span style="color:#94a3b8">Bill to</span><br><strong>${_aiEscapeHtml(inv.customer_name||'-')}</strong></div>
@@ -24162,6 +24193,7 @@ async function _tryShowPublicInvoice() {
         <div style="color:#16a34a">Paid: MYR ${Number(inv.paid_amt||0).toFixed(2)}</div>
         <div style="color:#dc2626">Balance: MYR ${(Number(inv.total||0)-Number(inv.paid_amt||0)).toFixed(2)}</div>
       </div>
+      ${_pub.pay||''}
       <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap" class="no-print">
         ${showPayOnline ? `<button id="public-inv-pay-online-btn" onclick="_publicInvPayOnline('${token.replace(/'/g,"\\'")}')" style="padding:10px 16px;border-radius:8px;border:none;background:#0E7490;color:#fff;cursor:pointer;font-size:13px;font-weight:600">💳 Pay Online</button>` : ''}
         <button onclick="_pdocSetPrintFilename('Invoice_${_pdocSlug(inv.ref_no)}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}');window.print()" style="padding:10px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px">🖨 Print</button>
