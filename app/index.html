@@ -23478,6 +23478,7 @@ async function renderInvList() {
   </div>`
 
   const wrap = document.getElementById('inv-list-wrap')
+  try { await _invProcessDueRecurring() } catch(e) { console.warn('recurring process', e) }
   const {data, error} = await sb.from('invoices').select('id,ref_no,issue_date,due_date,total,paid_amt,status,customer_name')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('issue_date',{ascending:false})
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
@@ -24198,6 +24199,172 @@ async function _publicInvPayOnline(token) {
 }
 
 
+
+function _invToggleRecurringPanel() {
+  const el = document.getElementById('inv-recur-panel')
+  if(!el) return
+  el.style.display = el.style.display === 'none' ? 'block' : 'none'
+}
+function _invAddPeriod(dateStr, interval) {
+  const base = dateStr || new Date().toISOString().slice(0,10)
+  const d = new Date(base + 'T00:00:00')
+  if(isNaN(d.getTime())) return new Date().toISOString().slice(0,10)
+  if(interval === 'quarterly') d.setMonth(d.getMonth() + 3)
+  else if(interval === 'yearly') d.setFullYear(d.getFullYear() + 1)
+  else d.setMonth(d.getMonth() + 1)
+  return d.toISOString().slice(0,10)
+}
+function _invTermDays(inv) {
+  if(!inv || !inv.issue_date || !inv.due_date) return 30
+  const a = new Date(inv.issue_date + 'T00:00:00')
+  const b = new Date(inv.due_date + 'T00:00:00')
+  const days = Math.round((b - a) / 86400000)
+  return days > 0 ? days : 30
+}
+async function _invSaveRecurring(id) {
+  const isBm = APP.language==='bm'
+  const msg = document.getElementById('inv-recur-msg')
+  const interval = document.getElementById('inv-recur-interval')?.value || 'monthly'
+  let next = document.getElementById('inv-recur-next')?.value || ''
+  const active = !!document.getElementById('inv-recur-active')?.checked
+  if(active && !next) next = _invAddPeriod(new Date().toISOString().slice(0,10), interval)
+  const payload = { recurring_interval: interval, recurring_next: next || null, recurring_active: active, updated_at: new Date().toISOString() }
+  const {error} = await sb.from('invoices').update(payload).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) {
+    const text = /recurring_|column/i.test(error.message||'')
+      ? (isBm ? 'Jalankan SQL recurring invoices di Supabase dulu.' : 'Run the recurring invoices SQL in Supabase first.')
+      : error.message
+    if(msg) { msg.style.color = 'var(--danger)'; msg.textContent = text }
+    showToast(text, 'error')
+    return
+  }
+  if(document.getElementById('inv-recur-next') && next) document.getElementById('inv-recur-next').value = next
+  if(msg) { msg.style.color = 'var(--success)'; msg.textContent = isBm ? 'Jadual disimpan.' : 'Schedule saved.' }
+  showToast(isBm ? 'Jadual berulang disimpan' : 'Recurring schedule saved', 'success')
+}
+async function _invCloneFromRecurring(src, issueDate) {
+  const {data: items, error: itemsErr} = await sb.from('invoice_items').select('product_id,description,qty,unit_price,line_total').eq('invoice_id', src.id)
+  if(itemsErr) throw itemsErr
+  const term = _invTermDays(src)
+  const due = (() => { const d = new Date(issueDate + 'T00:00:00'); d.setDate(d.getDate() + term); return d.toISOString().slice(0,10) })()
+  const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'INV'}).then(r=>r, ()=>({data:null}))
+  const payload = {
+    tenant_id: APP.tenant.id,
+    customer_id: src.customer_id,
+    customer_name: src.customer_name,
+    issue_date: issueDate,
+    due_date: due,
+    total: src.total,
+    subtotal: src.subtotal,
+    tax_rate: src.tax_rate,
+    tax_amt: src.tax_amt,
+    status: 'unpaid',
+    paid_amt: 0,
+    sales_person_id: src.sales_person_id || null,
+    channel: src.channel || 'retail',
+    recurring_active: false,
+    recurring_source_id: src.id,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ref_no: refData || await _genFallbackRefNo('invoices','ref_no','INV')
+  }
+  const strip = (p) => {
+    const q = {...p}
+    delete q.subtotal; delete q.tax_rate; delete q.tax_amt
+    delete q.recurring_active; delete q.recurring_source_id
+    return q
+  }
+  let {data, error} = await sb.from('invoices').insert(payload).select('id,ref_no').single()
+  if(error && /column|schema cache|recurring_|subtotal|tax_/i.test(error.message||'')) {
+    ({data, error} = await sb.from('invoices').insert(strip(payload)).select('id,ref_no').single())
+  }
+  if(error) throw error
+  if(items && items.length) {
+    const rows = items.map(it => ({
+      tenant_id: APP.tenant.id,
+      invoice_id: data.id,
+      product_id: it.product_id || null,
+      description: it.description,
+      qty: Number(it.qty||0),
+      unit_price: Number(it.unit_price||0),
+      line_total: Number(it.line_total != null ? it.line_total : Number(it.qty||0)*Number(it.unit_price||0))
+    }))
+    const {error: ie} = await sb.from('invoice_items').insert(rows)
+    if(ie) throw ie
+  }
+  return data
+}
+async function _invGenerateRecurringNow(id) {
+  const isBm = APP.language==='bm'
+  const msg = document.getElementById('inv-recur-msg')
+  const {data: src, error} = await sb.from('invoices').select('*').eq('id', id).eq('tenant_id', APP.tenant.id).single()
+  if(error || !src) { showToast(error?.message || 'Invoice not found', 'error'); return }
+  const interval = document.getElementById('inv-recur-interval')?.value || src.recurring_interval || 'monthly'
+  const issue = new Date().toISOString().slice(0,10)
+  try {
+    const created = await _invCloneFromRecurring(src, issue)
+    const next = _invAddPeriod(src.recurring_next || issue, interval)
+    await sb.from('invoices').update({
+      recurring_interval: interval,
+      recurring_next: next,
+      recurring_active: true,
+      updated_at: new Date().toISOString()
+    }).eq('id', id).eq('tenant_id', APP.tenant.id)
+    if(document.getElementById('inv-recur-next')) document.getElementById('inv-recur-next').value = next
+    if(document.getElementById('inv-recur-active')) document.getElementById('inv-recur-active').checked = true
+    const text = isBm ? ('Invois '+created.ref_no+' dijana.') : ('Generated '+created.ref_no)
+    if(msg) { msg.style.color = 'var(--success)'; msg.textContent = text }
+    showToast(text, 'success')
+    auditLog('create','invoices', created.id)
+  } catch(e) {
+    const text = /recurring_|column/i.test(e.message||'')
+      ? (isBm ? 'Jalankan SQL recurring invoices di Supabase dulu.' : 'Run the recurring invoices SQL in Supabase first.')
+      : (e.message || String(e))
+    if(msg) { msg.style.color = 'var(--danger)'; msg.textContent = text }
+    showToast(text, 'error')
+  }
+}
+async function _invProcessDueRecurring() {
+  if(!APP.tenant?.id) return
+  const today = new Date().toISOString().slice(0,10)
+  const {data: due, error} = await sb.from('invoices')
+    .select('*')
+    .eq('tenant_id', APP.tenant.id)
+    .eq('recurring_active', true)
+    .lte('recurring_next', today)
+    .is('deleted_at', null)
+  if(error) {
+    if(!/recurring_|column/i.test(error.message||'')) console.warn('recurring due', error)
+    return
+  }
+  for(const src of (due||[])) {
+    const issue = src.recurring_next || today
+    const {data: exists} = await sb.from('invoices').select('id')
+      .eq('tenant_id', APP.tenant.id)
+      .eq('recurring_source_id', src.id)
+      .eq('issue_date', issue)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if(exists) {
+      await sb.from('invoices').update({
+        recurring_next: _invAddPeriod(issue, src.recurring_interval || 'monthly'),
+        updated_at: new Date().toISOString()
+      }).eq('id', src.id).eq('tenant_id', APP.tenant.id)
+      continue
+    }
+    try {
+      const created = await _invCloneFromRecurring(src, issue)
+      await sb.from('invoices').update({
+        recurring_next: _invAddPeriod(issue, src.recurring_interval || 'monthly'),
+        updated_at: new Date().toISOString()
+      }).eq('id', src.id).eq('tenant_id', APP.tenant.id)
+      auditLog('create','invoices', created.id)
+    } catch(e) {
+      console.warn('recurring generate', src.ref_no, e)
+    }
+  }
+}
+
 async function renderInvDetail(id) {
   const t = APP.language==='bm' ? {
     back:'Invois', edit:'Edit', customer:'Pelanggan', date:'Tarikh', due:'Tarikh Akhir',
@@ -24266,8 +24433,32 @@ async function renderInvDetail(id) {
     <button class="btn btn-outline btn-sm" onclick="_invPublicLink('${id}')"><i class="ti ti-link"></i> ${APP.language==='bm'?'Link awam':'Public link'}</button>
     <button class="btn btn-outline btn-sm" onclick="_cnOpenForm('${id}')"><i class="ti ti-receipt-refund"></i> ${APP.language==='bm'?'Nota Kredit':'Credit Note'}</button>
     <button class="btn btn-outline btn-sm" onclick="_doOpenFromInvoice('${id}')"><i class="ti ti-truck-delivery"></i> ${APP.language==='bm'?'Cipta DO':'Create DO'}</button>
+    <button class="btn btn-outline btn-sm" onclick="_invToggleRecurringPanel()"><i class="ti ti-repeat"></i> ${APP.language==='bm'?'Berulang':'Recurring'}</button>
     ${canRecordPayment ? `<button class="btn btn-primary btn-sm" onclick="document.getElementById('inv-pay-section')?.scrollIntoView({behavior:'smooth',block:'start'})"><i class="ti ti-cash"></i> ${t.recordPayment}</button>` : ''}
   </div></div>
+  <div id="inv-recur-panel" class="card no-print" style="display:none;max-width:820px;margin:0 auto 16px;padding:16px">
+    <div style="font-weight:700;margin-bottom:10px">${APP.language==='bm'?'Invois berulang':'Recurring invoice'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Kekerapan':'Frequency'}</label>
+        <select id="inv-recur-interval" class="form-select">
+          <option value="monthly" ${inv.recurring_interval==='monthly'?'selected':''}>${APP.language==='bm'?'Bulanan':'Monthly'}</option>
+          <option value="quarterly" ${inv.recurring_interval==='quarterly'?'selected':''}>${APP.language==='bm'?'Suku tahun':'Quarterly'}</option>
+          <option value="yearly" ${inv.recurring_interval==='yearly'?'selected':''}>${APP.language==='bm'?'Tahunan':'Yearly'}</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Jana seterusnya':'Next generate'}</label>
+        <input id="inv-recur-next" type="date" class="form-input" value="${_aiEscapeHtml(inv.recurring_next||'')}">
+      </div>
+      <div class="form-group"><label class="form-label">${APP.language==='bm'?'Status':'Status'}</label>
+        <label style="display:flex;align-items:center;gap:8px;min-height:40px"><input id="inv-recur-active" type="checkbox" ${inv.recurring_active?'checked':''}> ${APP.language==='bm'?'Aktif':'Active'}</label>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn btn-primary btn-sm" type="button" onclick="_invSaveRecurring('${id}')">${APP.language==='bm'?'Simpan jadual':'Save schedule'}</button>
+      <button class="btn btn-outline btn-sm" type="button" onclick="_invGenerateRecurringNow('${id}')">${APP.language==='bm'?'Jana sekarang':'Generate now'}</button>
+    </div>
+    <div id="inv-recur-msg" style="margin-top:8px;font-size:13px;color:var(--text-3)"></div>
+  </div>
 
   <div class="pdoc" style="--pdoc-accent:#0E7490;max-width:820px;margin:0 auto 24px">
     <div class="pdoc-header">
