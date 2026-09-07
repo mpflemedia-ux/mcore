@@ -28893,7 +28893,6 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
   })
 }
 
-async 
 function _payrollToggleAll(src) {
   document.querySelectorAll('.payroll-emp-check').forEach(c => { c.checked = !!src.checked })
   const all = document.getElementById('payroll-emp-all')
@@ -28908,7 +28907,7 @@ function _payrollSyncAllBox() {
   all.indeterminate = n > 0 && n < boxes.length
 }
 
-function _payrollRunExecute() {
+async function _payrollRunExecute() {
   const isBm = APP.language==='bm'
   const month = Number(document.getElementById('payroll-month').value)
   const year = Number(document.getElementById('payroll-year').value)
