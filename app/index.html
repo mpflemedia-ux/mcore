@@ -27266,8 +27266,8 @@ async function renderPVDList() {
 async function renderPVDForm(id) {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { title:'PV Disbursement', back:'Disbursement', batchTitle:'Tajuk *', date:'Tarikh', payee:'Penerima', amount:'Jumlah', method:'Kaedah', bank:'Bank / Akaun', desc:'Tujuan', addRow:'Tambah baris', save:'Simpan', cancel:'Batal' }
-    : { title:'PV Disbursement', back:'Disbursement', batchTitle:'Title *', date:'Date', payee:'Payee', amount:'Amount', method:'Method', bank:'Bank / Account', desc:'Purpose', addRow:'Add line', save:'Save', cancel:'Cancel' }
+    ? { title:'PV Disbursement', back:'Disbursement', batchTitle:'Tajuk *', date:'Tarikh', payee:'Penerima', amount:'Jumlah', method:'Kaedah', bank:'Bank / Akaun', desc:'Tujuan', addRow:'Tambah baris', save:'Simpan', cancel:'Batal', reuse:'Guna semula', saveTpl:'Simpan sebagai template', tplName:'Nama template', tplOk:'Template disimpan.', loaded:'Baris dimuat.', noTpl:'Tiada data untuk disimpan.' }
+    : { title:'PV Disbursement', back:'Disbursement', batchTitle:'Title *', date:'Date', payee:'Payee', amount:'Amount', method:'Method', bank:'Bank / Account', desc:'Purpose', addRow:'Add line', save:'Save', cancel:'Cancel', reuse:'Reuse', saveTpl:'Save as template', tplName:'Template name', tplOk:'Template saved.', loaded:'Lines loaded.', noTpl:'Nothing to save.' }
   let batch = null, lines = []
   if(id) {
     const {data} = await sb.from('payment_voucher_batches').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
@@ -27289,6 +27289,12 @@ async function renderPVDForm(id) {
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:16px">
       <div class="form-group"><label class="form-label">${t.batchTitle}</label><input id="pvd-title" class="form-input" value="${_aiEscapeHtml(batch?.title||'Payment Voucher Disbursement')}"></div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="pvd-date" type="date" class="form-input" value="${batch?.batch_date||today}"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <select id="pvd-reuse" class="form-select" style="min-width:240px;max-width:360px" onchange="_pvdLoadReuse(this)">
+        <option value="">${t.reuse}…</option>
+      </select>
+      <button class="btn btn-outline btn-sm" type="button" onclick="_pvdSaveTemplate()"><i class="ti ti-device-floppy"></i> ${t.saveTpl}</button>
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px">
       <table class="pvd-edit-table" style="width:100%;min-width:900px;border-collapse:collapse">
@@ -27315,6 +27321,83 @@ async function renderPVDForm(id) {
     </div>
   </div>`
   _pvdRenderLines()
+  _pvdPopulateReuse(id||'')
+}
+
+function _pvdTplKey() {
+  return 'mcore_pvd_templates_' + ((APP.tenant && APP.tenant.id) || 'x')
+}
+function _pvdReadTemplates() {
+  try { return JSON.parse(localStorage.getItem(_pvdTplKey())||'[]') || [] } catch(e) { return [] }
+}
+function _pvdWriteTemplates(list) {
+  try { localStorage.setItem(_pvdTplKey(), JSON.stringify(list.slice(0,30))) } catch(e) {}
+}
+function _pvdCloneLines(lines) {
+  return (lines||[]).map(l => ({
+    payee_name: l.payee_name||'',
+    amount: Number(l.amount||0),
+    payment_method: l.payment_method||'Bank Transfer',
+    bank_name: l.bank_name||'',
+    description: l.description||'',
+    bill_id: null
+  }))
+}
+async function _pvdPopulateReuse(currentId) {
+  const sel = document.getElementById('pvd-reuse')
+  if(!sel) return
+  const isBm = APP.language==='bm'
+  const tpls = _pvdReadTemplates()
+  let batches = []
+  try {
+    const {data} = await sb.from('payment_voucher_batches').select('id,title,batch_date,ref_no,total_amount')
+      .eq('tenant_id', APP.tenant.id).order('batch_date', {ascending:false}).limit(20)
+    batches = (data||[]).filter(b => String(b.id) !== String(currentId||''))
+  } catch(e) {}
+  const first = `<option value="">${isBm?'Guna semula…':'Reuse…'}</option>`
+  const g1 = tpls.length ? `<optgroup label="${isBm?'Template':'Templates'}">${tpls.map((t,i)=>`<option value="tpl:${i}">${_aiEscapeHtml(t.name||('Template '+(i+1)))}</option>`).join('')}</optgroup>` : ''
+  const g2 = batches.length ? `<optgroup label="${isBm?'PV lepas':'Previous PV'}">${batches.map(b=>`<option value="batch:${b.id}">${_aiEscapeHtml((b.ref_no||'')+' · '+(b.title||'')+' · '+(b.batch_date||''))}</option>`).join('')}</optgroup>` : ''
+  sel.innerHTML = first + g1 + g2
+}
+async function _pvdLoadReuse(sel) {
+  const v = sel && sel.value
+  if(!v) return
+  const isBm = APP.language==='bm'
+  if(v.startsWith('tpl:')) {
+    const tpls = _pvdReadTemplates()
+    const t = tpls[Number(v.slice(4))]
+    if(!t || !t.lines) { sel.value=''; return }
+    _pvdLines = _pvdCloneLines(t.lines)
+    if(!_pvdLines.length) _pvdLines = [{ payee_name:'', amount:0, payment_method:'Bank Transfer', bank_name:'', description:'', bill_id:null }]
+    _pvdRenderLines()
+    showToast(isBm?'Baris dimuat.':'Lines loaded.', 'success')
+  } else if(v.startsWith('batch:')) {
+    const bid = v.slice(6)
+    const {data: ln, error} = await sb.from('payment_voucher_batch_lines').select('payee_name,amount,payment_method,bank_name,description').eq('batch_id', bid).order('sort_order')
+    if(error) { showToast(error.message,'error'); sel.value=''; return }
+    _pvdLines = _pvdCloneLines(ln)
+    if(!_pvdLines.length) _pvdLines = [{ payee_name:'', amount:0, payment_method:'Bank Transfer', bank_name:'', description:'', bill_id:null }]
+    _pvdRenderLines()
+    showToast(isBm?'Baris dimuat.':'Lines loaded.', 'success')
+  }
+  sel.value = ''
+}
+function _pvdSaveTemplate() {
+  const isBm = APP.language==='bm'
+  const lines = (_pvdLines||[]).filter(l => (l.payee_name||'').trim())
+  if(!lines.length) { showToast(isBm?'Tiada data untuk disimpan.':'Nothing to save.', 'error'); return }
+  const name = prompt(isBm?'Nama template:':'Template name:', (document.getElementById('pvd-title')||{}).value || '')
+  if(!name || !name.trim()) return
+  const list = _pvdReadTemplates()
+  const rec = { name: name.trim(), lines: _pvdCloneLines(lines), saved_at: new Date().toISOString() }
+  const idx = list.findIndex(t => String(t.name).toLowerCase() === rec.name.toLowerCase())
+  if(idx>=0) list[idx] = rec
+  else list.unshift(rec)
+  _pvdWriteTemplates(list)
+  showToast(isBm?'Template disimpan.':'Template saved.', 'success')
+  const cur = document.querySelector('#pvd-form-err') ? '' : ''
+  const idEl = document.querySelector('[onclick^="_pvdSave"]')
+  _pvdPopulateReuse('')
 }
 
 function _pvdAddLine() {
