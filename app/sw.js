@@ -1,5 +1,5 @@
 /* M-Core service worker — HTML always network; bump CACHE to drop bad shells */
-const CACHE = 'mcore-shell-v14'
+const CACHE = 'mcore-shell-v15'
 self.addEventListener('install', e => {
   e.waitUntil(self.skipWaiting())
 })
@@ -15,10 +15,21 @@ self.addEventListener('fetch', e => {
   if (url.origin !== self.location.origin) return
   if (e.request.method !== 'GET') return
   const isNav = e.request.mode === 'navigate' || (e.request.headers.get('accept') || '').includes('text/html')
-  // Never serve stale index.html / SPA shell from cache
   if (isNav || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/app/') || url.pathname.endsWith('/app')) {
     e.respondWith(
-      fetch(e.request, { cache: 'no-store' }).catch(() => caches.match('./index.html'))
+      fetch(e.request, { cache: 'no-store' }).then(async res => {
+        const ct = res.headers.get('content-type') || ''
+        if (!ct.includes('html') && !url.pathname.endsWith('.html') && !url.pathname.endsWith('/app/') && !url.pathname.endsWith('/app')) return res
+        let html = await res.text()
+        if (html.includes('</body>') && !html.includes('pvd-four-roles.js')) {
+          html = html.replace('</body>', '<script src="./pvd-four-roles.js?v=1"></script>\n</body>')
+        }
+        return new Response(html, {
+          status: res.status,
+          statusText: res.statusText,
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
+        })
+      }).catch(() => caches.match('./index.html'))
     )
     return
   }
