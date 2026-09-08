@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Invoice</title>
+<style>
+  html,body{margin:0;background:#F1F5F9;color:#0f172a;font-family:Inter,system-ui,sans-serif}
+  .wrap{max-width:720px;margin:24px auto 48px;padding:20px 16px 28px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.06);box-sizing:border-box}
+  .muted{color:#475569;font-weight:600;font-size:12px}
+  .name{font-weight:800;font-size:18px;color:#0E7490}
+  .ref{font-weight:800;font-size:20px;color:#0E7490}
+  .val{color:#0f172a;font-size:13px}
+  .line{padding:12px 0;border-bottom:1px solid #e2e8f0}
+  .pay{margin-top:18px;padding:16px 12px 20px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}
+  .pay img{display:block;margin:0 auto;width:auto;max-width:min(280px,100%);max-height:280px;height:auto;object-fit:contain;background:#fff;border-radius:8px}
+  .err{max-width:560px;margin:60px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e2e8f0}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div id="root"><div style="max-width:720px;margin:40px auto;text-align:center;color:#475569">Loading invoice…</div></div>
+<script>
+const SUPABASE_URL = 'https://wjqhhnjlgoigoagsnsen.supabase.co'
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw'
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON)
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function rm(n){return Number(n||0).toFixed(2)}
+;(async function(){
+  const root = document.getElementById('root')
+  const token = new URLSearchParams(location.search).get('public_inv')
+  if(!token){ root.innerHTML = '<div class="err"><h2>Invoice unavailable</h2><p>Missing token.</p></div>'; return }
+  const {data:inv, error} = await sb.rpc('get_public_invoice', { p_token: token })
+  if(error||!inv){ root.innerHTML = '<div class="err"><h2>Invoice unavailable</h2><p>'+esc(error&&error.message||'Not found')+'</p></div>'; return }
+  document.title = (inv.ref_no||'Invoice')+' · '+(inv.tenant_name||'')
+  const items = inv.items||[]
+  const addr = [inv.address, inv.address_line2, [inv.postcode,inv.city].filter(Boolean).join(' '), inv.state].filter(Boolean).join(', ')
+  const qr = inv.payment_qr_url||''
+  const lines = items.length ? items.map(it=>'<div class="line"><div style="font-weight:600">'+esc(it.description)+'</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px;color:#475569"><span>Qty '+esc(it.qty)+' × '+rm(it.unit_price)+'</span><span style="font-weight:700;color:#0f172a">MYR '+rm(it.line_total)+'</span></div></div>').join('') : '<div class="line">No lines</div>'
+  root.innerHTML = '<div class="wrap">'
+    +'<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">'
+    +(inv.logo_url?'<img src="'+esc(inv.logo_url)+'" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:#fff">':'')
+    +'<div><div class="name">'+esc(inv.tenant_name)+'</div>'
+    +(inv.ssm_no?'<div class="muted">SSM '+esc(inv.ssm_no)+'</div>':'')
+    +(addr?'<div class="muted" style="font-weight:400">'+esc(addr)+'</div>':'')
+    +((inv.phone||inv.email)?'<div class="muted" style="font-weight:400">'+esc([inv.phone,inv.email].filter(Boolean).join(' · '))+'</div>':'')
+    +'</div></div>'
+    +'<div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:16px"><div class="muted">Invoice</div><div class="ref">'+esc(inv.ref_no||'-')+'</div></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">'
+    +'<div><div class="muted">Bill to</div><div class="val"><strong>'+esc(inv.customer_name||'-')+'</strong></div></div>'
+    +'<div><div class="muted">Issue / Due</div><div class="val">'+esc(inv.issue_date||'')+' / '+esc(inv.due_date||'-')+'</div></div>'
+    +'</div><div style="border-top:1px solid #e2e8f0">'+lines+'</div>'
+    +'<div style="margin-top:16px;text-align:right">'
+    +(Number(inv.tax_amt)>0?'<div>Subtotal: MYR '+rm(inv.subtotal)+'</div><div>SST: MYR '+rm(inv.tax_amt)+'</div>':'')
+    +'<div style="font-size:18px;font-weight:800;margin-top:6px">Total: MYR '+rm(inv.total)+'</div>'
+    +'<div style="color:#15803d;font-weight:600">Paid: MYR '+rm(inv.paid_amt)+'</div>'
+    +'<div style="color:#b91c1c;font-weight:700">Balance: MYR '+rm(Number(inv.total||0)-Number(inv.paid_amt||0))+'</div></div>'
+    +((qr||inv.bank_name||inv.account_number)?'<div class="pay"><div class="muted" style="text-align:center;letter-spacing:.06em;text-transform:uppercase;color:#0E7490;margin-bottom:10px">Payment</div>'
+      +(qr?'<img src="'+esc(qr)+'" alt="Payment QR">':'')
+      +'<div style="margin-top:8px;text-align:center">'
+      +(inv.bank_name?'<div style="font-weight:700">'+esc(inv.bank_name)+'</div>':'')
+      +(inv.account_name?'<div>'+esc(inv.account_name)+'</div>':'')
+      +(inv.account_number?'<div style="font-size:16px;font-weight:800;margin-top:4px">'+esc(inv.account_number)+'</div>':'')
+      +'</div></div>':'')
+    +'<p style="margin-top:24px;font-size:11px;color:#64748b;text-align:center">View-only</p></div>'
+})()
+</script>
+</body>
+</html>
