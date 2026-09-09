@@ -3373,7 +3373,7 @@ function formatRM(a) { return 'RM '+Number(a||0).toLocaleString('ms-MY',{minimum
 let _pdocTenantCache = null
 async function _pdocGetTenant() {
   if(_pdocTenantCache && _pdocTenantCache.id===APP.tenant.id) return _pdocTenantCache
-  const {data} = await sb.from('tenants').select('id,name,logo_url,address,address_line2,city,postcode,state,country,phone,sst_gst_no').eq('id',APP.tenant.id).single()
+  const {data} = await sb.from('tenants').select('id,name,logo_url,address,address_line2,city,postcode,state,country,phone,sst_gst_no,bank_name,account_number,account_name,payment_qr_url').eq('id',APP.tenant.id).single()
   _pdocTenantCache = data || {id:APP.tenant.id, name:APP.tenant.name}
   return _pdocTenantCache
 }
@@ -24443,14 +24443,21 @@ async function renderInvDetail(id) {
   const printFilename = `Invoice_${inv.ref_no}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}`
   const tn = await _pdocGetTenant()
   let invTerms = String((tn && tn.invoice_terms) || ((APP.tenant.config||{}).company_profile||{}).invoice_terms || '').trim()
-  if(!invTerms) {
-    try {
-      const cfgRes = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle()
-      let cfg = cfgRes.data && cfgRes.data.config
-      if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }
-      invTerms = String((cfg && cfg.company_profile && cfg.company_profile.invoice_terms) || '').trim()
-    } catch (e) {}
-  }
+  let bankName = String((tn && tn.bank_name) || ((APP.tenant.config||{}).company_profile||{}).bank_name || '').trim()
+  let accName = String((tn && tn.account_name) || ((APP.tenant.config||{}).company_profile||{}).account_name || '').trim()
+  let accNo = String((tn && tn.account_number) || ((APP.tenant.config||{}).company_profile||{}).account_number || '').trim()
+  let payQr = String((tn && tn.payment_qr_url) || ((APP.tenant.config||{}).company_profile||{}).payment_qr_url || '').trim()
+  try {
+    const cfgRes = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle()
+    let cfg = cfgRes.data && cfgRes.data.config
+    if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }
+    const cp = (cfg && cfg.company_profile) || {}
+    if(!invTerms) invTerms = String(cp.invoice_terms || '').trim()
+    if(!bankName) bankName = String(cp.bank_name || '').trim()
+    if(!accName) accName = String(cp.account_name || '').trim()
+    if(!accNo) accNo = String(cp.account_number || '').trim()
+    if(!payQr) payQr = String(cp.payment_qr_url || '').trim()
+  } catch (e) {}
   const companyAddr = _pdocAddressLine(tn)
   const isBm = APP.language==='bm'
   const canRecordPayment = balance > 0.005 && inv.status !== 'cancelled'
@@ -24566,7 +24573,13 @@ async function renderInvDetail(id) {
         <div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;padding:4px 0;font-weight:600;color:${balance>0?'#DC2626':'#64748B'}"><span>${t.balance}</span><span>${formatRM(balance)}</span></div>
       </div>
     </div>
-    <div style="padding:0 16px 8px">${invTerms?`<div class="pdoc-inv-terms" style="padding:8px 8px 12px;font-size:12px;line-height:1.55;color:#334155;white-space:pre-wrap">${_aiEscapeHtml(invTerms)}</div>`:""}${_pdocNoSigNote(isBm)}</div>
+    <div style="padding:0 16px 8px">${(bankName||accNo||payQr)?`<div class="pdoc-pay-block" style="margin:8px 8px 16px;padding:12px;border:1px solid #E2E8F0;border-radius:8px;text-align:center">
+        <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#0E7490;font-weight:700;margin-bottom:8px">${isBm?'Pembayaran':'Payment'}</div>
+        ${payQr?`<img src="${_aiEscapeHtml(payQr)}" alt="QR" style="width:160px;max-width:70vw;height:auto;margin:0 auto 8px;display:block">`:''}
+        ${bankName?`<div style="font-weight:700;color:#0F172A">${_aiEscapeHtml(bankName)}</div>`:''}
+        ${accName?`<div style="color:#334155;font-size:13px">${_aiEscapeHtml(accName)}</div>`:''}
+        ${accNo?`<div style="font-size:16px;font-weight:800;color:#0F172A;margin-top:2px">${_aiEscapeHtml(accNo)}</div>`:''}
+      </div>`:''}${invTerms?`<div class="pdoc-inv-terms" style="padding:8px 8px 12px;font-size:12px;line-height:1.55;color:#334155;white-space:pre-wrap">${_aiEscapeHtml(invTerms)}</div>`:""}${_pdocNoSigNote(isBm)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')}</div>
   </div>
 
