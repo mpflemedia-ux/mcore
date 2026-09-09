@@ -1,0 +1,28 @@
+name: patch-invoice-customer
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_invoice_customer.py
+      - .github/workflows/patch-invoice-customer.yml
+      - app/index.html
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch index.html
+        run: python3 scripts/patch_invoice_customer.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix: invoice bill-to shows CRM email phone address"
+          git push
