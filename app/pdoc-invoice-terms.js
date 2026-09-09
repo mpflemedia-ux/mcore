@@ -1,4 +1,4 @@
-/* Invoice Terms → .pdoc print + #public-inv-root public overlay */
+/* Invoice Terms → .pdoc print + #public-inv-root */
 (function () {
   var cached = '';
   function esc(s) {
@@ -22,6 +22,22 @@
       return block + orig(isBm);
     };
     window._pdocNoSigNote._termsWrapped = true;
+  }
+  function wrapRpc() {
+    if (!window.sb || typeof sb.rpc !== 'function' || sb.rpc._termsWrapped) return;
+    var orig = sb.rpc.bind(sb);
+    sb.rpc = function (name, args) {
+      var out = orig(name, args);
+      Promise.resolve(out).then(function (res) {
+        var d = res && res.data;
+        if (name === 'get_public_invoice' && d && d.invoice_terms) {
+          cached = String(d.invoice_terms).trim();
+          paintPublic();
+        }
+      }).catch(function () {});
+      return out;
+    };
+    sb.rpc._termsWrapped = true;
   }
   function blockHtml(txt) {
     return '<div class="pdoc-inv-terms" style="margin:16px 0 8px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;line-height:1.55;color:#0f172a;white-space:pre-wrap">' + esc(txt) + '</div>';
@@ -58,26 +74,21 @@
     else card.appendChild(wrap.firstChild);
   }
   async function hydrate() {
-    cached = fromApp();
-    wrapNote();
-    paintPdoc();
-    paintPublic();
-    var t = window.APP && APP.tenant;
+    cached = cached || fromApp();
+    wrapNote(); wrapRpc();
+    paintPdoc(); paintPublic();
     if (cached) return;
-    if (!window.sb) return;
+    var t = window.APP && APP.tenant;
+    if (!window.sb || !t || !t.id) return;
     try {
-      var q = sb.from('tenants').select('invoice_terms,config');
-      if (t && t.id) q = q.eq('id', t.id);
-      var r = await q.maybeSingle();
+      var r = await sb.from('tenants').select('invoice_terms,config').eq('id', t.id).maybeSingle();
       var row = r && r.data;
-      if (!row && t && t.id) return;
       if (!row) return;
       var cp = (row.config && row.config.company_profile) || {};
       cached = String(row.invoice_terms || cp.invoice_terms || '').trim();
       wrapNote(); paintPdoc(); paintPublic();
     } catch (e) {}
   }
-  wrapNote();
-  hydrate();
-  setInterval(function () { wrapNote(); paintPdoc(); paintPublic(); if (!cached) hydrate(); }, 800);
+  wrapNote(); wrapRpc(); hydrate();
+  setInterval(function () { wrapNote(); wrapRpc(); paintPdoc(); paintPublic(); if (!cached) hydrate(); }, 800);
 })();
