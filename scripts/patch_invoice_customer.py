@@ -8,10 +8,11 @@ def sub(old, new, label):
     global html, changed
     if old not in html:
         print('miss', label)
-        return
+        return False
     html = html.replace(old, new, 1)
     changed = True
     print('ok', label)
+    return True
 
 sub(
     "select('id,name,logo_url,address,address_line2,city,postcode,state,country,phone,sst_gst_no')",
@@ -19,12 +20,10 @@ sub(
     'pdoc tenant bank cols'
 )
 
-old = """      invTerms = String((cfg && cfg.company_profile && cfg.company_profile.invoice_terms) || '').trim()\n    } catch (e) {}\n  }\n  const companyAddr = _pdocAddressLine(tn)"""
-new = """      invTerms = String((cfg && cfg.company_profile && cfg.company_profile.invoice_terms) || '').trim()\n      window._invBankCfg = cfg && cfg.company_profile || {}\n    } catch (e) {}\n  }\n  const cpBank = window._invBankCfg || ((APP.tenant.config||{}).company_profile||{})\n  const bankName = String((tn && tn.bank_name) || cpBank.bank_name || '').trim()\n  const accName = String((tn && tn.account_name) || cpBank.account_name || '').trim()\n  const accNo = String((tn && tn.account_number) || cpBank.account_number || '').trim()\n  const payQr = String((tn && tn.payment_qr_url) || cpBank.payment_qr_url || '').trim()\n  const companyAddr = _pdocAddressLine(tn)"""
-sub(old, new, 'bank vars')
+old = """  let invTerms = String((tn && tn.invoice_terms) || ((APP.tenant.config||{}).company_profile||{}).invoice_terms || '').trim()\n  if(!invTerms) {\n    try {\n      const cfgRes = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle()\n      let cfg = cfgRes.data && cfgRes.data.config\n      if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }\n      invTerms = String((cfg && cfg.company_profile && cfg.company_profile.invoice_terms) || '').trim()\n    } catch (e) {}\n  }\n  const companyAddr = _pdocAddressLine(tn)"""
+new = """  let invTerms = String((tn && tn.invoice_terms) || ((APP.tenant.config||{}).company_profile||{}).invoice_terms || '').trim()\n  let bankName = String((tn && tn.bank_name) || ((APP.tenant.config||{}).company_profile||{}).bank_name || '').trim()\n  let accName = String((tn && tn.account_name) || ((APP.tenant.config||{}).company_profile||{}).account_name || '').trim()\n  let accNo = String((tn && tn.account_number) || ((APP.tenant.config||{}).company_profile||{}).account_number || '').trim()\n  let payQr = String((tn && tn.payment_qr_url) || ((APP.tenant.config||{}).company_profile||{}).payment_qr_url || '').trim()\n  try {\n    const cfgRes = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle()\n    let cfg = cfgRes.data && cfgRes.data.config\n    if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }\n    const cp = (cfg && cfg.company_profile) || {}\n    if(!invTerms) invTerms = String(cp.invoice_terms || '').trim()\n    if(!bankName) bankName = String(cp.bank_name || '').trim()\n    if(!accName) accName = String(cp.account_name || '').trim()\n    if(!accNo) accNo = String(cp.account_number || '').trim()\n    if(!payQr) payQr = String(cp.payment_qr_url || '').trim()\n  } catch (e) {}\n  const companyAddr = _pdocAddressLine(tn)"""
+sub(old, new, 'bank vars always')
 
-old2 = '${invTerms?`<div class="pdoc-inv-terms"'
-# insert bank block before terms in that footer
 needle = '<div style="padding:0 16px 8px">${invTerms?'
 bank = '''<div style="padding:0 16px 8px">${(bankName||accNo||payQr)?`<div class="pdoc-pay-block" style="margin:8px 8px 16px;padding:12px;border:1px solid #E2E8F0;border-radius:8px;text-align:center">
         <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#0E7490;font-weight:700;margin-bottom:8px">${isBm?'Pembayaran':'Payment'}</div>
@@ -38,7 +37,7 @@ if needle in html and 'pdoc-pay-block' not in html:
     changed = True
     print('ok pay block')
 else:
-    print('pay block skip', needle in html, 'pdoc-pay-block' in html)
+    print('pay block skip', 'needle', needle in html, 'already', 'pdoc-pay-block' in html)
 
 if changed:
     p.write_text(html, encoding='utf-8')
