@@ -37,6 +37,8 @@ function rm(n){return Number(n||0).toFixed(2)}
   document.title = (inv.ref_no||'Invoice')+' - '+(inv.tenant_name||'')
   const items = inv.items||[]
   const addr = [inv.address, inv.address_line2, [inv.postcode,inv.city].filter(Boolean).join(' '), inv.state].filter(Boolean).join(', ')
+  const custAddr = [inv.customer_address, [inv.customer_postcode,inv.customer_city].filter(Boolean).join(' '), inv.customer_state].filter(Boolean).join(', ')
+  const custPe = [inv.customer_phone, inv.customer_email].filter(Boolean).join(' | ')
   const qr = inv.payment_qr_url||''
   const terms = String(inv.invoice_terms||'').trim()
   const lines = items.length ? items.map(it=>'<div class="line"><div style="font-weight:600">'+esc(it.description)+'</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px;color:#475569"><span>Qty '+esc(it.qty)+' x '+rm(it.unit_price)+'</span><span style="font-weight:700;color:#0f172a">MYR '+rm(it.line_total)+'</span></div></div>').join('') : '<div class="line">No lines</div>'
@@ -50,7 +52,10 @@ function rm(n){return Number(n||0).toFixed(2)}
     +'</div></div>'
     +'<div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:16px"><div class="muted">Invoice</div><div class="ref">'+esc(inv.ref_no||'-')+'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">'
-    +'<div><div class="muted">Bill to</div><div class="val"><strong>'+esc(inv.customer_name||'-')+'</strong></div></div>'
+    +'<div><div class="muted">Bill to</div><div class="val"><strong>'+esc(inv.customer_name||'-')+'</strong>'
+    +(custAddr?'<div style="font-weight:400;margin-top:2px">'+esc(custAddr)+'</div>':'')
+    +(custPe?'<div style="font-weight:400;margin-top:2px">'+esc(custPe)+'</div>':'')
+    +'</div></div>'
     +'<div><div class="muted">Issue / Due</div><div class="val">'+esc(inv.issue_date||'')+' / '+esc(inv.due_date||'-')+'</div></div>'
     +'</div><div style="border-top:1px solid #e2e8f0">'+lines+'</div>'
     +'<div style="margin-top:16px;text-align:right">'
