@@ -1,5 +1,5 @@
 /* M-Core service worker — HTML always network; bump CACHE to drop bad shells */
-const CACHE = 'mcore-shell-v16'
+const CACHE = 'mcore-shell-v17'
 self.addEventListener('install', e => {
   e.waitUntil(self.skipWaiting())
 })
@@ -23,6 +23,21 @@ self.addEventListener('fetch', e => {
         let html = await res.text()
         if (html.includes('</body>') && !html.includes('pvd-four-roles.js')) {
           html = html.replace('</body>', '<script src="./pvd-four-roles.js?v=1"></script>\n</body>')
+        }
+        if (html.includes('</body>') && !html.includes('mcore-public-inv-boot')) {
+          html = html.replace('</body>', [
+            '<script id="mcore-public-inv-boot">',
+            '(function(){',
+            'var q=location.search;',
+            'if(q.indexOf("public_inv=")===-1)return;',
+            'if(/public\\.html$/i.test(location.pathname))return;',
+            'var base=location.pathname.replace(/index\\.html$/i,"").replace(/\\/?$/,"/");',
+            'location.replace(base+"public.html"+q+location.hash);',
+            '})();',
+            '</script>',
+            '<script src="./public-inv-overrides.js?v=2"></script>',
+            '</body>'
+          ].join('\n'))
         }
         return new Response(html, {
           status: res.status,
