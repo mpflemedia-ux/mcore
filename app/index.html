@@ -1858,11 +1858,11 @@ function _safeAuthStorage() {
   }
 }
 const { createClient } = supabase
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implicit', detectSessionInUrl: true, storage: _safeAuthStorage() } })
+const sb = window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { flowType: 'implicit', detectSessionInUrl: true, storage: _safeAuthStorage() } })
 
 
 // GLOBAL STATE
-const APP = {
+const APP = window.APP = {
   tenant:   { id:null, code:null, name:null, plan:null, config:{} },
   user:     { id:null, name:null, email:null, role:null, language:'bm', theme:'light' },
   tenantConfig: { modules:{}, features:{}, roles:{} },
@@ -24442,6 +24442,15 @@ async function renderInvDetail(id) {
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
   const printFilename = `Invoice_${inv.ref_no}_${_pdocSlug(inv.customer_name)}_${_pdocDateStamp(inv.issue_date)}`
   const tn = await _pdocGetTenant()
+  let invTerms = String((tn && tn.invoice_terms) || ((APP.tenant.config||{}).company_profile||{}).invoice_terms || '').trim()
+  if(!invTerms) {
+    try {
+      const cfgRes = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle()
+      let cfg = cfgRes.data && cfgRes.data.config
+      if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch(e) { cfg = {} } }
+      invTerms = String((cfg && cfg.company_profile && cfg.company_profile.invoice_terms) || '').trim()
+    } catch (e) {}
+  }
   const companyAddr = _pdocAddressLine(tn)
   const isBm = APP.language==='bm'
   const canRecordPayment = balance > 0.005 && inv.status !== 'cancelled'
@@ -24557,7 +24566,7 @@ async function renderInvDetail(id) {
         <div style="display:flex;justify-content:space-between;white-space:nowrap;min-width:max-content;padding:4px 0;font-weight:600;color:${balance>0?'#DC2626':'#64748B'}"><span>${t.balance}</span><span>${formatRM(balance)}</span></div>
       </div>
     </div>
-    <div style="padding:0 16px 8px">${_pdocNoSigNote(isBm)}</div>
+    <div style="padding:0 16px 8px">${invTerms?`<div class="pdoc-inv-terms" style="padding:8px 8px 12px;font-size:12px;line-height:1.55;color:#334155;white-space:pre-wrap">${_aiEscapeHtml(invTerms)}</div>`:""}${_pdocNoSigNote(isBm)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')}</div>
   </div>
 
