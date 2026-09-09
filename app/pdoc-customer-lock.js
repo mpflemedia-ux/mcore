@@ -1,4 +1,12 @@
 (function(){
+function alreadyHasContact(band){
+  var subs=band.querySelectorAll('.pdoc-band-sub');
+  for(var i=0;i<subs.length;i++){
+    var t=(subs[i].textContent||'');
+    if(t.indexOf('@')>=0 || /\+?\d{8,}/.test(t)) return true;
+  }
+  return false;
+}
 function linesOf(c){
   if(!c) return [];
   var addr=[c.address_line1||c.address,[c.postcode,c.city].filter(Boolean).join(' '),c.state].filter(Boolean).join(', ');
@@ -8,6 +16,7 @@ function linesOf(c){
 }
 function paint(band,c){
   if(!band||!c||band.getAttribute('data-cust-locked')==='1') return;
+  if(alreadyHasContact(band)){ band.setAttribute('data-cust-locked','1'); return; }
   var lines=linesOf(c); if(!lines.length) return;
   lines.forEach(function(t){
     var d=document.createElement('div');
@@ -24,15 +33,8 @@ async function lookup(name){
   if(token.length<3) token=raw.slice(0,12);
   try{
     var q=await sb.from('customers').select('name,email,phone,address_line1,city,state,postcode').eq('tenant_id',APP.tenant.id).ilike('name','%'+token+'%').limit(20);
-    if(q.error){
-      q=await sb.from('customers').select('name,email,phone').eq('tenant_id',APP.tenant.id).ilike('name','%'+token+'%').limit(20);
-    }
+    if(q.error) q=await sb.from('customers').select('name,email,phone').eq('tenant_id',APP.tenant.id).ilike('name','%'+token+'%').limit(20);
     var rows=q.data||[];
-    if(!rows.length){
-      q=await sb.from('customers').select('name,email,phone,address_line1,city,state,postcode').eq('tenant_id',APP.tenant.id).limit(200);
-      if(q.error) q=await sb.from('customers').select('name,email,phone').eq('tenant_id',APP.tenant.id).limit(200);
-      rows=q.data||[];
-    }
     var n=raw.toLowerCase();
     return rows.find(function(x){return String(x.name||'').replace(/\s+/g,' ').trim().toLowerCase()===n;})
       || rows.find(function(x){return String(x.name||'').toLowerCase().indexOf(token.toLowerCase())>=0;})
@@ -43,6 +45,7 @@ async function scan(){
   var bands=document.querySelectorAll('.pdoc-band');
   for(var i=0;i<bands.length;i++){
     var band=bands[i];
+    if(alreadyHasContact(band)){ band.setAttribute('data-cust-locked','1'); continue; }
     if(band.getAttribute('data-cust-locked')==='1') continue;
     var nameEl=band.querySelector('.pdoc-band-name');
     var name=nameEl&&nameEl.textContent;
@@ -52,6 +55,5 @@ async function scan(){
   }
 }
 scan();
-setInterval(scan,800);
-new MutationObserver(function(){scan();}).observe(document.documentElement,{childList:true,subtree:true});
+setInterval(scan,1200);
 })();
