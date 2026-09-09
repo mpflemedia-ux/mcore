@@ -1,7 +1,7 @@
 (function(){
 function linesOf(c){
   if(!c) return [];
-  var addr=[c.address,[c.postcode,c.city].filter(Boolean).join(' '),c.state].filter(Boolean).join(', ');
+  var addr=[c.address_line1||c.address,[c.postcode,c.city].filter(Boolean).join(' '),c.state].filter(Boolean).join(', ');
   var out=[]; if(addr) out.push(addr);
   var pe=[c.phone,c.email].filter(Boolean).join(' \u00b7 '); if(pe) out.push(pe);
   return out;
@@ -23,10 +23,14 @@ async function lookup(name){
   var token=raw.split(/[\s\-\u2013\u2014]+/)[0];
   if(token.length<3) token=raw.slice(0,12);
   try{
-    var q=await sb.from('customers').select('name,email,phone,address,city,state,postcode').eq('tenant_id',APP.tenant.id).ilike('name','%'+token+'%').limit(20);
+    var q=await sb.from('customers').select('name,email,phone,address_line1,city,state,postcode').eq('tenant_id',APP.tenant.id).ilike('name','%'+token+'%').limit(20);
+    if(q.error){
+      q=await sb.from('customers').select('name,email,phone').eq('tenant_id',APP.tenant.id).ilike('name','%'+token+'%').limit(20);
+    }
     var rows=q.data||[];
     if(!rows.length){
-      q=await sb.from('customers').select('name,email,phone,address,city,state,postcode').eq('tenant_id',APP.tenant.id).limit(200);
+      q=await sb.from('customers').select('name,email,phone,address_line1,city,state,postcode').eq('tenant_id',APP.tenant.id).limit(200);
+      if(q.error) q=await sb.from('customers').select('name,email,phone').eq('tenant_id',APP.tenant.id).limit(200);
       rows=q.data||[];
     }
     var n=raw.toLowerCase();
