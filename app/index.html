@@ -24100,7 +24100,7 @@ function _publicPayBlock(doc) {
   const ssm = doc.ssm_no || ''
   const phone = doc.phone || ''
   const email = doc.email || ''
-  const addr = [doc.address, doc.address_line2, [doc.postcode, doc.city].filter(Boolean).join(' '), doc.state].filter(Boolean).join(', ')
+  const addr = [doc.address_line1, doc.address_line2, [doc.postcode, doc.city].filter(Boolean).join(' '), doc.state].filter(Boolean).join(', ')
   const hasCo = !!(logo || ssm || addr || phone)
   const hasPay = !!(qr || bank || accNo || accName)
   if(!hasCo && !hasPay) return ''
@@ -24424,18 +24424,18 @@ async function renderInvDetail(id) {
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
   let custPhone = null
   if(inv.customer_id) {
-    const r1 = await sb.from('customers').select('phone,email,address,city,state,postcode,name').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).maybeSingle()
+    const r1 = await sb.from('customers').select('phone,email,address_line1,city,state,postcode,name').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).maybeSingle()
     custPhone = r1.data
   }
   if(!custPhone && inv.customer_name) {
-    const r2 = await sb.from('customers').select('phone,email,address,city,state,postcode,name').eq('tenant_id',APP.tenant.id).limit(500)
+    const r2 = await sb.from('customers').select('phone,email,address_line1,city,state,postcode,name').eq('tenant_id',APP.tenant.id).limit(500)
     const n = String(inv.customer_name||'').replace(/\s+/g,' ').trim().toLowerCase()
     const rows = r2.data||[]
     custPhone = rows.find(x => String(x.name||'').replace(/\s+/g,' ').trim().toLowerCase()===n)
       || rows.find(x => n.includes(String(x.name||'').toLowerCase()) || String(x.name||'').toLowerCase().includes(n.split(' - ')[0]))
       || null
   }
-  const custAddr = custPhone ? [custPhone.address, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
+  const custAddr = custPhone ? [custPhone.address_line1, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
   const custPe = custPhone ? [custPhone.phone, custPhone.email].filter(Boolean).join(' · ') : ''
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
@@ -24894,7 +24894,7 @@ async function renderQuoForm(id=null) {
     const {data: items} = await sb.from('quotation_items').select('*').eq('quotation_id',id)
     if(items && items.length) _slItems = items.map(it=>({product_id:it.product_id||'',description:it.description,qty:it.qty,unit_price:it.unit_price}))
     if(quo.customer_id) {
-      const {data: cp} = await sb.from('customers').select('phone,email,address,city,state,postcode').eq('id',quo.customer_id).eq('tenant_id',APP.tenant.id).single()
+      const {data: cp} = await sb.from('customers').select('phone,email,address_line1,city,state,postcode').eq('id',quo.customer_id).eq('tenant_id',APP.tenant.id).single()
       custPhone = cp
     }
   }
@@ -24903,7 +24903,7 @@ async function renderQuoForm(id=null) {
 
   const tn = id ? await _pdocGetTenant() : null
   const companyAddr = tn ? _pdocAddressLine(tn) : ''
-  const custAddr = custPhone ? [custPhone.address, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
+  const custAddr = custPhone ? [custPhone.address_line1, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
   const isBmQ = APP.language==='bm'
   const quoSubtotal = (_slItems||[]).reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
 
@@ -25164,7 +25164,7 @@ async function _doOpenFromInvoice(invoiceId) {
     const custId = inv?.customer_id || ''
     if(custId) {
       const {data: c} = await sb.from('customers').select('address,city,state,postcode').eq('id',custId).eq('tenant_id',APP.tenant.id).single()
-      if(c) address = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+      if(c) address = [c.address_line1, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
     }
     openPage('logistics', {view:'do-form', invoiceId: invoiceId, customerId: custId, address: address})
   } catch(e) {
@@ -25297,7 +25297,7 @@ function _doOnCustomerPick() {
   if(v && v !== '__new__') {
     const c = (window._doFormCusts||[]).find(x => String(x.id)===String(v))
     if(c) {
-      const built = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+      const built = [c.address_line1, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
       window._doFormCustOnFileAddr = built
       if(addrEl && !addrEl.value.trim()) addrEl.value = built
     }
@@ -25343,7 +25343,7 @@ function _doOnInvoicePick() {
   }
   const c = (window._doFormCusts||[]).find(x => String(x.id)===String(inv.customer_id))
   if(c && addrEl) {
-    const built = [c.address, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
+    const built = [c.address_line1, [c.postcode,c.city].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ')
     if(built) addrEl.value = built
   }
   _doOnCustomerPick()
@@ -36932,6 +36932,6 @@ if('serviceWorker' in navigator){
   })
 }
 </script>
-<script src="./pdoc-customer-lock.js?v=4"></script>
+<script src="./pdoc-customer-lock.js?v=5"></script>
 </body>
 </html>
