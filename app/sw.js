@@ -1,14 +1,8 @@
-/* M-Core service worker — HTML always network; bump CACHE */
-const CACHE = 'mcore-shell-v21'
-self.addEventListener('install', e => {
-  e.waitUntil(self.skipWaiting())
-})
+/* M-Core service worker */
+const CACHE = 'mcore-shell-v22'
+self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()) })
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  )
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(() => self.clients.claim()))
 })
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url)
@@ -27,8 +21,8 @@ self.addEventListener('fetch', e => {
         if (html.includes('</body>') && !html.includes('pdoc-invoice-terms.js')) {
           html = html.replace('</body>', '<script src="./pdoc-invoice-terms.js?v=2"></script>\n</body>')
         }
-        if (url.searchParams.has('public_inv') && html.includes('</head>') && !html.includes('mcore-public-inv-boot')) {
-          html = html.replace('</head>', '<script id="mcore-public-inv-boot">(function(){var q=location.search;if(q.indexOf("public_inv=")===-1)return;if(/public.html$/i.test(location.pathname))return;var base=location.pathname.replace(/index.html$/i,"").replace(/\/?$/,"/");location.replace(base+"public.html"+q+location.hash);})();</script></head>')
+        if (html.includes('</head>') && !html.includes('public-inv-scroll.js')) {
+          html = html.replace('</head>', '<script src="./public-inv-scroll.js?v=3"></script></head>')
         }
         return new Response(html, {
           status: res.status,
@@ -47,7 +41,6 @@ self.addEventListener('fetch', e => {
     }).catch(() => caches.match(e.request))
   )
 })
-
 self.addEventListener('notificationclick', event => {
   event.notification.close()
   const target = (event.notification && event.notification.data && event.notification.data.url) || '/app/'
