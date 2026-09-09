@@ -3,20 +3,17 @@ from pathlib import Path
 p = Path('app/index.html')
 html = p.read_text(encoding='utf-8')
 changed = False
-# Fix bad column name that zeroes the whole customer select
-for a,b in [
-    ("select('phone,email,address,city,state,postcode,name')", "select('phone,email,address_line1,city,state,postcode,name')"),
-    ("select('phone,email,address,city,state,postcode')", "select('phone,email,address_line1,city,state,postcode')"),
-    ('custPhone.address', 'custPhone.address_line1'),
-    ('c.address,', 'c.address_line1,'),
-]:
-    if a in html:
-        html = html.replace(a, b)
-        changed = True
-        print('replaced', a)
-if 'pdoc-customer-lock.js?v=5' not in html and 'pdoc-customer-lock.js' in html:
-    html = html.replace('pdoc-customer-lock.js?v=4', 'pdoc-customer-lock.js?v=5')
+if 'pdoc-invoice-terms.js' not in html:
+    html = html.replace('</body>', '<script src="./pdoc-invoice-terms.js?v=6"></script>\n</body>', 1)
     changed = True
+    print('added terms script')
+elif 'pdoc-invoice-terms.js?v=6' not in html:
+    import re
+    html2 = re.sub(r'pdoc-invoice-terms\.js\?v=\d+', 'pdoc-invoice-terms.js?v=6', html)
+    if html2 != html:
+        html = html2
+        changed = True
+        print('bumped terms script')
 if changed:
     p.write_text(html, encoding='utf-8')
     print('wrote', p.stat().st_size)
