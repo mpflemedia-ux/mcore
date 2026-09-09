@@ -1,5 +1,5 @@
 /* M-Core service worker */
-const CACHE = 'mcore-shell-v22'
+const CACHE = 'mcore-shell-v23'
 self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()) })
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(() => self.clients.claim()))
@@ -19,7 +19,7 @@ self.addEventListener('fetch', e => {
           html = html.replace('</body>', '<script src="./pvd-four-roles.js?v=1"></script>\n</body>')
         }
         if (html.includes('</body>') && !html.includes('pdoc-invoice-terms.js')) {
-          html = html.replace('</body>', '<script src="./pdoc-invoice-terms.js?v=2"></script>\n</body>')
+          html = html.replace('</body>', '<script src="./pdoc-invoice-terms.js?v=3"></script>\n</body>')
         }
         if (html.includes('</head>') && !html.includes('public-inv-scroll.js')) {
           html = html.replace('</head>', '<script src="./public-inv-scroll.js?v=3"></script></head>')
