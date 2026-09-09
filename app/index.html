@@ -24422,10 +24422,21 @@ async function renderInvDetail(id) {
   const {data: inv} = await sb.from('invoices').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>Not found</p></div>`; return }
   const {data: items} = await sb.from('invoice_items').select('*').eq('invoice_id',id)
-  const {data: custPhone} = inv.customer_id
-    ? await sb.from('customers').select('phone,email,address,city,state,postcode').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).single()
-    : {data:null}
+  let custPhone = null
+  if(inv.customer_id) {
+    const r1 = await sb.from('customers').select('phone,email,address,city,state,postcode,name').eq('id',inv.customer_id).eq('tenant_id',APP.tenant.id).maybeSingle()
+    custPhone = r1.data
+  }
+  if(!custPhone && inv.customer_name) {
+    const r2 = await sb.from('customers').select('phone,email,address,city,state,postcode,name').eq('tenant_id',APP.tenant.id).limit(500)
+    const n = String(inv.customer_name||'').replace(/\s+/g,' ').trim().toLowerCase()
+    const rows = r2.data||[]
+    custPhone = rows.find(x => String(x.name||'').replace(/\s+/g,' ').trim().toLowerCase()===n)
+      || rows.find(x => n.includes(String(x.name||'').toLowerCase()) || String(x.name||'').toLowerCase().includes(n.split(' - ')[0]))
+      || null
+  }
   const custAddr = custPhone ? [custPhone.address, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
+  const custPe = custPhone ? [custPhone.phone, custPhone.email].filter(Boolean).join(' · ') : ''
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
@@ -24512,7 +24523,7 @@ async function renderInvDetail(id) {
     <div class="pdoc-band">
       <div class="pdoc-band-name">${_aiEscapeHtml(inv.customer_name||'-')}</div>
       ${custAddr?`<div class="pdoc-band-sub">${_aiEscapeHtml(custAddr)}</div>`:''}
-      ${(custPhone&&custPhone.phone)?`<div class="pdoc-band-sub">${_aiEscapeHtml(custPhone.phone)}${custPhone.email?' · '+_aiEscapeHtml(custPhone.email):''}</div>`:''}
+      ${custPe?`<div class="pdoc-band-sub">${_aiEscapeHtml(custPe)}</div>`:''}
     </div>
     <div style="padding:0 0 8px">
       <table class="pdoc-table" style="width:100%">
@@ -36921,5 +36932,6 @@ if('serviceWorker' in navigator){
   })
 }
 </script>
+<script src="./pdoc-customer-lock.js?v=4"></script>
 </body>
 </html>
