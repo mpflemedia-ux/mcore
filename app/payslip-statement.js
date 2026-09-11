@@ -1,4 +1,4 @@
-/* Salary-statement payslip. Only real employee/payroll fields. Empty stays empty. */
+/* Salary-statement payslip. Landscape print, centered. Empty fields stay empty. */
 (function () {
   function esc(s) {
     if (typeof _aiEscapeHtml === 'function') return _aiEscapeHtml(s);
@@ -20,35 +20,37 @@
     var name = (m >= 1 && m <= 12) ? months[m - 1] : '';
     return (name + ' ' + y.slice(-2)).trim();
   }
-  function kv(label, value) {
+  function kv(label, value, extra) {
     var v = dash(value);
-    return '<div class="ps-kv"><span class="ps-k">' + esc(label) + '</span><span class="ps-c">:</span><span class="ps-v">' + esc(v) + '</span></div>';
+    return '<div class="ps-kv' + (extra ? ' ' + extra : '') + '"><span class="ps-k">' + esc(label) + '</span><span class="ps-c">:</span><span class="ps-v">' + esc(v) + '</span></div>';
   }
-  if (!document.getElementById('ps-stmt-css')) {
-    var st = document.createElement('style');
-    st.id = 'ps-stmt-css';
-    st.textContent =
-      '.ps-stmt{max-width:980px!important;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:11.5px;line-height:1.35}' +
-      '.ps-stmt .ps-top{display:flex;justify-content:space-between;font-size:12px;font-weight:700}' +
-      '.ps-stmt .ps-co{text-align:center;font-size:18px;font-weight:800;letter-spacing:.06em;margin:10px 0 16px;text-transform:uppercase}' +
-      '.ps-stmt .ps-meta{display:grid;grid-template-columns:1.4fr 1.1fr 1.2fr;gap:2px 18px;align-items:start}' +
-      '.ps-stmt .ps-kv{display:grid;grid-template-columns:auto 8px 1fr;gap:4px;align-items:start}' +
-      '.ps-stmt .ps-k{white-space:nowrap}' +
-      '.ps-stmt .ps-v{font-weight:400}' +
-      '.ps-stmt .ps-rule{border:0;border-top:1.4px solid #111;margin:12px 0}' +
-      '.ps-stmt .ps-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 36px;min-height:220px}' +
-      '.ps-stmt .ps-h{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;margin-bottom:8px}' +
-      '.ps-stmt .ps-tbl{width:100%;border-collapse:collapse;font-size:11.5px}' +
-      '.ps-stmt .ps-tbl td{padding:3px 0;vertical-align:top}' +
-      '.ps-stmt .ps-tbl td:last-child{text-align:right;white-space:nowrap;padding-left:16px}' +
-      '.ps-stmt .ps-tot td{font-weight:700;padding-top:10px}' +
-      '.ps-stmt .ps-foot{display:grid;grid-template-columns:1fr 1.5fr;gap:8px 28px;padding-top:4px}' +
-      '.ps-stmt .ps-foot h4{margin:0 0 8px;font-size:11.5px;font-weight:700}' +
-      '.ps-stmt .ps-pay{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:10px}' +
-      '.ps-stmt .ps-pay b{font-size:12px}' +
-      '@media print{.ps-stmt{max-width:100%!important}}';
-    document.head.appendChild(st);
-  }
+  var st = document.getElementById('ps-stmt-css');
+  if (!st) { st = document.createElement('style'); st.id = 'ps-stmt-css'; document.head.appendChild(st); }
+  st.textContent =
+    '@page{size:A4 landscape;margin:10mm}' +
+    '.ps-stmt{width:100%;max-width:1100px!important;margin:0 auto 24px!important;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.4;box-sizing:border-box}' +
+    '.ps-stmt .ps-top{display:flex;justify-content:space-between;font-size:12px;font-weight:700}' +
+    '.ps-stmt .ps-co{text-align:center;font-size:20px;font-weight:800;letter-spacing:.08em;margin:8px 0 14px;text-transform:uppercase}' +
+    '.ps-stmt .ps-meta{display:grid;grid-template-columns:1.6fr 1.1fr 1.2fr;gap:4px 24px;align-items:start}' +
+    '.ps-stmt .ps-kv{display:grid;grid-template-columns:auto 8px minmax(0,1fr);gap:6px;align-items:baseline}' +
+    '.ps-stmt .ps-k{white-space:nowrap}' +
+    '.ps-stmt .ps-v{font-weight:400}' +
+    '.ps-stmt .ps-name .ps-v{white-space:nowrap}' +
+    '.ps-stmt .ps-rule{border:0;border-top:1.4px solid #111;margin:12px 0}' +
+    '.ps-stmt .ps-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 48px;min-height:160px}' +
+    '.ps-stmt .ps-h{display:flex;justify-content:space-between;font-weight:700;margin-bottom:8px}' +
+    '.ps-stmt .ps-tbl{width:100%;border-collapse:collapse}' +
+    '.ps-stmt .ps-tbl td{padding:3px 0;vertical-align:top}' +
+    '.ps-stmt .ps-tbl td:last-child{text-align:right;white-space:nowrap;padding-left:16px}' +
+    '.ps-stmt .ps-tot td{font-weight:700;padding-top:10px}' +
+    '.ps-stmt .ps-foot{display:grid;grid-template-columns:1fr 1.4fr;gap:8px 36px}' +
+    '.ps-stmt .ps-foot h4{margin:0 0 8px;font-size:12px;font-weight:700}' +
+    '.ps-stmt .ps-pay{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:10px}' +
+    '@media print{' +
+      'html,body{width:100%!important;background:#fff!important}' +
+      '.ps-stmt{max-width:none!important;width:100%!important;margin:0 auto!important;padding:8px 16px!important}' +
+      '#shell .sidebar,#shell .topbar,.fab-stack,nav,header,.no-print{display:none!important}' +
+    '}';
   window._pdocPayslipHtml = function (rec, tn, t, isBm) {
     t = t || {};
     var earnRows = [{ label: isBm ? 'Gaji Pokok' : 'Basic Salary', amount: rec.basic_salary }];
@@ -93,11 +95,11 @@
       }).join('');
     }
     return (
-      '<div class="pdoc ps-stmt" style="--pdoc-accent:#111;margin:0 auto 28px;padding:16px 22px 20px;page-break-inside:avoid">' +
+      '<div class="pdoc ps-stmt" style="--pdoc-accent:#111;page-break-inside:avoid">' +
       '<div class="ps-top"><div>' + (isBm ? 'Penyata Gaji' : 'Salary Statement') + '</div><div>' + (isBm ? 'SULIT' : 'PRIVATE &amp; CONFIDENTIAL') + '</div></div>' +
       '<div class="ps-co">' + esc(co) + '</div>' +
       '<div class="ps-meta">' +
-        kv(isBm ? 'Nama Pekerja' : 'Employee Name', emp.name) +
+        kv(isBm ? 'Nama Pekerja' : 'Employee Name', emp.name, 'ps-name') +
         '<div>' + kv(isBm ? 'No. Pekerja' : 'Employee Number', empNo) + kv(isBm ? 'Lokasi' : 'Pers Subarea', area) + '</div>' +
         '<div>' + kv(isBm ? 'No. KP / Pasport' : 'Identity Card/Passport', ic) + kv(isBm ? 'Bulan' : 'Month', monthLbl(rec)) + '</div>' +
       '</div>' +

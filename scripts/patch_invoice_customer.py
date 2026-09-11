@@ -5,15 +5,10 @@ p = Path('app/index.html')
 html = p.read_text(encoding='utf-8')
 changed = False
 if 'payslip-statement.js' not in html:
-    html = html.replace('</body>', '<script src="./payslip-statement.js?v=2"></script>\n</body>', 1)
+    html = html.replace('</body>', '<script src="./payslip-statement.js?v=3"></script>\n</body>', 1)
     changed = True
 else:
-    html2 = re.sub(r'payslip-statement\.js\?v=\d+', 'payslip-statement.js?v=2', html)
-    if html2 != html:
-        html = html2
-        changed = True
-if 'pdoc-invoice-terms.js' in html:
-    html2 = re.sub(r'pdoc-invoice-terms\.js\?v=\d+', 'pdoc-invoice-terms.js?v=9', html)
+    html2 = re.sub(r'payslip-statement\.js\?v=\d+', 'payslip-statement.js?v=3', html)
     if html2 != html:
         html = html2
         changed = True
