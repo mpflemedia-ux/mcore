@@ -810,7 +810,9 @@ html[data-skip-intro="1"] #intro-skip {
 .pdoc-band { background:#F8FAFC; padding:16px 24px; border-top:1px solid #E2E8F0; border-bottom:1px solid #E2E8F0; }
 .pdoc-band-name { font-weight:700; font-size:16px; font-family:'Space Grotesk',sans-serif; letter-spacing:-.01em; color:#0F172A; }
 .pdoc-band-sub { font-size:11px; color:#64748B; margin-top:2px; }
-.pdoc-band-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:10px; }
+.pdoc-band-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:10px; align-items:start; }
+.pdoc-band-right { text-align:right; }
+.pdoc-band-right .pdoc-band-item b { display:block; }
 .pdoc-band-item { font-size:11px; color:#64748B; line-height:1.4; }
 .pdoc-band-item b { display:block; color:#0F172A; font-weight:600; font-size:12px; margin-top:1px; }
 .pdoc-section-title { background:#F8FAFC; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; padding:8px 24px; color:#64748B; border-bottom:1px solid #E2E8F0; }
@@ -36959,5 +36961,6 @@ if('serviceWorker' in navigator){
 <script src="./title-case-inputs.js?v=2"></script>
 <script src="./public-apply.js?v=2"></script>
 <script src="./public-apply-bank.js?v=1"></script>
+<script src="./payslip-band-align.js?v=1"></script>
 </body>
 </html>
