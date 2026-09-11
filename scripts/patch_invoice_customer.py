@@ -13,7 +13,6 @@ for old, new in [
     if old in html:
         html = html.replace(old, new)
         changed = True
-        print('orientation patched')
 if 'payslip-statement.js' not in html:
     html = html.replace('</body>', '<script src="./payslip-statement.js?v=4"></script>\n</body>', 1)
     changed = True
@@ -22,6 +21,9 @@ else:
     if html2 != html:
         html = html2
         changed = True
+if 'payslip-print-boot.js' not in html:
+    html = html.replace('</body>', '<script src="./payslip-print-boot.js?v=1"></script>\n</body>', 1)
+    changed = True
 if changed:
     p.write_text(html, encoding='utf-8')
     print('wrote')
