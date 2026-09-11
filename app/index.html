@@ -31014,7 +31014,7 @@ async function renderPayslipsPrint(month, year) {
     back:'Salary Disbursement', period:'Period', basic:'Basic Salary', epf:'EPF (Employee/Employer)', socso:'SOCSO (Employee/Employer)',
     eis:'EIS (Employee/Employer)', pcb:'PCB', netPay:'Net Pay', print:'Print All', noData:'No payroll records for this period.', advance:'Advance'
   }
-  const {data, error} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no)')
+  const {data, error} = await sb.from('payroll_records').select('*,employees(name,position,bank_name,bank_account_no,epf_no,socso_no,ic_no)')
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
   if(error || !data || data.length===0) {
     document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
@@ -36962,5 +36962,6 @@ if('serviceWorker' in navigator){
 <script src="./public-apply.js?v=2"></script>
 <script src="./public-apply-bank.js?v=1"></script>
 <script src="./payslip-band-align.js?v=1"></script>
+<script src="./payslip-statement.js?v=1"></script>
 </body>
 </html>
