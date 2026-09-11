@@ -6,11 +6,19 @@ function fromApp(){
   var cp=cfg.company_profile||{};
   return String(t.invoice_terms||cp.invoice_terms||'').trim();
 }
+function isPayslip(doc){
+  var t=(doc.textContent||'');
+  return /payslip|slip gaji|net pay|kwsp \(employee\)|employer contributions \(info\)/i.test(t);
+}
 var cached='';
 function paint(){
   var txt=cached||fromApp();
-  if(!txt) return;
   document.querySelectorAll('.pdoc').forEach(function(doc){
+    if(isPayslip(doc)){
+      doc.querySelectorAll('.pdoc-inv-terms').forEach(function(n){ n.remove(); });
+      return;
+    }
+    if(!txt) return;
     if(doc.querySelector('.pdoc-inv-terms')) return;
     var el=document.createElement('div');
     el.className='pdoc-inv-terms';
