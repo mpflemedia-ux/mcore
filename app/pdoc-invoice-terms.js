@@ -6,9 +6,8 @@ function fromApp(){
   return String(t.invoice_terms||cp.invoice_terms||'').trim();
 }
 function isPayslip(doc){
-  if(doc.classList&&doc.classList.contains('ps-stmt')) return true;
   var t=(doc.textContent||'');
-  return /payslip|slip gaji|penyata gaji|salary statement|net pay|details of payment|employer contribution|private & confidential/i.test(t);
+  return /payslip|slip gaji|penyata gaji|salary statement|net pay|kwsp \(employee\)|employer contributions/i.test(t);
 }
 var cached='';
 function paint(){
@@ -47,10 +46,6 @@ async function hydrate(){
     var cfg=(r.data&&r.data.config)||{};
     if(typeof cfg==='string'){ try{cfg=JSON.parse(cfg)}catch(e){cfg={}} }
     cached=String((cfg.company_profile&&cfg.company_profile.invoice_terms)||'').trim();
-    if(cached && APP.tenant){
-      APP.tenant.config=APP.tenant.config||{};
-      APP.tenant.config.company_profile=Object.assign({},APP.tenant.config.company_profile||{},{invoice_terms:cached});
-    }
   }catch(e){}
   paint();
 }
