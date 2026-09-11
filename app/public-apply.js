@@ -4,8 +4,26 @@
   function esc(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
-  function isBm() {
-    try { return (window.APP && APP.language === 'bm') || (navigator.language || '').startsWith('ms') } catch (e) { return false }
+  function readLang() {
+    try {
+      var q = new URLSearchParams(location.search).get('lang')
+      if (q === 'bm' || q === 'ms') return 'bm'
+      if (q === 'en') return 'en'
+      if (window._pubApplyLang === 'bm' || window._pubApplyLang === 'en') return window._pubApplyLang
+      if (window.APP && APP.language === 'bm') return 'bm'
+      if (window.APP && APP.language === 'en') return 'en'
+    } catch (e) {}
+    return 'en'
+  }
+  function isBm() { return readLang() === 'bm' }
+  window._pubApplySetLang = function (lang) {
+    window._pubApplyLang = lang === 'bm' ? 'bm' : 'en'
+    try {
+      var u = new URL(location.href)
+      u.searchParams.set('lang', window._pubApplyLang)
+      history.replaceState({}, '', u)
+    } catch (e) {}
+    if (typeof _tryShowPublicApply === 'function') _tryShowPublicApply()
   }
   function toast(msg, kind) {
     if (typeof showToast === 'function') showToast(msg, kind || 'success')
@@ -30,7 +48,7 @@
         return
       }
     }
-    const link = publicBase() + '?' + TOKEN_QS + '=' + encodeURIComponent(token)
+    const link = publicBase() + '?' + TOKEN_QS + '=' + encodeURIComponent(token) + (APP.language === 'bm' ? '&lang=bm' : '&lang=en')
     window._publicInvLink = link
     if (typeof _showPublicLinkModal === 'function') {
       _showPublicLinkModal(link, (isBm() ? 'Borang permohonan kerja' : 'Job application form') + ' — ' + (row.name || ''))
@@ -55,7 +73,7 @@
       btn.className = 'btn btn-outline'
       btn.setAttribute('data-app-share', '1')
       btn.innerHTML = '<i class="ti ti-share"></i> Share link'
-      btn.onclick = () => _appSharePublicLink()
+      btn.onclick = function () { _appSharePublicLink() }
       if (header.children.length >= 2) {
         const right = header.children[header.children.length - 1]
         const wrap = document.createElement('div')
@@ -86,8 +104,8 @@
   function _pubApplyRenderRows() {
     const edu = document.getElementById('pub-edu-body')
     const emp = document.getElementById('pub-emp-body')
-    if (edu) edu.innerHTML = _pubApplyEdu.map((r, i) => '<tr><td><input class="form-input" value="'+esc(r.qualification)+'" oninput="_pubApplyEdu['+i+'].qualification=this.value"></td><td><input class="form-input" value="'+esc(r.institution)+'" oninput="_pubApplyEdu['+i+'].institution=this.value"></td><td><input class="form-input" value="'+esc(r.year_completed)+'" oninput="_pubApplyEdu['+i+'].year_completed=this.value"></td>'+rowBtns('edu', i)+'</tr>').join('')
-    if (emp) emp.innerHTML = _pubApplyEmp.map((r, i) => '<tr><td><input class="form-input" value="'+esc(r.company)+'" oninput="_pubApplyEmp['+i+'].company=this.value"></td><td><input class="form-input" value="'+esc(r.position_duration)+'" oninput="_pubApplyEmp['+i+'].position_duration=this.value"></td><td><input class="form-input" value="'+esc(r.reason_leaving)+'" oninput="_pubApplyEmp['+i+'].reason_leaving=this.value"></td>'+rowBtns('emp', i)+'</tr>').join('')
+    if (edu) edu.innerHTML = _pubApplyEdu.map(function(r, i){ return '<tr><td><input class="form-input" value="'+esc(r.qualification)+'" oninput="_pubApplyEdu['+i+'].qualification=this.value"></td><td><input class="form-input" value="'+esc(r.institution)+'" oninput="_pubApplyEdu['+i+'].institution=this.value"></td><td><input class="form-input" value="'+esc(r.year_completed)+'" oninput="_pubApplyEdu['+i+'].year_completed=this.value"></td>'+rowBtns('edu', i)+'</tr>' }).join('')
+    if (emp) emp.innerHTML = _pubApplyEmp.map(function(r, i){ return '<tr><td><input class="form-input" value="'+esc(r.company)+'" oninput="_pubApplyEmp['+i+'].company=this.value"></td><td><input class="form-input" value="'+esc(r.position_duration)+'" oninput="_pubApplyEmp['+i+'].position_duration=this.value"></td><td><input class="form-input" value="'+esc(r.reason_leaving)+'" oninput="_pubApplyEmp['+i+'].reason_leaving=this.value"></td>'+rowBtns('emp', i)+'</tr>' }).join('')
   }
   window._pubApplySubmit = async function (token) {
     const err = document.getElementById('pub-apply-err')
@@ -150,16 +168,18 @@
     }
     const res = await sb.rpc('get_public_apply_form', { p_token: token })
     if (res.error || !res.data) {
-      root.innerHTML = '<div class="card" style="max-width:480px;margin:40px auto;padding:24px"><p>'+(isBm()?'Link tidak sah.':'Invalid link.')+'</p><p style="font-size:12px;color:#94a3b8">Admin: run SQL get_public_apply_form / job_apply_token.</p></div>'
+      root.innerHTML = '<div class="card" style="max-width:480px;margin:40px auto;padding:24px"><p>'+(isBm()?'Link tidak sah.':'Invalid link.')+'</p></div>'
       return true
     }
     const data = res.data
+    if (!window._pubApplyLang && data && (data.language === 'bm' || data.language === 'en')) window._pubApplyLang = data.language
     const bm = isBm()
     const prof = '<option value="">-</option><option value="good">'+(bm?'Baik':'Good')+'</option><option value="average">'+(bm?'Sederhana':'Average')+'</option><option value="basic">'+(bm?'Asas':'Basic')+'</option>'
     root.innerHTML = '<div class="card" style="max-width:720px;margin:0 auto;padding:20px">'
       + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">'
       + (data.logo_url ? '<img src="'+esc(data.logo_url)+'" style="height:40px;object-fit:contain">' : '')
-      + '<div><div style="font-weight:700">'+esc(data.tenant_name||'')+'</div><div style="font-size:13px;color:var(--text-3)">'+(bm?'Borang Permohonan Kerja':'Job Application Form')+'</div></div></div>'
+      + '<div style="flex:1"><div style="font-weight:700">'+esc(data.tenant_name||'')+'</div><div style="font-size:13px;color:var(--text-3)">'+(bm?'Borang Permohonan Kerja':'Job Application Form')+'</div></div>'
+      + '<div style="display:flex;gap:6px"><button type="button" class="btn btn-outline btn-sm" onclick="_pubApplySetLang(\'en\')">EN</button><button type="button" class="btn btn-outline btn-sm" onclick="_pubApplySetLang(\'bm\')">BM</button></div></div>'
       + '<div class="form-group"><label class="form-label">'+(bm?'Jawatan Dipohon *':'Position Applied *')+'</label><input class="form-input" id="pub-position"></div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div class="form-group"><label class="form-label">'+(bm?'Gaji Dijangka (RM)':'Expected Salary (RM)')+'</label><input class="form-input" id="pub-salary" type="number" min="0" step="0.01"></div><div class="form-group"><label class="form-label">'+(bm?'Tarikh Boleh Mula':'Available Date')+'</label><input class="form-input" id="pub-avail" type="date"></div></div>'
       + '<div style="font-weight:700;margin:16px 0 8px">'+(bm?'Butiran Peribadi':'Personal Particulars')+'</div>'
