@@ -1,0 +1,16 @@
+@page { size: A4 landscape; margin: 8mm; }
+@media print {
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  #shell .sidebar, #shell .topbar, #shell .nav, .sidebar, .topbar,
+  .fab-stack, .ai-fab, .page-header, .no-print, nav, header,
+  #auth-page, .pdoc-inv-terms { display: none !important; }
+  #main, #content, .page-body { padding: 0 !important; margin: 0 !important; background: #fff !important; }
+  .ps-stmt {
+    position: relative !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    padding: 4mm 6mm !important;
+    box-shadow: none !important;
+  }
+}
