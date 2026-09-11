@@ -30217,7 +30217,7 @@ async function renderPayslipDetail(id) {
   }
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
-  _pdocSetPageOrientation('landscape', 8)
+  _pdocSetPageOrientation('portrait')
   const printFilenamePrefix = `Payslip_${_pdocSlug(rec.employees?.name)}_${rec.year}${String(rec.month).padStart(2,'0')}`.replace(/'/g,"\\'")
 
   document.getElementById('main').innerHTML = `
@@ -31022,7 +31022,7 @@ async function renderPayslipsPrint(month, year) {
   }
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('payslip')
-  _pdocSetPageOrientation('landscape', 8)
+  _pdocSetPageOrientation('portrait')
   const printFilenamePrefix = `Payslips_${_pdocSlug(tn.name)}_${year}${String(month).padStart(2,'0')}`
 
   // Generate each payslip individually (not inline in the template literal
@@ -36962,7 +36962,7 @@ if('serviceWorker' in navigator){
 <script src="./public-apply.js?v=2"></script>
 <script src="./public-apply-bank.js?v=1"></script>
 <script src="./payslip-band-align.js?v=1"></script>
-<script src="./payslip-statement.js?v=4"></script>
-<script src="./payslip-print-boot.js?v=2"></script>
+<script src="./payslip-statement.js?v=5"></script>
+<script src="./payslip-print-boot.js?v=3"></script>
 </body>
 </html>
