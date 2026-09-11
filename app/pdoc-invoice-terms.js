@@ -1,5 +1,4 @@
 (function(){
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function fromApp(){
   var t=window.APP&&APP.tenant; if(!t) return '';
   var cfg=t.config||{};
@@ -7,8 +6,9 @@ function fromApp(){
   return String(t.invoice_terms||cp.invoice_terms||'').trim();
 }
 function isPayslip(doc){
+  if(doc.classList&&doc.classList.contains('ps-stmt')) return true;
   var t=(doc.textContent||'');
-  return /payslip|slip gaji|net pay|kwsp \(employee\)|employer contributions \(info\)/i.test(t);
+  return /payslip|slip gaji|penyata gaji|salary statement|net pay|details of payment|employer contribution|private & confidential/i.test(t);
 }
 var cached='';
 function paint(){
