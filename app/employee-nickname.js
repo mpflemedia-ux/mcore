@@ -1,22 +1,33 @@
-/* Employee nickname — form field + dashboard labels */
+/* Employee nickname — form + People / Attendance Tracker / Top Sales */
 (function () {
   function label(e) {
-    if (!e) return 'Staff';
+    if (!e) return '';
     var n = String(e.nickname || '').trim();
-    return n || e.name || 'Staff';
+    return n || String(e.name || '').trim();
   }
   function initials(name) {
     return String(name || 'S').split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) {
       return w.charAt(0);
     }).join('').toUpperCase();
   }
+  function findByLegal(rows, text) {
+    var t = String(text || '').replace(/…/g, '').replace(/\.\.\.$/, '').trim();
+    if (!t) return null;
+    for (var i = 0; i < rows.length; i++) {
+      var e = rows[i];
+      var nm = String(e.name || '').trim();
+      if (!nm) continue;
+      if (nm === t || nm.indexOf(t) === 0 || t.indexOf(nm) === 0) return e;
+    }
+    return null;
+  }
   async function loadMap() {
     if (!window.sb || !window.APP || !APP.tenant || !APP.tenant.id) return [];
     var res = await sb.from('employees').select('id,name,nickname')
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(400);
-    if (res.error && /nickname/i.test(res.error.message || '')) {
-      res = await sb.from('employees').select('id,name')
-        .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(400);
+    if (res.error) {
+      console.warn('nickname load', res.error.message);
+      return [];
     }
     return res.data || [];
   }
@@ -25,7 +36,7 @@
     if (!nameEl) return;
     var existing = document.getElementById('emp-nickname');
     if (existing) {
-      if (emp && emp.nickname != null) existing.value = emp.nickname;
+      if (emp) existing.value = emp.nickname || '';
       return;
     }
     var group = nameEl.closest('.form-group') || nameEl.parentNode;
@@ -44,8 +55,8 @@
   }
   function wrapForm() {
     var orig = window.renderEmployeeForm;
-    if (typeof orig !== 'function') return;
-    window.renderEmployeeForm = async function (id) {
+    if (typeof orig !== 'function' || orig._nickWrapped) return;
+    var wrapped = async function (id) {
       var r = await orig.apply(this, arguments);
       var emp = null;
       if (id && window.sb) {
@@ -55,97 +66,103 @@
       injectForm(emp);
       return r;
     };
+    wrapped._nickWrapped = true;
+    window.renderEmployeeForm = wrapped;
   }
   function wrapSave() {
     var orig = window._employeeSave;
-    if (typeof orig !== 'function') return;
-    window._employeeSave = async function (id) {
-      var nickEl = document.getElementById('emp-nickname');
-      var nick = nickEl ? (nickEl.value.trim() || null) : null;
-      var name = ((document.getElementById('emp-name') || {}).value || '').trim();
+    if (typeof orig !== 'function' || orig._nickWrapped) return;
+    var wrapped = async function (id) {
       var r = await orig.apply(this, arguments);
-      if (!window.sb) return r;
+      var nickEl = document.getElementById('emp-nickname');
+      if (!nickEl || !window.sb) return r;
+      var nick = nickEl.value.trim() || null;
       var empId = id;
-      if (!empId && name) {
+      if (!empId) {
+        var name = (document.getElementById('emp-name') || {}).value;
         var q = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('name', name)
           .is('deleted_at', null).order('created_at', { ascending: false }).limit(1);
         empId = q.data && q.data[0] && q.data[0].id;
       }
-      if (!empId) return r;
-      var up = await sb.from('employees').update({ nickname: nick }).eq('id', empId).eq('tenant_id', APP.tenant.id);
-      if (up.error) console.warn('nickname save', up.error.message);
+      if (empId) {
+        var up = await sb.from('employees').update({ nickname: nick }).eq('id', empId).eq('tenant_id', APP.tenant.id);
+        if (up.error) console.warn('nickname save', up.error.message);
+      }
       return r;
     };
+    wrapped._nickWrapped = true;
+    window._employeeSave = wrapped;
   }
-  function wrapTopSales() {
+  function wrapTopSalesEmployees() {
     var orig = window._scLoadEmployees;
-    if (typeof orig !== 'function') return;
-    window._scLoadEmployees = async function () {
+    if (typeof orig !== 'function' || orig._nickWrapped) return;
+    var wrapped = async function () {
       var rows = await loadMap();
-      return rows.map(function (e) { return { id: e.id, name: label(e) }; });
+      return rows.map(function (e) { return { id: e.id, name: label(e) || e.name }; });
     };
+    wrapped._nickWrapped = true;
+    window._scLoadEmployees = wrapped;
   }
-  function relabel(rows) {
-    if (!rows || !rows.length) return;
-    var byName = {};
-    rows.forEach(function (e) { if (e.name) byName[e.name] = e; });
-    var people = document.getElementById('db-people-list');
-    if (people) {
-      people.querySelectorAll('div[style*="font-weight:600"]').forEach(function (div) {
-        var cur = (div.textContent || '').trim();
-        var e = byName[cur];
-        if (!e) return;
-        var lab = label(e);
-        if (lab === cur) return;
-        div.textContent = lab;
-        var avatar = div.parentNode && div.parentNode.previousElementSibling;
-        if (avatar) avatar.textContent = initials(lab);
-      });
-    }
-    var tracker = document.getElementById('db-att-tracker');
-    if (tracker) {
-      tracker.querySelectorAll('tbody td:first-child').forEach(function (td) {
-        var cur = (td.getAttribute('title') || td.textContent || '').trim();
-        var e = byName[cur];
-        if (!e) return;
-        var lab = label(e);
-        td.setAttribute('title', lab);
-        td.textContent = lab;
-      });
-    }
+  function relabelPeople(rows) {
+    var el = document.getElementById('db-people-list');
+    if (!el || !rows.length) return;
+    el.querySelectorAll('div[style*="font-weight:600"]').forEach(function (div) {
+      var cur = (div.textContent || '').trim();
+      var e = findByLegal(rows, cur);
+      if (!e) return;
+      var lab = label(e);
+      if (!lab || lab === cur) return;
+      div.textContent = lab;
+      var avatar = div.parentNode && div.parentNode.previousElementSibling;
+      if (avatar) avatar.textContent = initials(lab);
+    });
   }
-  var _relabelTimer = null;
-  function scheduleRelabel() {
-    if (_relabelTimer) clearTimeout(_relabelTimer);
-    _relabelTimer = setTimeout(function () {
-      loadMap().then(relabel).catch(function () {});
-    }, 80);
+  function relabelTracker(rows) {
+    var el = document.getElementById('db-att-tracker');
+    if (!el || !rows.length) return;
+    el.querySelectorAll('tbody td:first-child').forEach(function (td) {
+      var cur = (td.getAttribute('title') || td.textContent || '').trim();
+      var e = findByLegal(rows, cur);
+      if (!e) return;
+      var lab = label(e);
+      if (!lab) return;
+      td.setAttribute('title', lab);
+      td.textContent = lab;
+    });
+  }
+  async function applyAll() {
+    try {
+      var rows = await loadMap();
+      if (!rows.length) return;
+      relabelPeople(rows);
+      relabelTracker(rows);
+      if (typeof window._dbRenderTopSalesPerson === 'function') {
+        await window._dbRenderTopSalesPerson();
+      }
+    } catch (e) { console.warn('nickname apply', e); }
   }
   function wrapDash() {
-    ['_dbLoadPeople', '_dbLoadAttTracker', '_dbRenderTopSalesPerson'].forEach(function (name) {
+    ['_dbLoadPeople', '_dbLoadAttTracker', 'loadDashboardData'].forEach(function (name) {
       var orig = window[name];
-      if (typeof orig !== 'function') return;
-      window[name] = async function () {
+      if (typeof orig !== 'function' || orig._nickWrapped) return;
+      var wrapped = async function () {
         var r = await orig.apply(this, arguments);
-        scheduleRelabel();
+        setTimeout(applyAll, 50);
         return r;
       };
+      wrapped._nickWrapped = true;
+      window[name] = wrapped;
     });
-    var root = document.getElementById('page-content') || document.getElementById('main') || document.body;
-    if (root && !root._nickObs) {
-      var obs = new MutationObserver(scheduleRelabel);
-      obs.observe(root, { childList: true, subtree: true });
-      root._nickObs = obs;
-    }
-    scheduleRelabel();
-    setTimeout(scheduleRelabel, 400);
-    setTimeout(scheduleRelabel, 1200);
   }
   function boot() {
     wrapForm();
     wrapSave();
-    wrapTopSales();
+    wrapTopSalesEmployees();
     wrapDash();
+    applyAll();
+    setTimeout(applyAll, 400);
+    setTimeout(applyAll, 1200);
+    setTimeout(applyAll, 2500);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
