@@ -12,6 +12,7 @@ SCRIPTS = [
     ('print-hide-fabs.js', '1'),
     ('role-permissions-sync.js', '3'),
     ('booking.js', '1'),
+    ('booking-shortcut.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
