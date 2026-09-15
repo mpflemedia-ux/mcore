@@ -15,5 +15,9 @@ if 'sales-achievements-edit.js' not in html:
     html = html.replace('</body>', '<script src="./sales-achievements-edit.js?v=1"></script>\n</body>', 1)
 else:
     html = re.sub(r'sales-achievements-edit\.js\?v=\d+', 'sales-achievements-edit.js?v=1', html)
+if 'dashboard-ai-layout.js' not in html:
+    html = html.replace('</body>', '<script src="./dashboard-ai-layout.js?v=1"></script>\n</body>', 1)
+else:
+    html = re.sub(r'dashboard-ai-layout\.js\?v=\d+', 'dashboard-ai-layout.js?v=1', html)
 p.write_text(html, encoding='utf-8')
 print('ok')
