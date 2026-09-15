@@ -13,6 +13,7 @@ SCRIPTS = [
     ('role-permissions-sync.js', '3'),
     ('booking.js', '1'),
     ('booking-shortcut.js', '1'),
+    ('booking-token-fix.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
