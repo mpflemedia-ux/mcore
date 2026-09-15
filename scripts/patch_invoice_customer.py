@@ -19,5 +19,9 @@ if 'dashboard-ai-layout.js' not in html:
     html = html.replace('</body>', '<script src="./dashboard-ai-layout.js?v=1"></script>\n</body>', 1)
 else:
     html = re.sub(r'dashboard-ai-layout\.js\?v=\d+', 'dashboard-ai-layout.js?v=1', html)
+if 'pv-bank-account.js' not in html:
+    html = html.replace('</body>', '<script src="./pv-bank-account.js?v=1"></script>\n</body>', 1)
+else:
+    html = re.sub(r'pv-bank-account\.js\?v=\d+', 'pv-bank-account.js?v=1', html)
 p.write_text(html, encoding='utf-8')
 print('ok')
