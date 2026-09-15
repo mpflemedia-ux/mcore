@@ -21,12 +21,13 @@
     return res.data || [];
   }
   function injectForm(emp) {
-    if (document.getElementById('emp-nickname')) {
-      if (emp) document.getElementById('emp-nickname').value = emp.nickname || '';
-      return;
-    }
     var nameEl = document.getElementById('emp-name');
     if (!nameEl) return;
+    var existing = document.getElementById('emp-nickname');
+    if (existing) {
+      if (emp && emp.nickname != null) existing.value = emp.nickname;
+      return;
+    }
     var group = nameEl.closest('.form-group') || nameEl.parentNode;
     var wrap = document.createElement('div');
     wrap.className = 'form-group';
@@ -59,22 +60,20 @@
     var orig = window._employeeSave;
     if (typeof orig !== 'function') return;
     window._employeeSave = async function (id) {
-      var r = await orig.apply(this, arguments);
       var nickEl = document.getElementById('emp-nickname');
-      if (!nickEl || !window.sb) return r;
-      var nick = nickEl.value.trim() || null;
+      var nick = nickEl ? (nickEl.value.trim() || null) : null;
+      var name = ((document.getElementById('emp-name') || {}).value || '').trim();
+      var r = await orig.apply(this, arguments);
+      if (!window.sb) return r;
       var empId = id;
-      if (!empId) {
-        var name = (document.getElementById('emp-name') || {}).value;
+      if (!empId && name) {
         var q = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('name', name)
           .is('deleted_at', null).order('created_at', { ascending: false }).limit(1);
         empId = q.data && q.data[0] && q.data[0].id;
       }
       if (!empId) return r;
       var up = await sb.from('employees').update({ nickname: nick }).eq('id', empId).eq('tenant_id', APP.tenant.id);
-      if (up.error && /nickname/i.test(up.error.message || '')) {
-        console.warn('nickname column missing — run SQL');
-      }
+      if (up.error) console.warn('nickname save', up.error.message);
       return r;
     };
   }
@@ -86,49 +85,61 @@
       return rows.map(function (e) { return { id: e.id, name: label(e) }; });
     };
   }
-  function relabelPeople(rows) {
-    var el = document.getElementById('db-people-list');
-    if (!el) return;
+  function relabel(rows) {
+    if (!rows || !rows.length) return;
     var byName = {};
     rows.forEach(function (e) { if (e.name) byName[e.name] = e; });
-    el.querySelectorAll('div[style*="font-weight:600"]').forEach(function (div) {
-      var cur = (div.textContent || '').trim();
-      var e = byName[cur];
-      if (!e) return;
-      var lab = label(e);
-      if (lab === cur) return;
-      div.textContent = lab;
-      var avatar = div.parentNode && div.parentNode.previousElementSibling;
-      if (avatar && avatar.style && avatar.style.borderRadius === '50%') avatar.textContent = initials(lab);
-    });
+    var people = document.getElementById('db-people-list');
+    if (people) {
+      people.querySelectorAll('div[style*="font-weight:600"]').forEach(function (div) {
+        var cur = (div.textContent || '').trim();
+        var e = byName[cur];
+        if (!e) return;
+        var lab = label(e);
+        if (lab === cur) return;
+        div.textContent = lab;
+        var avatar = div.parentNode && div.parentNode.previousElementSibling;
+        if (avatar) avatar.textContent = initials(lab);
+      });
+    }
+    var tracker = document.getElementById('db-att-tracker');
+    if (tracker) {
+      tracker.querySelectorAll('tbody td:first-child').forEach(function (td) {
+        var cur = (td.getAttribute('title') || td.textContent || '').trim();
+        var e = byName[cur];
+        if (!e) return;
+        var lab = label(e);
+        td.setAttribute('title', lab);
+        td.textContent = lab;
+      });
+    }
   }
-  function relabelTracker(rows) {
-    var el = document.getElementById('db-att-tracker');
-    if (!el) return;
-    var byName = {};
-    rows.forEach(function (e) { if (e.name) byName[e.name] = e; });
-    el.querySelectorAll('tbody td:first-child').forEach(function (td) {
-      var cur = (td.getAttribute('title') || td.textContent || '').trim();
-      var e = byName[cur];
-      if (!e) return;
-      var lab = label(e);
-      td.setAttribute('title', lab);
-      td.textContent = lab;
-    });
+  var _relabelTimer = null;
+  function scheduleRelabel() {
+    if (_relabelTimer) clearTimeout(_relabelTimer);
+    _relabelTimer = setTimeout(function () {
+      loadMap().then(relabel).catch(function () {});
+    }, 80);
   }
   function wrapDash() {
-    [[' _dbLoadPeople', '_dbLoadPeople', relabelPeople], ['_dbLoadAttTracker', '_dbLoadAttTracker', relabelTracker], ['_dbRenderTopSalesPerson', '_dbRenderTopSalesPerson', null]].forEach(function (item) {
-      var name = item[1], after = item[2];
+    ['_dbLoadPeople', '_dbLoadAttTracker', '_dbRenderTopSalesPerson'].forEach(function (name) {
       var orig = window[name];
       if (typeof orig !== 'function') return;
       window[name] = async function () {
         var r = await orig.apply(this, arguments);
-        if (after) {
-          try { after(await loadMap()); } catch (e) {}
-        }
+        scheduleRelabel();
         return r;
       };
     });
+    var root = document.getElementById('page-content') || document.getElementById('main') || document.body;
+    if (root && !root._nickObs) {
+      var obs = new MutationObserver(scheduleRelabel);
+      obs.observe(root, { childList: true, subtree: true });
+      root._nickObs = obs;
+    }
+    scheduleRelabel();
+    setTimeout(scheduleRelabel, 400);
+    setTimeout(scheduleRelabel, 1200);
   }
   function boot() {
     wrapForm();
