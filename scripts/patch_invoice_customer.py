@@ -23,5 +23,9 @@ if 'pv-bank-account.js' not in html:
     html = html.replace('</body>', '<script src="./pv-bank-account.js?v=1"></script>\n</body>', 1)
 else:
     html = re.sub(r'pv-bank-account\.js\?v=\d+', 'pv-bank-account.js?v=1', html)
+if 'print-hide-fabs.js' not in html:
+    html = html.replace('</body>', '<script src="./print-hide-fabs.js?v=1"></script>\n</body>', 1)
+else:
+    html = re.sub(r'print-hide-fabs\.js\?v=\d+', 'print-hide-fabs.js?v=1', html)
 p.write_text(html, encoding='utf-8')
 print('ok')
