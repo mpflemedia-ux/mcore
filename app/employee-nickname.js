@@ -73,20 +73,26 @@
     var orig = window._employeeSave;
     if (typeof orig !== 'function' || orig._nickWrapped) return;
     var wrapped = async function (id) {
-      var r = await orig.apply(this, arguments);
       var nickEl = document.getElementById('emp-nickname');
-      if (!nickEl || !window.sb) return r;
-      var nick = nickEl.value.trim() || null;
-      var empId = id;
-      if (!empId) {
-        var name = (document.getElementById('emp-name') || {}).value;
-        var q = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('name', name)
-          .is('deleted_at', null).order('created_at', { ascending: false }).limit(1);
-        empId = q.data && q.data[0] && q.data[0].id;
+      var nameEl = document.getElementById('emp-name');
+      var nick = nickEl ? (nickEl.value.trim() || null) : undefined;
+      var nameSnap = nameEl ? nameEl.value.trim() : '';
+      if (id && nick !== undefined && window.sb) {
+        var pre = await sb.from('employees').update({ nickname: nick }).eq('id', id).eq('tenant_id', APP.tenant.id);
+        if (pre.error) console.warn('nickname pre-save', pre.error.message);
       }
-      if (empId) {
-        var up = await sb.from('employees').update({ nickname: nick }).eq('id', empId).eq('tenant_id', APP.tenant.id);
-        if (up.error) console.warn('nickname save', up.error.message);
+      var r = await orig.apply(this, arguments);
+      if (nick !== undefined && window.sb) {
+        var empId = id;
+        if (!empId && nameSnap) {
+          var q = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('name', nameSnap)
+            .is('deleted_at', null).order('created_at', { ascending: false }).limit(1);
+          empId = q.data && q.data[0] && q.data[0].id;
+        }
+        if (empId) {
+          var up = await sb.from('employees').update({ nickname: nick }).eq('id', empId).eq('tenant_id', APP.tenant.id);
+          if (up.error) console.warn('nickname save', up.error.message);
+        }
       }
       return r;
     };
