@@ -7,9 +7,22 @@
     } catch (e) {}
     return false;
   }
-  function fmtRM(n) {
-    if (typeof formatRM === 'function') return formatRM(n);
-    return 'RM ' + Number(n || 0).toFixed(2);
+  function sortedRows() {
+    var data = (window._scLedgerRaw || []).slice();
+    var sortState = (window._scSortState && window._scSortState.ledger) || {};
+    var fn = {
+      date: function (r) { return new Date(r.created_at).getTime(); },
+      amount: function (r) { return Number(r.sale_amount || 0); },
+      rate: function (r) { return Number(r.rate_applied || 0); },
+      commission: function (r) { return Number(r.commission_amount || 0); }
+    }[sortState.field];
+    if (fn) {
+      data.sort(function (a, b) {
+        var cmp = fn(a) - fn(b);
+        return sortState.dir === 'desc' ? -cmp : cmp;
+      });
+    }
+    return data;
   }
   function removeModal() {
     var m = document.getElementById('sc-edit-modal');
@@ -32,7 +45,7 @@
       '<div class="form-group"><label class="form-label">' + (isBm ? 'Komisyen (RM)' : 'Commission (RM)') + '</label>' +
       '<input id="sc-ed-comm" type="number" step="0.01" class="form-input" value="' + Number(row.commission_amount || 0) + '"></div>' +
       '<div style="font-size:11px;color:var(--text-3);margin:-4px 0 12px">' +
-      (isBm ? 'Kadar × jualan akan isi komisyen auto. Boleh edit manual.' : 'Rate × sale auto-fills commission. Override if needed.') + '</div>' +
+      (isBm ? 'Kadar × jualan isi komisyen auto. Boleh override.' : 'Rate × sale auto-fills commission. Override if needed.') + '</div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end">' +
       '<button class="btn btn-outline" id="sc-ed-cancel">' + (isBm ? 'Batal' : 'Cancel') + '</button>' +
       '<button class="btn btn-primary" id="sc-ed-save">' + (isBm ? 'Simpan' : 'Save') + '</button></div></div>';
@@ -50,10 +63,12 @@
       var amt = Number(document.getElementById('sc-ed-amt').value || 0);
       var rate = Number(document.getElementById('sc-ed-rate').value || 0);
       var comm = Number(document.getElementById('sc-ed-comm').value || 0);
-      var { error } = await sb.from('sales_commissions').update({
-        sale_amount: amt, rate_applied: rate, commission_amount: comm, updated_at: new Date().toISOString()
-      }).eq('id', id).eq('tenant_id', APP.tenant.id);
-      if (error) { showToast(error.message, 'error'); return; }
+      var payload = { sale_amount: amt, rate_applied: rate, commission_amount: comm };
+      var res = await sb.from('sales_commissions').update(payload).eq('id', id).eq('tenant_id', APP.tenant.id);
+      if (res.error && /updated_at/i.test(res.error.message || '')) {
+        res = await sb.from('sales_commissions').update(payload).eq('id', id).eq('tenant_id', APP.tenant.id);
+      }
+      if (res.error) { showToast(res.error.message, 'error'); return; }
       showToast(isBm ? 'Komisyen dikemaskini' : 'Commission updated', 'success');
       removeModal();
       if (typeof _scLoadLedger === 'function') _scLoadLedger();
@@ -79,12 +94,13 @@
     if (!table) return;
     if (table.querySelector('th[data-sc-act]')) return;
     var head = table.querySelector('thead tr');
+    if (!head) return;
     var th = document.createElement('th');
     th.setAttribute('data-sc-act', '1');
     th.textContent = APP.language === 'bm' ? 'Tindakan' : 'Actions';
     head.appendChild(th);
     var rows = table.querySelectorAll('tbody tr');
-    var raw = window._scLedgerRaw || [];
+    var raw = sortedRows();
     rows.forEach(function (tr, i) {
       var r = raw[i];
       if (!r || !r.id) return;
