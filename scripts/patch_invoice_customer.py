@@ -10,7 +10,7 @@ SCRIPTS = [
     ('dashboard-ai-layout.js', '1'),
     ('pv-bank-account.js', '1'),
     ('print-hide-fabs.js', '1'),
-    ('role-permissions-sync.js', '2'),
+    ('role-permissions-sync.js', '3'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
