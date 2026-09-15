@@ -7,5 +7,9 @@ if 'employee-nickname.js' not in html:
     html = html.replace('</body>', '<script src="./employee-nickname.js?v=3"></script>\n</body>', 1)
 else:
     html = re.sub(r'employee-nickname\.js\?v=\d+', 'employee-nickname.js?v=3', html)
+if 'sales-commission-edit.js' not in html:
+    html = html.replace('</body>', '<script src="./sales-commission-edit.js?v=1"></script>\n</body>', 1)
+else:
+    html = re.sub(r'sales-commission-edit\.js\?v=\d+', 'sales-commission-edit.js?v=1', html)
 p.write_text(html, encoding='utf-8')
 print('ok')
