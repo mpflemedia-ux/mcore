@@ -15,6 +15,7 @@ SCRIPTS = [
     ('booking-shortcut.js', '1'),
     ('booking-token-fix.js', '1'),
     ('booking-public-contrast.js', '1'),
+    ('pdoc-invoice-terms.js', '4'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'

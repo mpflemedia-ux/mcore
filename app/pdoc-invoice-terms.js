@@ -5,18 +5,20 @@ function fromApp(){
   var cp=cfg.company_profile||{};
   return String(t.invoice_terms||cp.invoice_terms||'').trim();
 }
-function isPayslip(doc){
+function isInvoiceDoc(doc){
   var t=(doc.textContent||'');
-  return /payslip|slip gaji|penyata gaji|salary statement|net pay|kwsp \(employee\)|employer contributions/i.test(t);
+  if(/payment voucher|baucar bayaran|payslip|slip gaji|penyata gaji|purchase order|pesanan belian|quotation|sebut harga|disbursement|penyaluran/i.test(t))
+    return false;
+  return /\binvoice\b|\binvois\b/i.test(t);
 }
 var cached='';
 function paint(){
-  var txt=cached||fromApp();
   document.querySelectorAll('.pdoc').forEach(function(doc){
-    if(isPayslip(doc)){
+    if(!isInvoiceDoc(doc)){
       doc.querySelectorAll('.pdoc-inv-terms').forEach(function(n){ n.remove(); });
       return;
     }
+    var txt=cached||fromApp();
     if(!txt) return;
     if(doc.querySelector('.pdoc-inv-terms')) return;
     var el=document.createElement('div');
@@ -27,7 +29,7 @@ function paint(){
     var divs=doc.querySelectorAll('div');
     for(var i=0;i<divs.length;i++){
       var t=(divs[i].textContent||'').trim();
-      if(/computer generated|dijana oleh komputer/i.test(t) && t.length<120){ note=divs[i]; break; }
+      if(/computer generated|dijana oleh komputer|computer-generated/i.test(t) && t.length<140){ note=divs[i]; break; }
     }
     if(note) note.parentNode.insertBefore(el, note);
     else {
