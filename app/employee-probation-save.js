@@ -44,13 +44,20 @@
   }
 
   function flags() {
-    return {
+    var statusEl = document.getElementById('prb-status');
+    var status = statusEl && statusEl.value === 'permanent' ? 'permanent' : (statusEl ? 'probation' : null);
+    var snap = {
       probation_months: Number((document.getElementById('prb-months') || {}).value || 6),
       allow_leave_during_probation: !!(document.getElementById('prb-al') && document.getElementById('prb-al').checked),
       allow_medical_claim_during_probation: !!(document.getElementById('prb-am') && document.getElementById('prb-am').checked),
       allow_sales_commission_during_probation: !!(document.getElementById('prb-ac') && document.getElementById('prb-ac').checked),
       allow_full_access_during_probation: !!(document.getElementById('prb-af') && document.getElementById('prb-af').checked)
     };
+    if (status) {
+      snap.employment_status = status;
+      snap.confirmed_at = status === 'permanent' ? new Date().toISOString() : null;
+    }
+    return snap;
   }
 
   async function writeFlags(eid, snap) {
