@@ -19,6 +19,7 @@ SCRIPTS = [
     ('pv-desc-wrap.js', '1'),
     ('pv-preview-scroll.js', '3'),
     ('pdoc-preview-light.js', '1'),
+    ('booking-state.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
