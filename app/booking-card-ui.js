@@ -1,4 +1,4 @@
-/* Bookings card: new-booking badge + date range + status filter + sort */
+/* Bookings card: badge + date/status/sort + row expand */
 (function () {
   var STATE = { range: 'today', status: 'all', sort: 'starts' };
   function isBm() { return APP.language === 'bm'; }
@@ -65,7 +65,7 @@
     ensureTools(card);
     var b = bounds();
     var q = await sb.from('bookings')
-      .select('id,customer_name,starts_at,status,quote_ref,created_at,booking_services(name)')
+      .select('id,customer_name,customer_email,customer_phone,starts_at,status,quote_ref,payment_channel,created_at,notes,booking_services(name)')
       .eq('tenant_id', APP.tenant.id)
       .gte('starts_at', b.start)
       .lte('starts_at', b.end)
@@ -89,17 +89,25 @@
     body.innerHTML = rows.map(function (r) {
       var svc = r.booking_services && r.booking_services.name ? r.booking_services.name : 'Booking';
       var pending = r.status === 'hold' || r.status === 'pending_payment' || r.status === 'payment_failed';
-      return '<div style="padding:8px 0;border-bottom:1px solid var(--border,#e2e8f0)">' +
-        '<div style="display:flex;justify-content:space-between;gap:8px"><span>' +
-        esc(fmt(r.starts_at)) + ' · ' + esc(r.customer_name || '-') + ' · ' + esc(svc) +
+      return '<details style="padding:8px 0;border-bottom:1px solid var(--border,#e2e8f0)">' +
+        '<summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px">' +
+        '<span>' + esc(fmt(r.starts_at)) + ' · ' + esc(r.customer_name || '-') + ' · ' + esc(svc) +
         (r.quote_ref ? ' · ' + esc(r.quote_ref) : '') + '</span><strong style="font-size:11px">' +
-        esc(String(r.status || '').toUpperCase()) + '</strong></div>' +
+        esc(String(r.status || '').toUpperCase()) + '</strong></summary>' +
+        '<div style="font-size:12px;color:var(--db-text3);margin-top:8px;line-height:1.5">' +
+        '<div>' + (isBm() ? 'Nama' : 'Name') + ': ' + esc(r.customer_name || '-') + '</div>' +
+        '<div>Email: ' + esc(r.customer_email || '-') + '</div>' +
+        '<div>' + (isBm() ? 'Telefon' : 'Phone') + ': ' + esc(r.customer_phone || '-') + '</div>' +
+        '<div>' + (isBm() ? 'Masa' : 'Time') + ': ' + esc(fmt(r.starts_at)) + '</div>' +
+        '<div>Ref: ' + esc(r.quote_ref || '-') + '</div>' +
+        '<div>' + (isBm() ? 'Bayaran' : 'Payment') + ': ' + esc(r.payment_channel || '-') + '</div>' +
+        '<div>' + (isBm() ? 'Dicipta' : 'Created') + ': ' + esc(fmt(r.created_at)) + '</div></div>' +
         (pending
           ? '<div style="margin-top:6px;display:flex;gap:6px">' +
             '<button type="button" class="db-btn" data-bk-act="cash" data-id="' + esc(r.id) + '">' + (isBm() ? 'Sahkan tunai' : 'Confirm cash') + '</button>' +
             '<button type="button" class="db-btn" data-bk-act="release" data-id="' + esc(r.id) + '">' + (isBm() ? 'Lepaskan' : 'Release') + '</button></div>'
           : '') +
-        '</div>';
+        '</details>';
     }).join('');
   }
   var last = 0;
@@ -110,7 +118,7 @@
     last = now;
     paint();
   }
-  setInterval(boot, 2000);
+  setInterval(boot, 2500);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
