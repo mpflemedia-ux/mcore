@@ -7,7 +7,7 @@ SCRIPTS = [
     ('employee-nickname.js', '4'),
     ('sales-commission-edit.js', '1'),
     ('sales-achievements-edit.js', '1'),
-    ('dashboard-ai-layout.js', '2'),
+    ('dashboard-ai-layout.js', '3'),
     ('pv-bank-account.js', '1'),
     ('print-hide-fabs.js', '1'),
     ('role-permissions-sync.js', '3'),
@@ -29,6 +29,7 @@ SCRIPTS = [
     ('employee-form-id.js', '2'),
     ('employment-status-select.js', '1'),
     ('employee-join-date.js', '1'),
+    ('att-tracker-today.js', '1'),
     ('probation-dash.js', '2'),
 ]
 for name, ver in SCRIPTS:
