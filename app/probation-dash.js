@@ -12,10 +12,22 @@
     var n = new Date(); n.setHours(0, 0, 0, 0);
     return Math.round((t - n) / 86400000);
   }
+  function stripEdit(card) {
+    if (!card) return;
+    card.querySelectorAll('a').forEach(function (a) {
+      var t = (a.textContent || '').trim();
+      if (/^edit$/i.test(t)) {
+        var parent = a.parentNode;
+        a.remove();
+        if (parent) parent.innerHTML = (parent.textContent || '').replace(/\s*·\s*$/, '').trim();
+      }
+    });
+  }
   function place(card) {
-    card.style.margin = '0 0 14px';
+    card.style.margin = '0';
     card.style.width = '100%';
     card.style.gridColumn = '1 / -1';
+    stripEdit(card);
     var row = document.querySelector('.db-people-row-2');
     if (row && row.parentNode) {
       if (card.parentNode !== row.parentNode || card.previousElementSibling !== row) {
@@ -58,9 +70,7 @@
         return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);' +
           (warn ? 'color:#b91c1c;font-weight:600' : '') + '">' +
           '<span>' + esc(r.nickname || r.name) + '</span>' +
-          '<span style="font-size:12px;white-space:nowrap">' + esc(label) +
-          ' · <a href="#" onclick="openPage(\'hr\',{view:\'employee-form\',id:\'' + r.id + '\'});return false">' +
-          (isBm() ? 'Edit' : 'Edit') + '</a></span></div>';
+          '<span style="font-size:12px;white-space:nowrap">' + esc(label) + '</span></div>';
       }).join('');
     }
     card.innerHTML = '<div class="db-card-title"><i class="ti ti-hourglass"></i> ' +
@@ -73,20 +83,6 @@
     if (!window.sb || window._prbReminded) return;
     window._prbReminded = true;
     try { await sb.rpc('check_probation_reminders'); } catch (e) {}
-    try {
-      var q = await sb.from('employees').select('name,probation_end_date').eq('tenant_id', APP.tenant.id).eq('employment_status', 'probation');
-      (q.data || []).forEach(function (r) {
-        var d = daysLeft(r.probation_end_date);
-        if (d == null) return;
-        if ([14, 7, 3, 1].indexOf(d) >= 0 || d <= 0) {
-          var msg = d <= 0
-            ? ('OVERDUE — ' + r.name + "'s probation ended without action — risk of automatic confirmation by conduct under Employment Act.")
-            : (r.name + ' — probation ends in ' + d + ' day(s)');
-          if (typeof _notifPushBell === 'function') _notifPushBell(msg, r.probation_end_date);
-          if (typeof showToast === 'function' && d <= 3) showToast(msg, d <= 0 ? 'error' : 'warning');
-        }
-      });
-    } catch (e) {}
   }
   function boot() {
     if (!document.getElementById('dashboard-wrap')) return;

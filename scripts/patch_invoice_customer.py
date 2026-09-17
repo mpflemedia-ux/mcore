@@ -30,7 +30,7 @@ SCRIPTS = [
     ('employment-status-select.js', '1'),
     ('employee-join-date.js', '1'),
     ('att-tracker-today.js', '1'),
-    ('probation-dash.js', '2'),
+    ('probation-dash.js', '3'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
