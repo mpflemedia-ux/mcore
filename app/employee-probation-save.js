@@ -1,4 +1,4 @@
-/* Resolve employee id + persist probation flags BEFORE form re-render */
+/* Resolve employee id + persist probation flags (snapshot survives form re-render) */
 (function () {
   function uuidLike(v) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ''));
@@ -25,16 +25,19 @@
     var id = resolveId();
     if (id) return id;
     if (!window.sb || !APP.tenant) return null;
-    var ic = (document.getElementById('emp-ic') || {}).value;
-    var name = (document.getElementById('emp-name') || {}).value;
+    var ic = ((document.getElementById('emp-ic') || {}).value || '').trim();
+    var name = ((document.getElementById('emp-name') || {}).value || '').trim();
+    var nick = ((document.getElementById('emp-nickname') || {}).value || '').trim();
     if (ic) {
-      var q = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('ic_no', ic.trim()).is('deleted_at', null).limit(1);
+      var q = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('ic_no', ic).limit(1);
       if (q.data && q.data[0]) return q.data[0].id;
     }
     if (name) {
-      var q2 = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('name', name.trim()).is('deleted_at', null).limit(1);
+      var q2 = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('name', name).limit(1);
       if (q2.data && q2.data[0]) return q2.data[0].id;
-      var q3 = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('nickname', name.trim()).is('deleted_at', null).limit(1);
+    }
+    if (nick) {
+      var q3 = await sb.from('employees').select('id').eq('tenant_id', APP.tenant.id).eq('nickname', nick).limit(1);
       if (q3.data && q3.data[0]) return q3.data[0].id;
     }
     return null;
@@ -50,6 +53,13 @@
     };
   }
 
+  async function writeFlags(eid, snap) {
+    if (!eid || !window.sb) return;
+    var up = await sb.from('employees').update(snap).eq('id', eid).eq('tenant_id', APP.tenant.id);
+    if (up.error && typeof showToast === 'function') showToast('Probation save: ' + up.error.message, 'error');
+    return up;
+  }
+
   function wrapForm() {
     var orig = window.renderEmployeeForm;
     if (typeof orig !== 'function' || orig._prbSaveId) return;
@@ -61,28 +71,22 @@
   }
   function wrapSave() {
     var orig = window._employeeSave;
-    if (typeof orig !== 'function' || orig._prbSaveFirst) return;
+    if (typeof orig !== 'function' || orig._prbSnap) return;
     window._employeeSave = async function (id) {
+      var snap = flags();
       var eid = resolveId(id) || await lookupId();
-      window._prbEditingId = eid || window._prbEditingId;
-      if (eid && window.sb && document.getElementById('prb-al')) {
-        var up = await sb.from('employees').update(flags()).eq('id', eid).eq('tenant_id', APP.tenant.id);
-        if (up.error) {
-          console.warn('probation save', up.error);
-          if (typeof showToast === 'function') showToast(up.error.message, 'error');
-        }
-      }
-      return orig.apply(this, arguments);
+      if (eid) window._prbEditingId = eid;
+      await writeFlags(eid, snap);
+      var r = await orig.apply(this, arguments);
+      await writeFlags(eid, snap);
+      return r;
     };
-    window._employeeSave._prbSaveFirst = true;
-  }
-  function disableOldPostSave() {
-    if (window._employeeSave) window._employeeSave._prb = true;
+    window._employeeSave._prbSnap = true;
+    window._employeeSave._prb = true;
   }
   function boot() {
     wrapForm();
     wrapSave();
-    disableOldPostSave();
   }
   setInterval(boot, 600);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
