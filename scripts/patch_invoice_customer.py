@@ -23,6 +23,7 @@ SCRIPTS = [
     ('booking-settings-ui.js', '1'),
     ('booking-realtime.js', '1'),
     ('booking-card-ui.js', '2'),
+    ('crm-scan.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
