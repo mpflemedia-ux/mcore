@@ -1,6 +1,13 @@
-/* Dashboard layout: hide marketing card; People+Tracker row; probation full-width below */
+/* Dashboard layout: consistent 16px gaps; People+Tracker row; probation full-width below */
 (function () {
+  var GAP = '16px';
   function apply() {
+    var dash = document.getElementById('dashboard-wrap');
+    if (dash) {
+      dash.style.display = 'flex';
+      dash.style.flexDirection = 'column';
+      dash.style.gap = GAP;
+    }
     var ai = document.getElementById('db-sec-ai');
     if (ai) {
       var cards = ai.querySelectorAll(':scope > .db-card');
@@ -9,22 +16,27 @@
       });
       ai.style.display = 'grid';
       ai.style.gridTemplateColumns = '1fr 1fr';
-      ai.style.gap = '14px';
+      ai.style.gap = GAP;
       ai.style.alignItems = 'stretch';
+      ai.style.margin = '0';
     }
     var row = document.querySelector('.db-people-row-2');
     if (row) {
       row.style.display = 'grid';
       row.style.gridTemplateColumns = 'minmax(220px, 0.85fr) minmax(0, 1.6fr)';
-      row.style.gap = '14px';
+      row.style.gap = GAP;
       row.style.alignItems = 'stretch';
       row.style.width = '100%';
+      row.style.margin = '0';
     }
+    document.querySelectorAll('#dashboard-wrap .db-card').forEach(function (c) {
+      c.style.margin = '0';
+    });
     var pr = document.getElementById('db-sec-probation');
     if (pr && row && row.parentNode) {
       pr.style.width = '100%';
       pr.style.gridColumn = '1 / -1';
-      pr.style.margin = '14px 0';
+      pr.style.margin = '0';
       if (pr.parentNode !== row.parentNode || pr.previousElementSibling !== row) {
         row.parentNode.insertBefore(pr, row.nextSibling);
       }
