@@ -1,6 +1,6 @@
 /* Bookings card: badge + date/status/sort + row expand */
 (function () {
-  var STATE = { range: 'today', status: 'all', sort: 'starts' };
+  var STATE = { range: 'today', status: 'all', sort: 'starts', force: false };
   function isBm() { return APP.language === 'bm'; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -19,7 +19,7 @@
     if (STATE.range === 'upcoming') { start = now; end = new Date(start); end.setFullYear(end.getFullYear() + 2); }
     return { start: start.toISOString(), end: end.toISOString() };
   }
-  function ensureTools(card) {
+  function ensureTools() {
     if (document.getElementById('bk-card-tools')) return;
     var body = document.getElementById('db-book-body');
     if (!body) return;
@@ -41,9 +41,9 @@
       '<option value="starts">' + (isBm() ? 'Masa' : 'Time') + '</option>' +
       '<option value="status">Status</option></select>';
     body.parentNode.insertBefore(bar, body);
-    document.getElementById('bk-range').onchange = function () { STATE.range = this.value; paint(); };
-    document.getElementById('bk-status').onchange = function () { STATE.status = this.value; paint(); };
-    document.getElementById('bk-sort').onchange = function () { STATE.sort = this.value; paint(); };
+    document.getElementById('bk-range').onchange = function () { STATE.range = this.value; STATE.force = true; paint(); };
+    document.getElementById('bk-status').onchange = function () { STATE.status = this.value; STATE.force = true; paint(); };
+    document.getElementById('bk-sort').onchange = function () { STATE.sort = this.value; STATE.force = true; paint(); };
   }
   function setBadge(n) {
     var title = document.querySelector('#db-sec-booking .db-card-title');
@@ -62,7 +62,9 @@
     var card = document.getElementById('db-sec-booking');
     var body = document.getElementById('db-book-body');
     if (!card || !body || !window.sb || !APP.tenant) return;
-    ensureTools(card);
+    ensureTools();
+    if (!STATE.force && body.querySelector('details[open]')) return;
+    STATE.force = false;
     var b = bounds();
     var q = await sb.from('bookings')
       .select('id,customer_name,customer_email,customer_phone,starts_at,status,quote_ref,payment_channel,created_at,notes,booking_services(name)')
