@@ -12,9 +12,31 @@
     var n = new Date(); n.setHours(0, 0, 0, 0);
     return Math.round((t - n) / 86400000);
   }
+  function place(card) {
+    card.style.margin = '0 0 14px';
+    card.style.width = '100%';
+    card.style.gridColumn = '1 / -1';
+    var row = document.querySelector('.db-people-row-2');
+    if (row && row.parentNode) {
+      if (card.parentNode !== row.parentNode || card.previousElementSibling !== row) {
+        row.parentNode.insertBefore(card, row.nextSibling);
+      }
+      return;
+    }
+    var tracker = document.getElementById('db-att-tracker');
+    var host = tracker && tracker.closest('.db-card');
+    if (host && host.parentNode) {
+      host.parentNode.insertBefore(card, host.nextSibling);
+      return;
+    }
+    var dash = document.getElementById('dashboard-wrap');
+    if (dash && !card.parentNode) dash.appendChild(card);
+  }
   async function render() {
-    if (!document.getElementById('dashboard-wrap') || document.getElementById('db-sec-probation')) return;
+    if (!document.getElementById('dashboard-wrap')) return;
     if (!window.sb || !APP.tenant) return;
+    var existing = document.getElementById('db-sec-probation');
+    if (existing) { place(existing); return; }
     var q = await sb.from('employees')
       .select('id,name,nickname,employment_status,probation_end_date,probation_months,confirmed_at')
       .eq('tenant_id', APP.tenant.id)
@@ -22,11 +44,9 @@
       .order('probation_end_date');
     if (q.error) return;
     var rows = q.data || [];
-    var people = document.getElementById('db-sec-people') || document.getElementById('db-sec-booking');
     var card = document.createElement('div');
     card.className = 'db-card';
     card.id = 'db-sec-probation';
-    card.style.marginBottom = '14px';
     var body;
     if (!rows.length) {
       body = '<div style="font-size:13px;color:var(--db-text3)">' + (isBm() ? 'Tiada staf dalam percubaan.' : 'No staff on probation.') + '</div>';
@@ -35,11 +55,11 @@
         var d = daysLeft(r.probation_end_date);
         var warn = d != null && d <= 3;
         var label = d == null ? '-' : (d < 0 ? (isBm() ? 'Lewat ' + Math.abs(d) + ' hari' : 'Overdue ' + Math.abs(d) + 'd') : (isBm() ? d + ' hari lagi' : d + ' days left'));
-        return '<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);' +
+        return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);' +
           (warn ? 'color:#b91c1c;font-weight:600' : '') + '">' +
           '<span>' + esc(r.nickname || r.name) + '</span>' +
-          '<span style="font-size:12px">' + esc(label) +
-          ' <a href="#" onclick="openPage(\'hr\',{view:\'employee-form\',id:\'' + r.id + '\'});return false">' +
+          '<span style="font-size:12px;white-space:nowrap">' + esc(label) +
+          ' · <a href="#" onclick="openPage(\'hr\',{view:\'employee-form\',id:\'' + r.id + '\'});return false">' +
           (isBm() ? 'Edit' : 'Edit') + '</a></span></div>';
       }).join('');
     }
@@ -47,12 +67,7 @@
       (isBm() ? 'Staf Percubaan' : 'Staff on Probation') + '</div>' +
       '<div style="font-size:12px;color:var(--db-text3);margin:0 0 8px">' +
       (isBm() ? 'Tamat terdekat dahulu' : 'Soonest end date first') + '</div>' + body;
-    var host = people && people.parentNode;
-    if (host) host.insertBefore(card, people.nextSibling);
-    else {
-      var dash = document.getElementById('dashboard-wrap');
-      if (dash) dash.appendChild(card);
-    }
+    place(card);
   }
   async function reminders() {
     if (!window.sb || window._prbReminded) return;
@@ -89,6 +104,7 @@
     w._prbDash = true; window[name] = w;
   });
   setInterval(function () {
-    if (document.getElementById('dashboard-wrap') && !document.getElementById('db-sec-probation')) boot();
+    if (!document.getElementById('dashboard-wrap')) return;
+    boot();
   }, 2000);
 })();

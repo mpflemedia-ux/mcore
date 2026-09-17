@@ -7,7 +7,7 @@ SCRIPTS = [
     ('employee-nickname.js', '4'),
     ('sales-commission-edit.js', '1'),
     ('sales-achievements-edit.js', '1'),
-    ('dashboard-ai-layout.js', '1'),
+    ('dashboard-ai-layout.js', '2'),
     ('pv-bank-account.js', '1'),
     ('print-hide-fabs.js', '1'),
     ('role-permissions-sync.js', '3'),
@@ -25,7 +25,7 @@ SCRIPTS = [
     ('booking-card-ui.js', '2'),
     ('crm-scan.js', '1'),
     ('employee-probation.js', '1'),
-    ('probation-dash.js', '1'),
+    ('probation-dash.js', '2'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
