@@ -1,4 +1,4 @@
-/* Keep employee-form id in hash + reload probation box from live row */
+/* Keep employee-form id in hash. Paint probation flags ONCE after load. */
 (function () {
   function uuidLike(v) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ''));
@@ -8,7 +8,9 @@
     if (typeof orig !== 'function' || orig._empIdHash) return;
     window._navHistoryUrl = function (page, params) {
       var u = orig.apply(this, arguments);
-      if (params && uuidLike(params.id) && u.indexOf('id=') < 0) u += (u.indexOf('?') >= 0 ? '&' : '?') + 'id=' + params.id;
+      if (params && uuidLike(params.id) && u.indexOf('id=') < 0) {
+        u += (u.indexOf('?') >= 0 ? '&' : '?') + 'id=' + params.id;
+      }
       return u;
     };
     window._navHistoryUrl._empIdHash = true;
@@ -36,11 +38,27 @@
     }
     return null;
   }
-  async function paint() {
+  function markDirty() {
+    var box = document.getElementById('prb-box');
+    if (box) box.setAttribute('data-dirty', '1');
+  }
+  function bindDirty() {
+    ['prb-al', 'prb-am', 'prb-ac', 'prb-af', 'prb-months'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el || el._prbDirtyBound) return;
+      el.addEventListener('change', markDirty);
+      el.addEventListener('input', markDirty);
+      el._prbDirtyBound = true;
+    });
+  }
+  async function paint(force) {
     var box = document.getElementById('prb-box');
     if (!box) return;
+    if (!force && box.getAttribute('data-dirty') === '1') return;
+    if (!force && box.getAttribute('data-painted') === '1') return;
     var emp = await liveEmp();
     if (!emp) return;
+    if (box.getAttribute('data-dirty') === '1' && !force) return;
     window._prbEditingId = emp.id;
     box.setAttribute('data-emp-id', emp.id);
     var al = document.getElementById('prb-al');
@@ -55,13 +73,12 @@
     if (mo && emp.probation_months) mo.value = emp.probation_months;
     var badge = document.getElementById('prb-badge');
     if (badge) {
-      var isBm = APP.language === 'bm';
-      if (emp.employment_status === 'permanent') {
-        badge.textContent = isBm ? 'Tetap' : 'Permanent';
-      } else {
-        badge.textContent = isBm ? 'Percubaan' : 'Probation';
-      }
+      badge.textContent = emp.employment_status === 'permanent'
+        ? (APP.language === 'bm' ? 'Tetap' : 'Permanent')
+        : (APP.language === 'bm' ? 'Percubaan' : 'Probation');
     }
+    box.setAttribute('data-painted', '1');
+    bindDirty();
   }
   function wrapForm() {
     var orig = window.renderEmployeeForm;
@@ -70,8 +87,8 @@
       if (!id) id = idFromHash();
       if (uuidLike(id)) window._prbEditingId = id;
       var r = await orig.apply(this, arguments);
-      setTimeout(paint, 80);
-      setTimeout(paint, 400);
+      setTimeout(function () { paint(true); }, 80);
+      setTimeout(function () { paint(false); }, 400);
       return r;
     };
     window.renderEmployeeForm._empIdHash = true;
@@ -79,7 +96,7 @@
   function boot() {
     wrapNav();
     wrapForm();
-    paint();
+    bindDirty();
   }
   setInterval(boot, 1000);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
