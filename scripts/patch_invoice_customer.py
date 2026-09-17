@@ -24,8 +24,8 @@ SCRIPTS = [
     ('booking-realtime.js', '1'),
     ('booking-card-ui.js', '2'),
     ('crm-scan.js', '1'),
-    ('employee-probation.js', '1'),
-    ('employee-probation-save.js', '1'),
+    ('employee-probation.js', '2'),
+    ('employee-probation-save.js', '2'),
     ('probation-dash.js', '2'),
 ]
 for name, ver in SCRIPTS:
