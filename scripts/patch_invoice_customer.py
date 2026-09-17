@@ -24,6 +24,8 @@ SCRIPTS = [
     ('booking-realtime.js', '1'),
     ('booking-card-ui.js', '2'),
     ('crm-scan.js', '1'),
+    ('employee-probation.js', '1'),
+    ('probation-dash.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
