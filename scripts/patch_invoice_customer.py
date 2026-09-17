@@ -4,7 +4,7 @@ import re
 p = Path('app/index.html')
 html = p.read_text(encoding='utf-8')
 SCRIPTS = [
-    ('employee-nickname.js', '3'),
+    ('employee-nickname.js', '4'),
     ('sales-commission-edit.js', '1'),
     ('sales-achievements-edit.js', '1'),
     ('dashboard-ai-layout.js', '1'),
