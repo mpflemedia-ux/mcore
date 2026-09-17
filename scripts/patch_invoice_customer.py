@@ -28,6 +28,7 @@ SCRIPTS = [
     ('employee-probation-save.js', '3'),
     ('employee-form-id.js', '2'),
     ('employment-status-select.js', '1'),
+    ('employee-join-date.js', '1'),
     ('probation-dash.js', '2'),
 ]
 for name, ver in SCRIPTS:
