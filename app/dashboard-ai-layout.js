@@ -1,21 +1,34 @@
-/* Hide AI Marketing Ideas; keep Insight + Digest as a two-column row */
+/* Dashboard layout: hide marketing card; People+Tracker row; probation full-width below */
 (function () {
   function apply() {
-    var row = document.getElementById('db-sec-ai');
-    if (!row) return;
-    var cards = row.querySelectorAll(':scope > .db-card');
-    cards.forEach(function (card) {
-      if (card.querySelector('#db-marketing-out') || card.querySelector('#db-marketing-btn')) {
-        card.remove();
+    var ai = document.getElementById('db-sec-ai');
+    if (ai) {
+      var cards = ai.querySelectorAll(':scope > .db-card');
+      cards.forEach(function (card) {
+        if (card.querySelector('#db-marketing-out') || card.querySelector('#db-marketing-btn')) card.remove();
+      });
+      ai.style.display = 'grid';
+      ai.style.gridTemplateColumns = '1fr 1fr';
+      ai.style.gap = '14px';
+      ai.style.alignItems = 'stretch';
+    }
+    var row = document.querySelector('.db-people-row-2');
+    if (row) {
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = 'minmax(220px, 0.85fr) minmax(0, 1.6fr)';
+      row.style.gap = '14px';
+      row.style.alignItems = 'stretch';
+      row.style.width = '100%';
+    }
+    var pr = document.getElementById('db-sec-probation');
+    if (pr && row && row.parentNode) {
+      pr.style.width = '100%';
+      pr.style.gridColumn = '1 / -1';
+      pr.style.margin = '14px 0';
+      if (pr.parentNode !== row.parentNode || pr.previousElementSibling !== row) {
+        row.parentNode.insertBefore(pr, row.nextSibling);
       }
-    });
-    row.style.display = 'grid';
-    row.style.gridTemplateColumns = '1fr 1fr';
-    row.style.gap = '14px';
-    row.style.alignItems = 'stretch';
-    row.querySelectorAll(':scope > .db-card').forEach(function (card) {
-      card.style.minHeight = '160px';
-    });
+    }
   }
   function wrap() {
     ['loadDashboardData', 'renderDashboard', '_dbRenderDashboard'].forEach(function (name) {
