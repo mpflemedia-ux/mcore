@@ -25,7 +25,7 @@ SCRIPTS = [
     ('booking-card-ui.js', '2'),
     ('crm-scan.js', '1'),
     ('employee-probation.js', '2'),
-    ('employee-probation-save.js', '2'),
+    ('employee-probation-save.js', '3'),
     ('employee-form-id.js', '2'),
     ('employment-status-select.js', '1'),
     ('probation-dash.js', '2'),
