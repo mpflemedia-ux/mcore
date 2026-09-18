@@ -1,8 +1,14 @@
-/* Leave slip: branded print + Hostinger SMTP email (fallback mailto) */
+/* Leave slip print + Hostinger SMTP for Phion only */
 (function () {
   var NAVY = '#0B1F3A';
   var GOLD = '#C4A35A';
+  var PHION_ID = 'c40847f5-63c1-49d5-8e28-8eae95f12ed5';
   function isBm() { return APP.language === 'bm'; }
+  function isPhion() {
+    var t = APP.tenant || {};
+    if (t.id === PHION_ID) return true;
+    return /phion/i.test(t.name || '');
+  }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
@@ -44,15 +50,11 @@
     var l = d.l, emp = d.emp, tn = d.tenant || {};
     var half = l.is_half_day || Number(l.days_count) === 0.5;
     var sess = l.half_session === 'pm' ? (isBm() ? 'Petang' : 'PM') : (l.half_session === 'am' ? (isBm() ? 'Pagi' : 'AM') : '');
-    var logo = tn.logo_url
-      ? '<img src="' + esc(tn.logo_url) + '" alt="logo" style="height:56px;max-width:180px;object-fit:contain">'
-      : '';
-    var contact = [tn.phone, String(tn.name || '').toLowerCase().indexOf('phion') >= 0 ? 'hello@phion.my' : '']
-      .filter(Boolean).join(' · ');
+    var logo = tn.logo_url ? '<img src="' + esc(tn.logo_url) + '" alt="logo" style="height:56px;max-width:180px;object-fit:contain">' : '';
+    var contact = [tn.phone, isPhion() ? 'hello@phion.my' : ''].filter(Boolean).join(' · ');
     return '<div style="font-family:Georgia,Times,serif;max-width:720px;margin:0 auto;color:' + NAVY + '">' +
       '<div style="background:' + NAVY + ';color:#fff;padding:18px 22px;display:flex;gap:16px;align-items:center">' +
-      logo +
-      '<div style="flex:1"><div style="font-size:20px;font-weight:700">' + esc(tn.name || '') + '</div>' +
+      logo + '<div style="flex:1"><div style="font-size:20px;font-weight:700">' + esc(tn.name || '') + '</div>' +
       '<div style="font-size:12px;color:' + GOLD + ';margin-top:4px">' + (isBm() ? 'Slip Cuti' : 'Leave Slip') + '</div>' +
       '<div style="font-size:11px;color:#cbd5e1;margin-top:6px;line-height:1.45">' +
       esc(addr(tn)) + (contact ? '<br>' + esc(contact) : '') + '</div></div></div>' +
@@ -89,8 +91,7 @@
       (isBm() ? 'Jenis: ' : 'Type: ') + typeLabel(d.l.leave_type) + (half ? ' (half-day)' : '') + '\n' +
       (isBm() ? 'Tarikh: ' : 'Dates: ') + d.l.start_date + ' → ' + d.l.end_date + '\n' +
       (isBm() ? 'Hari: ' : 'Days: ') + d.l.days_count + '\n' +
-      (isBm() ? 'Sebab: ' : 'Reason: ') + (d.l.reason || '-') + '\n' +
-      'Status: ' + (d.l.status || '-') + '\n';
+      (isBm() ? 'Sebab: ' : 'Reason: ') + (d.l.reason || '-') + '\nStatus: ' + (d.l.status || '-') + '\n';
   }
   async function emailSlip(d) {
     var email = (d.emp && d.emp.email || '').trim();
@@ -98,21 +99,18 @@
       showToast(isBm() ? 'Staff tiada email pada rekod pekerja' : 'Staff has no email on employee record', 'error');
       return;
     }
+    if (!isPhion()) {
+      showToast(isBm() ? 'Hantar email Hostinger untuk Phion sahaja' : 'Hostinger send is Phion-only', 'error');
+      return;
+    }
     var sub = (isBm() ? 'Slip Cuti' : 'Leave Slip') + ' — ' + (d.emp.nickname || d.emp.name || '') + ' — ' + d.l.start_date;
     var text = mailText(d);
-    try {
-      var res = await sb.functions.invoke('send-email', {
-        body: { to: email, subject: sub, text: text, html: slipHtml(d) }
-      });
-      if (res.error) throw res.error;
-      if (res.data && res.data.success === false) throw new Error(res.data.error || 'send failed');
-      showToast(isBm() ? 'Slip dihantar ke ' + email : 'Slip sent to ' + email, 'success');
-      return;
-    } catch (err) {
-      showToast((isBm() ? 'SMTP belum siap. Buka email app. ' : 'SMTP not ready. Opening mail app. ') + (err.message || ''), 'error');
-      window.location.href = 'mailto:' + encodeURIComponent(email) +
-        '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(text);
-    }
+    var res = await sb.functions.invoke('send-email', {
+      body: { tenant_id: APP.tenant.id, to: email, subject: sub, text: text, html: slipHtml(d) }
+    });
+    if (res.error) throw res.error;
+    if (res.data && res.data.success === false) throw new Error(res.data.error || 'send failed');
+    showToast(isBm() ? 'Slip dihantar ke ' + email : 'Slip sent to ' + email, 'success');
   }
   window._leaveSlipPrint = async function (id) {
     try { var d = await loadSlip(id); printSlip(slipHtml(d)); }
