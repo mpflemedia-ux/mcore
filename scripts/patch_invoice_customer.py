@@ -36,6 +36,7 @@ SCRIPTS = [
     ('leave-half-day.js', '1'),
     ('leave-row-detail.js', '3'),
     ('leave-slip.js', '4'),
+    ('leave-email-click.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
