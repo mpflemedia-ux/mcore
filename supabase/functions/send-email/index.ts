@@ -1,4 +1,6 @@
-// Hostinger SMTP over TLS 465 — no nodemailer (Deno Edge)
+// Hostinger SMTP from Edge is blocked. Send via Resend HTTPS.
+// Secret: RESEND_API_KEY
+// Phion tenants only. From: hello@phion.my
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const CORS = {
@@ -15,67 +17,12 @@ function json(body: unknown, status = 200) {
   })
 }
 
-async function smtpSend(opts: {
-  host: string; port: number; user: string; pass: string
-  from: string; to: string; subject: string; text: string; html?: string
-}) {
-  const conn = await Deno.connectTls({ hostname: opts.host, port: opts.port })
-  const enc = new TextEncoder()
-  const dec = new TextDecoder()
-  async function read() {
-    const buf = new Uint8Array(8192)
-    const n = await conn.read(buf)
-    return dec.decode(buf.subarray(0, n || 0))
-  }
-  async function cmd(line: string) {
-    await conn.write(enc.encode(line + '\r\n'))
-    return await read()
-  }
-  const banner = await read()
-  if (!/^220/.test(banner)) throw new Error('SMTP banner: ' + banner.slice(0, 120))
-  await cmd('EHLO mcore.phion.my')
-  let r = await cmd('AUTH LOGIN')
-  if (!/^334/.test(r)) throw new Error('AUTH LOGIN: ' + r.slice(0, 120))
-  r = await cmd(btoa(opts.user))
-  if (!/^334/.test(r)) throw new Error('AUTH user: ' + r.slice(0, 120))
-  r = await cmd(btoa(opts.pass))
-  if (!/^235/.test(r)) throw new Error('AUTH pass failed')
-  r = await cmd('MAIL FROM:<' + opts.from + '>')
-  if (!/^250/.test(r)) throw new Error('MAIL FROM: ' + r.slice(0, 120))
-  r = await cmd('RCPT TO:<' + opts.to + '>')
-  if (!/^250/.test(r)) throw new Error('RCPT TO: ' + r.slice(0, 120))
-  r = await cmd('DATA')
-  if (!/^354/.test(r)) throw new Error('DATA: ' + r.slice(0, 120))
-  const boundary = 'mc' + Date.now()
-  const headers =
-    'From: Phion Sdn. Bhd. <' + opts.from + '>\r\n' +
-    'To: <' + opts.to + '>\r\n' +
-    'Subject: ' + opts.subject.replace(/[\r\n]+/g, ' ') + '\r\n' +
-    'MIME-Version: 1.0\r\n' +
-    (opts.html
-      ? 'Content-Type: multipart/alternative; boundary="' + boundary + '"\r\n\r\n' +
-        '--' + boundary + '\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n' + opts.text + '\r\n' +
-        '--' + boundary + '\r\nContent-Type: text/html; charset=utf-8\r\n\r\n' + opts.html + '\r\n' +
-        '--' + boundary + '--'
-      : 'Content-Type: text/plain; charset=utf-8\r\n\r\n' + opts.text)
-  await conn.write(enc.encode(headers + '\r\n.\r\n'))
-  r = await read()
-  await cmd('QUIT').catch(() => '')
-  try { conn.close() } catch { /* ignore */ }
-  if (!/^250/.test(r)) throw new Error('SMTP send: ' + r.slice(0, 160))
-  return r
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ success: false, error: 'POST only' }, 405)
   try {
-    const host = Deno.env.get('SMTP_HOST') || 'smtp.hostinger.com'
-    const port = Number(Deno.env.get('SMTP_PORT') || '465')
-    const user = Deno.env.get('SMTP_USER') || ''
-    const pass = Deno.env.get('SMTP_PASS') || ''
-    const from = Deno.env.get('SMTP_FROM') || user
-    if (!user || !pass) return json({ success: false, error: 'SMTP secrets not set' }, 503)
+    const apiKey = Deno.env.get('RESEND_API_KEY') || ''
+    if (!apiKey) return json({ success: false, error: 'RESEND_API_KEY not set' }, 503)
 
     const body = await req.json().catch(() => ({})) as Record<string, string>
     const tenantId = String(body.tenant_id || '').trim()
@@ -96,8 +43,28 @@ Deno.serve(async (req) => {
       return json({ success: false, error: 'SMTP enabled for Phion only' }, 403)
     }
 
-    await smtpSend({ host, port, user, pass, from, to, subject, text, html })
-    return json({ success: true })
+    const payload: Record<string, unknown> = {
+      from: 'Phion Sdn. Bhd. <hello@phion.my>',
+      to: [to],
+      subject,
+      text,
+    }
+    if (html) payload.html = html
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      const detail = (data.error && (data.error as { message?: string }).message) || data.message || JSON.stringify(data)
+      return json({ success: false, error: String(detail) }, 502)
+    }
+    return json({ success: true, id: data.id || null })
   } catch (e) {
     return json({ success: false, error: (e as Error).message || 'send failed' }, 502)
   }
