@@ -33,6 +33,7 @@ SCRIPTS = [
     ('probation-dash.js', '3'),
     ('hr-list-nickname.js', '1'),
     ('probation-dialog-contrast.js', '2'),
+    ('leave-half-day.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
