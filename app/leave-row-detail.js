@@ -1,4 +1,4 @@
-/* Leave list: tap row to expand details */
+/* Leave list: tap row to expand details + print/email slip */
 (function () {
   function isBm() { return APP.language === 'bm'; }
   function esc(s) {
@@ -16,27 +16,15 @@
   function bind() {
     var wrap = document.getElementById('lv-table-wrap');
     if (!wrap) return;
-    var rows = wrap.querySelectorAll('tbody tr');
     var list = window._leaveRequests || [];
     var used = {};
-    var dataRows = [];
-    rows.forEach(function (tr) {
+    wrap.querySelectorAll('tbody tr').forEach(function (tr, i) {
       if (tr.classList.contains('lv-detail-row')) return;
-      dataRows.push(tr);
-    });
-    dataRows.forEach(function (tr, i) {
-      var rec = list[i];
-      if (!rec) {
-        var name = norm(tr.children[0] && tr.children[0].textContent);
-        rec = list.find(function (r) {
-          if (used[r.id]) return false;
-          return norm(r.employees && r.employees.name) === name;
-        });
-      }
-      if (rec && rec.id) {
-        tr.setAttribute('data-leave-id', rec.id);
-        used[rec.id] = 1;
-      }
+      var rec = list[i] || list.find(function (r) {
+        if (used[r.id]) return false;
+        return norm(r.employees && r.employees.name) === norm(tr.children[0] && tr.children[0].textContent);
+      });
+      if (rec && rec.id) { tr.setAttribute('data-leave-id', rec.id); used[rec.id] = 1; }
       if (tr._lvDet) return;
       tr._lvDet = true;
       tr.style.cursor = 'pointer';
@@ -56,39 +44,35 @@
     detail.className = 'lv-detail-row';
     var cell = document.createElement('td');
     cell.colSpan = Math.max(tr.children.length, 4);
-    cell.style.cssText = 'background:rgba(15,23,42,.55);padding:12px;font-size:13px;color:inherit';
+    cell.style.cssText = 'background:rgba(15,23,42,.55);padding:12px 12px 72px;font-size:13px;color:inherit';
     cell.textContent = isBm() ? 'Memuatkan...' : 'Loading...';
     detail.appendChild(cell);
     tr.parentNode.insertBefore(detail, tr.nextSibling);
-    if (!id && window.sb) {
+    if (!id && window.sb && APP.tenant) {
       var name = norm(tr.children[0] && tr.children[0].textContent);
       var qn = await sb.from('employees').select('id,name,nickname').eq('tenant_id', APP.tenant.id).is('deleted_at', null);
       var emp = (qn.data || []).find(function (e) {
-        return norm(e.nickname) === name || norm(e.name) === name || norm(e.name).indexOf(name.split(' ')[0]) === 0;
+        return norm(e.nickname) === name || norm(e.name) === name;
       });
       if (emp) {
-        var ql = await sb.from('leave_requests').select('id').eq('tenant_id', APP.tenant.id).eq('employee_id', emp.id).is('deleted_at', null).order('start_date', { ascending: false }).limit(5);
+        var ql = await sb.from('leave_requests').select('id').eq('employee_id', emp.id).is('deleted_at', null).order('start_date', { ascending: false }).limit(3);
         if (ql.data && ql.data[0]) id = ql.data[0].id;
       }
     }
-    if (!id || !window.sb) {
-      cell.textContent = isBm() ? 'Tidak jumpa rekod.' : 'Record not found.';
-      return;
-    }
+    if (!id || !window.sb) { cell.textContent = isBm() ? 'Tidak jumpa rekod.' : 'Record not found.'; return; }
+    tr.setAttribute('data-leave-id', id);
     var q = await sb.from('leave_requests')
       .select('id,leave_type,start_date,end_date,days_count,status,reason,is_half_day,half_session,employee_id')
       .eq('id', id).maybeSingle();
     var l = q.data;
-    if (!l) { cell.textContent = (q.error && q.error.message) || (isBm() ? 'Tiada data' : 'No data'); return; }
+    if (!l) { cell.textContent = (q.error && q.error.message) || 'No data'; return; }
     var nick = '';
     try {
       var e = await sb.from('employees').select('name,nickname').eq('id', l.employee_id).maybeSingle();
       nick = (e.data && (e.data.nickname || e.data.name)) || '';
     } catch (err) {}
     var half = l.is_half_day || Number(l.days_count) === 0.5;
-    var sess = l.half_session === 'pm'
-      ? (isBm() ? 'Petang (PM)' : 'Afternoon (PM)')
-      : (l.half_session === 'am' ? (isBm() ? 'Pagi (AM)' : 'Morning (AM)') : '');
+    var sess = l.half_session === 'pm' ? (isBm() ? 'Petang (PM)' : 'Afternoon (PM)') : (l.half_session === 'am' ? (isBm() ? 'Pagi (AM)' : 'Morning (AM)') : '');
     var reason = (l.reason && String(l.reason).trim()) || (isBm() ? '(tiada sebab diisi)' : '(no reason entered)');
     cell.innerHTML =
       '<div style="display:grid;gap:6px">' +
@@ -99,7 +83,19 @@
       '<div><b>' + (isBm() ? 'Tamat' : 'End') + '</b>: ' + esc(l.end_date) + '</div>' +
       '<div><b>' + (isBm() ? 'Hari' : 'Days') + '</b>: ' + esc(l.days_count) + '</div>' +
       '<div><b>Status</b>: ' + esc(l.status || '-') + '</div>' +
-      '<div><b>' + (isBm() ? 'Sebab' : 'Reason') + '</b>: ' + esc(reason) + '</div></div>';
+      '<div><b>' + (isBm() ? 'Sebab' : 'Reason') + '</b>: ' + esc(reason) + '</div>' +
+      '<div class="lv-slip-btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+      '<button type="button" class="btn btn-outline btn-sm" data-slip="print">' + (isBm() ? 'Cetak slip' : 'Print slip') + '</button>' +
+      '<button type="button" class="btn btn-primary btn-sm" data-slip="email">' + (isBm() ? 'Emel ke staff' : 'Email staff') + '</button>' +
+      '</div></div>';
+    cell.querySelector('[data-slip="print"]').onclick = function (ev) {
+      ev.stopPropagation();
+      if (typeof window._leaveSlipPrint === 'function') window._leaveSlipPrint(id);
+    };
+    cell.querySelector('[data-slip="email"]').onclick = function (ev) {
+      ev.stopPropagation();
+      if (typeof window._leaveSlipEmail === 'function') window._leaveSlipEmail(id);
+    };
   }
   function wrap() {
     var orig = window._leaveLoadTable;
