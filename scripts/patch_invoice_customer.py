@@ -7,7 +7,7 @@ SCRIPTS = [
     ('employee-nickname.js', '4'),
     ('sales-commission-edit.js', '1'),
     ('sales-achievements-edit.js', '1'),
-    ('dashboard-ai-layout.js', '3'),
+    ('dashboard-ai-layout.js', '4'),
     ('pv-bank-account.js', '1'),
     ('print-hide-fabs.js', '1'),
     ('role-permissions-sync.js', '3'),
