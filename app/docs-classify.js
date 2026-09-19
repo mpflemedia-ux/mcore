@@ -1,4 +1,3 @@
-/* WHAT then WHO then folder. Uses scanned page text when present. */
 (function () {
   var CLIENTS = [
     ['fade boys', 'Fade Boys Worldwide'],
@@ -13,40 +12,38 @@
   ];
   var OWNER = /phion|puteri nur rabiatul|puteri nur rabiyatul|phubieyas|al-?adawiyah/i;
   var TYPES = [
-    { key: 'StaffLetter', re: /lanjutan percubaan|surat percubaan|probation|confirmation of employment|surat amaran|warning letter|show.?cause|memo intern|staff letter/i, label: 'Staff letter' },
-    { key: 'SSM', re: /ssm|borang d|perakuan pendaftaran|akta pendaftaran|ezbiz|la00\d+/i, label: 'SSM / Borang D' },
-    { key: 'LOA', re: /\bloa\b|surat tawaran|offer letter|letter of offer|letter of appointment|surat lantikan|surat pengesahan/i, label: 'LOA / Offer' },
-    { key: 'Payslip', re: /payslip|pay slip|slip gaji|salary slip/i, label: 'Payslip' },
+    { key: 'Brand', re: /\.(png|jpe?g|webp|gif|svg)$/i, label: 'Brand asset' },
+    { key: 'Brand', re: /\blogo\b|letterhead|brand asset|favicon|icon pack/i, label: 'Brand asset' },
+    { key: 'StaffLetter', re: /lanjutan percubaan|surat percubaan|probation|surat amaran|warning letter|show.?cause/i, label: 'Staff letter' },
+    { key: 'SSM', re: /\bssm\b|borang d|perakuan pendaftaran|akta pendaftaran|ezbiz/i, label: 'SSM / Borang D' },
+    { key: 'LOA', re: /\bloa\b|surat tawaran|offer letter|letter of appointment|surat lantikan/i, label: 'LOA / Offer' },
+    { key: 'Payslip', re: /payslip|pay slip|slip gaji/i, label: 'Payslip' },
     { key: 'PV', re: /\bpv\b|payment voucher|baucar bayaran/i, label: 'Payment Voucher' },
     { key: 'SOA', re: /\bsoa\b|statement of account|penyata akaun/i, label: 'Statement of Account' },
-    { key: 'Claim', re: /claim|tuntutan/i, label: 'Claim' },
-    { key: 'Quotation', re: /quotation|quote|sebut harga/i, label: 'Quotation' },
-    { key: 'PO', re: /\bpo\b|purchase order|pesanan belian/i, label: 'Purchase Order' },
-    { key: 'Contract', re: /contract|agreement|kontrak|perjanjian|nda/i, label: 'Contract' },
-    { key: 'Invoice', re: /invoice|invois|\binv[-_ ]?\d/i, label: 'Invoice' },
-    { key: 'Receipt', re: /receipt|resit/i, label: 'Receipt' },
-    { key: 'Letter', re: /letter|surat/i, label: 'Letter' }
+    { key: 'Claim', re: /\bclaim\b|tuntutan/i, label: 'Claim' },
+    { key: 'Quotation', re: /quotation|sebut harga/i, label: 'Quotation' },
+    { key: 'PO', re: /purchase order|pesanan belian/i, label: 'Purchase Order' },
+    { key: 'Contract', re: /\bcontract\b|\bagreement\b|\bkontrak\b|\bperjanjian\b|\bnda\b/i, label: 'Contract' },
+    { key: 'Invoice', re: /\binvoice\b|\binvois\b|\binv[-_ ]?\d/i, label: 'Invoice' },
+    { key: 'Receipt', re: /\breceipt\b|\bresit\b/i, label: 'Receipt' },
+    { key: 'Letter', re: /\bletter\b|\bsurat\b/i, label: 'Letter' }
   ];
 
   function sectionOf(key) {
+    if (key === 'Brand') return '04_Brand & Marketing';
     if (key === 'StaffLetter' || key === 'Payslip') return '03_Human Resource';
     if (key === 'SSM' || key === 'LOA' || key === 'Contract') return '08_Legal';
     if (key === 'Invoice' || key === 'Receipt' || key === 'PV' || key === 'SOA' || key === 'Claim') return '02_Finance';
     if (key === 'Quotation' || key === 'PO') return '07_Projects';
     if (key === 'Letter') return '01_Administration';
-    return '';
+    return '01_Administration';
   }
 
-  function parseBox(txt) {
-    var who = '', what = '';
-    var m = txt.match(/Who\s*[\u2014\-]\s*(.+)/i);
-    if (m) who = m[1].split('\n')[0].trim();
-    m = txt.match(/What\s*[\u2014\-]\s*(.+)/i);
-    if (m) what = m[1].split('\n')[0].trim();
-    return { who: who, what: what, raw: txt };
-  }
-
-  function detectType(blob) {
+  function detectType(blob, filename) {
+    var name = String(filename || '');
+    if (/\.(png|jpe?g|webp|gif|svg)$/i.test(name) || /logo|letterhead/i.test(name)) {
+      return { key: 'Brand', label: 'Brand asset' };
+    }
     for (var i = 0; i < TYPES.length; i++) {
       if (TYPES[i].re.test(blob)) return TYPES[i];
     }
@@ -65,10 +62,9 @@
     var sec = sectionOf(typeKey);
     var isOwner = OWNER.test(blob) || OWNER.test(who || '');
     var client = detectClient(blob) || detectClient(who || '');
-    if (typeKey === 'StaffLetter' || typeKey === 'Payslip') return '03_Human Resource';
-    if (client && !isOwner) return sec ? ('05_Clients/' + client + '/' + sec) : '';
-    if (isOwner && sec) return sec;
-    return sec || '';
+    if (typeKey === 'Brand' || typeKey === 'StaffLetter' || typeKey === 'Payslip') return sec;
+    if (client && !isOwner) return '05_Clients/' + client + '/' + sec;
+    return sec;
   }
 
   function setLine(box, label, value) {
@@ -85,14 +81,16 @@
     var folder = document.getElementById('docs-folder');
     var box = document.getElementById('docs-result');
     if (!folder || !box) return;
-    var p = parseBox(box.textContent || '');
     var orig = window._docsOrigName || (window._docsLastFile && window._docsLastFile.name) || '';
-    var blob = [orig, window._docsScanText || '', p.what, p.who, p.raw].join(' ');
-    var typ = detectType(blob);
-    var next = folderFor(typ.key, p.who, blob);
+    var who = '';
+    var m = (box.textContent || '').match(/Who\s*[\u2014\-]\s*(.+)/i);
+    if (m) who = m[1].split('\n')[0].trim();
+    var blob = [orig, window._docsScanText || '', who].join(' ');
+    var typ = detectType(blob, orig);
+    var next = folderFor(typ.key, who, blob);
     if (next && folder.value !== next) folder.value = next;
-    if (typ.label) setLine(box, 'What', typ.label);
-    if (next) setLine(box, 'Where', next);
+    setLine(box, 'What', typ.label);
+    setLine(box, 'Where', next);
   }
 
   setInterval(apply, 500);
