@@ -22,11 +22,21 @@
   }
 
   function pickWho(blob, fallback) {
-    var m = blob.match(/ETHYE[^\n,]{0,40}/i);
-    if (m) return m[0].replace(/[^A-Za-z0-9 .&-]/g, ' ').trim();
-    m = blob.match(/BRZKY[^\n,]{0,30}/i);
-    if (m) return m[0].replace(/[^A-Za-z0-9 .&-]/g, ' ').trim();
+    var m = blob.match(/ETHYE\s*SDN\.?\s*BHD\.?/i);
+    if (m) return 'ETHYE SDN. BHD.';
+    m = blob.match(/([A-Z][A-Za-z0-9&.\- ]{2,60}(?:SDN\.?\s*BHD\.?|BERHAD))/i);
+    if (m) return m[1].replace(/\s+/g,' ').trim();
+    if (/BRZKY\s*EMPIRE/i.test(blob)) return 'BRZKY EMPIRE';
     return fallback || '';
+  }
+  function pickPayDate(blob) {
+    var m = blob.match(/(\d{1,2})[-\/](Sep|Sept|September|\d{1,2})[-\/](20\d{2})/i);
+    if (m) {
+      var mon = String(m[2]);
+      var mm = /sep/i.test(mon) ? '09' : String(mon).padStart(2,'0');
+      return m[3] + mm + String(m[1]).padStart(2,'0');
+    }
+    return dateStr();
   }
 
   function decide(text, filename, who) {
@@ -57,7 +67,7 @@
       folder = '';
     }
     var ext = (filename.split('.').pop() || 'pdf');
-    var name = dateStr() + '_' + slug(client || cat) + '_' + cat + '_Final.' + ext;
+    var name = pickPayDate(blob) + '_' + slug(client || cat) + '_' + cat + '_Final.' + ext;
     return { what: what, who: client || '—', where: folder, folder: folder, name: name };
   }
 
@@ -253,7 +263,7 @@
 
   function wrapOpen() {
     var orig = window.openPage;
-    if (typeof orig !== 'function' || orig._docs6) return;
+    if (typeof orig !== 'function' || orig._docs7) return;
     window.openPage = function (page, params) {
       if (page === 'docs' || page === 'documents') {
         if (!allowed()) { showToast(t('Access denied', 'Akses ditolak'), 'error'); return; }
@@ -268,7 +278,7 @@
       }
       return orig.apply(this, arguments);
     };
-    window.openPage._docs6 = true;
+    window.openPage._docs7 = true;
   }
 
   function boot() { wrapOpen(); injectNav(); }
