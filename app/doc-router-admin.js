@@ -14,51 +14,74 @@
     });
   }
   function slug(s) {
-    return String(s || '').replace(/[^a-zA-Z0-9]+/g, '').slice(0, 28) || 'Client';
+    return String(s || '').replace(/[^a-zA-Z0-9]+/g, '').slice(0, 28) || 'Doc';
   }
   function dateStr() {
     var d = new Date();
     return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   }
 
+  function pickWho(blob, fallback) {
+    var m = blob.match(/ETHYE[^\n,]{0,40}/i);
+    if (m) return m[0].replace(/[^A-Za-z0-9 .&-]/g, ' ').trim();
+    m = blob.match(/BRZKY[^\n,]{0,30}/i);
+    if (m) return m[0].replace(/[^A-Za-z0-9 .&-]/g, ' ').trim();
+    return fallback || '';
+  }
+
   function decide(text, filename, who) {
     var blob = (text || '') + ' ' + (filename || '') + ' ' + (who || '');
-    var what = '', folder = '', why = '', client = who || '', cat = 'Doc';
-    if (/fade\s*boys|fadeboys|la0068592|202403134273/i.test(blob)) {
+    var what = '', folder = '', client = who || '', cat = 'Doc';
+    if (/duitnow|fund transfer|from account|recipient'?s duitnow|transaction details|transaction approval/i.test(blob)) {
+      what = t('DuitNow / bank transfer', 'DuitNow / pindahan bank');
+      cat = 'BankTransfer';
+      client = pickWho(blob, client) || 'Bank';
+      folder = '02_Finance/02.4_Bank Statements';
+    } else if (/fade\s*boys|fadeboys|la0068592|202403134273/i.test(blob)) {
       what = 'SSM / Borang D'; cat = 'SSM_BorangD'; client = client || 'Fade Boys Worldwide';
       folder = '05_Clients/Fade Boys Worldwide/01_Contracts & Agreements';
-      why = t('Matched Fade Boys / SSM number.', 'Padan Fade Boys / no. SSM.');
-    } else if (/pb\s*enterprise|pbenterprise/i.test(blob)) {
-      what = t('Client document', 'Dokumen client'); cat = 'ClientDoc'; client = client || 'PB Enterprise';
-      folder = '05_Clients/PB Enterprise/01_Contracts & Agreements';
-      why = t('Matched PB Enterprise.', 'Padan PB Enterprise.');
     } else if (/borang d|perakuan pendaftaran|akta pendaftaran perniagaan|ezbiz|ssm/i.test(blob)) {
       what = 'SSM / Borang D'; cat = 'SSM_BorangD';
       folder = '05_Clients/' + (client || 'Client') + '/01_Contracts & Agreements';
-      why = t('SSM registration certificate detected.', 'Sijil SSM dikesan.');
     } else if (/invoice|\binv\b|resit|receipt/i.test(blob)) {
       what = t('Invoice / receipt', 'Invois / resit'); cat = 'INV';
       folder = '02_Finance/02.1_Invoices (Client)';
-      why = t('Invoice/receipt keywords.', 'Keyword invois/resit.');
+    } else if (/pb\s*enterprise|pbenterprise/i.test(blob)) {
+      what = t('Client document', 'Dokumen client'); cat = 'ClientDoc'; client = client || 'PB Enterprise';
+      folder = '05_Clients/PB Enterprise/01_Contracts & Agreements';
     } else if (client) {
       what = t('Client document', 'Dokumen client'); cat = 'ClientDoc';
       folder = '05_Clients/' + client + '/01_Contracts & Agreements';
-      why = t('AI read organisation name.', 'AI baca nama organisasi.');
     } else {
       what = t('Unknown', 'Tidak dikenal pasti');
       folder = '';
-      why = t('AI could not classify. Edit folder then Confirm.', 'AI tidak dapat klasifikasi. Edit folder kemudian Sahkan.');
     }
     var ext = (filename.split('.').pop() || 'pdf');
     var name = dateStr() + '_' + slug(client || cat) + '_' + cat + '_Final.' + ext;
-    return { what: what, who: client || '—', where: folder, why: why, folder: folder, name: name };
+    return { what: what, who: client || '—', where: folder, folder: folder, name: name };
+  }
+
+  async function pdfAllText(file) {
+    if (typeof _loadPdfJs !== 'function') return '';
+    try {
+      var pdfjsLib = await _loadPdfJs();
+      var pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+      var out = '';
+      var n = Math.min(pdf.numPages, 4);
+      for (var i = 1; i <= n; i++) {
+        var page = await pdf.getPage(i);
+        var content = await page.getTextContent();
+        out += (content.items || []).map(function (x) { return x.str; }).join(' ') + ' ';
+      }
+      return out;
+    } catch (e) { return ''; }
   }
 
   async function fileToImages(file) {
     var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     if (isPdf) {
       if (typeof _pdfPagesToImageBlobs !== 'function') throw new Error('PDF helper missing');
-      return _pdfPagesToImageBlobs(file, 2);
+      return _pdfPagesToImageBlobs(file, 4);
     }
     if (file.type.indexOf('image/') === 0) return [file];
     throw new Error(t('Use PDF or image (JPG/PNG).', 'Guna PDF atau imej (JPG/PNG).'));
@@ -68,13 +91,12 @@
     if (typeof _compressImageToBase64 !== 'function' || typeof _invokeAiProxy !== 'function') {
       throw new Error('AI helpers missing');
     }
-    var first = await _compressImageToBase64(blobs[0]);
+    var images = await Promise.all(blobs.map(function (b) { return _compressImageToBase64(b); }));
     var rec = await _invokeAiProxy({
       action: 'receipt',
-      image_base64: first.base64,
-      mime_type: first.mimeType || 'image/jpeg'
+      image_base64: images[images.length - 1].base64,
+      mime_type: images[images.length - 1].mimeType || 'image/jpeg'
     });
-    var images = await Promise.all(blobs.map(function (b) { return _compressImageToBase64(b); }));
     var cust = await _invokeAiProxy({
       action: 'scan_customer_document',
       images: images.map(function (img) {
@@ -90,7 +112,7 @@
     }
     var recData = (rec.data && rec.data.success && rec.data.data) ? rec.data.data : {};
     if (!who) who = String(recData.vendor || recData.merchant || '').trim();
-    extra += ' ' + String(recData.description || '');
+    extra += ' ' + String(recData.description || '') + ' ' + String(recData.amount || '');
     return { who: who, extra: extra, raw: recData };
   }
 
@@ -133,7 +155,7 @@
       '<div class="card" style="padding:16px;max-width:760px">' +
       '<h2 style="margin:0 0 8px">' + t('Documents', 'Dokumen') + '</h2>' +
       '<p style="color:var(--text-2);font-size:13px">' +
-        t('1. Upload  ·  2. AI scan  ·  3. Confirm or Try again', '1. Muat naik  ·  2. AI imbas  ·  3. Sahkan atau Cuba lagi') +
+        t('1. Upload  ·  2. AI scan all pages  ·  3. Confirm or Try again', '1. Muat naik  ·  2. AI imbas semua page  ·  3. Sahkan atau Cuba lagi') +
       '</p>' +
       '<input id="docs-file" type="file" accept="image/*,application/pdf">' +
       '<div id="docs-status" style="margin-top:8px;font-size:13px;color:var(--text-2)"></div>' +
@@ -151,13 +173,15 @@
     window._docsLastFile = file;
     var status = document.getElementById('docs-status');
     var box = document.getElementById('docs-result');
-    if (status) status.textContent = t('AI reading document…', 'AI membaca dokumen…');
+    if (status) status.textContent = t('AI reading all pages…', 'AI membaca semua page…');
     if (box) box.innerHTML = '';
     try {
+      var text = '';
+      if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') text = await pdfAllText(file);
       var blobs = await fileToImages(file);
       if (status) status.textContent = t('AI classifying…', 'AI mengelaskan…');
       var ai = await aiScanImages(blobs);
-      var d = decide(ai.extra, file.name, ai.who);
+      var d = decide(text + ' ' + ai.extra, file.name, ai.who);
       renderResult(file, d);
       if (status) status.textContent = t('Review the box, then Confirm.', 'Semak petak, kemudian Sahkan.');
     } catch (e) {
@@ -176,7 +200,6 @@
           '<div><b>' + t('What', 'Apa') + '</b> — ' + esc(d.what) + '</div>' +
           '<div style="margin-top:6px"><b>' + t('Who', 'Siapa') + '</b> — ' + esc(d.who) + '</div>' +
           '<div style="margin-top:6px"><b>' + t('Where', 'Mana') + '</b> — ' + esc(d.where || t('not set', 'belum ditetapkan')) + '</div>' +
-          '<div style="margin-top:6px"><b>' + t('Why', 'Kenapa') + '</b> — ' + esc(d.why) + '</div>' +
         '</div>' +
         '<label class="form-label">' + t('New filename', 'Nama fail baru') + '</label>' +
         '<input class="form-input" id="docs-name" value="' + esc(d.name) + '">' +
@@ -230,7 +253,7 @@
 
   function wrapOpen() {
     var orig = window.openPage;
-    if (typeof orig !== 'function' || orig._docs5) return;
+    if (typeof orig !== 'function' || orig._docs6) return;
     window.openPage = function (page, params) {
       if (page === 'docs' || page === 'documents') {
         if (!allowed()) { showToast(t('Access denied', 'Akses ditolak'), 'error'); return; }
@@ -245,7 +268,7 @@
       }
       return orig.apply(this, arguments);
     };
-    window.openPage._docs5 = true;
+    window.openPage._docs6 = true;
   }
 
   function boot() { wrapOpen(); injectNav(); }
