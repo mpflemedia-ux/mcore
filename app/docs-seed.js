@@ -1,29 +1,47 @@
 /* Seed Phion SOP folders + new client pack. */
 (function () {
   var SOP = [
-    '01_Administration',
-    '02_Finance',
-    '03_Human Resource',
-    '04_Brand & Marketing',
-    '05_Clients',
-    '06_Partners & Vendors',
-    '07_Projects',
-    '08_Legal',
-    '09_Operations',
-    '99_Archive'
+    '01_Administration','02_Finance','03_Human Resource','04_Brand & Marketing',
+    '05_Clients','06_Partners & Vendors','07_Projects','08_Legal','09_Operations','99_Archive'
   ];
   var ROOT = '1XLo0KDErqPiGDXXiuwzNa9nW7TF0Kn74';
+  var CID = '490414473408-0gb8sv4d1s51rvorepp7bna1j7igenj7.apps.googleusercontent.com';
   var cache = {};
 
   function token() {
     return window._docsAccessToken || (typeof window._docsGetToken === 'function' && window._docsGetToken()) || null;
   }
-  function rootId() { return ROOT; }
   function t(en, bm) { return APP.language === 'bm' ? bm : en; }
+  function status(msg) {
+    var el = document.getElementById('docs-seed-st');
+    if (el) el.textContent = msg;
+  }
+
+  function ensureToken() {
+    return new Promise(function (resolve, reject) {
+      var tok = token();
+      if (tok) return resolve(tok);
+      if (!window.google || !google.accounts || !google.accounts.oauth2) {
+        return reject(new Error(t('Connect Drive first.', 'Sambung Drive dulu.')));
+      }
+      var client = google.accounts.oauth2.initTokenClient({
+        client_id: CID,
+        scope: 'https://www.googleapis.com/auth/drive',
+        callback: function (resp) {
+          if (resp.error || !resp.access_token) {
+            reject(new Error(resp.error || 'No token'));
+            return;
+          }
+          window._docsAccessToken = resp.access_token;
+          resolve(resp.access_token);
+        }
+      });
+      client.requestAccessToken({ prompt: '' });
+    });
+  }
 
   async function api(url, opts) {
-    var tok = token();
-    if (!tok) throw new Error(t('Connect Drive first.', 'Sambung Drive dulu.'));
+    var tok = await ensureToken();
     opts = opts || {};
     opts.headers = Object.assign({ Authorization: 'Bearer ' + tok }, opts.headers || {});
     var res = await fetch(url, opts);
@@ -62,15 +80,11 @@
     return (data.files || []).map(function (f) { return f.name; }).sort();
   }
 
-  function status(msg) {
-    var el = document.getElementById('docs-seed-st');
-    if (el) el.textContent = msg;
-  }
-
   async function seedRoot() {
     try {
       status(t('Seeding Phion SB folders…', 'Sedang seed folder Phion SB…'));
-      var ids = await seedInto(rootId());
+      await ensureToken();
+      var ids = await seedInto(ROOT);
       var names = await listClients(ids['05_Clients']);
       status(t('Root OK. Clients: ', 'Root OK. Client: ') + (names.join(', ') || '—'));
       showToast(t('Folders seeded', 'Folder sudah di-seed'), 'success');
@@ -87,7 +101,8 @@
     if (!name) return;
     try {
       status(t('Creating client…', 'Mencipta client…'));
-      var rootIds = await seedInto(rootId());
+      await ensureToken();
+      var rootIds = await seedInto(ROOT);
       var clientId = await child(rootIds['05_Clients'], name);
       await seedInto(clientId);
       status(t('Created ', 'Dicipta ') + '05_Clients/' + name);
