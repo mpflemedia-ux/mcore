@@ -6,6 +6,7 @@
   }
   function allowed() { return email() === ALLOW; }
   function isBm() { return APP.language === 'bm'; }
+  function t(en, bm) { return isBm() ? bm : en; }
   function mainEl() { return document.getElementById('main'); }
 
   var RULES = [
@@ -44,16 +45,21 @@
       if (gone) gone.remove();
       return;
     }
-    if (document.getElementById('nav-docs')) return;
+    var label = t('Documents', 'Dokumen');
+    var existing = document.getElementById('nav-docs');
+    if (existing) {
+      var sp = existing.querySelector('span');
+      if (sp && sp.textContent !== label) sp.textContent = label;
+      return;
+    }
     var nav = document.querySelector('.sidebar-nav') || document.getElementById('sidebar-nav') || document.querySelector('nav');
     if (!nav) return;
     var a = document.createElement('div');
     a.id = 'nav-docs';
     a.className = 'nav-item';
-    a.dataset.page = 'docs';
     a.setAttribute('data-page', 'docs');
     a.style.cssText = 'cursor:pointer';
-    a.innerHTML = '<i class="ti ti-folders"></i><span>Documents</span>';
+    a.innerHTML = '<i class="ti ti-folders"></i><span>' + label + '</span>';
     a.onclick = function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -66,16 +72,18 @@
     var root = mainEl();
     if (!root) return;
     if (!allowed()) {
-      root.innerHTML = '<div class="empty-state"><h3>Access denied</h3></div>';
+      root.innerHTML = '<div class="empty-state"><h3>' + t('Access denied', 'Akses ditolak') + '</h3></div>';
       return;
     }
     APP.currentPage = 'docs';
     var ht = document.getElementById('header-title');
-    if (ht) ht.textContent = 'Documents';
+    if (ht) ht.textContent = t('Documents', 'Dokumen');
     root.innerHTML =
       '<div class="card" style="padding:16px;max-width:720px">' +
-      '<h2 style="margin:0 0 8px">Documents</h2>' +
-      '<p style="color:var(--text-2);font-size:13px">Upload → semak folder & nama → Confirm.</p>' +
+      '<h2 style="margin:0 0 8px">' + t('Documents', 'Dokumen') + '</h2>' +
+      '<p style="color:var(--text-2);font-size:13px">' +
+        t('Upload → review folder & name → Confirm.', 'Muat naik → semak folder & nama → Sahkan.') +
+      '</p>' +
       '<input id="docs-file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple>' +
       '<div id="docs-list" style="margin-top:12px"></div>' +
       '<div id="docs-log" style="margin-top:16px;font-size:12px;color:var(--text-2)"></div>' +
@@ -93,12 +101,14 @@
         wrap.style.cssText = 'padding:12px;margin-top:10px';
         wrap.innerHTML =
           '<div style="font-weight:600;word-break:break-all">' + f.name + '</div>' +
-          (sug.unmatched ? '<div style="color:var(--warning);font-size:12px;margin-top:4px">Unmatched — isi folder manual</div>' : '') +
-          '<label class="form-label">Destination folder</label>' +
+          (sug.unmatched ? '<div style="color:var(--warning);font-size:12px;margin-top:4px">' +
+            t('Unmatched — fill folder manually', 'Tidak sepadan — isi folder sendiri') + '</div>' : '') +
+          '<label class="form-label">' + t('Destination folder', 'Folder destinasi') + '</label>' +
           '<input class="form-input" id="' + id + '-folder" value="' + String(sug.folder).replace(/"/g,'') + '">' +
-          '<label class="form-label">New filename</label>' +
+          '<label class="form-label">' + t('New filename', 'Nama fail baru') + '</label>' +
           '<input class="form-input" id="' + id + '-name" value="' + String(sug.name).replace(/"/g,'') + '">' +
-          '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px">Confirm</button>';
+          '<button type="button" class="btn btn-primary btn-sm" style="margin-top:8px">' +
+            t('Confirm', 'Sahkan') + '</button>';
         wrap.querySelector('button').onclick = function () {
           confirmRow(f, document.getElementById(id + '-folder').value.trim(), document.getElementById(id + '-name').value.trim(), sug);
         };
@@ -109,7 +119,10 @@
   };
 
   async function confirmRow(file, folder, name, sug) {
-    if (!folder || !name) { showToast(isBm() ? 'Isi folder + nama' : 'Folder + name required', 'error'); return; }
+    if (!folder || !name) {
+      showToast(t('Folder + name required', 'Isi folder + nama'), 'error');
+      return;
+    }
     try {
       var res = await sb.from('doc_routes').insert({
         tenant_id: APP.tenant && APP.tenant.id,
@@ -123,10 +136,10 @@
         status: 'filed'
       });
       if (res.error) { showToast(res.error.message, 'error'); return; }
-      showToast('Filed: ' + folder + '/' + name, 'success');
+      showToast(t('Saved', 'Disimpan') + ': ' + folder + '/' + name, 'success');
       loadLog();
     } catch (e) {
-      showToast(e.message || 'Save failed', 'error');
+      showToast(e.message || t('Save failed', 'Gagal simpan'), 'error');
     }
   }
 
@@ -135,19 +148,20 @@
     if (!el || !window.sb) return;
     var res = await sb.from('doc_routes').select('original_name,final_folder,final_name,created_at').order('created_at', { ascending: false }).limit(20);
     if (res.error) { el.textContent = res.error.message; return; }
-    el.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Recent</div>' +
-      ((res.data || []).map(function (r) {
+    var rows = res.data || [];
+    el.innerHTML = '<div style="font-weight:600;margin-bottom:6px">' + t('Recent', 'Terkini') + '</div>' +
+      (rows.length ? rows.map(function (r) {
         return '<div>' + String(r.created_at || '').slice(0, 16) + ' · ' + r.final_folder + '/' + r.final_name + '</div>';
-      }).join('') || 'Tiada lagi.');
+      }).join('') : t('None yet.', 'Tiada lagi.'));
   }
 
   function wrapOpen() {
     var orig = window.openPage;
     if (typeof orig !== 'function') return;
-    if (orig._docs2) return;
+    if (orig._docs3) return;
     window.openPage = function (page, params) {
       if (page === 'docs' || page === 'documents') {
-        if (!allowed()) { showToast('Access denied', 'error'); return; }
+        if (!allowed()) { showToast(t('Access denied', 'Akses ditolak'), 'error'); return; }
         try { _clearUiOverlays(); } catch (e) {}
         try { _closeMobileSidebar(); } catch (e) {}
         APP.currentPage = 'docs';
@@ -155,13 +169,13 @@
           el.classList.toggle('active', el.getAttribute('data-page') === 'docs');
         });
         var title = document.getElementById('header-title');
-        if (title) title.textContent = 'Documents';
+        if (title) title.textContent = t('Documents', 'Dokumen');
         window.renderDocs();
         return;
       }
       return orig.apply(this, arguments);
     };
-    window.openPage._docs2 = true;
+    window.openPage._docs3 = true;
   }
 
   function boot() { wrapOpen(); injectNav(); }
