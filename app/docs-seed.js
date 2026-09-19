@@ -1,4 +1,4 @@
-/* Seed Phion SOP folders + new client pack. Email-gated page only. */
+/* Seed Phion SOP folders + new client pack. */
 (function () {
   var SOP = [
     '01_Administration',
@@ -18,10 +18,7 @@
   function token() {
     return window._docsAccessToken || (typeof window._docsGetToken === 'function' && window._docsGetToken()) || null;
   }
-  function rootId() {
-    var el = document.getElementById('docs-root');
-    return (el && el.value.trim()) || localStorage.getItem('mcore_docs_drive_root') || ROOT;
-  }
+  function rootId() { return ROOT; }
   function t(en, bm) { return APP.language === 'bm' ? bm : en; }
 
   async function api(url, opts) {
@@ -93,7 +90,7 @@
       var rootIds = await seedInto(rootId());
       var clientId = await child(rootIds['05_Clients'], name);
       await seedInto(clientId);
-      status(t('Created ', 'Dicipta ') + '05_Clients/' + name + ' + SOP folders');
+      status(t('Created ', 'Dicipta ') + '05_Clients/' + name);
       showToast(t('Client folder ready', 'Folder client sedia'), 'success');
     } catch (e) {
       status(e.message || 'Failed');
