@@ -12,15 +12,21 @@
     if (/nuhea/.test(s)) return 'Nuhea';
     return null;
   }
-  function slotOf(s) {
+  function phionRel(s) {
     if (/borang d|perakuan pendaftaran|akta pendaftaran|ezbiz|\bssm\b|la00\d+|certificate of business|business registration/.test(s))
-      return '01_Contracts & Agreements';
-    if (/payment voucher|\bpv\b|invoice|invois|receipt|resit|claim|tuntutan|soa/.test(s))
-      return '06_Invoices & Payment';
-    if (/quotation|proposal|sebut harga|sales order/.test(s))
-      return '02_Proposals & Quotations';
+      return '01_Administration/01.1_Company Registration & SSM';
+    if (/payment voucher|\bpv\b|claim|tuntutan/.test(s))
+      return '02_Finance/02.6_Payment Vouchers & Claims';
+    if (/invoice|invois|receipt|resit|soa/.test(s))
+      return '02_Finance/02.1_Invoices (Client)';
+    if (/bank statement|penyata bank/.test(s))
+      return '02_Finance/02.3_Bank Statements';
     if (/contract|agreement|kontrak|nda|mou/.test(s))
-      return '01_Contracts & Agreements';
+      return '08_Legal/08.1_Master Contracts';
+    if (/quotation|proposal|sebut harga|sales order/.test(s))
+      return '07_Projects';
+    if (/logo|letterhead|brand/.test(s))
+      return '04_Brand & Marketing/04.2_Logo & Visual Assets';
     return null;
   }
   function apply() {
@@ -28,10 +34,10 @@
     if (!cls) return;
     var s = blob();
     var client = clientOf(s);
-    var slot = slotOf(s);
-    if (client && slot) {
+    var rel = phionRel(s);
+    if (client && rel) {
       cls.who = client;
-      cls.folder = '05_Clients/' + client + '/' + slot;
+      cls.folder = '05_Clients/' + client + '/' + rel;
       if (/borang d|ssm|perakuan pendaftaran/.test(s)) cls.what = 'SSM / Borang D';
     }
   }
