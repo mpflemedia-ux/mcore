@@ -22,7 +22,6 @@
     if (/operation/i.test(w)) return '09_Operations';
     return '01_Administration';
   }
-
   function parseBox(txt) {
     var who = '', what = '';
     var m = txt.match(/Who\s*[\u2014\-]\s*(.+)/i);
@@ -31,7 +30,6 @@
     if (m) what = m[1].split('\n')[0].trim();
     return { who: who, what: what };
   }
-
   function matchClient(blob) {
     var s = String(blob || '').toLowerCase();
     for (var i = 0; i < CLIENTS.length; i++) {
@@ -39,7 +37,6 @@
     }
     return null;
   }
-
   function target(who, what) {
     var blob = who + ' ' + what;
     var sec = section(what);
@@ -48,7 +45,6 @@
     if (c && !OWNER.test(c)) return '05_Clients/' + c + '/' + sec;
     return sec;
   }
-
   function apply() {
     var folder = document.getElementById('docs-folder');
     var box = document.getElementById('docs-result');
@@ -57,7 +53,14 @@
     if (!p.what && !p.who) return;
     var next = target(p.who, p.what);
     if (next && folder.value !== next) folder.value = next;
+    var nodes = box.querySelectorAll('div');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.querySelector('b') && /^\s*Where/i.test(el.textContent) && el.children.length <= 2) {
+        var want = '<b>Where</b> \u2014 ' + folder.value;
+        if (el.innerHTML.indexOf(folder.value) < 0) el.innerHTML = want;
+      }
+    }
   }
-
   setInterval(apply, 500);
 })();

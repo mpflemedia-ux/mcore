@@ -43,7 +43,7 @@ SCRIPTS = [
     ('docs-token-hook.js', '1'),
     ('docs-seed.js', '3'),
     ('docs-ssm-legal.js', '1'),
-    ('docs-route-owner.js', '1'),
+    ('docs-route-owner.js', '2'),
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
 ]
