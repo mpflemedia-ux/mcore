@@ -1,4 +1,4 @@
-/* Documents classifier: WHAT then WHO then folder matrix. */
+/* WHAT then WHO then folder. Uses scanned page text when present. */
 (function () {
   var CLIENTS = [
     ['fade boys', 'Fade Boys Worldwide'],
@@ -13,8 +13,9 @@
   ];
   var OWNER = /phion|puteri nur rabiatul|puteri nur rabiyatul|phubieyas|al-?adawiyah/i;
   var TYPES = [
+    { key: 'StaffLetter', re: /lanjutan percubaan|surat percubaan|probation|confirmation of employment|surat amaran|warning letter|show.?cause|memo intern|staff letter/i, label: 'Staff letter' },
     { key: 'SSM', re: /ssm|borang d|perakuan pendaftaran|akta pendaftaran|ezbiz|la00\d+/i, label: 'SSM / Borang D' },
-    { key: 'LOA', re: /\bloa\b|surat tawaran|offer letter|letter of offer|letter of appointment|confirmation letter|surat lantikan|surat pengesahan/i, label: 'LOA / Offer' },
+    { key: 'LOA', re: /\bloa\b|surat tawaran|offer letter|letter of offer|letter of appointment|surat lantikan|surat pengesahan/i, label: 'LOA / Offer' },
     { key: 'Payslip', re: /payslip|pay slip|slip gaji|salary slip/i, label: 'Payslip' },
     { key: 'PV', re: /\bpv\b|payment voucher|baucar bayaran/i, label: 'Payment Voucher' },
     { key: 'SOA', re: /\bsoa\b|statement of account|penyata akaun/i, label: 'Statement of Account' },
@@ -28,29 +29,28 @@
   ];
 
   function sectionOf(key) {
+    if (key === 'StaffLetter' || key === 'Payslip') return '03_Human Resource';
     if (key === 'SSM' || key === 'LOA' || key === 'Contract') return '08_Legal';
     if (key === 'Invoice' || key === 'Receipt' || key === 'PV' || key === 'SOA' || key === 'Claim') return '02_Finance';
-    if (key === 'Payslip') return '03_Human Resource';
     if (key === 'Quotation' || key === 'PO') return '07_Projects';
+    if (key === 'Letter') return '01_Administration';
     return '';
   }
 
   function parseBox(txt) {
-    var who = '', what = '', name = '';
+    var who = '', what = '';
     var m = txt.match(/Who\s*[\u2014\-]\s*(.+)/i);
     if (m) who = m[1].split('\n')[0].trim();
     m = txt.match(/What\s*[\u2014\-]\s*(.+)/i);
     if (m) what = m[1].split('\n')[0].trim();
-    var fn = document.getElementById('docs-name');
-    if (fn) name = fn.value || '';
-    return { who: who, what: what, name: name, raw: txt };
+    return { who: who, what: what, raw: txt };
   }
 
   function detectType(blob) {
     for (var i = 0; i < TYPES.length; i++) {
       if (TYPES[i].re.test(blob)) return TYPES[i];
     }
-    return { key: 'Other', re: /./, label: 'Other' };
+    return { key: 'Other', label: 'Other' };
   }
 
   function detectClient(blob) {
@@ -65,23 +65,18 @@
     var sec = sectionOf(typeKey);
     var isOwner = OWNER.test(blob) || OWNER.test(who || '');
     var client = detectClient(blob) || detectClient(who || '');
-    if (typeKey === 'Payslip') return '03_Human Resource';
-    if (client && !isOwner) {
-      return sec ? ('05_Clients/' + client + '/' + sec) : '';
-    }
+    if (typeKey === 'StaffLetter' || typeKey === 'Payslip') return '03_Human Resource';
+    if (client && !isOwner) return sec ? ('05_Clients/' + client + '/' + sec) : '';
     if (isOwner && sec) return sec;
     return sec || '';
   }
 
-  function setWhere(box, path) {
+  function setLine(box, label, value) {
     var nodes = box.querySelectorAll('div');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
-      if (el.querySelector('b') && /^\s*Where/i.test(el.textContent) && el.children.length <= 2) {
-        el.innerHTML = '<b>Where</b> \u2014 ' + path;
-      }
-      if (el.querySelector('b') && /^\s*What/i.test(el.textContent) && el.children.length <= 2 && window._docsWhatLabel) {
-        el.innerHTML = '<b>What</b> \u2014 ' + window._docsWhatLabel;
+      if (el.querySelector('b') && el.textContent.indexOf(label) === 0 && el.children.length <= 2) {
+        el.innerHTML = '<b>' + label + '</b> \u2014 ' + value;
       }
     }
   }
@@ -91,12 +86,13 @@
     var box = document.getElementById('docs-result');
     if (!folder || !box) return;
     var p = parseBox(box.textContent || '');
-    var blob = [p.what, p.who, p.name, p.raw].join(' ');
+    var orig = window._docsOrigName || (window._docsLastFile && window._docsLastFile.name) || '';
+    var blob = [orig, window._docsScanText || '', p.what, p.who, p.raw].join(' ');
     var typ = detectType(blob);
-    window._docsWhatLabel = typ.label;
     var next = folderFor(typ.key, p.who, blob);
     if (next && folder.value !== next) folder.value = next;
-    if (next) setWhere(box, next);
+    if (typ.label) setLine(box, 'What', typ.label);
+    if (next) setLine(box, 'Where', next);
   }
 
   setInterval(apply, 500);
