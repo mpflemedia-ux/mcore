@@ -14,31 +14,36 @@
     ['print expert', 'PRINT EXPERT SDN BHD']
   ];
   var OWNER = /phion|puteri nur rabiatul|puteri nur rabiyatul|phubieyas|al-?adawiyah/i;
+
+  function norm(s) {
+    return String(s || '').replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
+  }
+
   var TYPES = [
-    { key: 'Brand', re: /\.(png|jpe?g|webp|gif|svg|ai)$/i, label: 'Brand asset' },
+    { key: 'Brand', re: /\.(png|jpe?g|webp|gif|svg|ai)\b/i, label: 'Brand asset' },
     { key: 'Brand', re: /\blogo\b|letterhead|brand book|brand guide|favicon|banner|poster|name card|kad nama/i, label: 'Brand asset' },
-    { key: 'Bank', re: /bank statement|penyata bank|bank-?in/i, label: 'Bank statement' },
+    { key: 'StaffLetter', re: /lanjutan percubaan|surat percubaan|extension of probation|probation period|probation|percubaan|surat amaran|warning letter|show cause|resign|termination|penamatan|surat tawaran|offer letter|\bloa\b|surat lantikan|confirmation letter/i, label: 'Staff letter' },
+    { key: 'Bank', re: /bank statement|penyata bank|bank in/i, label: 'Bank statement' },
     { key: 'Tax', re: /\bsst\b|form c|audited|cp204|lhdn|income tax/i, label: 'Tax / accounts' },
     { key: 'EPF', re: /\bepf\b|kwsp|\bsocso\b|perkeso|\beis\b|\bpcb\b/i, label: 'EPF / SOCSO' },
-    { key: 'StaffLetter', re: /lanjutan percubaan|surat percubaan|probation|surat amaran|warning letter|show.?cause|resign|termination|penamatan|surat tawaran|offer letter|\bloa\b|surat lantikan|confirmation letter/i, label: 'Staff letter' },
     { key: 'Payslip', re: /payslip|pay slip|slip gaji/i, label: 'Payslip' },
     { key: 'Leave', re: /medical cert|\bmc\b|sick leave|cuti|leave form|leave application/i, label: 'Leave / MC' },
-    { key: 'CV', re: /\bcv\b|resume|borang kerja|job description|\bjd\b/i, label: 'Recruitment' },
+    { key: 'CV', re: /\bcv\b|resume|borang kerja|job description/i, label: 'Recruitment' },
     { key: 'SSM', re: /\bssm\b|borang d|form 9|form 24|form 49|perakuan pendaftaran|annual return|constitution/i, label: 'SSM / company secretarial' },
-    { key: 'NDA', re: /\bnda\b|\bmou\b|non-?disclosure/i, label: 'NDA / MOU' },
-    { key: 'Contract', re: /\bcontract\b|\bagreement\b|\bkontrak\b|\bperjanjian\b|tenancy|scope of (work|service)/i, label: 'Contract' },
+    { key: 'NDA', re: /\bnda\b|\bmou\b|non disclosure/i, label: 'NDA / MOU' },
+    { key: 'Contract', re: /\bcontract\b|\bagreement\b|\bkontrak\b|\bperjanjian\b|tenancy|scope of/i, label: 'Contract' },
     { key: 'License', re: /\blesen\b|\bpermit\b|\bpbt\b/i, label: 'Licence' },
     { key: 'Minutes', re: /\bminit\b|minutes of meeting|board meeting|agm|egm/i, label: 'Minutes' },
-    { key: 'Policy', re: /policy|sop_|employee handbook|code of conduct|pdpa/i, label: 'Policy / SOP' },
+    { key: 'Policy', re: /policy|employee handbook|code of conduct|pdpa/i, label: 'Policy / SOP' },
     { key: 'PV', re: /\bpv\b|payment voucher|baucar bayaran/i, label: 'Payment Voucher' },
     { key: 'SOA', re: /\bsoa\b|statement of account|penyata akaun/i, label: 'SOA' },
     { key: 'CN', re: /credit note|debit note|nota kredit/i, label: 'Credit note' },
     { key: 'Claim', re: /\bclaim\b|tuntutan/i, label: 'Claim' },
-    { key: 'SO', re: /sales order|\bsokl-/i, label: 'Sales order' },
+    { key: 'SO', re: /sales order|sokl /i, label: 'Sales order' },
     { key: 'Quotation', re: /quotation|sebut harga/i, label: 'Quotation' },
     { key: 'PO', re: /purchase order|pesanan belian/i, label: 'PO' },
-    { key: 'Proposal', re: /proposal|pitch deck|pembentangan|brief/i, label: 'Proposal / brief' },
-    { key: 'Invoice', re: /\binvoice\b|\binvois\b|\binv[-_ ]?\d/i, label: 'Invoice' },
+    { key: 'Proposal', re: /proposal|pitch deck|pembentangan|\bbrief\b/i, label: 'Proposal / brief' },
+    { key: 'Invoice', re: /\binvoice\b|\binvois\b|\binv \d/i, label: 'Invoice' },
     { key: 'Receipt', re: /\breceipt\b|\bresit\b|payment proof/i, label: 'Receipt' },
     { key: 'Letter', re: /\bletter\b|\bsurat\b/i, label: 'Letter' }
   ];
@@ -74,7 +79,6 @@
     };
     return map[key] || '01_Administration';
   }
-
   function clientSlot(key) {
     var map = {
       SSM: '01_Contracts & Agreements',
@@ -92,10 +96,9 @@
     };
     return map[key] || '07_Meeting Notes & Communication';
   }
-
   function detectType(blob, filename) {
-    var name = String(filename || '');
-    if (/\.(png|jpe?g|webp|gif|svg|ai)$/i.test(name) || /logo|letterhead|banner|poster/i.test(name)) {
+    var name = norm(filename);
+    if (/\.(png|jpe?g|webp|gif|svg|ai)\b/i.test(filename || '') || /logo|letterhead|banner|poster/i.test(name)) {
       return { key: 'Brand', label: 'Brand asset' };
     }
     for (var i = 0; i < TYPES.length; i++) {
@@ -117,13 +120,8 @@
     if (typeKey === 'Brand' || typeKey === 'StaffLetter' || typeKey === 'Payslip' || typeKey === 'Leave' || typeKey === 'CV' || typeKey === 'EPF') {
       return phionPath(typeKey);
     }
-    if (vendor && !client) {
-      return '06_Partners & Vendors/06.2_Vendors/' + vendor;
-    }
-    if (client && !isOwner) {
-      return '05_Clients/' + client + '/' + clientSlot(typeKey);
-    }
-    if (typeKey === 'Invoice' && vendor) return '02_Finance/02.2_Invoices (Vendor)';
+    if (vendor && !client) return '06_Partners & Vendors/06.2_Vendors/' + vendor;
+    if (client && !isOwner) return '05_Clients/' + client + '/' + clientSlot(typeKey);
     return phionPath(typeKey);
   }
   function setLine(box, label, value) {
@@ -143,12 +141,12 @@
     var who = '';
     var m = (box.textContent || '').match(/Who\s*[\u2014\-]\s*(.+)/i);
     if (m) who = m[1].split('\n')[0].trim();
-    var blob = [orig, window._docsScanText || '', who].join(' ');
+    var blob = norm([orig, window._docsScanText || '', who, box.textContent || ''].join(' '));
     var typ = detectType(blob, orig);
     var next = folderFor(typ.key, who, blob);
-    if (next && folder.value !== next) folder.value = next;
+    if (next) folder.value = next;
     setLine(box, 'What', typ.label);
     setLine(box, 'Where', next);
   }
-  setInterval(apply, 500);
+  setInterval(apply, 400);
 })();
