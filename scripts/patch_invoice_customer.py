@@ -38,7 +38,7 @@ SCRIPTS = [
     ('leave-slip.js', '4'),
     ('leave-email-click.js', '1'),
     ('outstation-amend.js', '1'),
-    ('doc-drive-root.js', '1'),
+    ('doc-drive-root.js', '2'),
     ('doc-router-admin.js', '6'),
 ]
 for name, ver in SCRIPTS:
