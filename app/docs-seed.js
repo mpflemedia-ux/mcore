@@ -1,7 +1,60 @@
 (function () {
   var ROOT = '1XLo0KDErqPiGDXXiuwzNa9nW7TF0Kn74';
   var CID = '490414473408-0gb8sv4d1s51rvorepp7bna1j7igenj7.apps.googleusercontent.com';
-  var TREE = {
+  var PHION_FULL = {
+    '01_Administration': {
+      '01.1_Company Registration & SSM': ['Form 9','Form 24','Form 49','Constitution_MA','Annual Return','SSM Correspondence'],
+      '01.2_Licenses & Permits': ['Business Premise License','Industry License','Renewal Tracking'],
+      '01.3_Policies & SOPs': ['Company Policies','Standard Operating Procedures','Employee Handbook'],
+      '01.4_Meeting Minutes': ['Board of Directors','Management Meeting','AGM_EGM'],
+      '01.5_Office & Facilities': ['Tenancy Agreement','Utility Bills','Office Inventory']
+    },
+    '02_Finance': {
+      '02.1_Invoices (Client)': ['Outstanding','Credit Notes'],
+      '02.2_Invoices (Vendor)': ['Recurring Vendors'],
+      '02.3_Bank Statements': [],
+      '02.4_Budgets & Financial Reports': ['Annual Budget','Monthly Management Account','Cashflow Projection'],
+      '02.5_Tax & Accounting': ['SST Returns','Income Tax','Audited Financial Statements','LHDN Letters'],
+      '02.6_Payment Vouchers & Claims': ['Staff Claims','Payment Vouchers']
+    },
+    '03_Human Resource': {
+      '03.1_Employee Records': ['Active Employees','Former Employees'],
+      '03.2_Payroll & Claims': ['Payslips','Claims & Reimbursement','EPF_SOCSO'],
+      '03.3_Recruitment': ['Job Descriptions','Candidates','Offer Letters'],
+      '03.4_Training & Development': ['Training Calendar','Certificates'],
+      '03.5_Leave & Attendance': ['Leave Applications','Leave Balance'],
+      '03.6_HR Policies & Forms': []
+    },
+    '04_Brand & Marketing': {
+      '04.1_Brand Guidelines': [],
+      '04.2_Logo & Visual Assets': ['Primary Logo','Secondary Logo','Social Media Kit'],
+      '04.3_Marketing Materials': ['Brochure','Pitch Deck','Name Card','Email Signature'],
+      '04.4_Website & Digital': [],
+      '04.5_Social Media': ['Content Calendar','Graphics','Analytics'],
+      '04.6_Campaigns': []
+    },
+    '05_Clients': {
+      '_Client List & Overview': [],
+      '_Archive': []
+    },
+    '06_Partners & Vendors': {
+      '06.1_Partners': [],
+      '06.2_Vendors': []
+    },
+    '07_Projects': {},
+    '08_Legal': {
+      '08.1_Master Contracts': [],
+      '08.2_NDAs': [],
+      '08.3_Intellectual Property': []
+    },
+    '09_Operations': {
+      '09.1_Templates': [],
+      '09.2_Tools & Software': [],
+      '09.3_Inventory & Assets': []
+    },
+    '99_Archive': {}
+  };
+  var CLIENT_TREE = {
     '01_Administration': ['01.1_Company Registration & SSM','01.2_Licenses & Permits','01.3_Policies & SOPs','01.4_Meeting Minutes','01.5_Office & Facilities'],
     '02_Finance': ['02.1_Invoices (Client)','02.2_Invoices (Vendor)','02.3_Bank Statements','02.4_Budgets & Financial Reports','02.5_Tax & Accounting','02.6_Payment Vouchers & Claims'],
     '03_Human Resource': ['03.1_Employee Records','03.2_Payroll & Claims','03.3_Recruitment','03.4_Training & Development','03.5_Leave & Attendance','03.6_HR Policies & Forms'],
@@ -12,7 +65,6 @@
     '09_Operations': ['09.1_Templates','09.2_Tools & Software','09.3_Inventory & Assets'],
     '99_Archive': []
   };
-  var ROOT_EXTRA = { '05_Clients': [] };
   var cache = {};
   function token() { return window._docsAccessToken || (typeof window._docsGetToken === 'function' && window._docsGetToken()) || null; }
   function t(en, bm) { return APP.language === 'bm' ? bm : en; }
@@ -54,35 +106,44 @@
     }
     cache[key] = id; return id;
   }
-  async function seedTree(parentId, tree) {
-    var keys = Object.keys(tree);
-    var ids = {};
-    for (var i = 0; i < keys.length; i++) {
-      ids[keys[i]] = await child(parentId, keys[i]);
-      var subs = tree[keys[i]] || [];
-      for (var j = 0; j < subs.length; j++) await child(ids[keys[i]], subs[j]);
+  async function seedNode(parentId, node) {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) await child(parentId, node[i]);
+      return;
     }
-    return ids;
+    var keys = Object.keys(node);
+    for (var k = 0; k < keys.length; k++) {
+      status(t('Seeding ', 'Seed ') + keys[k]);
+      var id = await child(parentId, keys[k]);
+      await seedNode(id, node[keys[k]]);
+    }
+  }
+  async function seedFlat(parentId, tree) {
+    var keys = Object.keys(tree);
+    for (var i = 0; i < keys.length; i++) {
+      var id = await child(parentId, keys[i]);
+      var subs = tree[keys[i]] || [];
+      for (var j = 0; j < subs.length; j++) await child(id, subs[j]);
+    }
   }
   async function listClients(clientsId) {
     var data = await api('https://www.googleapis.com/drive/v3/files?q=' +
       encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false and '" + clientsId + "' in parents") +
       '&fields=files(id,name)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true');
-    return (data.files || []).sort(function (a, b) { return String(a.name).localeCompare(b.name); });
+    return (data.files || []).filter(function (f) { return f.name.indexOf('_') !== 0; });
   }
   async function seedRoot() {
     try {
       await ensureToken();
-      var rootTree = Object.assign({ '05_Clients': [] }, TREE);
-      status(t('Seeding Phion SOP…', 'Seed SOP Phion…'));
-      var ids = await seedTree(ROOT, rootTree);
-      var clients = await listClients(ids['05_Clients']);
+      await seedNode(ROOT, PHION_FULL);
+      var clientsId = await child(ROOT, '05_Clients');
+      var clients = await listClients(clientsId);
       for (var i = 0; i < clients.length; i++) {
-        if (clients[i].name.indexOf('_') === 0) continue;
-        status(t('Mirror Phion in ', 'Salin struktur Phion ') + clients[i].name);
-        await seedTree(clients[i].id, TREE);
+        status(t('Client SOP ', 'SOP client ') + clients[i].name);
+        await seedFlat(clients[i].id, CLIENT_TREE);
       }
-      status(t('Ready', 'Sedia') + ' — ' + clients.map(function (c) { return c.name; }).join(', '));
+      status(t('Full SOP ready', 'SOP penuh sedia'));
       showToast(t('Folders seeded', 'Folder sudah di-seed'), 'success');
     } catch (e) { status(e.message || 'Seed failed'); showToast(e.message || 'Seed failed', 'error'); }
   }
@@ -93,7 +154,7 @@
       await ensureToken();
       var clientsId = await child(ROOT, '05_Clients');
       var clientId = await child(clientsId, name);
-      await seedTree(clientId, TREE);
+      await seedFlat(clientId, CLIENT_TREE);
       status(t('Created ', 'Dicipta ') + '05_Clients/' + name);
       showToast(t('Client folder ready', 'Folder client sedia'), 'success');
     } catch (e) { showToast(e.message || 'Failed', 'error'); }
