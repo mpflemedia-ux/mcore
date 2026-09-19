@@ -46,6 +46,7 @@ SCRIPTS = [
     ('docs-seed.js', '3'),
     ('docs-ssm-legal.js', '1'),
     ('docs-route-owner.js', '2'),
+    ('docs-upload-fix.js', '1'),
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
 ]
