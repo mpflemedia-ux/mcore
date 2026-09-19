@@ -7,18 +7,26 @@
       localStorage.setItem('mcore_docs_drive_root', ROOT);
     }
   } catch (e) {}
-  function lock() {
+  function once() {
     var cid = document.getElementById('docs-cid');
-    if (cid) {
-      cid.value = CID;
-      cid.setAttribute('autocapitalize', 'none');
-      cid.setAttribute('autocomplete', 'off');
-      cid.setAttribute('autocorrect', 'off');
-      cid.setAttribute('spellcheck', 'false');
-      cid.style.textTransform = 'none';
-    }
+    if (!cid || cid.getAttribute('data-locked') === '1') return;
+    cid.value = CID;
+    cid.readOnly = true;
+    cid.setAttribute('data-locked', '1');
+    cid.setAttribute('autocapitalize', 'none');
+    cid.setAttribute('autocomplete', 'off');
+    cid.setAttribute('spellcheck', 'false');
+    cid.style.textTransform = 'none';
     var root = document.getElementById('docs-root');
     if (root && !root.value) root.value = ROOT;
   }
-  setInterval(lock, 400);
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'docs-connect') once();
+  }, true);
+  var n = 0;
+  var t = setInterval(function () {
+    once();
+    n++;
+    if (n > 8) clearInterval(t);
+  }, 300);
 })();
