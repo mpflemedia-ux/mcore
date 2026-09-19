@@ -41,7 +41,7 @@ SCRIPTS = [
     ('doc-drive-root.js', '2'),
     ('doc-oauth-lock.js', '2'),
     ('docs-token-hook.js', '1'),
-    ('docs-drive-persist.js', '2'),
+    ('docs-drive-persist.js', '3'),
     ('docs-seed.js', '3'),
     ('docs-ssm-legal.js', '1'),
     ('docs-route-owner.js', '2'),
