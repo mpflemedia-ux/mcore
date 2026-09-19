@@ -12,8 +12,15 @@
     if (/nuhea/.test(s)) return 'Nuhea';
     return null;
   }
-  function phionRel(s) {
-    if (/borang d|perakuan pendaftaran|akta pendaftaran|ezbiz|\bssm\b|la00\d+|certificate of business|business registration/.test(s))
+  function isPhion(s) {
+    return /phion/.test(s) && !clientOf(s);
+  }
+  function relOf(s) {
+    if (/profil syarikat|company profile|brochure|pitch deck|name card/.test(s))
+      return '04_Brand & Marketing/04.3_Marketing Materials';
+    if (/logo|letterhead|brand book/.test(s))
+      return '04_Brand & Marketing/04.2_Logo & Visual Assets';
+    if (/borang d|perakuan pendaftaran|akta pendaftaran|ezbiz|\bssm\b|la00\d+|form 9|form 24|form 49/.test(s))
       return '01_Administration/01.1_Company Registration & SSM';
     if (/payment voucher|\bpv\b|claim|tuntutan/.test(s))
       return '02_Finance/02.6_Payment Vouchers & Claims';
@@ -21,25 +28,33 @@
       return '02_Finance/02.1_Invoices (Client)';
     if (/bank statement|penyata bank/.test(s))
       return '02_Finance/02.3_Bank Statements';
+    if (/probation|staff letter|offer letter|\bloa\b|surat lantikan/.test(s))
+      return '03_Human Resource/03.1_Employee Records';
+    if (/payslip|epf|socso/.test(s))
+      return '03_Human Resource/03.2_Payroll & Claims';
     if (/contract|agreement|kontrak|nda|mou/.test(s))
       return '08_Legal/08.1_Master Contracts';
-    if (/quotation|proposal|sebut harga|sales order/.test(s))
+    if (/quotation|proposal|sebut harga/.test(s))
       return '07_Projects';
-    if (/logo|letterhead|brand/.test(s))
-      return '04_Brand & Marketing/04.2_Logo & Visual Assets';
-    return null;
+    return '01_Administration/01.3_Policies & SOPs';
+  }
+  function valid(folder) {
+    return /^(01_|02_|03_|04_|05_|06_|07_|08_|09_|99_)/.test(String(folder || ''));
   }
   function apply() {
     var cls = window._docsAiClass;
     if (!cls) return;
     var s = blob();
     var client = clientOf(s);
-    var rel = phionRel(s);
-    if (client && rel) {
+    var rel = relOf(s);
+    if (client) {
       cls.who = client;
       cls.folder = '05_Clients/' + client + '/' + rel;
-      if (/borang d|ssm|perakuan pendaftaran/.test(s)) cls.what = 'SSM / Borang D';
+    } else {
+      cls.folder = rel;
     }
+    if (/profil syarikat|company profile/.test(s)) cls.what = 'Company profile';
+    if (!valid(cls.folder)) cls.folder = rel;
   }
   setInterval(apply, 300);
 })();
