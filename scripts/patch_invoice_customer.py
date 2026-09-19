@@ -46,6 +46,7 @@ SCRIPTS = [
     ('docs-seed.js', '4'),
     ('docs-content-scan.js', '4'),
     ('docs-classify.js', '7'),
+    ('docs-slot-fix.js', '1'),
     ('docs-ai-apply.js', '1'),
     ('docs-filename.js', '3'),
     ('docs-upload-fix.js', '1'),
