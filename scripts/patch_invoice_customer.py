@@ -43,7 +43,7 @@ SCRIPTS = [
     ('docs-token-hook.js', '1'),
     ('docs-drive-persist.js', '4'),
     ('docs-drive-label.js', '1'),
-    ('docs-seed.js', '5'),
+    ('docs-seed.js', '6'),
     ('docs-content-scan.js', '4'),
     ('docs-classify.js', '7'),
     ('docs-slot-fix.js', '2'),
