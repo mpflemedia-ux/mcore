@@ -39,6 +39,7 @@ SCRIPTS = [
     ('leave-email-click.js', '1'),
     ('outstation-amend.js', '1'),
     ('doc-router-admin.js', '7'),
+    ('docs-persist.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
