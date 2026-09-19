@@ -42,6 +42,7 @@ SCRIPTS = [
     ('doc-oauth-lock.js', '2'),
     ('docs-token-hook.js', '1'),
     ('docs-seed.js', '1'),
+    ('docs-ssm-legal.js', '1'),
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
 ]
