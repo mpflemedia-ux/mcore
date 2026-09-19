@@ -1,4 +1,4 @@
-/* Seed Phion SOP folders + new client pack. */
+/* Seed Phion SOP folders + pack each existing client. */
 (function () {
   var SOP = [
     '01_Administration','02_Finance','03_Human Resource','04_Brand & Marketing',
@@ -73,11 +73,11 @@
     return ids;
   }
 
-  async function listClients(clientsId) {
+  async function listClientFolders(clientsId) {
     var data = await api('https://www.googleapis.com/drive/v3/files?q=' +
       encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false and '" + clientsId + "' in parents") +
       '&fields=files(id,name)&pageSize=100');
-    return (data.files || []).map(function (f) { return f.name; }).sort();
+    return (data.files || []).sort(function (a, b) { return String(a.name).localeCompare(b.name); });
   }
 
   async function seedRoot() {
@@ -85,9 +85,14 @@
       status(t('Seeding Phion SB folders…', 'Sedang seed folder Phion SB…'));
       await ensureToken();
       var ids = await seedInto(ROOT);
-      var names = await listClients(ids['05_Clients']);
-      status(t('Root OK. Clients: ', 'Root OK. Client: ') + (names.join(', ') || '—'));
-      showToast(t('Folders seeded', 'Folder sudah di-seed'), 'success');
+      var clients = await listClientFolders(ids['05_Clients']);
+      for (var i = 0; i < clients.length; i++) {
+        status(t('Packing client ', 'Isi folder client ') + (i + 1) + '/' + clients.length + ' — ' + clients[i].name);
+        await seedInto(clients[i].id);
+      }
+      var names = clients.map(function (c) { return c.name; });
+      status(t('Done. Packed: ', 'Siap. Diisi: ') + (names.join(', ') || '—'));
+      showToast(t('Client folders packed', 'Folder client sudah diisi'), 'success');
     } catch (e) {
       status(e.message || 'Seed failed');
       showToast(e.message || 'Seed failed', 'error');
