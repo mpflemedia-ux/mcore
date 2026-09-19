@@ -48,7 +48,7 @@ SCRIPTS = [
     ('docs-classify.js', '7'),
     ('docs-slot-fix.js', '4'),
     ('docs-ai-apply.js', '1'),
-    ('docs-filename.js', '3'),
+    ('docs-filename.js', '4'),
     ('docs-upload-fix.js', '1'),
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
