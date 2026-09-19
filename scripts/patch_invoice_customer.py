@@ -45,7 +45,7 @@ SCRIPTS = [
     ('docs-drive-label.js', '1'),
     ('docs-seed.js', '3'),
     ('docs-content-scan.js', '2'),
-    ('docs-classify.js', '3'),
+    ('docs-classify.js', '4'),
     ('docs-upload-fix.js', '1'),
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
