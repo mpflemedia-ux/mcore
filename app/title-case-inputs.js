@@ -5,12 +5,15 @@ function titleCase(s){
   });
 }
 function skip(el){
+  if(el.getAttribute && el.getAttribute('data-no-titlecase')) return true;
+  var id=String(el.id||'');
+  if(/^docs-(name|folder|cid|root|file)$/.test(id)) return true;
   var t=String(el.type||'').toLowerCase();
   if(['email','tel','url','password','number','date','datetime-local','hidden','checkbox','radio','file','search'].indexOf(t)>=0) return true;
   if(el.tagName==='SELECT' || el.readOnly || el.disabled) return true;
-  var id=String(el.id||'')+' '+String(el.name||'');
-  if(/email|phone|tel|fax|postcode|zip|url|website|password|qty|price|amount|account|ssm|tin|qr|sku|search/i.test(id)) return true;
-  if(/\bcf-code\b|\bref_no\b|\bif-/.test(id) && /code|ref/.test(id)) return true;
+  var idn=id+' '+String(el.name||'');
+  if(/email|phone|tel|fax|postcode|zip|url|website|password|qty|price|amount|account|ssm|tin|qr|sku|search/i.test(idn)) return true;
+  if(/\bcf-code\b|\bref_no\b|\bif-/.test(idn) && /code|ref/.test(idn)) return true;
   var v=String(el.value||'');
   if(v.indexOf('@')>=0) return true;
   if(v && /^[\d\s+\-().\/]+$/.test(v)) return true;
