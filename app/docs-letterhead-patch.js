@@ -96,6 +96,17 @@
       if (!window._docsAiClass) window._docsAiClass = {};
       window._docsAiClass.who = who;
       window._docsAiClass.folder = want;
+      var box = document.getElementById('docs-result');
+      if (box) {
+        var nodes = box.querySelectorAll('div');
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          if (el.querySelector('b') && el.textContent.indexOf('Who') === 0 && el.children.length <= 2)
+            el.innerHTML = '<b>Who</b> \u2014 ' + who;
+          if (el.querySelector('b') && el.textContent.indexOf('Where') === 0 && el.children.length <= 2)
+            el.innerHTML = '<b>Where</b> \u2014 ' + want;
+        }
+      }
     }
   }
   setInterval(apply, 400);
