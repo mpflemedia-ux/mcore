@@ -5,7 +5,8 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (el.querySelector('b') && el.textContent.indexOf(label) === 0 && el.children.length <= 2) {
-        el.innerHTML = '<b>' + label + '</b> \u2014 ' + value;
+        var next = '<b>' + label + '</b> \u2014 ' + value;
+        if (el.innerHTML !== next) el.innerHTML = next;
       }
     }
   }
@@ -15,7 +16,7 @@
     var folder = document.getElementById('docs-folder');
     var box = document.getElementById('docs-result');
     if (!folder || !box) return;
-    folder.value = cls.folder;
+    if (folder.value !== cls.folder) folder.value = cls.folder;
     setLine(box, 'What', cls.what);
     setLine(box, 'Who', cls.who);
     setLine(box, 'Where', cls.folder);
