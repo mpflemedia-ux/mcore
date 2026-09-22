@@ -83,7 +83,16 @@
     var folderEl = document.getElementById('docs-folder');
     if (!folderEl) return;
     var text = window._docsScanText || '';
-    var who = normalizeWho((window._docsAiClass && window._docsAiClass.who) || whoFromUi());
+    var scan = window._docsScanText || '';
+    var who = normalizeWho((window._docsAiClass && window._docsAiClass.who) || '');
+    if (!who) {
+      var head = String(scan).slice(0, 1200).toLowerCase();
+      var letterheads = ['tns consulting','tns consult','fade boys','brozky','brzky','atas angin','clore','pb enterprise','mayang','nuhea'];
+      for (var li = 0; li < letterheads.length; li++) {
+        if (head.indexOf(letterheads[li]) >= 0) { who = normalizeWho(letterheads[li]); break; }
+      }
+    }
+    if (!who) who = normalizeWho(whoFromUi());
     var name = window._docsOrigName || '';
     var blob = [text, who, name, folderEl.value].join(' ');
     if (/phion/i.test(blob)) return;
