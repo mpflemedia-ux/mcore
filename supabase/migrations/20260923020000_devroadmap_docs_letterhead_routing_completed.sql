@@ -20,8 +20,8 @@ BEGIN
   ) THEN
     UPDATE public.dev_roadmap_items
     SET stage = 'completed',
-        description = 'Documents routing locked: Client = letterhead company (not Bill To / description names). No Phion mention → 05_Clients/{letterhead}/01–08 category; Phion mentioned → Phion 01–09 paths. New client on Confirm seeds full client 01–08 tree. TNS invoice → 05_Clients/TNS Consulting/06_Invoices & Payment (not Nuhea, not 02_Finance).',
-        pr_url = 'https://github.com/mpflemedia-ux/mcore/pull/PLACEHOLDER',
+        description = 'Documents routing locked: Client = letterhead company (not Bill To / description names). No Phion mention -> 05_Clients/{letterhead}/01-08 category; Phion mentioned -> Phion 01-09 paths. New client on Confirm seeds full client 01-08 tree. TNS invoice -> 05_Clients/TNS Consulting/06_Invoices & Payment (not Nuhea, not 02_Finance).',
+        pr_url = 'https://github.com/mpflemedia-ux/mcore/pull/770',
         module = COALESCE(module, 'docs')
     WHERE title ILIKE '%letterhead%rout%'
        OR title ILIKE '%docs%letterhead%'
@@ -31,10 +31,10 @@ BEGIN
     INSERT INTO public.dev_roadmap_items (title, description, module, stage, pr_url)
     VALUES (
       'Documents letterhead routing',
-      'Documents routing locked: Client = letterhead company (not Bill To / description names). No Phion mention → 05_Clients/{letterhead}/01–08 category; Phion mentioned → Phion 01–09 paths. New client on Confirm seeds full client 01–08 tree. TNS invoice → 05_Clients/TNS Consulting/06_Invoices & Payment (not Nuhea, not 02_Finance).',
+      'Documents routing locked: Client = letterhead company (not Bill To / description names). No Phion mention -> 05_Clients/{letterhead}/01-08 category; Phion mentioned -> Phion 01-09 paths. New client on Confirm seeds full client 01-08 tree. TNS invoice -> 05_Clients/TNS Consulting/06_Invoices & Payment (not Nuhea, not 02_Finance).',
       'docs',
       'completed',
-      'https://github.com/mpflemedia-ux/mcore/pull/PLACEHOLDER'
+      'https://github.com/mpflemedia-ux/mcore/pull/770'
     );
   END IF;
 END $$;
