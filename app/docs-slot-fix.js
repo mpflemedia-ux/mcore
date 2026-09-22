@@ -39,6 +39,8 @@
     var name = window._docsOrigName || '';
     var what = (cls && cls.what) || '';
     if (!what && !name) return;
+    // Do not fight AI / prior classification every 300ms
+    if (cls && cls.folder) return;
     var hint = [what, name, window._docsScanText || ''].join(' ');
     var client = clientOf(hint.toLowerCase());
     var rel = relOf(what, name);
