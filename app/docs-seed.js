@@ -39,6 +39,17 @@
     '09_Operations': { '09.1_Templates': [], '09.2_Tools & Software': [], '09.3_Inventory & Assets': [] },
     '99_Archive': {}
   };
+  // Per-client tree (NOT full Phion department SOP)
+  var CLIENT_SOP = {
+    '01_Contracts & Agreements': [],
+    '02_Proposals & Quotations': [],
+    '03_Brief & Requirements': [],
+    '04_Working Files': [],
+    '05_Final Deliverables': [],
+    '06_Invoices & Payment': [],
+    '07_Meeting Notes & Communication': [],
+    '08_Feedback & Revisions': []
+  };
   var cache = {};
   function token() { return window._docsAccessToken || (typeof window._docsGetToken === 'function' && window._docsGetToken()) || null; }
   function t(en, bm) { return APP.language === 'bm' ? bm : en; }
@@ -98,19 +109,36 @@
       '&fields=files(id,name)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true');
     return (data.files || []).filter(function (f) { return f.name.indexOf('_') !== 0; });
   }
+  async function seedClientTree(clientName, clientId) {
+    await seedNode(clientId, CLIENT_SOP);
+    return clientId;
+  }
+  /** Ensure 05_Clients/{name}/ + full CLIENT 01-08 tree. Safe if already exists. */
+  async function ensureClientTree(clientName) {
+    var name = String(clientName || '').trim();
+    if (!name) return null;
+    await ensureToken();
+    var clientsId = await child(ROOT, '05_Clients');
+    var clientId = await child(clientsId, name);
+    await seedClientTree(name, clientId);
+    return clientId;
+  }
+  window._docsEnsureClientTree = ensureClientTree;
+  window._docsClientSop = CLIENT_SOP;
+
   async function seedRoot() {
     try {
       await ensureToken();
-      status(t('Seeding Phion SOP…', 'Seed SOP Phion…'));
+      status(t('Seeding Phion SOP...', 'Seed SOP Phion...'));
       var rootTree = Object.assign({ '05_Clients': { '_Client List & Overview': [], '_Archive': [] } }, SOP);
       await seedNode(ROOT, rootTree);
       var clientsId = await child(ROOT, '05_Clients');
       var clients = await listClients(clientsId);
       for (var i = 0; i < clients.length; i++) {
-        status(t('Full SOP — ', 'SOP penuh — ') + clients[i].name);
-        await seedNode(clients[i].id, SOP);
+        status(t('Client tree - ', 'Tree client - ') + clients[i].name);
+        await seedClientTree(clients[i].name, clients[i].id);
       }
-      status(t('Full SOP ready for Phion + clients', 'SOP penuh sedia untuk Phion + client'));
+      status(t('Phion SOP + client 01-08 ready', 'SOP Phion + client 01-08 sedia'));
       showToast(t('Folders seeded', 'Folder sudah di-seed'), 'success');
     } catch (e) { status(e.message || 'Seed failed'); showToast(e.message || 'Seed failed', 'error'); }
   }
@@ -118,11 +146,8 @@
     var name = prompt(t('New client folder name', 'Nama folder client baru'));
     if (!name) return; name = name.trim(); if (!name) return;
     try {
-      await ensureToken();
-      var clientsId = await child(ROOT, '05_Clients');
-      var clientId = await child(clientsId, name);
-      await seedNode(clientId, SOP);
-      status(t('Created ', 'Dicipta ') + '05_Clients/' + name);
+      await ensureClientTree(name);
+      status(t('Created ', 'Dicipta ') + '05_Clients/' + name + ' (01-08)');
       showToast(t('Client folder ready', 'Folder client sedia'), 'success');
     } catch (e) { showToast(e.message || 'Failed', 'error'); }
   }
@@ -138,5 +163,17 @@
     document.getElementById('docs-seed-root').onclick = seedRoot;
     document.getElementById('docs-seed-client').onclick = seedClient;
   }
+  // On Confirm: if destination is 05_Clients/{name}/... seed full 01-08 for new/existing client
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    if (!el) return;
+    if (el.id !== 'docs-confirm' && !(el.closest && el.closest('#docs-confirm'))) return;
+    var folderEl = document.getElementById('docs-folder');
+    var folder = folderEl && folderEl.value.trim();
+    var m = String(folder || '').match(/^05_Clients\/([^/]+)\//);
+    if (!m) return;
+    var name = m[1];
+    ensureClientTree(name).catch(function () {});
+  }, true);
   setInterval(inject, 700);
 })();
