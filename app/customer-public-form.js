@@ -1,8 +1,8 @@
+/* mobile full-width + layout fix */
 /* Public CRM customer self-fill form (?customer_form=TOKEN) + Share link on Customer List. */
 (function () {
   const TOKEN_QS = 'customer_form'
   const STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','W.P. Kuala Lumpur','W.P. Labuan','W.P. Putrajaya']
-
   function esc(s) {
     var A = String.fromCharCode(38)
     return String(s || '').replace(/[&<>"']/g, function (c) {
@@ -39,7 +39,6 @@
   function publicUrl(tok) {
     return location.origin + '/app/?' + TOKEN_QS + '=' + encodeURIComponent(tok) + langQs()
   }
-
   window._pubCustSetLang = function (lang) {
     window._pubCustLang = lang === 'bm' ? 'bm' : 'en'
     try {
@@ -49,7 +48,6 @@
     } catch (e) {}
     if (typeof _tryShowPublicCustomerForm === 'function') _tryShowPublicCustomerForm()
   }
-
   async function ensureToken() {
     if (!window.sb || !window.APP || !APP.tenant) return null
     try {
@@ -71,7 +69,6 @@
     }
     return tok
   }
-
   window._crmSharePublicLink = async function () {
     if (typeof canAccess === 'function' && !canAccess('crm')) {
       toast(isBm() ? 'Tiada akses CRM' : 'No CRM access', 'error')
@@ -96,7 +93,6 @@
       toast(link, 'success')
     }
   }
-
   function patchCustomerList() {
     var _orig = window.renderCustomerList
     if (typeof _orig !== 'function' || _orig._crmPublicSharePatched) return
@@ -123,7 +119,6 @@
     }
     window.renderCustomerList._crmPublicSharePatched = true
   }
-
   window._pubCustSubmit = async function (token) {
     var err = document.getElementById('pub-cust-err')
     var btn = document.getElementById('pub-cust-btn')
@@ -160,42 +155,42 @@
       : (mode === 'updated' ? 'Your details were updated. Thank you!' : 'Your details were submitted. Thank you!')
     var root = document.getElementById('pub-cust-root')
     if (root) {
-      root.innerHTML = '<div class="card" style="max-width:560px;margin:40px auto;padding:28px;text-align:center">'
+      root.innerHTML = '<div class="card pcf-card" style="width:100%;max-width:560px;margin:24px auto;padding:24px;text-align:center;box-sizing:border-box">'
         + '<div style="font-size:22px;font-weight:700;margin-bottom:8px">' + esc(msg) + '</div>'
         + '<div style="color:var(--text-3)">' + (isBm() ? 'Anda boleh tutup halaman ini.' : 'You can close this page.') + '</div></div>'
     }
   }
-
   window._tryShowPublicCustomerForm = async function () {
     var token = new URLSearchParams(location.search).get(TOKEN_QS)
     if (!token) return false
     document.getElementById('shell') && document.getElementById('shell').classList.remove('active')
+    try { document.documentElement.style.overflowX='hidden'; document.body.style.margin='0'; document.body.style.padding='0' } catch(e) {}
     var auth = document.getElementById('auth-page')
     if (auth) auth.style.display = 'none'
     var root = document.getElementById('pub-cust-root')
     if (!root) {
       root = document.createElement('div')
       root.id = 'pub-cust-root'
-      root.style.cssText = 'min-height:100vh;padding:16px 12px 48px;background:var(--bg,#0f172a)'
+      root.style.cssText = 'min-height:100vh;width:100%;max-width:100vw;margin:0;padding:8px;box-sizing:border-box;background:var(--bg,#0f172a)'
       document.body.appendChild(root)
     }
     var res = await sb.rpc('get_public_customer_form', { p_token: token })
     if (res.error || !res.data) {
-      root.innerHTML = '<div class="card" style="max-width:480px;margin:40px auto;padding:24px"><p>' + (isBm() ? 'Link tidak sah.' : 'Invalid link.') + '</p></div>'
+      root.innerHTML = '<div class="card pcf-card" style="width:100%;max-width:480px;margin:24px auto;padding:20px;box-sizing:border-box"><p>' + (isBm() ? 'Link tidak sah.' : 'Invalid link.') + '</p></div>'
       return true
     }
     var data = res.data
     var bm = isBm()
     var stateOpts = '<option value="">-- ' + (bm ? 'Pilih' : 'Select') + ' --</option>'
       + STATES.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>' }).join('')
-    root.innerHTML = '<div class="card" style="max-width:700px;margin:0 auto;padding:20px">'
+    root.innerHTML = '<style id="pcf-mobile-css">#pub-cust-root{width:100%;max-width:100vw;box-sizing:border-box}#pub-cust-root .pcf-card{width:100%!important;max-width:100%!important;margin:0!important;box-sizing:border-box;border-radius:12px}#pub-cust-root .pcf-grid{display:grid;grid-template-columns:1fr;gap:12px}@media (min-width:640px){#pub-cust-root .pcf-card{max-width:720px!important;margin:0 auto!important}#pub-cust-root .pcf-grid{grid-template-columns:1fr 1fr;gap:16px}}#pub-cust-root .form-input,#pub-cust-root .form-select,#pub-cust-root textarea.form-input{width:100%;box-sizing:border-box;max-width:100%}#pub-cust-root .btn-primary{width:100%;box-sizing:border-box}@media (min-width:640px){#pub-cust-root .btn-primary{width:auto}}</style><div class="card pcf-card" style="width:100%;max-width:100%;margin:0;padding:16px;box-sizing:border-box">'
       + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">'
       + (data.logo_url ? '<img src="' + esc(data.logo_url) + '" alt="" style="height:40px;object-fit:contain">' : '')
       + '<div style="flex:1"><div style="font-weight:700">' + esc(data.tenant_name || '') + '</div>'
       + '<div style="font-size:13px;color:var(--text-3)">' + (bm ? 'Borang Maklumat Pelanggan' : 'Customer Details Form') + '</div></div>'
       + '<div style="display:flex;gap:6px"><button type="button" class="btn btn-outline btn-sm" onclick="_pubCustSetLang(\'en\')">EN</button>'
       + '<button type="button" class="btn btn-outline btn-sm" onclick="_pubCustSetLang(\'bm\')">BM</button></div></div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
+      + '<div class="pcf-grid">'
       + '<div class="form-group" style="grid-column:1/-1"><label class="form-label">' + (bm ? 'Nama *' : 'Name *') + '</label>'
       + '<input class="form-input" id="pcf-name" placeholder="Nama penuh / Company name"></div>'
       + '<div class="form-group"><label class="form-label">' + (bm ? 'Emel' : 'Email') + '</label>'
@@ -218,7 +213,6 @@
       + (bm ? 'Hantar' : 'Submit') + '</button></div>'
     return true
   }
-
   function boot() {
     try {
       patchCustomerList()
