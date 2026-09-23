@@ -4,7 +4,14 @@
   const STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','W.P. Kuala Lumpur','W.P. Labuan','W.P. Putrajaya']
 
   function esc(s) {
-    return String(s || '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"')
+    var A = String.fromCharCode(38)
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      if (c === '&') return A + 'amp;'
+      if (c === '<') return A + 'lt;'
+      if (c === '>') return A + 'gt;'
+      if (c === '"') return A + 'quot;'
+      return A + '#39;'
+    })
   }
   function readLang() {
     try {
