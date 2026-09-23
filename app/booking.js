@@ -6,7 +6,7 @@
   }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return ({ '&': '&', '<': '<', '>': '>', '"': '"', "'": '&#39;' })[c];
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
     });
   }
   function fmtTime(iso) {
@@ -63,7 +63,7 @@
       document.body.appendChild(root);
     }
     var date = qs('date') || new Date().toISOString().slice(0, 10);
-    root.innerHTML = '<div style="max-width:720px;margin:40px auto;color:#64748b;text-align:center">Loading booking…</div>';
+    root.innerHTML = '<div style="max-width:720px;margin:40px auto;color:#64748b;text-align:center">Loading booking\u2026</div>';
     var res = await sb.rpc('get_public_booking_board', { p_token: token, p_date: date });
     if (res.error) {
       root.innerHTML = '<div style="max-width:520px;margin:60px auto;padding:24px;background:#fff;border-radius:12px"><h2>Booking unavailable</h2><p>' + esc(res.error.message) + '</p></div>';
@@ -80,9 +80,9 @@
     list.innerHTML = services.map(function (svc) {
       var slots = slotTimes(svc, date).map(function (sl) {
         var full = takenCount(board, svc.id, sl.start) >= Number(svc.capacity || 1);
-        return '<button type="button" class="bk-slot" data-sid="' + esc(svc.id) + '" data-start="' + esc(sl.start) + '" data-name="' + esc(svc.name) + '" data-price="' + esc(svc.price) + '" ' + (full ? 'disabled style="opacity:.4"' : '') + ' style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">' + esc(sl.label || fmtTime(sl.start)) + (full ? ' · full' : '') + '</button>';
+        return '<button type="button" class="bk-slot" data-sid="' + esc(svc.id) + '" data-start="' + esc(sl.start) + '" data-name="' + esc(svc.name) + '" data-price="' + esc(svc.price) + '" ' + (full ? 'disabled style="opacity:.4"' : '') + ' style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">' + esc(sl.label || fmtTime(sl.start)) + (full ? ' \u00b7 full' : '') + '</button>';
       }).join(' ');
-      return '<div style="border-top:1px solid #e2e8f0;padding:14px 0"><div style="font-weight:700">' + esc(svc.name) + '</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">RM ' + Number(svc.price || 0).toFixed(2) + ' · ' + esc(svc.duration_min) + ' min</div><div style="display:flex;flex-wrap:wrap;gap:8px">' + (slots || '<span style="color:#94a3b8">No slot</span>') + '</div></div>';
+      return '<div style="border-top:1px solid #e2e8f0;padding:14px 0"><div style="font-weight:700">' + esc(svc.name) + '</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">RM ' + Number(svc.price || 0).toFixed(2) + ' \u00b7 ' + esc(svc.duration_min) + ' min</div><div style="display:flex;flex-wrap:wrap;gap:8px">' + (slots || '<span style="color:#94a3b8">No slot</span>') + '</div></div>';
     }).join('');
     list.querySelectorAll('.bk-slot:not([disabled])').forEach(function (btn) {
       btn.onclick = function () { openBookForm(token, btn.dataset); };
@@ -93,7 +93,7 @@
     var root = document.getElementById('public-book-root');
     var box = document.createElement('div');
     box.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px';
-    box.innerHTML = '<form id="bk-form" style="background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%"><h3 style="margin:0 0 8px">Book ' + esc(ds.name) + '</h3><p style="color:#64748b;font-size:13px">' + esc(fmtTime(ds.start)) + ' · RM ' + Number(ds.price || 0).toFixed(2) + '</p><input required name="name" placeholder="Full name" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="email" type="email" placeholder="Email" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="phone" placeholder="Phone" style="width:100%;margin:0 0 12px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="bk-cancel">Cancel</button><button type="submit" style="background:#0E7490;color:#fff;border:0;border-radius:8px;padding:8px 14px">Confirm hold</button></div><p id="bk-err" style="color:#b91c1c;font-size:12px;display:none"></p></form>';
+    box.innerHTML = '<form id="bk-form" style="background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%"><h3 style="margin:0 0 8px">Book ' + esc(ds.name) + '</h3><p style="color:#64748b;font-size:13px">' + esc(fmtTime(ds.start)) + ' \u00b7 RM ' + Number(ds.price || 0).toFixed(2) + '</p><input required name="name" placeholder="Full name" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="email" type="email" placeholder="Email" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="phone" placeholder="Phone" style="width:100%;margin:0 0 12px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="bk-cancel">Cancel</button><button type="submit" style="background:#0E7490;color:#fff;border:0;border-radius:8px;padding:8px 14px">Confirm hold</button></div><p id="bk-err" style="color:#b91c1c;font-size:12px;display:none"></p></form>';
     root.appendChild(box);
     document.getElementById('bk-cancel').onclick = function () { box.remove(); };
     document.getElementById('bk-form').onsubmit = async function (ev) {
@@ -120,7 +120,7 @@
     var card = document.createElement('div');
     card.className = 'db-card'; card.id = 'db-sec-booking'; card.style.marginBottom = '14px';
     var isBm = APP.language === 'bm';
-    card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px"><div><div class="db-card-title"><i class="ti ti-calendar-plus"></i> ' + (isBm ? 'Tempahan' : 'Bookings') + '</div><div style="font-size:12px;color:var(--db-text3)">' + (isBm ? 'Hari ini + link awam' : 'Today + public link') + '</div></div><div style="display:flex;gap:6px"><button type="button" class="db-btn" id="db-book-copy">' + (isBm ? 'Salin link' : 'Copy link') + '</button><button type="button" class="db-btn" onclick="openPage(\'planner\')">Planner</button></div></div><div id="db-book-body" style="font-size:13px;color:var(--db-text3)">Loading…</div>';
+    card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px"><div><div class="db-card-title"><i class="ti ti-calendar-plus"></i> ' + (isBm ? 'Tempahan' : 'Bookings') + '</div><div style="font-size:12px;color:var(--db-text3)">' + (isBm ? 'Hari ini + link awam' : 'Today + public link') + '</div></div><div style="display:flex;gap:6px"><button type="button" class="db-btn" id="db-book-copy">' + (isBm ? 'Salin link' : 'Copy link') + '</button><button type="button" class="db-btn" onclick="openPage(\'planner\')">Planner</button></div></div><div id="db-book-body" style="font-size:13px;color:var(--db-text3)">Loading\u2026</div>';
     if (planner && planner.parentNode) planner.parentNode.insertBefore(card, planner.nextSibling);
     var body = document.getElementById('db-book-body');
     var copyBtn = document.getElementById('db-book-copy');
@@ -136,19 +136,19 @@
     var q = await sb.from('bookings').select('id,customer_name,starts_at,status,booking_services(name)').eq('tenant_id', APP.tenant.id).gte('starts_at', start.toISOString()).lte('starts_at', end.toISOString()).order('starts_at');
     if (q.error) { body.textContent = isBm ? 'Jalankan SQL booking dulu.' : 'Run booking SQL first.'; return; }
     var rows = q.data || [];
-    if (!rows.length) { body.textContent = isBm ? 'Tiada tempahan hari ini — kongsi link awam.' : 'No bookings today — share the public link.'; return; }
+    if (!rows.length) { body.textContent = isBm ? 'Tiada tempahan hari ini \u2014 kongsi link awam.' : 'No bookings today \u2014 share the public link.'; return; }
     body.innerHTML = rows.map(function (r) {
       var svc = r.booking_services && r.booking_services.name ? r.booking_services.name : 'Booking';
-      return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border,#e2e8f0)"><span>' + esc(fmtTime(r.starts_at)) + ' · ' + esc(r.customer_name || '-') + ' · ' + esc(svc) + '</span><strong style="font-size:11px;text-transform:uppercase">' + esc(r.status) + '</strong></div>';
+      return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border,#e2e8f0)"><span>' + esc(fmtTime(r.starts_at)) + ' \u00b7 ' + esc(r.customer_name || '-') + ' \u00b7 ' + esc(svc) + '</span><strong style="font-size:11px;text-transform:uppercase">' + esc(r.status) + '</strong></div>';
     }).join('');
   }
   async function injectSettings() {
-    if (location.hash.indexOf('settings') < 0 || document.getElementById('bk-settings-box')) return;
+    if (location.hash.indexOf('settings') < 0 || document.getElementById('stg-booking') || document.getElementById('bk-settings-box')) return;
     var wrap = document.getElementById('role-perms-wrap');
     if (!wrap) return;
     var isBm = APP.language === 'bm';
     var box = document.createElement('div');
-    box.id = 'bk-settings-box';
+    box.id = 'stg-booking'; box.setAttribute('data-bk-settings', '1');
     box.style.cssText = 'border:1px solid var(--border);border-radius:10px;padding:14px;margin:16px 0';
     box.innerHTML = '<strong>' + (isBm ? 'Booking awam' : 'Public booking') + '</strong><div style="font-size:12px;color:var(--text-3);margin:6px 0 10px">' + (isBm ? 'Link customer pilih slot & tempah.' : 'Customer picks a slot and books.') + '</div><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="bk-svc-name" class="form-input" placeholder="Service / event" style="min-width:160px"><input id="bk-svc-price" class="form-input" type="number" step="0.01" placeholder="RM" style="width:100px"><input id="bk-svc-mins" class="form-input" type="number" value="60" style="width:80px"><button type="button" class="btn btn-outline btn-sm" id="bk-svc-add">Add service</button><button type="button" class="btn btn-primary btn-sm" id="bk-link-btn">Copy public link</button></div><div id="bk-svc-msg" style="font-size:12px;margin-top:8px"></div>';
     wrap.parentNode.insertBefore(box, wrap);
