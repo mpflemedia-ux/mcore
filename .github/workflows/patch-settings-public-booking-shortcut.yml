@@ -1,6 +1,11 @@
 name: patch-settings-public-booking-shortcut
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_settings_public_booking_shortcut.py
+      - .github/workflows/patch-settings-public-booking-shortcut.yml
 permissions:
   contents: write
 jobs:
@@ -13,11 +18,27 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Bake Public booking shortcut into index.html
         run: python3 scripts/patch_settings_public_booking_shortcut.py
+      - name: Prefer #stg-booking in employee-probation settingsBox
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/employee-probation.js')
+          t = p.read_text(encoding='utf-8')
+          old = "var wrap = document.getElementById('bk-settings-box') || document.getElementById('role-perms-wrap');"
+          new = "var wrap = document.getElementById('stg-booking') || document.getElementById('bk-settings-box') || document.getElementById('role-perms-wrap');"
+          if old in t and "getElementById('stg-booking')" not in t:
+              p.write_text(t.replace(old, new, 1), encoding='utf-8')
+              print('patched employee-probation.js')
+          elif "getElementById('stg-booking')" in t:
+              print('employee-probation.js already prefers stg-booking')
+          else:
+              print('pattern missing; no change')
+          PY
       - name: Commit
         run: |
           git config user.name "mcore-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/index.html
+          git add app/index.html app/employee-probation.js
           git diff --cached --quiet && echo 'nothing' && exit 0
-          git commit -m "feat(settings): bake Public booking shortcut into index.html"
+          git commit -m "feat(settings): bake Public booking shortcut + probation #stg-booking"
           git push origin HEAD:fix/settings-public-booking-shortcut
