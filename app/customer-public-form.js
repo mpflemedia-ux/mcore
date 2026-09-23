@@ -1,4 +1,4 @@
-/* mobile full-width + layout fix */
+/* mobile full-width + scrollable layout fix */
 /* Public CRM customer self-fill form (?customer_form=TOKEN) + Share link on Customer List. */
 (function () {
   const TOKEN_QS = 'customer_form'
@@ -164,14 +164,27 @@
     var token = new URLSearchParams(location.search).get(TOKEN_QS)
     if (!token) return false
     document.getElementById('shell') && document.getElementById('shell').classList.remove('active')
-    try { document.documentElement.style.overflowX='hidden'; document.body.style.margin='0'; document.body.style.padding='0' } catch(e) {}
+    try {
+      var html = document.documentElement, body = document.body
+      html.style.overflowX = 'hidden'
+      html.style.overflowY = 'auto'
+      html.style.height = 'auto'
+      html.style.maxHeight = 'none'
+      body.style.overflowX = 'hidden'
+      body.style.overflowY = 'auto'
+      body.style.height = 'auto'
+      body.style.maxHeight = 'none'
+      body.style.margin = '0'
+      body.style.padding = '0'
+      body.style.webkitOverflowScrolling = 'touch'
+    } catch(e) {}
     var auth = document.getElementById('auth-page')
     if (auth) auth.style.display = 'none'
     var root = document.getElementById('pub-cust-root')
     if (!root) {
       root = document.createElement('div')
       root.id = 'pub-cust-root'
-      root.style.cssText = 'min-height:100vh;width:100%;max-width:100vw;margin:0;padding:8px;box-sizing:border-box;background:var(--bg,#0f172a)'
+      root.style.cssText = 'min-height:100vh;width:100%;max-width:100vw;margin:0;padding:8px 8px calc(48px + env(safe-area-inset-bottom,0px));box-sizing:border-box;background:var(--bg,#0f172a);overflow-y:auto;-webkit-overflow-scrolling:touch'
       document.body.appendChild(root)
     }
     var res = await sb.rpc('get_public_customer_form', { p_token: token })
@@ -183,7 +196,7 @@
     var bm = isBm()
     var stateOpts = '<option value="">-- ' + (bm ? 'Pilih' : 'Select') + ' --</option>'
       + STATES.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>' }).join('')
-    root.innerHTML = '<style id="pcf-mobile-css">#pub-cust-root{width:100%;max-width:100vw;box-sizing:border-box}#pub-cust-root .pcf-card{width:100%!important;max-width:100%!important;margin:0!important;box-sizing:border-box;border-radius:12px}#pub-cust-root .pcf-grid{display:grid;grid-template-columns:1fr;gap:12px}@media (min-width:640px){#pub-cust-root .pcf-card{max-width:720px!important;margin:0 auto!important}#pub-cust-root .pcf-grid{grid-template-columns:1fr 1fr;gap:16px}}#pub-cust-root .form-input,#pub-cust-root .form-select,#pub-cust-root textarea.form-input{width:100%;box-sizing:border-box;max-width:100%}#pub-cust-root .btn-primary{width:100%;box-sizing:border-box}@media (min-width:640px){#pub-cust-root .btn-primary{width:auto}}</style><div class="card pcf-card" style="width:100%;max-width:100%;margin:0;padding:16px;box-sizing:border-box">'
+    root.innerHTML = '<style id="pcf-mobile-css">html,body{height:auto!important;max-height:none!important;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch}#pub-cust-root{width:100%;max-width:100vw;box-sizing:border-box;min-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}#pub-cust-root .pcf-card{width:100%!important;max-width:100%!important;margin:0!important;box-sizing:border-box;border-radius:12px}#pub-cust-root .pcf-grid{display:grid;grid-template-columns:1fr;gap:12px}@media (min-width:640px){#pub-cust-root .pcf-card{max-width:720px!important;margin:0 auto!important}#pub-cust-root .pcf-grid{grid-template-columns:1fr 1fr;gap:16px}}#pub-cust-root .form-input,#pub-cust-root .form-select,#pub-cust-root textarea.form-input{width:100%;box-sizing:border-box;max-width:100%}#pub-cust-root .btn-primary{width:100%;box-sizing:border-box}@media (min-width:640px){#pub-cust-root .btn-primary{width:auto}}</style><div class="card pcf-card" style="width:100%;max-width:100%;margin:0;padding:16px;box-sizing:border-box">'
       + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">'
       + (data.logo_url ? '<img src="' + esc(data.logo_url) + '" alt="" style="height:40px;object-fit:contain">' : '')
       + '<div style="flex:1"><div style="font-weight:700">' + esc(data.tenant_name || '') + '</div>'
