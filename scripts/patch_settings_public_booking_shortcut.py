@@ -29,7 +29,7 @@ def main():
         changed = True
     for path, ver in [('booking.js', '2'), ('booking-settings-ui.js', '2'), ('employee-probation.js', '3')]:
         html2, n = re.subn(
-            rf'(<script src="\./{re.escape(path)}\?v=)\d+(">\</script>)',
+            rf'(<script src="\./{re.escape(path)}\?v=)\d+(">' + '</script>)',
             rf'\g<1>{ver}\g<2>',
             html,
             count=1,
