@@ -1,0 +1,58 @@
+/* Settings → Audit Log: keep table inside card on narrow viewports.
+   Mobile sets table{min-width:520px} but #settings-audit-preview had no
+   overflow-x wrap, so #main{overflow-x:hidden} clipped TABLE/User cols.
+   Scroll stays inside the card (not page-wide). Desktop unchanged. */
+
+#stg-audit {
+  max-width: min(700px, 100%) !important;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+#stg-audit > div[style*="padding"] {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#settings-audit-preview,
+#audit-log-wrap,
+#admin-audit-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+}
+
+#settings-audit-preview table,
+#audit-log-wrap table,
+#admin-audit-wrap table {
+  width: max-content;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.card:has(> #audit-log-wrap),
+.card:has(> #admin-audit-wrap) {
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  #stg-audit .card-header {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  #settings-audit-preview td:first-child,
+  #audit-log-wrap td:first-child {
+    font-size: 11px;
+  }
+}
