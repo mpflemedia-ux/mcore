@@ -1,5 +1,8 @@
 /* Rebuild Public booking settings: session/event, hours, weekdays, list */
 (function () {
+  function bkSettingsBox() {
+    return document.getElementById('stg-booking') || document.getElementById('bk-settings-box');
+  }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
@@ -13,7 +16,7 @@
     return mask || 127;
   }
   function toggleKind() {
-    var kind = (document.querySelector('#bk-settings-box input[name=bk-kind]:checked') || {}).value || 'session';
+    var root = bkSettingsBox(); var kind = ((root && root.querySelector('input[name=bk-kind]:checked')) || {}).value || 'session';
     var sess = document.getElementById('bk-sess-fields');
     var evt = document.getElementById('bk-evt-fields');
     var dur = document.getElementById('bk-dur-wrap');
@@ -85,7 +88,7 @@
       var name = (document.getElementById('bk-svc-name').value || '').trim();
       var msg = document.getElementById('bk-svc-msg');
       if (!name) { msg.textContent = isBm ? 'Nama diperlukan' : 'Name required'; return; }
-      var kind = (document.querySelector('#bk-settings-box input[name=bk-kind]:checked') || {}).value || 'session';
+      var root = bkSettingsBox(); var kind = ((root && root.querySelector('input[name=bk-kind]:checked')) || {}).value || 'session';
       var row = { tenant_id: APP.tenant.id, name: name, kind: kind, price: Number(document.getElementById('bk-svc-price').value || 0), is_active: true };
       if (kind === 'event') {
         var es = document.getElementById('bk-evt-start').value;
@@ -123,7 +126,7 @@
     loadList();
   }
   function boot() {
-    var box = document.getElementById('bk-settings-box');
+    var box = bkSettingsBox();
     if (box) paint(box);
   }
   setInterval(boot, 800);
