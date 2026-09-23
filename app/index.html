@@ -2322,7 +2322,6 @@ function canAccess(module) {
     if (mods.includes('hr')) return true
     return mods.includes(module)
   }
-  if (module === 'vouchers' && mods.includes('accounting')) return true
   if (module === 'reports') return mods.includes('reports')
   return false
 }
@@ -15620,7 +15619,7 @@ async function _crmLoad() {
         <td style="color:var(--text-3);font-size:12px">${c.created_at?new Date(c.created_at).toLocaleDateString('en-MY'):'-'}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('crm',{view:'form',id:'${c.id}'})"><i class="ti ti-edit"></i></button>
-          <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_crmDelete('${c.id}','${(c.name||'').replace(/'/g,'\\\'')}')" title="${t.del}"><i class="ti ti-trash"></i></button>
+          ${(typeof canDelete==='function'&&canDelete('crm'))?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_crmDelete('${c.id}','${(c.name||'').replace(/'/g,'\\\'')}')" title="${t.del}"><i class="ti ti-trash"></i></button>`:''}
         </td>
       </tr>`).join('')}</tbody>
     </table>`
@@ -23594,10 +23593,10 @@ function _invRenderListTable(t) {
     <td><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
     <td style="white-space:nowrap" onclick="event.stopPropagation()">
       ${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i></button>`:''}
-      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+      ${(typeof canDelete==='function'&&canDelete('sales'))?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="_invoiceDelete('${i.id}','${(i.ref_no||'').replace(/'/g,"\\'")}',${Number(i.paid_amt||0)})" title="${t.del||'Delete'}">
         <i class="ti ti-trash"></i>
-      </button>
+      </button>`:''}
     </td>
   </tr>`
   }).join('')}</tbody></table>`
@@ -24903,10 +24902,10 @@ function _quoRenderListTable() {
     <td><strong>${q.ref_no||'-'}</strong></td><td>${q.customer_name||'-'}</td><td>${formatDate(q.issue_date)}</td>
     <td style="text-align:right">${formatRM(q.total)}</td><td>${statusLabel(q.status)}</td>
     <td style="text-align:center">
-      <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
+      ${(typeof canDelete==='function'&&canDelete('sales'))?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="event.stopPropagation();_quoDelete('${q.id}','${(q.ref_no||'').replace(/'/g,"\\'")}')" title="${t.del||'Delete'}">
         <i class="ti ti-trash"></i>
-      </button>
+      </button>`:''}
     </td>
   </tr>`).join('')}</tbody></table>`
 }
@@ -37003,7 +37002,7 @@ if('serviceWorker' in navigator){
 <script src="./dashboard-ai-layout.js?v=4"></script>
 <script src="./pv-bank-account.js?v=1"></script>
 <script src="./print-hide-fabs.js?v=1"></script>
-<script src="./role-permissions-sync.js?v=3"></script>
+<script src="./role-permissions-sync.js?v=4"></script>
 <script src="./booking.js?v=2"></script>
 <script src="./booking-shortcut.js?v=1"></script>
 <script src="./booking-token-fix.js?v=1"></script>
