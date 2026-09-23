@@ -755,6 +755,19 @@ html[data-skip-intro="1"] #intro-skip {
 .print-only, .acc-print-title { display:none; }
 
 @media print {
+  /* Unlock app shell so multi-page prints (Journal Entries, PV lists, reports)
+     are not clipped to one viewport. Screen UI keeps overflow:hidden / 100dvh;
+     print must allow height:auto + overflow:visible or Chrome shows 1/1 only. */
+  html, body, #app, #shell, #shell.active, #main-area, #main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+  #shell, #shell.active, #main-area {
+    display: block !important;
+    width: 100% !important;
+  }
   #sidebar, #header, .no-print, .page-header, .acc-tabs, #acc-tabs { display:none !important; }
   .acc-print-body { display:block !important; }
   .acc-print-title { display:block !important; font-size:16px; font-weight:700; margin:0 0 12px 0; color:#000 !important; }
@@ -772,10 +785,24 @@ html[data-skip-intro="1"] #intro-skip {
     padding: 0 !important;
   }
   #main-area { margin:0 !important; }
-  #main { padding:0 !important; }
+  #main { padding:0 !important; overflow: visible !important; }
   body, html { background:#fff !important; }
   .card { box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
+  /* Horizontal scroll wraps clip paged media — same issue as .pdoc-sd-scroll */
+  #jnl-table-wrap, #pv-list-wrap, #exp-table-wrap, #coa-table-wrap,
+  #inv-list-wrap, #po-list-wrap, #bill-list-wrap, #crm-table-wrap,
+  #supp-table-wrap, #audit-log-wrap, #pc-list-wrap,
+  #main [style*="overflow-x"], #main [style*="overflow:auto"], #main [style*="overflow: auto"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  #main table { page-break-inside: auto; }
+  #main tr { page-break-inside: avoid; break-inside: avoid; }
+  #main thead { display: table-header-group; }
+  #main tfoot { display: table-footer-group; }
   .print-only { display:inline !important; }
+
   /* Printing while a modal is open (e.g. the POS Shift Settlement report,
      which lives inside a .modal-box, not its own page) — print ONLY that
      modal's content, not the page underneath it, and undo the modal's
@@ -1439,7 +1466,7 @@ html[data-skip-intro="1"] #intro-skip {
   }
 }
 </style>
-<script src="./public-inv-scroll.js?v=4"></script><script src="./public-apply-scroll.js?v=1"></script></head>
+<script src="./public-inv-scroll.js?v=4"></script><link rel="stylesheet" href="./print-multipage.css?v=1"><script src="./public-apply-scroll.js?v=1"></script></head>
 <body>
 <!-- ─── INTRO VIDEO SCREEN ─────────────────────────────────────────────────── -->
 <div id="intro-screen" class="hidden" style="display:none">
