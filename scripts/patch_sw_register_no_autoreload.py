@@ -28,8 +28,8 @@ OLD = """if('serviceWorker' in navigator){
 
 NEW = """if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    // No controllerchange→reload: that forced a second full load after SW claim
-    // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
+    // No auto-reload on SW claim (that forced a second full load / blank first paint).
+    // Pass-through SW (v38+) streams index.html; no HTML re-buffer needed.
     navigator.serviceWorker.register('./sw.js?v=13').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
@@ -44,7 +44,7 @@ NEW = """if('serviceWorker' in navigator){
 
 def main():
     html = INDEX.read_text(encoding='utf-8')
-    if "./sw.js?v=13" in html and 'controllerchange' not in html[html.find("if('serviceWorker'"):html.find("if('serviceWorker'")+900]:
+    if "./sw.js?v=13" in html and "addEventListener('controllerchange'" not in html:
         print('already patched')
         return
     if OLD not in html:
