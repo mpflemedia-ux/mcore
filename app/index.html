@@ -1433,9 +1433,19 @@ html[data-skip-intro="1"] #intro-skip {
     justify-content: center;
   }
   .card [style*="overflow-x"], #inv-list-wrap, #po-list-wrap, #pv-list-wrap,
-  #exp-table-wrap, #bill-list-wrap, #crm-table-wrap, #supp-table-wrap, #audit-log-wrap {
+  #exp-table-wrap, #bill-list-wrap, #crm-table-wrap, #supp-table-wrap, #audit-log-wrap,
+  #settings-audit-preview, #admin-audit-wrap {
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    min-width: 0;
+  }
+  #stg-audit, .card:has(> #audit-log-wrap), .card:has(> #admin-audit-wrap) {
+    max-width: 100% !important;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    min-width: 0;
   }
   table { min-width: 520px; }
 }
@@ -1466,7 +1476,7 @@ html[data-skip-intro="1"] #intro-skip {
   }
 }
 </style>
-<script src="./public-inv-scroll.js?v=4"></script><link rel="stylesheet" href="./print-multipage.css?v=1"><script src="./public-apply-scroll.js?v=1"></script></head>
+<script src="./public-inv-scroll.js?v=4"></script><link rel="stylesheet" href="./print-multipage.css?v=1"><link rel="stylesheet" href="./settings-audit-mobile.css?v=1"><script src="./public-apply-scroll.js?v=1"></script></head>
 <body>
 <!-- ─── INTRO VIDEO SCREEN ─────────────────────────────────────────────────── -->
 <div id="intro-screen" class="hidden" style="display:none">
@@ -9940,7 +9950,7 @@ async function renderAdminAuditLog() {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
   </div></div>
   ${_adminTabs('audit')}
-  <div class="card"><div id="admin-audit-wrap" style="overflow-x:auto;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div class="card" style="max-width:100%;width:100%;box-sizing:border-box;overflow-x:hidden;min-width:0"><div id="admin-audit-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0;padding:8px"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
 
   const wrap = document.getElementById('admin-audit-wrap')
   const { data, error } = await sb.from('platform_admin_audit')
@@ -14229,14 +14239,14 @@ async function renderSettings(params={}) {
     </div>
   </div>
   ${isAdmin ? `
-  <div class="card" style="max-width:700px;margin-top:16px" id="stg-audit">
+  <div class="card" style="max-width:min(700px,100%);width:100%;box-sizing:border-box;overflow-x:hidden;margin-top:16px" id="stg-audit">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
       <div class="card-title">${APP.language==='bm'?'Log Audit':'Audit Log'}</div>
       <button class="btn btn-outline btn-sm" onclick="openPage('settings',{view:'audit'})"><i class="ti ti-list"></i> ${APP.language==='bm'?'Lihat semua':'View all'}</button>
     </div>
     <div style="padding:16px">
       <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">${APP.language==='bm'?'Aktiviti terkini untuk tenant ini (cipta, kemaskini, padam).':'Recent activity for this tenant (create, update, delete).'}</p>
-      <div id="settings-audit-preview"><div class="spinner" style="width:16px;height:16px"></div></div>
+      <div id="settings-audit-preview" class="settings-audit-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0"><div class="spinner" style="width:16px;height:16px"></div></div>
     </div>
   </div>
   <div class="card" style="max-width:600px;margin-top:16px" id="stg-roles">
@@ -14306,7 +14316,7 @@ async function renderAuditLogViewer() {
   </div>
     <button class="btn btn-outline btn-sm" onclick="renderAuditLogViewer()"><i class="ti ti-refresh"></i> ${t.refresh}</button>
   </div>
-  <div class="card"><div id="audit-log-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div class="card" style="max-width:100%;width:100%;box-sizing:border-box;overflow-x:hidden;min-width:0"><div id="audit-log-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('audit-log-wrap')
   try {
     const {data, error} = await sb.from('audit_logs')
