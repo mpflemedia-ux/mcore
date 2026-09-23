@@ -36975,20 +36975,14 @@ init()
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    // When a new SW takes control, reload once so invite/register fixes apply without Incognito
-    let refreshing = false
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if(refreshing) return
-      refreshing = true
-      try { location.reload() } catch(e) {}
-    })
-    navigator.serviceWorker.register('./sw.js?v=12').then(reg=>{
+    // No controllerchange→reload: that forced a second full load after SW claim
+    // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
+    navigator.serviceWorker.register('./sw.js?v=13').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
             .forEach(k => caches.delete(k))
       ).catch(()=>{})
-      // Force check for updates periodically while tab open
       try { setInterval(() => { try { reg.update() } catch(e) {} }, 60 * 1000) } catch(e) {}
     }).catch(err=>console.warn('SW register failed',err))
   })
