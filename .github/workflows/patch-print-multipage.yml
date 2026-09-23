@@ -1,0 +1,29 @@
+name: patch-print-multipage
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_print_multipage.py
+      - .github/workflows/patch-print-multipage.yml
+      - app/print-multipage.css
+      - app/sw.js
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake print multipage CSS into index.html
+        run: python3 scripts/patch_print_multipage.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix(print): bake multipage unlock into index.html"
+          git push

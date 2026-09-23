@@ -1,0 +1,27 @@
+/* Print multipage unlock — pairs with inline @media print in index.html.
+   Also injected by sw.js so clients get the fix even if index.html cache lags. */
+@media print {
+  html, body, #app, #shell, #shell.active, #main-area, #main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+  #shell, #shell.active, #main-area {
+    display: block !important;
+    width: 100% !important;
+  }
+  #main { overflow: visible !important; }
+  #jnl-table-wrap, #pv-list-wrap, #exp-table-wrap, #coa-table-wrap,
+  #inv-list-wrap, #po-list-wrap, #bill-list-wrap, #crm-table-wrap,
+  #supp-table-wrap, #audit-log-wrap, #pc-list-wrap,
+  #main [style*="overflow-x"], #main [style*="overflow:auto"], #main [style*="overflow: auto"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  #main table { page-break-inside: auto; }
+  #main tr { page-break-inside: avoid; break-inside: avoid; }
+  #main thead { display: table-header-group; }
+  #main tfoot { display: table-footer-group; }
+}
