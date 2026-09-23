@@ -1,4 +1,4 @@
-const CACHE='mcore-shell-v35'
+const CACHE='mcore-shell-v36'
 self.addEventListener('install',e=>{e.waitUntil(self.skipWaiting())})
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim()))})
 self.addEventListener('fetch',e=>{
@@ -18,6 +18,8 @@ self.addEventListener('fetch',e=>{
       if(!html.includes('</body>')) return new Response(html)
       if(!html.includes('public-inv-scroll.js')) html=html.replace('</head>','<script src="./public-inv-scroll.js?v=4"></script></head>')
       if(!html.includes('print-multipage.css')) html=html.replace('</head>','<link rel="stylesheet" href="./print-multipage.css?v=1"></head>')
+      if(!html.includes('settings-audit-mobile.css')) html=html.replace('</head>','<link rel="stylesheet" href="./settings-audit-mobile.css?v=1"></head>')
+      else html=html.replace(/settings-audit-mobile\.css\?v=\d+/g,'settings-audit-mobile.css?v=1')
       if(!html.includes('public-apply.js')) html=html.replace('</body>','<script src="./public-apply.js?v=1"></script></body>')
       if(!html.includes('customer-public-form.js')) html=html.replace('</body>','<script src="./customer-public-form.js?v=3"></script></body>')
       else html=html.replace(/customer-public-form\.js\?v=\d+/g,'customer-public-form.js?v=3')
