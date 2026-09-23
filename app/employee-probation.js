@@ -241,7 +241,7 @@
 
   function settingsBox() {
     if (location.hash.indexOf('settings') < 0 || document.getElementById('prb-set-box')) return;
-    var wrap = document.getElementById('bk-settings-box') || document.getElementById('role-perms-wrap');
+    var wrap = document.getElementById('stg-booking') || document.getElementById('bk-settings-box') || document.getElementById('role-perms-wrap');
     if (!wrap) return;
     var box = document.createElement('div');
     box.id = 'prb-set-box';
