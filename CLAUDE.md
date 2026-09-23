@@ -24,7 +24,7 @@ Dah siap/ada function untuk:
 - ✅ Reports — P&L, Balance Sheet, Sales Report
 - ✅ Settings
 
-**Known gap:** `canAccess(module)` sekarang **hardcoded return true** untuk semua — permission check belum enforce betul-betul. Jangan assume ini dah selesai; kalau kerja pasal role-based access, ni kena fix dulu.
+**RBAC (least-privilege):** `canAccess(module)` reads `user_profiles.module_override` → `tenants.config.roles[role]` → `_DEFAULT_ROLE_MODULES` / `RP_ROLE_DEFAULTS`. Owner/admin bypass. Child keys (e.g. `acc_expense`) do **not** elevate parent (`accounting`) for sidebar/nav — parent requires explicit parent key. Child pages use dedicated nav (e.g. Expense Claims → `acc_expense`) or view map in `app/role-permissions-sync.js`. Parent key grants all child views via `allowView`. Unmapped views deny (not any-child). Delete/void is Owner/Admin only (`canDelete`) for CRM/invoices/quotations until a full action matrix ships. Server helpers: `get_my_role_modules()` / `has_module(text)` in migrations.
 
 ## Rules Kritikal — JANGAN LANGGAR
 - Semua tables WAJIB ada `tenant_id`, semua queries WAJIB filter by tenant_id
@@ -34,7 +34,7 @@ Dah siap/ada function untuk:
 - Semua PDF WAJIB auto-filename: `[TYPE]-[CODE]-[REFNO]-[DDMMYYYY].pdf`
 - Jangan hardcode nama syarikat — guna `APP.tenant.name`
 - Jangan render content luar `#main` container
-- Guna `canAccess(module, feature)` sebelum render mana-mana page (tapi tengok "known gap" atas)
+- Guna `canAccess(module)` / `allowView` / `canDelete(module)` sebelum render; child modules via `role-permissions-sync.js`
 - Guna `openPage(page, params)` untuk navigation — **jangan** `showPage()`/`renderPage()`
 - Guna `String(a)===String(b)` untuk ID comparison — **jangan** `parseInt()` pada ID (boleh jadi string/UUID)
 - Ikut naming convention render function sedia ada: `render<Module><View>()` (contoh: `renderCustomerList`, `renderCOAForm`, `renderInvDetail`)
@@ -53,7 +53,9 @@ const NAV_ITEMS = [{ id, icon, label_en, label_bm, module }, ...]
 ```
 
 ### Key Functions (dah wujud — guna/extend, jangan re-invent)
-- `canAccess(module)` — permission check (lihat known gap)
+- `canAccess(module)` — role/module gate (no child→parent elevation)
+- `canDelete(module)` / `canMutate(module)` — action ACL (delete = owner/admin MVP)
+- `_rpAllowView(page, view)` — child view map in `role-permissions-sync.js`
 - `openPage(page, params={})` — navigation utama, switch-case ke render function
 - `formatRM(amount)` — format RM X,XXX.XX (locale ms-MY)
 - `formatDate(date)` — format DD/MM/YYYY (locale ms-MY)
