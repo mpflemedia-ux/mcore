@@ -1,4 +1,4 @@
-/* Role permission breakdown by live workflow. Least-privilege: no child→parent elevation. Child nav: expense+achievements; lexical NAV_ITEMS via navItemsList (v7). */
+/* Role permission breakdown by live workflow. Least-privilege: no child->parent elevation. Child nav: expense+achievements; modsNow mirrors canAccess role-key resolve (v8). */
 (function () {
   var GROUPS = [
     { en: 'Main', bm: 'Utama', modules: [
@@ -121,9 +121,57 @@
     vouchers: ['disbursements']
   };
 
+  /**
+   * Same effective module list canAccess uses for the current user.
+   * Mirrors: module_override -> rolesMap[role]|rolesMap[roleKey] -> case-insensitive
+   * key find -> hasCustom empty vs defaults. Do NOT use exact-only _rpModulesForCurrentUser
+   * (that falls back to _DEFAULT_ROLE_MODULES.staff and drops Settings ticks under
+   * differently-cased / underscored role keys). No child->parent elevation here.
+   */
   function modsNow() {
-    try { return (typeof _rpModulesForCurrentUser === 'function') ? _rpModulesForCurrentUser() : []; }
-    catch (e) { return []; }
+    try {
+      var role = '';
+      try {
+        role = (typeof APP !== 'undefined' && APP.user && APP.user.role)
+          ? String(APP.user.role).toLowerCase().trim() : '';
+      } catch (e0) {}
+      if (role === 'owner' || role === 'admin' || role === 'platform_admin') {
+        try {
+          if (typeof RP_MODULES !== 'undefined' && Array.isArray(RP_MODULES)) {
+            return RP_MODULES.map(function (m) { return (m && m.id) ? String(m.id) : String(m); });
+          }
+        } catch (eOwn) {}
+        return [];
+      }
+      var ov = null;
+      try { ov = (typeof APP !== 'undefined' && APP.user) ? APP.user.module_override : null; } catch (e1) {}
+      if (Array.isArray(ov)) return ov.map(String);
+      var rolesMap = {};
+      try {
+        rolesMap = (typeof APP !== 'undefined' && APP.tenantConfig && APP.tenantConfig.roles) || {};
+      } catch (e2) {}
+      var roleKey = role.replace(/\s+/g, '_');
+      var hasCustom = Object.keys(rolesMap).length > 0;
+      var configured = rolesMap[role] || rolesMap[roleKey];
+      if (!Array.isArray(configured)) {
+        var found = Object.keys(rolesMap).find(function (k) {
+          return String(k).toLowerCase() === role || String(k).toLowerCase() === roleKey;
+        });
+        if (found) configured = rolesMap[found];
+      }
+      if (Array.isArray(configured)) return configured.map(String);
+      if (hasCustom) return [];
+      var fallback = [];
+      try {
+        if (typeof _DEFAULT_ROLE_MODULES !== 'undefined') {
+          fallback = _DEFAULT_ROLE_MODULES[roleKey] || _DEFAULT_ROLE_MODULES[role] || [];
+        }
+        if ((!fallback || !fallback.length) && typeof RP_ROLE_DEFAULTS !== 'undefined') {
+          fallback = RP_ROLE_DEFAULTS[roleKey] || RP_ROLE_DEFAULTS[role] || [];
+        }
+      } catch (e3) {}
+      return Array.isArray(fallback) ? fallback.map(String) : [];
+    } catch (e) { return []; }
   }
   function allow(parent, child) {
     if (typeof isTenantAdmin === 'function' && isTenantAdmin()) return true;
@@ -386,7 +434,11 @@
 
   function openChildPage(pageId, parentModule, childModule, renderFn, viewKey, params) {
     params = params || {};
-    if (!allow(parentModule, childModule)) {
+    /* Prefer canAccess(child) (same path as sidebar) OR allow() after modsNow alignment. */
+    if (!(
+      (typeof canAccess === 'function' && childModule && canAccess(childModule)) ||
+      allow(parentModule, childModule)
+    )) {
       if (typeof renderAccessDenied === 'function') renderAccessDenied();
       return;
     }
