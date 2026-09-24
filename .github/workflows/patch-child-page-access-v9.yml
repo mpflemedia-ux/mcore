@@ -1,0 +1,22 @@
+name: patch-child-page-access-v9
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch child-page access (Expense + Achievements) + sync cache bust v9
+        run: python3 scripts/patch_child_page_access_v9.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/role-permissions-sync.js app/index.html
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore: child-page Access Denied fix (Expense+Achievements) + sync cache bust v9"
+          git push origin HEAD:main
