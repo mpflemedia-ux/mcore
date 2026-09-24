@@ -53,7 +53,7 @@ SCRIPTS = [
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
     ('expense-claims-access.js', '1'),
-    ('expense-claim-staff-apply.js', '1'),
+    ('expense-claim-staff-apply.js', '2'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
