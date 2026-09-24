@@ -3392,6 +3392,12 @@ function openPage(page, params={}) {
       case 'hr':         _safeRender(() => renderHR(params)); break
       case 'applicants': _safeRender(() => renderJobApplicants(params)); break
       case 'accounting': _safeRender(() => renderAccounting(params)); break
+      case 'expense_claims':
+        if(!canAccess('acc_expense')) { renderAccessDenied(); break }
+        _safeRender(() => renderExpenseClaims(params && params.view ? params : Object.assign({}, params, {view:'expense'}))); break
+      case 'achievements':
+        if(!canAccess('sc_achievements')) { renderAccessDenied(); break }
+        _safeRender(() => (typeof _scRenderAchievements === 'function' ? _scRenderAchievements() : renderSalesCommission(Object.assign({}, params, {view:'achievements'})))); break
       case 'vouchers':   _safeRender(() => renderPaymentVouchers(params)); break
       case 'reports':    _safeRender(() => renderReports(params)); break
       case 'admin':      _safeRender(() => renderAdmin(params)); break
@@ -16318,7 +16324,10 @@ function _accBasicOnly() {
 const _ACC_BASIC_VIEWS = ['coa-form', 'journal', 'journal-form']
 
 function renderAccounting(params={}) {
-  if(_accBasicOnly() && params.view && _ACC_BASIC_VIEWS.indexOf(params.view) < 0) params = {}
+  if(_accBasicOnly() && params.view && _ACC_BASIC_VIEWS.indexOf(params.view) < 0) {
+    var _keepExp = (params.view === 'expense' || params.view === 'exp-form') && typeof canAccess === 'function' && canAccess('acc_expense')
+    if(!_keepExp) params = {}
+  }
   if(params.view==='coa-form') { renderCOAForm(params.id||null); return }
   if(params.view==='journal-form') { renderJournalForm(params.id||null); return }
   if(params.view==='journal') { renderJournalList(); return }
@@ -29621,8 +29630,10 @@ async function _scLoadEmployees() {
 }
 
 function renderSalesCommission(params={}) {
-  if(!canAccess('sales_commission')) { renderAccessDenied(); return }
-  const view = params.view || 'rules'
+  var view = (params && params.view) || 'rules'
+  if(!(canAccess('sales_commission') || (view === 'achievements' && canAccess('sc_achievements')))) {
+    renderAccessDenied(); return
+  }
   if(view === 'ledger') { _scRenderLedger(); return }
   if(view === 'leaderboard') { _scRenderLeaderboard(); return }
   if(view === 'achievements') { _scRenderAchievements(); return }
@@ -36998,7 +37009,7 @@ if('serviceWorker' in navigator){
 <script src="./dashboard-ai-layout.js?v=4"></script>
 <script src="./pv-bank-account.js?v=1"></script>
 <script src="./print-hide-fabs.js?v=1"></script>
-<script src="./role-permissions-sync.js?v=8"></script>
+<script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=2"></script>
 <script src="./booking-shortcut.js?v=1"></script>
 <script src="./booking-token-fix.js?v=1"></script>

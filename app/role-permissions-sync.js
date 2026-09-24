@@ -1,4 +1,4 @@
-/* Role permission breakdown by live workflow. Least-privilege: no child->parent elevation. Child nav: expense+achievements; modsNow mirrors canAccess role-key resolve (v8). */
+/* Role permission breakdown by live workflow. Least-privilege: no child->parent elevation. Child nav: expense+achievements; direct child render + canAccess allow (v9). CHILD_PAGE_DIRECT_RENDER_V9 */
 (function () {
   var GROUPS = [
     { en: 'Main', bm: 'Utama', modules: [
@@ -176,10 +176,15 @@
   function allow(parent, child) {
     if (typeof isTenantAdmin === 'function' && isTenantAdmin()) return true;
     if (typeof isPlatformAdmin === 'function' && isPlatformAdmin()) return true;
+    /* Belt-and-suspenders: same path as sidebar. canAccess must NOT call allow (wrap uses modsNow only). */
+    if (typeof canAccess === 'function') {
+      if (child && canAccess(child)) return true;
+      if (!child && parent && canAccess(parent)) return true;
+    }
     var mods = modsNow();
     if (parent && mods.indexOf(parent) >= 0) return true;
     if (child && mods.indexOf(child) >= 0) return true;
-    /* Settings label "HR — Attendance & Leave" (hr_attendance) also unlocks Leave views. */
+    /* Settings label HR - Attendance & Leave (hr_attendance) also unlocks Leave views. */
     if (child === 'hr_leave' && mods.indexOf('hr_attendance') >= 0) return true;
     /* Leave-only tick must not unlock Attendance / My Payslips (mapped to hr_attendance). */
     return false;
@@ -464,6 +469,23 @@
       var main = document.getElementById('main');
       if (main) main.innerHTML = '<div class="page-loading"><div class="spinner dark"></div></div>';
       setTimeout(function () {
+        /* CHILD_PAGE_DIRECT_RENDER_V9: bypass parent wrapFn / Free _accBasicOnly / parent hard-gates. */
+        if (pageId === 'expense_claims' || childModule === 'acc_expense') {
+          if (typeof window.renderExpenseClaims === 'function') {
+            window.renderExpenseClaims(Object.assign({}, params, { view: viewKey || 'expense' }));
+            return;
+          }
+        }
+        if (pageId === 'achievements' || childModule === 'sc_achievements') {
+          if (typeof window._scRenderAchievements === 'function') {
+            window._scRenderAchievements();
+            return;
+          }
+          if (typeof window.renderSalesCommission === 'function') {
+            window.renderSalesCommission(Object.assign({}, params, { view: 'achievements' }));
+            return;
+          }
+        }
         if (typeof window[renderFn] === 'function') {
           window[renderFn](Object.assign({}, params, { view: viewKey }));
         }
