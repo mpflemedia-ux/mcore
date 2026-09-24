@@ -1,4 +1,4 @@
-/* Role permission breakdown by live workflow. Least-privilege: no child→parent elevation. Child nav: expense+achievements; rebuild sidebar on boot (v6). */
+/* Role permission breakdown by live workflow. Least-privilege: no child→parent elevation. Child nav: expense+achievements; lexical NAV_ITEMS via navItemsList (v7). */
 (function () {
   var GROUPS = [
     { en: 'Main', bm: 'Utama', modules: [
@@ -336,15 +336,25 @@
     window[name] = w;
   }
 
+  /** Classic scripts share lexical const NAV_ITEMS; it is NOT on window. Prefer bare NAV_ITEMS. */
+  function navItemsList() {
+    try {
+      if (typeof NAV_ITEMS !== 'undefined' && Array.isArray(NAV_ITEMS)) return NAV_ITEMS;
+    } catch (e) {}
+    if (window.NAV_ITEMS && Array.isArray(window.NAV_ITEMS)) return window.NAV_ITEMS;
+    return null;
+  }
+
   function insertNavAfter(afterId, item) {
-    if (!window.NAV_ITEMS || !Array.isArray(window.NAV_ITEMS)) return;
-    if (window.NAV_ITEMS.some(function (n) { return n && n.id === item.id; })) return;
+    var list = navItemsList();
+    if (!list) return;
+    if (list.some(function (n) { return n && n.id === item.id; })) return;
     var idx = -1;
-    for (var i = 0; i < NAV_ITEMS.length; i++) {
-      if (NAV_ITEMS[i] && NAV_ITEMS[i].id === afterId) { idx = i; break; }
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === afterId) { idx = i; break; }
     }
-    if (idx >= 0) NAV_ITEMS.splice(idx + 1, 0, item);
-    else NAV_ITEMS.push(item);
+    if (idx >= 0) list.splice(idx + 1, 0, item);
+    else list.push(item);
   }
 
   /** Child-only Expense Claims nav (parent Accounting stays hidden without accounting key). */
@@ -395,7 +405,8 @@
       document.querySelectorAll('.nav-item').forEach(function (el) {
         el.classList.toggle('active', el.dataset.page === pageId);
       });
-      var item = (window.NAV_ITEMS || []).find(function (n) { return n && n.id === pageId; });
+      var _navList = navItemsList() || [];
+      var item = _navList.find(function (n) { return n && n.id === pageId; });
       var ht = document.getElementById('header-title');
       if (ht && item) ht.textContent = (APP.language === 'bm') ? item.label_bm : item.label_en;
       var main = document.getElementById('main');
@@ -442,6 +453,7 @@
   }
 
   function boot() {
+    try { if (typeof NAV_ITEMS !== 'undefined') window.NAV_ITEMS = NAV_ITEMS; } catch (eNav) {}
     ensureChildNavs();
     wrapList();
     wrapCanAccess();
