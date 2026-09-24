@@ -1,0 +1,22 @@
+name: patch-nav-items-lexical-v7
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch sync JS lexical NAV_ITEMS + bump cache bust
+        run: python3 scripts/patch_nav_items_lexical_v7.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/role-permissions-sync.js app/index.html
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore: lexical NAV_ITEMS via navItemsList + sync cache bust v7"
+          git push origin HEAD:main
