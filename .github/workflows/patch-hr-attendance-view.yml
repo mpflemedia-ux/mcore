@@ -1,0 +1,22 @@
+name: patch-hr-attendance-view
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Bump sync cache bust
+        run: python3 scripts/patch_hr_attendance_view.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore: role-permissions-sync cache bust v5 (HR attendance VIEW)"
+          git push origin HEAD:main

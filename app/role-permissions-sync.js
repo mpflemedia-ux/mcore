@@ -1,4 +1,4 @@
-/* Role permission breakdown by live workflow. Least-privilege: no child→parent elevation. */
+/* Role permission breakdown by live workflow. Least-privilege: no child→parent elevation. HR attendance/payslips mapped (v5). */
 (function () {
   var GROUPS = [
     { en: 'Main', bm: 'Utama', modules: [
@@ -66,7 +66,16 @@
       'grn-form': 'pur_grn',
       bills: 'pur_bills', 'bill-form': 'pur_bills', 'bill-detail': 'pur_bills'
     },
-    hr: { leave: 'hr_leave', advance: 'hr_advance', 'salary-disbursement': 'hr_disbursement' },
+    hr: {
+      '': 'hr_attendance',
+      attendance: 'hr_attendance',
+      leave: 'hr_leave',
+      advance: 'hr_advance',
+      'salary-disbursement': 'hr_disbursement',
+      'my-payslips': 'hr_attendance',
+      'payroll-history': 'hr_attendance',
+      payslip: 'hr_attendance'
+    },
     accounting: {
       '': 'acc_coa',
       'coa-form': 'acc_coa',
@@ -90,7 +99,7 @@
     sc_rules: 'sales_commission', sc_ledger: 'sales_commission', sc_leaderboard: 'sales_commission', sc_achievements: 'sales_commission',
     inv_stock: 'inventory',
     pur_suppliers: 'purchasing', pur_po: 'purchasing', pur_grn: 'purchasing', pur_bills: 'purchasing',
-    hr_leave: 'hr', hr_advance: 'hr', hr_disbursement: 'hr_payroll',
+    hr_attendance: 'hr', hr_leave: 'hr', hr_advance: 'hr', hr_disbursement: 'hr_payroll',
     acc_coa: 'accounting', acc_journal: 'accounting',
     acc_expense: 'accounting', acc_reconcile: 'accounting', acc_fixed_assets: 'accounting',
     acc_petty: 'accounting', acc_fiscal: 'accounting', acc_ob: 'accounting',
@@ -104,7 +113,7 @@
     accounting: ['expense', 'petty', 'reconcile', 'fixed-assets', 'fiscal', 'opening-balance', 'journal', ''],
     sales: ['quo', 'cn', ''],
     purchasing: ['suppliers', 'bills'],
-    hr: ['leave', 'advance', 'salary-disbursement'],
+    hr: ['attendance', 'leave', 'my-payslips', 'advance', 'salary-disbursement'],
     reports: ['sales', 'ar-aging', 'ap-aging', 'balance-sheet', 'trial-balance', 'sst'],
     pos: ['history', 'shifts'],
     sales_commission: ['ledger', 'leaderboard', 'achievements', 'rules'],
@@ -122,6 +131,9 @@
     var mods = modsNow();
     if (parent && mods.indexOf(parent) >= 0) return true;
     if (child && mods.indexOf(child) >= 0) return true;
+    /* Settings label "HR — Attendance & Leave" (hr_attendance) also unlocks Leave views. */
+    if (child === 'hr_leave' && mods.indexOf('hr_attendance') >= 0) return true;
+    /* Leave-only tick must not unlock Attendance / My Payslips (mapped to hr_attendance). */
     return false;
   }
   /** Parent key grants all views; child key grants only its mapped views. Unmapped = parent only. */
