@@ -77,7 +77,7 @@ new_allow = """  function allow(parent, child) {
     var mods = modsNow();
     if (parent && mods.indexOf(parent) >= 0) return true;
     if (child && mods.indexOf(child) >= 0) return true;
-    /* Settings label \"HR - Attendance & Leave\" (hr_attendance) also unlocks Leave views. */
+    /* Settings label HR - Attendance & Leave (hr_attendance) also unlocks Leave views. */
     if (child === 'hr_leave' && mods.indexOf('hr_attendance') >= 0) return true;
     /* Leave-only tick must not unlock Attendance / My Payslips (mapped to hr_attendance). */
     return false;
