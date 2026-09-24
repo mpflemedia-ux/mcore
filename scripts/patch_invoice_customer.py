@@ -10,7 +10,7 @@ SCRIPTS = [
     ('dashboard-ai-layout.js', '4'),
     ('pv-bank-account.js', '1'),
     ('print-hide-fabs.js', '1'),
-    ('role-permissions-sync.js', '3'),
+    ('role-permissions-sync.js', '9'),
     ('booking.js', '1'),
     ('booking-shortcut.js', '1'),
     ('booking-token-fix.js', '1'),
@@ -52,6 +52,7 @@ SCRIPTS = [
     ('docs-upload-fix.js', '1'),
     ('doc-wrap.js', '1'),
     ('doc-router-admin.js', '6'),
+    ('expense-claims-access.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
