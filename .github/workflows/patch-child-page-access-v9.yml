@@ -1,6 +1,11 @@
 name: patch-child-page-access-v9
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_child_page_access_v9.py
+      - .github/workflows/patch-child-page-access-v9.yml
 jobs:
   bake:
     runs-on: ubuntu-latest
