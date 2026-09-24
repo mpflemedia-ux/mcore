@@ -55,6 +55,7 @@ SCRIPTS = [
     ('expense-claims-access.js', '1'),
     ('expense-claim-staff-apply.js', '2'),
     ('admin-clients-plans.js', '2'),
+    ('admin-clients-dates.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
