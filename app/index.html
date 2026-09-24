@@ -32720,7 +32720,7 @@ async function _attLoadPolicy() {
     office_code_enabled: false,
     daily_code: null,
     daily_code_date: null,
-    require_field_notes: true,
+    require_field_notes: false,
     office_lat: null,
     office_lng: null,
     office_radius_m: 500,
@@ -32846,10 +32846,6 @@ async function _attendanceSave() {
   }
   const notes = (document.getElementById('att-notes')?.value || '').trim()
   const policy = window._attPolicy || await _attLoadPolicy()
-  if(workMode === 'field' && policy.require_field_notes !== false && notes.length < 3) {
-    showToast(isBm?'Field: catatan pelanggan/lokasi/tujuan wajib':'Field: customer/location/purpose notes required', 'error')
-    return
-  }
   // Office daily code only for staff self-clock (form has no code field for HR/admin bulk log)
   if(workMode === 'office' && policy.office_code_enabled && !canManageHR()) {
     const code = (document.getElementById('att-office-code')?.value || '').trim()
