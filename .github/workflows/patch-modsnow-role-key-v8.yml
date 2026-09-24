@@ -1,0 +1,22 @@
+name: patch-modsnow-role-key-v8
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch modsNow role-key alignment + bump cache bust
+        run: python3 scripts/patch_modsnow_role_key_v8.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/role-permissions-sync.js app/index.html
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore: align modsNow with canAccess role-key resolve + sync cache bust v8"
+          git push origin HEAD:main
