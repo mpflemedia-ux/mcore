@@ -1,0 +1,27 @@
+name: patch-expense-claims-access-v10
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_expense_claims_access_v10.py
+      - .github/workflows/patch-expense-claims-access-v10.yml
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch Expense Claims access (Free plan + child deep-links) + sync cache bust v10
+        run: python3 scripts/patch_expense_claims_access_v10.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/role-permissions-sync.js app/index.html
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore: Expense Claims Access Denied fix (Free plan + child deep-links) + sync cache bust v10"
+          git push origin HEAD:main
