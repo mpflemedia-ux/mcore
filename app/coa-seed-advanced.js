@@ -1,7 +1,9 @@
 (function () {
   var EXTRA = [
-    { code: '1100', name_en: 'Bank Account', account_type: 'asset' },
+    { code: '1100', name_en: 'Maybank', account_type: 'asset' },
+    { code: '1110', name_en: 'GX Bank', account_type: 'asset' },
     { code: '1200', name_en: 'Accounts Receivable', account_type: 'asset' },
+    { code: '1210', name_en: 'Customer Deposits', account_type: 'liability' },
     { code: '1300', name_en: 'Inventory', account_type: 'asset' },
     { code: '1500', name_en: 'Fixed Assets', account_type: 'asset' },
     { code: '1510', name_en: 'Accumulated Depreciation', account_type: 'asset' },
@@ -14,9 +16,12 @@
     { code: '5010', name_en: 'Purchases', account_type: 'expense' },
     { code: '5020', name_en: 'Freight In', account_type: 'expense' },
     { code: '5050', name_en: 'Cost of Goods Sold', account_type: 'expense' },
+    { code: '6100', name_en: 'Salary Expense (Operating)', account_type: 'expense' },
     { code: '6110', name_en: 'EPF Expense (Employer)', account_type: 'expense' },
     { code: '6120', name_en: 'SOCSO Expense (Employer)', account_type: 'expense' },
     { code: '6130', name_en: 'EIS Expense (Employer)', account_type: 'expense' },
+    { code: '6140', name_en: 'PCB Expense (Employer)', account_type: 'expense' },
+    { code: '6200', name_en: 'Commission Expense (Operating)', account_type: 'expense' },
     { code: '6300', name_en: 'Rent Expense', account_type: 'expense' },
     { code: '6400', name_en: 'Utilities', account_type: 'expense' },
     { code: '6500', name_en: 'Bank Charges', account_type: 'expense' },
@@ -33,8 +38,23 @@
     return (type === 'asset' || type === 'liability' || type === 'equity') ? 'balance_sheet' : 'income_statement';
   }
 
+  async function fixMaybankCode() {
+    if (!APP.tenant || !APP.tenant.id) return;
+    var { data: rows } = await sb.from('chart_of_accounts').select('id,code,name_en')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+      .in('code', ['2000', '1100']);
+    var c2000 = (rows || []).find(function (a) { return a.code === '2000'; });
+    var c1100 = (rows || []).find(function (a) { return a.code === '1100'; });
+    if (!c2000 || c1100) return;
+    var name = String(c2000.name_en || '');
+    if (!/maybank|bank/i.test(name) && c2000.account_type === 'liability') return;
+    await sb.from('chart_of_accounts').update({ code: '1100', name_en: 'Maybank' })
+      .eq('id', c2000.id).eq('tenant_id', APP.tenant.id);
+  }
+
   async function seedExtra() {
-    if (!window.sb || !window.APP || !APP.tenant || !APP.tenant.id) return { added: 0 };
+    if (!window.sb || !APP.tenant || !APP.tenant.id) return { added: 0 };
+    await fixMaybankCode();
     var codes = EXTRA.map(function (a) { return a.code; });
     var { data: existing, error } = await sb.from('chart_of_accounts').select('id,code')
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null).in('code', codes);
@@ -60,7 +80,7 @@
 
   function wrap() {
     var orig = window._coaSeedDefaults;
-    if (typeof orig !== 'function' || orig._adv) return;
+    if (typeof orig !== 'function' || orig._adv2) return;
     window._coaSeedDefaults = async function () {
       var isBm = APP.language === 'bm';
       await orig.apply(this, arguments);
@@ -74,7 +94,7 @@
         showToast((e && e.message) || String(e), 'error');
       }
     };
-    window._coaSeedDefaults._adv = true;
+    window._coaSeedDefaults._adv2 = true;
   }
   wrap();
   setTimeout(wrap, 400);
