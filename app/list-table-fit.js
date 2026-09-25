@@ -12,14 +12,15 @@
     wrap.querySelectorAll('th,td').forEach(function (cell) {
       cell.style.whiteSpace = 'nowrap';
       cell.style.verticalAlign = 'middle';
-      cell.style.padding = cell.style.padding || '8px 12px';
+      cell.style.maxWidth = 'none';
     });
   }
   function fitAll() {
     var main = document.getElementById('main');
     if (main) main.style.paddingBottom = '120px';
-    var nodes = document.querySelectorAll('[id$="-list-wrap"],[id$="-table-wrap"]');
-    nodes.forEach(fitWrap);
+    document.querySelectorAll('[id$="-list-wrap"],[id$="-table-wrap"]').forEach(fitWrap);
+    var reco = document.getElementById('reco-result');
+    if (reco) reco.querySelectorAll('div[style*="overflow"]').forEach(fitWrap);
   }
   function hook(name) {
     var orig = window[name];
@@ -36,7 +37,8 @@
     ['renderPOList', '_poRenderListTable', 'renderInvList', '_invRenderListTable',
       'renderProductList', '_invLoad', 'renderCustomerList', '_crmLoad',
       'renderDOList', '_doRenderListTable', 'renderBillList', '_billRenderListTable',
-      'renderPVList', 'renderSuppList', 'renderJournalList'].forEach(hook);
+      'renderPVList', 'renderSuppList', 'renderJournalList',
+      '_recoRenderResults', 'renderBankRecon'].forEach(hook);
   }
   wrapFns();
   setTimeout(wrapFns, 400);
