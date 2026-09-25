@@ -62,6 +62,7 @@ SCRIPTS = [
     ('support-tenant.js', '2'),
     ('plan-code-fix.js', '1'),
     ('admin-content-mobile.js', '2'),
+    ('admin-team-table.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
