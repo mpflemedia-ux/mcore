@@ -71,6 +71,7 @@ SCRIPTS = [
     ('sl-items-fit.js', '1'),
     ('prod-table-fit.js', '1'),
     ('do-table-fit.js', '1'),
+    ('list-table-fit.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
