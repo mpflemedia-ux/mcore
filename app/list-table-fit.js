@@ -20,7 +20,12 @@
     if (main) main.style.paddingBottom = '120px';
     document.querySelectorAll('[id$="-list-wrap"],[id$="-table-wrap"]').forEach(fitWrap);
     var reco = document.getElementById('reco-result');
-    if (reco) reco.querySelectorAll('div[style*="overflow"]').forEach(fitWrap);
+    if (reco) {
+      reco.querySelectorAll('div[style*="overflow"]').forEach(function (w) {
+        fitWrap(w);
+        w.style.maxHeight = '480px';
+      });
+    }
   }
   function hook(name) {
     var orig = window[name];
