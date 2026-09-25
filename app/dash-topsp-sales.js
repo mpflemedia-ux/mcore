@@ -9,6 +9,9 @@
     var n = (e && (e.nickname || e.name)) || '';
     return String(n).trim() || '—';
   }
+  function rm(n) {
+    return typeof formatRM === 'function' ? formatRM(n) : ('RM ' + Number(n || 0).toFixed(2));
+  }
   async function salesByEmp(from, to) {
     var map = {};
     var tid = APP.tenant && APP.tenant.id;
@@ -39,7 +42,68 @@
     } catch (e2) {}
     return map;
   }
+  function wrapInsight() {
+    if (window._dbInsightFallbackBody && !window._dbInsightFallbackBody._salesTalk) {
+      var fb = window._dbInsightFallbackBody;
+      window._dbInsightFallbackBody = function (card, ctx, isBm) {
+        if (card === 'topsp') {
+          var sp = ctx && ctx.topsp;
+          if (!sp || !sp.name) {
+            return isBm
+              ? 'Tiada jualan bertag salesperson tempoh ini. Tag sales person pada invoice/POS supaya carta ada data.'
+              : 'No tagged salesperson sales this period. Tag a sales person on invoices/POS to populate the board.';
+          }
+          var sales = Number(sp.sales || 0);
+          var comm = Number(sp.commission || 0);
+          var prev = Number(sp.prevSales || 0);
+          var gap = Number(sp.salesGap || 0);
+          if (isBm) {
+            return sp.name + ' ketua carta jualan dengan ' + rm(sales) +
+              ' bulan ni (bulan lepas ' + rm(prev) + '), komisen ' + rm(comm) +
+              ', unggul ' + rm(gap) + ' depan #2. Jaga tag salesperson pada setiap invoice/POS supaya nombor ni jujur.';
+          }
+          return sp.name + ' leads sales with ' + rm(sales) +
+            ' this month (last month ' + rm(prev) + '), commission ' + rm(comm) +
+            ', ahead of #2 by ' + rm(gap) + '. Keep tagging a salesperson on every paid invoice/POS so the board stays honest.';
+        }
+        return fb.apply(this, arguments);
+      };
+      window._dbInsightFallbackBody._salesTalk = true;
+    }
+    if (window._dbInsightFacts && !window._dbInsightFacts._salesTalk) {
+      var facts = window._dbInsightFacts;
+      window._dbInsightFacts = function (card, ctx) {
+        if (card === 'topsp') {
+          var sp = ctx && ctx.topsp;
+          if (!sp) return { card: 'top_sales_person', has_data: false, period: ctx && ctx.periodLabel };
+          return {
+            card: 'top_sales_person',
+            has_data: true,
+            name: sp.name,
+            sales_this_period: Number(sp.sales || 0),
+            sales_prior_period: Number(sp.prevSales || 0),
+            commission_this_period: Number(sp.commission || 0),
+            sales_gap_to_second: Number(sp.salesGap || 0),
+            direction: sp.direction,
+            period: sp.period || (ctx && ctx.periodLabel) || null
+          };
+        }
+        return facts.apply(this, arguments);
+      };
+      window._dbInsightFacts._salesTalk = true;
+    }
+    if (window._dbInsightFingerprint && !window._dbInsightFingerprint._salesTalk) {
+      var fp = window._dbInsightFingerprint;
+      window._dbInsightFingerprint = function (ctx) {
+        var base = fp.apply(this, arguments);
+        var sp = ctx && ctx.topsp;
+        return base + '|ts|' + Number(sp && sp.sales || 0) + '|' + Number(sp && sp.commission || 0) + '|' + (sp && sp.name || '');
+      };
+      window._dbInsightFingerprint._salesTalk = true;
+    }
+  }
   window._dbRenderTopSalesPerson = async function () {
+    wrapInsight();
     var isBm = APP.language === 'bm';
     var canvas = document.getElementById('db-topsp-chart');
     var fallback = document.getElementById('db-topsp-fallback');
@@ -127,7 +191,6 @@
                 var v = Number(x.raw || 0);
                 var lab = x.label;
                 var c = Number(commByLabel[lab] || 0);
-                var rm = function (n) { return typeof formatRM === 'function' ? formatRM(n) : ('RM ' + n.toFixed(2)); };
                 return (isBm ? 'Jualan: ' : 'Sales: ') + rm(v) + ' · ' + (isBm ? 'Komisen: ' : 'Commission: ') + rm(c);
               }
             }
@@ -154,13 +217,22 @@
       }).join('');
     }
     var leader = top[0];
+    var second = top[1];
+    var prevSales = Number(salesPrev[leader.id] || 0);
+    var direction = prevSales === 0 ? 'new' : (leader.sales > prevSales ? 'up' : (leader.sales < prevSales ? 'down' : 'same'));
     window._dbInsightCtx = Object.assign({}, window._dbInsightCtx || {}, {
       topsp: {
         name: leader.name,
         sales: leader.sales,
+        prevSales: prevSales,
         commission: leader.comm,
+        salesGap: second ? Math.max(0, leader.sales - second.sales) : leader.sales,
+        direction: direction,
         period: isBm ? 'bulan ini' : 'this month'
       }
     });
+    wrapInsight();
   };
+  wrapInsight();
+  setTimeout(wrapInsight, 400);
 })();
