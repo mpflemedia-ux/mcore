@@ -73,7 +73,7 @@ SCRIPTS = [
     ('do-table-fit.js', '1'),
     ('list-table-fit.js', '3'),
     ('reco-print.js', '4'),
-    ('reco-sort-filter.js', '1'),
+    ('reco-sort-filter.js', '2'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
