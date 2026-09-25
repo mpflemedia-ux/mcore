@@ -22,7 +22,7 @@ SCRIPTS = [
     ('booking-state.js', '2'),
     ('booking-settings-ui.js', '1'),
     ('booking-realtime.js', '1'),
-    ('booking-card-ui', '2'),
+    ('booking-card-ui.js', '2'),
     ('crm-scan.js', '1'),
     ('employee-probation.js', '2'),
     ('employee-probation-save.js', '3'),
