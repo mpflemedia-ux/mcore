@@ -76,6 +76,7 @@ SCRIPTS = [
     ('reco-sort-filter.js', '2'),
     ('jnl-print.js', '2'),
     ('jnl-search.js', '1'),
+    ('coa-seed-advanced.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
