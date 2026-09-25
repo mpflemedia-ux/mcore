@@ -58,6 +58,7 @@ SCRIPTS = [
     ('admin-clients-dates.js', '1'),
     ('staff-hr-access.js', '1'),
     ('acc-full-tabs.js', '1'),
+    ('admin-announce-edit.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
