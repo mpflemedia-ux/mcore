@@ -35,28 +35,39 @@
     '</div>';
   }
   window._adminSetTenantDate = async function (tid, field, value) {
-    if (typeof isPlatformAdmin === 'function' && !isPlatformAdmin()) return;
+    if (!tid || (field !== 'trial_ends_at' && field !== 'plan_expires_at')) return;
     var patch = {};
     patch[field] = value || null;
     if (field === 'trial_ends_at') patch.is_trial = !!value;
-    var r = await sb.from('tenants').update(patch).eq('id', tid);
+    var r = await sb.from('tenants').update(patch).eq('id', tid).select('id,is_trial,trial_ends_at,plan_expires_at');
     if (r.error) {
       showToast(r.error.message, 'error');
       return;
     }
+    var saved = (r.data && r.data[0]) || null;
+    if (!saved) {
+      showToast(isBm() ? 'Save gagal (RLS tenants). Run SQL policy.' : 'Save blocked (tenants RLS). Run SQL policy.', 'error');
+      return;
+    }
     var row = (_adminClientsData || []).find(function (d) { return d.id === tid; });
     if (row) {
-      row[field] = value || null;
-      if (field === 'trial_ends_at') row.is_trial = !!value;
+      row.trial_ends_at = saved.trial_ends_at;
+      row.plan_expires_at = saved.plan_expires_at;
+      row.is_trial = saved.is_trial;
+    }
+    if (APP.tenant && APP.tenant.id === tid) {
+      APP.tenant.trial_ends_at = saved.trial_ends_at;
+      APP.tenant.plan_expires_at = saved.plan_expires_at;
+      APP.tenant.is_trial = saved.is_trial;
     }
     var box = document.querySelector('.admin-date-ui[data-tid="' + tid + '"][data-field="' + field + '"]');
     if (box) {
       var inp = box.querySelector('input.admin-date-input');
-      if (inp) inp.value = value || '';
+      if (inp) inp.value = ymd(saved[field]);
       var h = box.querySelector('.admin-date-hint');
-      if (h) h.textContent = hint(value);
+      if (h) h.textContent = hint(ymd(saved[field]));
     }
-    showToast(isBm() ? 'Tarikh dikemaskini' : 'Date updated', 'success');
+    showToast(isBm() ? 'Tarikh disimpan' : 'Date saved', 'success');
   };
   window._adminBumpTenantDate = function (tid, field, unit) {
     var row = (_adminClientsData || []).find(function (d) { return d.id === tid; });
