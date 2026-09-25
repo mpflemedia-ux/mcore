@@ -4,14 +4,44 @@
   function isPa() {
     try { return typeof isPlatformAdmin === 'function' && isPlatformAdmin(); } catch (e) { return false; }
   }
+  function inSupport() {
+    try { return isPa() && !!sessionStorage.getItem(KEY); } catch (e) { return false; }
+  }
+  function wrapPlanGates() {
+    if (window._planAllowsModule && !window._planAllowsModule._supportFull) {
+      var o = window._planAllowsModule;
+      window._planAllowsModule = function (m) {
+        if (inSupport()) return true;
+        return o.apply(this, arguments);
+      };
+      window._planAllowsModule._supportFull = true;
+    }
+    if (window._planAllowsPlanner && !window._planAllowsPlanner._supportFull) {
+      var p = window._planAllowsPlanner;
+      window._planAllowsPlanner = function () {
+        if (inSupport()) return true;
+        return p.apply(this, arguments);
+      };
+      window._planAllowsPlanner._supportFull = true;
+    }
+    if (window._planAllowsAi && !window._planAllowsAi._supportFull) {
+      var a = window._planAllowsAi;
+      window._planAllowsAi = function () {
+        if (inSupport()) return true;
+        return a.apply(this, arguments);
+      };
+      window._planAllowsAi._supportFull = true;
+    }
+  }
   function applyTenant(row) {
     if (!row || !row.id) return;
     APP.tenant = Object.assign({}, APP.tenant || {}, {
       id: row.id, code: row.code, name: row.name,
-      plan: row.plan, plan_id: row.plan_id || APP.tenant.plan_id
+      plan: row.plan, plan_id: row.plan_id || (APP.tenant && APP.tenant.plan_id)
     });
     try { localStorage.setItem('nexerp_pending_tenant_id', row.id); } catch (e) {}
     try { document.getElementById('tenant-name-header').textContent = row.name || '-'; } catch (e2) {}
+    wrapPlanGates();
     try { if (typeof buildSidebar === 'function') buildSidebar(); } catch (e3) {}
     try { if (typeof updateUserUI === 'function') updateUserUI(); } catch (e4) {}
   }
@@ -20,6 +50,8 @@
     if (!on) {
       if (el) el.remove();
       try { sessionStorage.removeItem(KEY); } catch (e) {}
+      wrapPlanGates();
+      try { if (typeof buildSidebar === 'function') buildSidebar(); } catch (e5) {}
       return;
     }
     try { sessionStorage.setItem(KEY, JSON.stringify({ name: name, at: Date.now() })); } catch (e2) {}
@@ -36,6 +68,8 @@
       ' <span style="opacity:.85">' + (bm() ? '(layout platform admin)' : '(platform admin layout)') + '</span>' +
       '<button type="button" class="btn btn-sm" style="margin-left:auto;background:#fff;color:#0e7490;border:0" onclick="window._exitSupportTenant()">' +
       (bm() ? 'Keluar' : 'Exit') + '</button>';
+    wrapPlanGates();
+    try { if (typeof buildSidebar === 'function') buildSidebar(); } catch (e6) {}
   }
   window._enterSupportTenant = async function (tid) {
     if (!isPa() || !tid) return;
@@ -51,10 +85,9 @@
         showToast((e && e.message) || 'Tenant not found', 'error');
         return;
       }
-      showToast(bm() ? 'Masuk workspace (jalankan SQL RPC untuk audit + RLS penuh)' : 'Entered workspace (run SQL RPC for audit + full RLS)', 'warning');
     }
-    applyTenant(row);
     banner(true, row.name);
+    applyTenant(row);
     showToast((bm() ? 'Masuk workspace: ' : 'Entered workspace: ') + (row.name || ''), 'success');
     if (typeof openPage === 'function') openPage('dashboard');
   };
@@ -68,8 +101,8 @@
     } catch (e) {
       showToast(e.message || 'exit failed', 'error');
     }
-    if (row && row.id) applyTenant(row);
     banner(false);
+    if (row && row.id) applyTenant(row);
     showToast(bm() ? 'Keluar mod sokongan' : 'Left support mode', 'success');
     if (typeof openPage === 'function') openPage('admin', { view: 'clients' });
   };
@@ -91,15 +124,12 @@
       td.insertBefore(b, td.firstChild);
       tr.dataset.supportBtn = '1';
     });
-    var title = document.querySelector('.page-title');
-    if (title && /Admin/.test(title.textContent || '') === false) return;
   }
   function injectDetail() {
     if (!isPa()) return;
     var sub = document.querySelector('.page-header .page-title');
     if (!sub) return;
     if (document.getElementById('support-enter-detail')) return;
-    var back = document.querySelector('.page-header [onclick*="clients"]');
     var hashTid = null;
     try {
       var st = window._adminClientsData || [];
@@ -118,6 +148,7 @@
     sub.parentNode.appendChild(btn);
   }
   function wrap() {
+    wrapPlanGates();
     var orig = window._adminClientsRenderTable;
     if (typeof orig === 'function' && !orig._support) {
       var w = function () {
