@@ -66,7 +66,7 @@ SCRIPTS = [
     ('admin-audit-filter.js', '1'),
     ('dash-topsp-sales.js', '3'),
     ('dash-ai-paint.js', '1'),
-    ('crm-table-fit.js', '1'),
+    ('crm-table-fit.js', '2'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
