@@ -55,7 +55,7 @@ SCRIPTS = [
     ('expense-claims-access.js', '1'),
     ('expense-claim-staff-apply.js', '2'),
     ('admin-clients-plans.js', '2'),
-    ('admin-clients-dates.js', '1'),
+    ('admin-clients-dates.js', '2'),
     ('staff-hr-access.js', '1'),
     ('acc-full-tabs.js', '1'),
     ('dash-insight-nickname.js', '1'),
