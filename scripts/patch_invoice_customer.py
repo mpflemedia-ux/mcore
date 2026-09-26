@@ -81,6 +81,7 @@ SCRIPTS = [
     ('sd-print-fit.js', '1'),
     ('sd-table-fit.js', '7'),
     ('sd-dark-contrast.js', '1'),
+    ('payslip-scroll.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
