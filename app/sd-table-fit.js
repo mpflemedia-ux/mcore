@@ -18,10 +18,18 @@
     '}' +
     '.pdoc-sd-table tbody td::before{content:none!important;display:none!important;}' +
     '.pdoc-sd-payee,.pdoc-sd-bank,.pdoc-sd-basic,.pdoc-sd-net{white-space:nowrap!important;word-break:normal!important;}' +
-    '.pdoc-sd-stack{display:flex;flex-direction:column;gap:6px;width:max-content;max-width:100%;}' +
-    '.pdoc-sd-line{flex-wrap:nowrap!important;width:max-content;align-items:center;}' +
-    '.pdoc-sd-line .form-input{width:88px!important;flex:0 0 88px;}' +
-    '.pdoc-sd-line .form-select{width:auto!important;min-width:64px;}' +
+    '.pdoc-sd-stack{display:flex;flex-direction:column;gap:6px;width:max-content;}' +
+    '.pdoc-sd-line{' +
+      'display:grid!important;grid-template-columns:76px 88px;column-gap:8px;align-items:center;' +
+      'width:172px!important;flex-wrap:nowrap!important;' +
+    '}' +
+    '.pdoc-sd-line label{' +
+      'white-space:nowrap!important;overflow:visible!important;word-break:keep-all!important;' +
+      'min-width:76px!important;width:76px!important;margin:0!important;line-height:1.2;' +
+    '}' +
+    '.pdoc-sd-line .form-input{width:88px!important;max-width:88px!important;flex:none!important;}' +
+    '.pdoc-sd-line .form-select{width:88px!important;min-width:88px!important;}' +
+    '.pdoc-sd-employer-note .pdoc-sd-line{grid-template-columns:76px 88px;}' +
     '}' +
     '@media print{.pdoc-sd-table{width:100%!important;table-layout:auto!important;}}';
   document.head.appendChild(s);
