@@ -1,35 +1,27 @@
 (function () {
-  function isFree(ds, d) {
-    var amt = d && d.amount != null ? Number(d.amount) : Number((ds && ds.price) || 0);
-    return amt <= 0 || (d && d.status === 'confirmed');
+  function pageIsFree() {
+    var root = document.getElementById('public-book-root') || document.body;
+    return /RM\s*0(\.00)?/.test(root.textContent || '');
   }
-  function patchForm() {
-    var form = document.getElementById('bk-form');
-    if (!form || form.getAttribute('data-free-ui')) return;
-    form.setAttribute('data-free-ui', '1');
-    var priceTxt = form.querySelector('p');
-    var free = priceTxt && /RM\s*0/.test(priceTxt.textContent || '');
-    var btn = form.querySelector('button[type=submit]');
-    if (btn && free) btn.textContent = 'Confirm booking';
-    var orig = form.onsubmit;
-    form.addEventListener('submit', function () {
-      setTimeout(function () {
-        var box = form.parentNode;
-        if (!box) return;
-        var h = box.querySelector('h3');
-        if (h && h.textContent === 'Held' && free) {
-          h.textContent = 'Booked';
-          var ps = box.querySelectorAll('p');
-          if (ps[0]) ps[0].textContent = 'Slot confirmed. No payment required.';
-          if (ps[1] && /confirm payment/i.test(ps[1].textContent || '')) ps[1].remove();
-        }
-      }, 80);
-    }, true);
+  function relabel() {
+    if (!pageIsFree()) return;
+    document.querySelectorAll('h3').forEach(function (h) {
+      if ((h.textContent || '').trim() !== 'Held') return;
+      h.textContent = 'Booked';
+      var box = h.parentElement;
+      if (!box) return;
+      Array.prototype.forEach.call(box.querySelectorAll('p'), function (p) {
+        var t = p.textContent || '';
+        if (/held 15 min/i.test(t)) p.textContent = 'Slot confirmed. No payment required.';
+        else if (/confirm payment/i.test(t)) p.remove();
+      });
+    });
+    document.querySelectorAll('#bk-form button[type=submit]').forEach(function (b) {
+      if (/hold/i.test(b.textContent || '')) b.textContent = 'Confirm booking';
+    });
   }
-  var mo;
+  setInterval(relabel, 200);
   try {
-    mo = new MutationObserver(function () { patchForm(); });
-    mo.observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(relabel).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   } catch (e) {}
-  setInterval(patchForm, 600);
 })();
