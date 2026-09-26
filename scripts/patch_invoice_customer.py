@@ -77,7 +77,7 @@ SCRIPTS = [
     ('jnl-print.js', '2'),
     ('jnl-search.js', '1'),
     ('coa-seed-advanced.js', '2'),
-    ('sd-employer-edit.js', '3'),
+    ('sd-employer-edit.js', '4'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'

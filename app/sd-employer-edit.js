@@ -21,7 +21,13 @@
     return m ? Number(m[1]) : 0;
   }
 
+  function killFab() {
+    var fab = document.getElementById('sd-er-save-fab');
+    if (fab && fab.parentNode) fab.parentNode.removeChild(fab);
+  }
+
   function inject() {
+    killFab();
     var notes = document.querySelectorAll('.pdoc-sd-employer-note');
     if (!notes.length) return;
     var isBm = typeof APP !== 'undefined' && APP.language === 'bm';
@@ -41,7 +47,6 @@
         '<div class="pdoc-sd-line"><label>' + (isBm ? 'EIS Mjkn' : 'Er EIS') + '</label>' +
         '<input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-er-' + id + '" value="' + parseAmt(src, 'EIS') + '" oninput="_sdRecalc()"></div>';
     });
-    ensureSave();
   }
 
   function sumByPrefix(prefix, er) {
@@ -64,7 +69,7 @@
     var socsoEr = sumByPrefix('sd-socso', true);
     var eisEe = sumByPrefix('sd-eis', false);
     var eisEr = sumByPrefix('sd-eis', true);
-    var pcb = 0, zakat = 0, adv = 0, net = 0;
+    var pcb = 0, zakat = 0, net = 0;
     document.querySelectorAll('input[id^="sd-pcb-"]').forEach(function (el) {
       var n = Number(el.value); if (Number.isFinite(n)) pcb += Math.max(0, n);
     });
@@ -170,24 +175,12 @@
     window._sdSaveAll._erEdit3 = true;
   }
 
-  function ensureSave() {
-    if (document.getElementById('sd-er-save-fab')) return;
-    if (!document.querySelector('.pdoc-sd-table, #sd-save-result, [onclick*="_sdSaveAll"]')) return;
-    var btn = document.createElement('button');
-    btn.id = 'sd-er-save-fab';
-    btn.className = 'btn btn-primary no-print';
-    btn.textContent = (APP.language === 'bm') ? 'Simpan' : 'Save';
-    btn.style.cssText = 'position:fixed;left:12px;bottom:88px;z-index:1200;padding:10px 16px';
-    btn.onclick = function (e) { e.preventDefault(); if (window._sdSaveAll) window._sdSaveAll(); };
-    document.body.appendChild(btn);
-  }
-
   function wrapRender() {
     var orig = window.renderSalaryDisbursement;
     if (typeof orig !== 'function' || orig._erEdit3) return;
     window.renderSalaryDisbursement = function () {
       var r = orig.apply(this, arguments);
-      var go = function () { wrapValues(); wrapRecalc(); wrapSave(); inject(); paintTotals(); };
+      var go = function () { killFab(); wrapValues(); wrapRecalc(); wrapSave(); inject(); paintTotals(); };
       if (r && typeof r.then === 'function') r.then(function () { setTimeout(go, 50); setTimeout(go, 400); });
       else { setTimeout(go, 50); setTimeout(go, 400); }
       return r;
@@ -195,10 +188,11 @@
     window.renderSalaryDisbursement._erEdit3 = true;
   }
 
+  killFab();
   wrapRender();
   wrapValues();
   wrapRecalc();
   wrapSave();
   setTimeout(wrapRender, 400);
-  setTimeout(function () { inject(); paintTotals(); wrapSave(); }, 600);
+  setTimeout(function () { killFab(); inject(); paintTotals(); wrapSave(); }, 600);
 })();
