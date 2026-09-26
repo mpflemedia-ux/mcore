@@ -79,7 +79,7 @@ SCRIPTS = [
     ('coa-seed-advanced.js', '2'),
     ('sd-employer-edit.js', '6'),
     ('sd-print-fit.js', '1'),
-    ('sd-table-fit.js', '5'),
+    ('sd-table-fit.js', '6'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
