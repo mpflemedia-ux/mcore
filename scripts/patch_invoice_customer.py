@@ -84,6 +84,7 @@ SCRIPTS = [
     ('payslip-scroll.js', '1'),
     ('booking-free-confirm.js', '2'),
     ('settings-form-fit.js', '2'),
+    ('keep-page-scroll.js', '1'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'
