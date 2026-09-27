@@ -1,27 +1,50 @@
 (function () {
-  var lastStmt = null;
-
-  function money(n) {
-    var v = Number(n || 0);
-    return 'RM ' + v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var KEY = 'mcore_reco_stmt_totals';
+  function loadStmt() {
+    try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
   }
-
+  function saveStmt(o) {
+    try { sessionStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {}
+  }
+  function parseAmt(s) {
+    var t = String(s || '').replace(/RM\s*/i, '').replace(/,/g, '').trim();
+    var n = parseFloat(t);
+    return isNaN(n) ? 0 : n;
+  }
+  function money(n) {
+    return 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   function sums() {
-    var rows = window._recoTxns || [];
-    var inn = 0, out = 0;
-    rows.forEach(function (t) {
-      var a = Number(t.amount || 0);
+    var inn = 0, out = 0, n = 0;
+    var cells = document.querySelectorAll('#reco-result table tbody tr td:nth-child(3)');
+    if (cells.length) {
+      cells.forEach(function (td) {
+        var a = parseAmt(td.textContent);
+        n += 1;
+        if (a >= 0) inn += a; else out += Math.abs(a);
+      });
+      return { inn: inn, out: out, net: inn - out, n: n };
+    }
+    var ta = document.getElementById('reco-csv-text');
+    var text = ta && ta.value || '';
+    text.split(/\r?\n/).forEach(function (line) {
+      var p = line.split(',');
+      if (p.length < 3) return;
+      var a = parseAmt(p[p.length - 1]);
+      if (!a && p.length >= 3) a = parseAmt(p[2]);
+      if (!a) return;
+      n += 1;
       if (a >= 0) inn += a; else out += Math.abs(a);
     });
-    return { inn: inn, out: out, net: inn - out, n: rows.length };
+    return { inn: inn, out: out, net: inn - out, n: n };
   }
-
   function paint() {
     var host = document.getElementById('reco-result');
     if (!host) return;
     var old = document.getElementById('reco-live-tally');
     if (old) old.remove();
     var s = sums();
+    var lastStmt = loadStmt();
     if (!s.n && !lastStmt) return;
     var isBm = window.APP && APP.language === 'bm';
     var stmtIn = lastStmt && lastStmt.in;
@@ -33,7 +56,7 @@
       var vs = stmt == null || stmt === 'conflict'
         ? ''
         : ' <span style="color:var(--text-3);font-weight:400">' + (isBm ? 'vs penyata ' : 'vs statement ') + money(stmt) + '</span>';
-      var icon = ok == null ? '' : ok ? ' ✓' : ' ⚠';
+      var icon = ok == null ? '' : ok ? ' \u2713' : ' \u26a0';
       return '<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12px">' +
         '<span style="color:var(--text-3)">' + label + '</span>' +
         '<span style="font-variant-numeric:tabular-nums;color:' + color + '">' + money(got) + icon + vs + '</span></div>';
@@ -52,44 +75,45 @@
       row(isBm ? 'Keluar (OUT)' : 'Total OUT', s.out, stmtOut) +
       row(isBm ? 'Bersih' : 'Net', s.net, null) +
       '<div style="font-size:11px;color:var(--text-3);margin-top:4px">' +
-      (isBm
-        ? 'Bandingkan IN/OUT dengan Jumlah Kredit/Debit pada PDF penyata.'
-        : 'Compare IN/OUT to Total Credit/Debit printed on the bank PDF.') +
+      s.n + (isBm ? ' baris dijumlah. Bandingkan dengan Jumlah Kredit/Debit PDF.' : ' lines summed. Compare to Total Credit/Debit on the PDF.') +
       '</div>';
     host.insertBefore(box, host.firstChild);
   }
-
   function hookTally() {
     var orig = window._recoRenderPdfTally;
-    if (typeof orig !== 'function' || orig._liveTally) return;
+    if (typeof orig !== 'function' || orig._liveTally2) return;
     window._recoRenderPdfTally = function (isBm, sumDebit, sumCredit, stmtTotalDebit, stmtTotalCredit) {
-      lastStmt = { out: stmtTotalDebit, in: stmtTotalCredit };
+      saveStmt({ out: stmtTotalDebit, in: stmtTotalCredit });
       var r = orig.apply(this, arguments);
-      setTimeout(paint, 30);
+      setTimeout(paint, 40);
       return r;
     };
-    window._recoRenderPdfTally._liveTally = true;
+    window._recoRenderPdfTally._liveTally2 = true;
   }
   function hookRender() {
     var orig = window._recoRenderResults;
-    if (typeof orig !== 'function' || orig._liveTally) return;
+    if (typeof orig !== 'function' || orig._liveTally2) return;
     window._recoRenderResults = function () {
       var r = orig.apply(this, arguments);
-      setTimeout(paint, 20);
+      setTimeout(paint, 30);
+      setTimeout(paint, 200);
       return r;
     };
-    window._recoRenderResults._liveTally = true;
+    window._recoRenderResults._liveTally2 = true;
   }
   function hookClear() {
     var orig = window._recoClearSession;
-    if (typeof orig !== 'function' || orig._liveTally) return;
+    if (typeof orig !== 'function' || orig._liveTally2) return;
     window._recoClearSession = function () {
-      lastStmt = null;
+      try { sessionStorage.removeItem(KEY); } catch (e) {}
       return orig.apply(this, arguments);
     };
-    window._recoClearSession._liveTally = true;
+    window._recoClearSession._liveTally2 = true;
   }
   function boot() { hookTally(); hookRender(); hookClear(); paint(); }
   boot();
   setTimeout(boot, 400);
+  setInterval(function () {
+    if (document.getElementById('reco-result')) paint();
+  }, 1500);
 })();
