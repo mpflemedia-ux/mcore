@@ -4,6 +4,18 @@
   function table() {
     return document.querySelector('#reco-result table');
   }
+  function parseDmy(s) {
+    var m = String(s || '').trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+    if (!m) {
+      var t = Date.parse(s);
+      return isNaN(t) ? 0 : t;
+    }
+    var d = parseInt(m[1], 10);
+    var mo = parseInt(m[2], 10);
+    var y = parseInt(m[3], 10);
+    if (y < 100) y += 2000;
+    return Date.UTC(y, mo - 1, d);
+  }
   function rowData(tr) {
     var tds = tr.querySelectorAll('td');
     var sel = tr.querySelector('select');
@@ -11,9 +23,11 @@
     var amtN = parseFloat(amtTxt.replace(/[^0-9.-]/g, ''));
     if (isNaN(amtN)) amtN = 0;
     if (/-/.test(amtTxt) && amtN > 0) amtN = -amtN;
+    var dateTxt = ((tds[0] && tds[0].textContent) || '').trim();
     return {
       tr: tr,
-      date: ((tds[0] && tds[0].textContent) || '').trim(),
+      date: dateTxt,
+      dateN: parseDmy(dateTxt),
       desc: ((tds[1] && tds[1].textContent) || '').trim(),
       amount: ((tds[2] && tds[2].textContent) || '').trim(),
       amountN: amtN,
@@ -36,6 +50,7 @@
       var va, vb;
       if (v.sort === 'amount') { va = a.amountN; vb = b.amountN; return (va - vb) * dir; }
       if (v.sort === 'conf') { va = a.conf; vb = b.conf; return (va - vb) * dir; }
+      if (v.sort === 'date') { return (a.dateN - b.dateN) * dir; }
       va = v.sort === 'desc' ? a.desc : v.sort === 'cat' ? a.cat : v.sort === 'match' ? a.match : a.date;
       vb = v.sort === 'desc' ? b.desc : v.sort === 'cat' ? b.cat : v.sort === 'match' ? b.match : b.date;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
@@ -124,7 +139,6 @@
     var host = document.getElementById('reco-result');
     if (!host) return;
     var old = document.getElementById('reco-view-bar');
-    var qKeep = window._recoView;
     if (old) old.remove();
     applyDom();
     host.insertAdjacentHTML('afterbegin', toolbarHtml());
