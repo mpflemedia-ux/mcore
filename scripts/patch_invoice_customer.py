@@ -83,7 +83,7 @@ SCRIPTS = [
     ('sd-dark-contrast.js', '1'),
     ('payslip-scroll.js', '1'),
     ('booking-free-confirm.js', '2'),
-    ('settings-form-fit.js', '1'),
+    ('settings-form-fit.js', '2'),
 ]
 for name, ver in SCRIPTS:
     tag = '<script src="./'+name+'?v='+ver+'"></script>'

@@ -5,27 +5,39 @@
   s.id = 'settings-form-fit-css';
   s.textContent =
     '@media screen{' +
-    '#stg-company .form-label,#main .card .form-label{white-space:nowrap!important;}' +
-    '#stg-company .form-input,#stg-company .form-select,' +
+    '#main .card .form-label{white-space:nowrap!important;}' +
     '#main .card .form-input,#main .card .form-select{' +
-      'min-width:200px!important;width:100%!important;box-sizing:border-box;' +
+      'min-width:240px!important;width:100%!important;box-sizing:border-box;' +
+    '}' +
+    '#stg-company,#stg-default-accounts,#main .card{' +
+      'overflow-x:auto!important;-webkit-overflow-scrolling:touch;' +
     '}' +
     '}';
   document.head.appendChild(s);
 
   function fitGrids() {
-    var root = document.getElementById('stg-company') || document.getElementById('main');
-    if (!root) return;
-    root.querySelectorAll('div[style*="grid-template-columns"]').forEach(function (grid) {
-      var cols = (grid.getAttribute('style') || '').match(/grid-template-columns:\s*([^;]+)/);
-      var spec = cols ? cols[1] : '';
-      var n = (spec.match(/1fr/g) || []).length;
-      if (n < 2) return;
-      grid.style.overflowX = 'auto';
-      grid.style.webkitOverflowScrolling = 'touch';
-      grid.style.gridTemplateColumns = 'repeat(' + n + ', minmax(220px, 1fr))';
-      grid.style.minWidth = '0';
+    var nodes = document.querySelectorAll(
+      '#stg-company, #stg-default-accounts, #main .card, #main div[style*="grid-template-columns"]'
+    );
+    nodes.forEach(function (el) {
+      var style = el.getAttribute('style') || '';
+      if (style.indexOf('grid-template-columns') >= 0) {
+        var n = (style.match(/1fr/g) || []).length || 2;
+        el.style.display = 'grid';
+        el.style.gridTemplateColumns = 'repeat(' + n + ', minmax(260px, 1fr))';
+        el.style.overflowX = 'auto';
+        el.style.webkitOverflowScrolling = 'touch';
+        el.style.maxWidth = '100%';
+      } else if (el.classList.contains('card') || el.id === 'stg-company' || el.id === 'stg-default-accounts') {
+        el.style.overflowX = 'auto';
+        el.style.webkitOverflowScrolling = 'touch';
+      }
     });
+    var main = document.getElementById('main');
+    if (main) {
+      main.style.overflowX = 'auto';
+      main.style.webkitOverflowScrolling = 'touch';
+    }
   }
 
   function hook() {
@@ -42,5 +54,5 @@
   }
   hook();
   setTimeout(hook, 400);
-  setTimeout(fitGrids, 600);
+  setTimeout(fitGrids, 500);
 })();
