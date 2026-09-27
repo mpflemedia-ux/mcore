@@ -85,7 +85,7 @@ SCRIPTS = [
     ('booking-free-confirm.js', '2'),
     ('settings-form-fit.js', '2'),
     ('keep-page-scroll.js', '1'),
-    ('reco-scan-tally.js', '1'),
+    ('reco-scan-tally.js', '2'),
     ('reco-delete-confirm.js', '1'),
 ]
 for name, ver in SCRIPTS:
