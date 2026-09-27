@@ -1,70 +1,163 @@
-/* Dashboard: expire stale + Confirm cash / Release + row expand */
+/* Dashboard booking actions: expire + confirm/release/amend/delete + planner sync */
 (function () {
+  function toast(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'success');
+  }
   async function expire() {
     if (!window.sb) return;
     try { await sb.rpc('expire_stale_bookings'); } catch (e) {}
+  }
+  async function loadBooking(id) {
+    var q = await sb.from('bookings')
+      .select('id,tenant_id,service_id,customer_name,customer_email,customer_phone,starts_at,ends_at,status,quote_ref,notes,activity_id,booking_services(name,duration_min)')
+      .eq('id', id)
+      .maybeSingle();
+    return q.data;
+  }
+  async function ensurePlanner(b) {
+    if (!b || b.status !== 'confirmed' || !APP.tenant || !APP.user) return;
+    var svc = b.booking_services && b.booking_services.name ? b.booking_services.name : 'Booking';
+    var title = 'Booking ' + (b.quote_ref || '') + ': ' + svc + ' — ' + (b.customer_name || '');
+    var notes = 'booking:' + b.id;
+    if (b.activity_id) {
+      var u = await sb.from('platform_activities').update({
+        title: title,
+        starts_at: b.starts_at,
+        ends_at: b.ends_at,
+        notes: notes,
+        status: 'open',
+        updated_at: new Date().toISOString()
+      }).eq('id', b.activity_id);
+      if (!u.error) return;
+    }
+    var ins = await sb.from('platform_activities').insert({
+      owner_user_id: APP.user.id,
+      tenant_id: APP.tenant.id,
+      title: title,
+      activity_type: 'appointment',
+      starts_at: b.starts_at,
+      ends_at: b.ends_at,
+      notes: notes,
+      status: 'open'
+    }).select('id').maybeSingle();
+    if (ins.data && ins.data.id) {
+      await sb.from('bookings').update({ activity_id: ins.data.id }).eq('id', b.id);
+    }
+  }
+  async function cancelPlanner(b) {
+    if (!b || !b.activity_id) return;
+    await sb.from('platform_activities').update({
+      status: 'cancelled',
+      updated_at: new Date().toISOString()
+    }).eq('id', b.activity_id);
+  }
+  async function amendBooking(id, form) {
+    var b = await loadBooking(id);
+    if (!b) { toast('Booking not found', 'error'); return; }
+    var name = (form.name.value || '').trim();
+    var phone = (form.phone.value || '').trim();
+    var email = (form.email.value || '').trim();
+    var notes = (form.notes.value || '').trim();
+    var starts = form.starts.value ? new Date(form.starts.value) : new Date(b.starts_at);
+    if (!name) { toast('Name required', 'error'); return; }
+    if (isNaN(starts.getTime())) { toast('Invalid time', 'error'); return; }
+    var dur = (b.booking_services && Number(b.booking_services.duration_min)) || 60;
+    var ends = new Date(starts.getTime() + dur * 60000);
+    var r = await sb.rpc('amend_booking', {
+      p_booking_id: id,
+      p_name: name,
+      p_phone: phone,
+      p_email: email,
+      p_starts_at: starts.toISOString(),
+      p_notes: notes
+    });
+    if (r.error) {
+      var u = await sb.from('bookings').update({
+        customer_name: name,
+        customer_phone: phone || null,
+        customer_email: email || null,
+        starts_at: starts.toISOString(),
+        ends_at: ends.toISOString(),
+        notes: notes || null,
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
+      if (u.error) { toast(u.error.message || r.error.message, 'error'); return; }
+    }
+    var fresh = await loadBooking(id);
+    if (fresh && fresh.status === 'confirmed') await ensurePlanner(fresh);
+    toast(APP.language === 'bm' ? 'Tempahan dipinda' : 'Booking amended');
+  }
+  async function deleteBooking(id) {
+    var ok = confirm(APP.language === 'bm' ? 'Padam / batal tempahan ini?' : 'Delete / cancel this booking?');
+    if (!ok) return;
+    var b = await loadBooking(id);
+    var r = await sb.rpc('cancel_booking', { p_booking_id: id });
+    if (r.error) {
+      var u = await sb.from('bookings').update({
+        status: 'cancelled',
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
+      if (u.error) { toast(u.error.message || r.error.message, 'error'); return; }
+    }
+    if (b) await cancelPlanner(b);
+    toast(APP.language === 'bm' ? 'Tempahan dibatalkan' : 'Booking cancelled');
   }
   function bindCard() {
     var body = document.getElementById('db-book-body');
     if (!body || body._bkState) return;
     body._bkState = true;
     body.addEventListener('click', async function (e) {
+      var cancelBtn = e.target.closest('[data-bk-act="amend-cancel"]');
+      if (cancelBtn) {
+        var form = cancelBtn.closest('.bk-amend-form');
+        if (form) form.style.display = 'none';
+        return;
+      }
       var btn = e.target.closest('[data-bk-act]');
       if (!btn) return;
+      e.preventDefault();
       e.stopPropagation();
       var id = btn.getAttribute('data-id');
       var act = btn.getAttribute('data-bk-act');
-      var r = act === 'cash'
-        ? await sb.rpc('confirm_booking_cash', { p_booking_id: id })
-        : await sb.rpc('release_booking', { p_booking_id: id });
-      if (r.error) { showToast(r.error.message, 'error'); return; }
-      showToast(act === 'cash' ? 'Cash confirmed' : 'Slot released', 'success');
-      var card = document.getElementById('db-sec-booking');
-      if (card) card.remove();
-      if (typeof window.renderDashboard === 'function') renderDashboard();
+      if (act === 'amend') {
+        var row = btn.closest('details');
+        var f = row && row.querySelector('.bk-amend-form');
+        if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        return;
+      }
+      if (act === 'delete') {
+        await deleteBooking(id);
+        if (typeof window.__bkCardPaint === 'function') window.__bkCardPaint();
+        return;
+      }
+      if (act === 'cash' || act === 'release') {
+        var r = act === 'cash'
+          ? await sb.rpc('confirm_booking_cash', { p_booking_id: id })
+          : await sb.rpc('release_booking', { p_booking_id: id });
+        if (r.error) { toast(r.error.message, 'error'); return; }
+        if (act === 'cash') {
+          var b = await loadBooking(id);
+          if (b) await ensurePlanner(b);
+          toast(APP.language === 'bm' ? 'Disahkan — masuk planner' : 'Confirmed — added to planner');
+        } else {
+          var rel = await loadBooking(id);
+          if (rel) await cancelPlanner(rel);
+          toast(APP.language === 'bm' ? 'Slot dilepaskan' : 'Slot released');
+        }
+        if (typeof window.__bkCardPaint === 'function') window.__bkCardPaint();
+      }
+    });
+    body.addEventListener('submit', async function (e) {
+      var form = e.target.closest('.bk-amend-form');
+      if (!form) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await amendBooking(form.getAttribute('data-id'), form);
+      if (typeof window.__bkCardPaint === 'function') window.__bkCardPaint();
     });
   }
   async function decorate() {
     await expire();
-    bindCard();
-    if (document.getElementById('bk-card-tools')) return;
-    var body = document.getElementById('db-book-body');
-    if (!body || !APP.tenant) return;
-    var isBm = APP.language === 'bm';
-    var start = new Date(); start.setHours(0, 0, 0, 0);
-    var end = new Date(); end.setHours(23, 59, 59, 999);
-    var q = await sb.from('bookings')
-      .select('id,customer_name,customer_email,customer_phone,starts_at,status,quote_ref,payment_channel,created_at,notes,booking_services(name)')
-      .eq('tenant_id', APP.tenant.id)
-      .gte('starts_at', start.toISOString())
-      .lte('starts_at', end.toISOString())
-      .order('starts_at');
-    if (q.error || !q.data) return;
-    if (!q.data.length) return;
-    body.innerHTML = q.data.map(function (r) {
-      var svc = r.booking_services && r.booking_services.name ? r.booking_services.name : 'Booking';
-      var pending = r.status === 'hold' || r.status === 'pending_payment' || r.status === 'payment_failed';
-      var t = new Date(r.starts_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' });
-      return '<details style="padding:8px 0;border-bottom:1px solid var(--border,#e2e8f0)">' +
-        '<summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px">' +
-        '<span>' + t + ' · ' + (r.customer_name || '-') + ' · ' + svc + (r.quote_ref ? ' · ' + r.quote_ref : '') +
-        '</span><strong style="font-size:11px">' + String(r.status || '').toUpperCase() + '</strong></summary>' +
-        '<div style="font-size:12px;color:var(--db-text3);margin-top:8px;line-height:1.5">' +
-        '<div>' + (isBm ? 'Nama' : 'Name') + ': ' + (r.customer_name || '-') + '</div>' +
-        '<div>Email: ' + (r.customer_email || '-') + '</div>' +
-        '<div>' + (isBm ? 'Telefon' : 'Phone') + ': ' + (r.customer_phone || '-') + '</div>' +
-        '<div>' + (isBm ? 'Masa' : 'Time') + ': ' + (r.starts_at || '-') + '</div>' +
-        '<div>Ref: ' + (r.quote_ref || '-') + '</div>' +
-        '<div>' + (isBm ? 'Bayaran' : 'Payment') + ': ' + (r.payment_channel || '-') + '</div>' +
-        '<div>' + (isBm ? 'Dicipta' : 'Created') + ': ' + (r.created_at || '-') + '</div>' +
-        '</div>' +
-        (pending
-          ? '<div style="margin-top:6px;display:flex;gap:6px">' +
-            '<button type="button" class="db-btn" data-bk-act="cash" data-id="' + r.id + '">Confirm cash</button>' +
-            '<button type="button" class="db-btn" data-bk-act="release" data-id="' + r.id + '">Release</button></div>'
-          : '') +
-        '</details>';
-    }).join('');
     bindCard();
   }
   function wrap() {
