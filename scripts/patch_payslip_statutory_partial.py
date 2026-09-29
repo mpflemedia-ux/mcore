@@ -1,20 +1,35 @@
 #!/usr/bin/env python3
-"""Bake payslip statutory exempt + partial payment overlay into app/index.html.
-Idempotent. Also bumps expense sync cache bust v9→v10 if still on v9 (PR #789 bake miss).
-"""
+"""Bake payslip statutory/partial overlay: assemble JS from b64 if needed, inject script tag, bump sync v10."""
 from pathlib import Path
-import sys
+import base64, sys
 
 root = Path(__file__).resolve().parents[1]
-idx_p = root / "app" / "index.html"
 js_name = "payslip-statutory-partial.js"
-tag = f'<script src="./{js_name}?v=1"></script>'
+js_p = root / "app" / js_name
 marker = "PAYSLIP_STATUTORY_PARTIAL_V1"
+b64_dir = Path(__file__).resolve().parent / "_payslip_partial_b64"
 
+# Assemble overlay from b64 chunks when missing or stale
+if b64_dir.is_dir():
+    b64 = "".join(p.read_text() for p in sorted(b64_dir.glob("*.b64")))
+    code = base64.b64decode(b64).decode("utf-8")
+    if marker not in code:
+        print("ERROR: assembled overlay missing marker", file=sys.stderr)
+        sys.exit(1)
+    if (not js_p.is_file()) or (marker not in js_p.read_text(encoding="utf-8")) or (js_p.read_text(encoding="utf-8") != code):
+        js_p.write_text(code, encoding="utf-8")
+        print("wrote", js_name, "from b64 (", len(code), "bytes)")
+    else:
+        print(js_name, "up to date")
+elif not js_p.is_file():
+    print("ERROR: missing", js_p, "and no b64 dir", file=sys.stderr)
+    sys.exit(1)
+
+idx_p = root / "app" / "index.html"
+tag = f'<script src="./{js_name}?v=1"></script>'
 text = idx_p.read_text(encoding="utf-8")
 changed = False
 
-# 1) Inject overlay after payslip-scroll.js (or after sd-employer-edit)
 if tag in text or f"./{js_name}?" in text:
     print("script tag already present")
 else:
@@ -28,7 +43,6 @@ else:
     changed = True
     print("injected", js_name)
 
-# 2) Expense v10 cache bust (secondary — bake missed after #789)
 if "role-permissions-sync.js?v=10" in text:
     print("sync already v10")
 elif "role-permissions-sync.js?v=9" in text:
@@ -37,15 +51,6 @@ elif "role-permissions-sync.js?v=9" in text:
     print("bumped role-permissions-sync.js?v=9 → v=10")
 else:
     print("WARN: unexpected sync cache bust tag")
-
-# 3) Ensure overlay file exists
-js_p = root / "app" / js_name
-if not js_p.is_file():
-    print("ERROR: missing", js_p, file=sys.stderr)
-    sys.exit(1)
-if marker not in js_p.read_text(encoding="utf-8"):
-    print("ERROR: overlay missing marker", marker, file=sys.stderr)
-    sys.exit(1)
 
 if changed:
     idx_p.write_text(text, encoding="utf-8")
