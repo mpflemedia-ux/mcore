@@ -1,0 +1,28 @@
+name: patch-payslip-statutory-partial
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_payslip_statutory_partial.py
+      - app/payslip-statutory-partial.js
+      - .github/workflows/patch-payslip-statutory-partial.yml
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Bake payslip statutory/partial overlay + sync v10 bust if needed
+        run: python3 scripts/patch_payslip_statutory_partial.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html app/payslip-statutory-partial.js scripts/patch_payslip_statutory_partial.py
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore: bake payslip statutory/partial overlay + sync cache bust"
+          git push origin HEAD:main
