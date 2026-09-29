@@ -1,28 +1,18 @@
 #!/usr/bin/env python3
-"""Bake payslip statutory/partial overlay: assemble JS from b64 if needed, inject script tag, bump sync v10."""
+"""Bake payslip statutory/partial: inject overlay script tag + sync v10 bust. Idempotent."""
 from pathlib import Path
-import base64, sys
+import sys
 
 root = Path(__file__).resolve().parents[1]
 js_name = "payslip-statutory-partial.js"
 js_p = root / "app" / js_name
 marker = "PAYSLIP_STATUTORY_PARTIAL_V1"
-b64_dir = Path(__file__).resolve().parent / "_payslip_partial_b64"
 
-# Assemble overlay from b64 chunks when missing or stale
-if b64_dir.is_dir():
-    b64 = "".join(p.read_text() for p in sorted(b64_dir.glob("*.b64")))
-    code = base64.b64decode(b64).decode("utf-8")
-    if marker not in code:
-        print("ERROR: assembled overlay missing marker", file=sys.stderr)
-        sys.exit(1)
-    if (not js_p.is_file()) or (marker not in js_p.read_text(encoding="utf-8")) or (js_p.read_text(encoding="utf-8") != code):
-        js_p.write_text(code, encoding="utf-8")
-        print("wrote", js_name, "from b64 (", len(code), "bytes)")
-    else:
-        print(js_name, "up to date")
-elif not js_p.is_file():
-    print("ERROR: missing", js_p, "and no b64 dir", file=sys.stderr)
+if not js_p.is_file():
+    print("ERROR: missing", js_p, file=sys.stderr)
+    sys.exit(1)
+if marker not in js_p.read_text(encoding="utf-8"):
+    print("ERROR: overlay missing marker", marker, file=sys.stderr)
     sys.exit(1)
 
 idx_p = root / "app" / "index.html"
