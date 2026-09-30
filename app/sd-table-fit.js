@@ -3,8 +3,15 @@
   if (old) old.remove();
   var s = document.createElement('style');
   s.id = 'sd-table-fit-css';
+  // v10: Mike rejected v9 mobile cards. Keep wide LTR table + horizontal
+  // scroll on ALL screen sizes (inside .pdoc-sd-scroll). Compact mobile
+  // stack/padding to shrink tall-row voids without stacking fields.
+  // Preserve #859 debounce + preventScroll + scroll capture/restore.
+  // Deduplicate screen PREPARED/CHECKED: hide #sd-sig-row preview lines
+  // (form .pdoc-sig-grid stays for edit; #sd-sig-print stays for print).
+  // Totals strip (Net/EPF/SOCSO/EIS/PCB) scrolls LTR on narrow screens.
   s.textContent =
-    '@media screen and (min-width:901px){' +
+    '@media screen{' +
     '.pdoc-sd-scroll{overflow-x:auto!important;-webkit-overflow-scrolling:touch;max-width:100%;}' +
     '.pdoc-sd-table{display:table!important;table-layout:auto!important;border-collapse:collapse!important;width:max-content!important;}' +
     '.pdoc-sd-table thead{display:table-header-group!important;}' +
@@ -33,58 +40,58 @@
     '.pdoc-sd-line .form-input{' +
       'flex:0 0 88px!important;width:88px!important;min-width:88px!important;max-width:88px!important;' +
     '}' +
+    /* Screen: one signature UI only - editable form cards.
+       Hide the plain-line preview row that duplicated PREPARED/CHECKED. */
+    '.pdoc-sd-sum-table tr.sd-sig-row,#sd-sig-row{display:none!important;}' +
     '}' +
     '@media screen and (max-width:900px){' +
-    '.pdoc-sd-scroll{overflow-x:hidden!important;max-width:100%!important;}' +
-    '.pdoc-sd-summary,.pdoc-sd-meta,.pdoc-sd-totals{' +
-      'flex-wrap:wrap!important;overflow:visible!important;white-space:normal!important;' +
-      'padding:8px 12px!important;gap:8px!important;' +
+    /* Keep real table (LTR columns) + force horizontal scroll - NOT cards */
+    '.pdoc-sd-scroll{overflow-x:auto!important;-webkit-overflow-scrolling:touch;max-width:100%!important;}' +
+    '.pdoc-sd-table{display:table!important;table-layout:auto!important;width:max-content!important;min-width:0!important;}' +
+    '.pdoc-sd-table thead{display:table-header-group!important;}' +
+    '.pdoc-sd-table tbody,.pdoc-sd-table tfoot{display:table-row-group!important;}' +
+    '.pdoc-sd-table tr{display:table-row!important;height:auto!important;min-height:0!important;}' +
+    '.pdoc-sd-table th,.pdoc-sd-table td{' +
+      'display:table-cell!important;vertical-align:top!important;height:auto!important;' +
+      'white-space:nowrap!important;padding:4px 8px!important;' +
     '}' +
-    '.pdoc-sd-table{' +
-      'display:block!important;min-width:0!important;width:100%!important;' +
-      'table-layout:auto!important;border-collapse:collapse!important;' +
-      'height:auto!important;' +
-    '}' +
-    '.pdoc-sd-table thead{display:none!important;}' +
-    '.pdoc-sd-table tbody,.pdoc-sd-table tfoot{display:block!important;width:100%!important;height:auto!important;}' +
-    '.pdoc-sd-table tbody tr{' +
-      'display:block!important;width:100%!important;box-sizing:border-box;' +
-      'height:auto!important;min-height:0!important;max-height:none!important;' +
-      'margin:0 0 10px;padding:10px 12px;' +
-      'border:1px solid #E2E8F0;border-radius:10px;background:#fff;' +
-    '}' +
-    '.pdoc-sd-table tbody td{' +
-      'display:grid!important;grid-template-columns:88px minmax(0,1fr);gap:6px;align-items:start;' +
-      'width:100%!important;max-width:100%!important;min-width:0!important;' +
-      'height:auto!important;min-height:0!important;box-sizing:border-box;' +
-      'padding:6px 0!important;border:none!important;border-bottom:1px solid #F1F5F9!important;' +
-      'white-space:normal!important;overflow:visible!important;vertical-align:top!important;' +
-    '}' +
-    '.pdoc-sd-table tbody td:last-child{border-bottom:none!important;}' +
-    '.pdoc-sd-table tbody td::before{' +
-      'content:attr(data-label);font-size:10px;font-weight:600;color:#64748B;' +
-      'text-transform:uppercase;letter-spacing:.03em;padding-top:3px;' +
-    '}' +
-    '.pdoc-sd-payee{font-weight:700;font-size:14px;white-space:normal!important;word-break:break-word!important;}' +
-    '.pdoc-sd-stack{display:flex!important;flex-direction:column!important;gap:6px!important;width:100%!important;max-width:100%!important;}' +
+    '.pdoc-sd-table tbody td::before{content:none!important;display:none!important;}' +
+    /* Compact stacks so sibling NO/PAYEE cells are not sky-tall */
+    '.pdoc-sd-stack{display:flex!important;flex-direction:column!important;gap:3px!important;width:max-content!important;}' +
     '.pdoc-sd-line{' +
-      'display:flex!important;flex-wrap:wrap!important;align-items:center;' +
-      'gap:6px!important;width:100%!important;max-width:100%!important;' +
+      'display:flex!important;flex-wrap:nowrap!important;align-items:center;' +
+      'gap:6px!important;width:max-content!important;' +
     '}' +
     '.pdoc-sd-line label{' +
-      'flex:0 0 auto!important;width:auto!important;min-width:52px;margin:0!important;' +
-      'white-space:nowrap!important;' +
+      'flex:0 0 52px!important;width:52px!important;font-size:10px!important;' +
+      'white-space:nowrap!important;margin:0!important;' +
     '}' +
     '.pdoc-sd-line .form-select{' +
-      'flex:1 1 140px!important;width:auto!important;min-width:0!important;max-width:100%!important;' +
-      'height:32px!important;min-height:32px!important;padding:4px 8px!important;font-size:12px!important;' +
+      'flex:0 0 132px!important;width:132px!important;min-width:132px!important;max-width:132px!important;' +
+      'height:28px!important;min-height:28px!important;padding:2px 6px!important;font-size:11px!important;' +
     '}' +
     '.pdoc-sd-line .form-input{' +
-      'flex:0 1 96px!important;width:96px!important;min-width:72px!important;max-width:100%!important;' +
-      'height:32px!important;min-height:32px!important;padding:4px 8px!important;font-size:12px!important;' +
+      'flex:0 0 72px!important;width:72px!important;min-width:72px!important;max-width:72px!important;' +
+      'height:28px!important;min-height:28px!important;padding:2px 6px!important;font-size:11px!important;' +
     '}' +
-    '.pdoc-sd-basic,.pdoc-sd-net{text-align:left!important;white-space:nowrap!important;}' +
-    '.pdoc-sd-closing{padding-bottom:88px!important;}' +
+    '.pdoc-sd-employer-note{font-size:9px!important;line-height:1.25!important;margin-top:2px!important;padding-top:2px!important;}' +
+    '.pdoc-sd-payee{font-size:12px!important;}' +
+    '.pdoc-sd-basic,.pdoc-sd-net{font-size:12px!important;}' +
+    /* NET PAY / EPF / SOCSO / EIS / PCB strip: LTR + horizontal scroll, no overlap */
+    '.pdoc-sd-closing{' +
+      'overflow-x:auto!important;-webkit-overflow-scrolling:touch;max-width:100%!important;' +
+      'padding-bottom:8px!important;' +
+    '}' +
+    '.pdoc-sd-sum-table{' +
+      'width:max-content!important;min-width:560px!important;table-layout:auto!important;' +
+    '}' +
+    '.pdoc-sd-sum-table th,.pdoc-sd-sum-table td{' +
+      'white-space:nowrap!important;padding:8px 12px!important;' +
+    '}' +
+    '.pdoc-sd-summary{' +
+      'flex-wrap:nowrap!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch;' +
+      'white-space:nowrap!important;gap:12px!important;padding:10px 12px!important;' +
+    '}' +
     '}' +
     '@media print{' +
     '.pdoc-sd-table{width:100%!important;table-layout:auto!important;display:table!important;}' +
@@ -98,47 +105,11 @@
 
   var syncTimer = null;
   var DEBOUNCE_MS = 200;
-  var MOBILE_MQ = '(max-width:900px)';
-
-  function isMobile() {
-    try {
-      return !!(window.matchMedia && window.matchMedia(MOBILE_MQ).matches);
-    } catch (e) {
-      return (window.innerWidth || 0) <= 900;
-    }
-  }
-
-  function labelCells() {
-    document.querySelectorAll('.pdoc-sd-table').forEach(function (table) {
-      var labels = [];
-      table.querySelectorAll('thead th').forEach(function (th) {
-        labels.push((th.textContent || '').trim());
-      });
-      table.querySelectorAll('tbody tr').forEach(function (tr) {
-        Array.prototype.forEach.call(tr.children, function (td, i) {
-          if (labels[i] && !td.getAttribute('data-label')) {
-            td.setAttribute('data-label', labels[i]);
-          }
-        });
-      });
-    });
-  }
-
-  function clearInlineColStyles() {
-    document.querySelectorAll('.pdoc-sd-table').forEach(function (table) {
-      table.style.width = '';
-      table.querySelectorAll('th,td').forEach(function (cell) {
-        cell.style.width = '';
-        cell.style.minWidth = '';
-        cell.style.maxWidth = '';
-      });
-    });
-  }
 
   function captureScroll() {
     var main = document.getElementById('main');
     var scrolls = [];
-    document.querySelectorAll('.pdoc-sd-scroll').forEach(function (el) {
+    document.querySelectorAll('.pdoc-sd-scroll,.pdoc-sd-closing').forEach(function (el) {
       scrolls.push({ el: el, left: el.scrollLeft, top: el.scrollTop });
     });
     return {
@@ -178,11 +149,6 @@
   }
 
   function syncCols() {
-    if (isMobile()) {
-      clearInlineColStyles();
-      labelCells();
-      return;
-    }
     var snap = captureScroll();
     document.querySelectorAll('.pdoc-sd-table').forEach(function (table) {
       var rows = table.querySelectorAll('tr');
@@ -226,7 +192,6 @@
   }
 
   function afterRender() {
-    labelCells();
     setTimeout(syncCols, 80);
     setTimeout(syncCols, 400);
   }
@@ -246,7 +211,7 @@
 
   function wrapRecalc() {
     var origRecalc = window._sdRecalc;
-    if (typeof origRecalc !== 'function' || origRecalc._sdGap9) return;
+    if (typeof origRecalc !== 'function' || origRecalc._sdGap10) return;
     window._sdRecalc = function () {
       var out = origRecalc.apply(this, arguments);
       syncColsDebounced();
@@ -255,6 +220,7 @@
     window._sdRecalc._sdGap = true;
     window._sdRecalc._sdGap8 = true;
     window._sdRecalc._sdGap9 = true;
+    window._sdRecalc._sdGap10 = true;
   }
 
   function onResize() {
@@ -265,7 +231,7 @@
   wrapRecalc();
   setTimeout(wrap, 400);
   setTimeout(wrapRecalc, 400);
-  setTimeout(function () { labelCells(); syncCols(); }, 700);
+  setTimeout(syncCols, 700);
   try {
     window.addEventListener('resize', onResize, { passive: true });
   } catch (e5) {
