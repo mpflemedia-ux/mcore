@@ -79,7 +79,7 @@ SCRIPTS = [
     ('coa-seed-advanced.js', '2'),
     ('sd-employer-edit.js', '6'),
     ('sd-print-fit.js', '1'),
-    ('sd-table-fit.js', '8'),
+    ('sd-table-fit.js', '9'),
     ('sd-dark-contrast.js', '1'),
     ('payslip-scroll.js', '1'),
     ('booking-free-confirm.js', '2'),
