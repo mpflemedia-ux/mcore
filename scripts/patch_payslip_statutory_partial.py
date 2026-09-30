@@ -18,16 +18,17 @@ assemble("_psp_a_chunks", "payslip-statutory-partial-a.js")
 assemble("_psp_b_chunks", "payslip-statutory-partial-b.js")
 
 loader = root / "app" / "payslip-statutory-partial.js"
-if not loader.is_file() or "PAYSLIP_STATUTORY_PARTIAL_V1" not in loader.read_text(encoding="utf-8"):
+_loader_txt = loader.read_text(encoding="utf-8") if loader.is_file() else ""
+if not loader.is_file() or ("PAYSLIP_STATUTORY_PARTIAL_V2" not in _loader_txt and "PAYSLIP_STATUTORY_PARTIAL_V1" not in _loader_txt):
     print("ERROR: missing loader", file=sys.stderr); sys.exit(1)
 
 idx_p = root / "app" / "index.html"
 text = idx_p.read_text(encoding="utf-8")
 changed = False
 tags = [
-  '<script src="./payslip-statutory-partial-a.js?v=1"></script>',
-  '<script src="./payslip-statutory-partial-b.js?v=1"></script>',
-  '<script src="./payslip-statutory-partial.js?v=1"></script>',
+  '<script src="./payslip-statutory-partial-a.js?v=2"></script>',
+  '<script src="./payslip-statutory-partial-b.js?v=2"></script>',
+  '<script src="./payslip-statutory-partial.js?v=2"></script>',
 ]
 anchor = '<script src="./payslip-scroll.js?v=1"></script>'
 if anchor not in text:
@@ -45,6 +46,16 @@ if "role-permissions-sync.js?v=10" not in text and "role-permissions-sync.js?v=9
   text = text.replace("role-permissions-sync.js?v=9", "role-permissions-sync.js?v=10", 1)
   changed = True
   print("bumped sync v10")
+
+# Cache-bust overlay to v2 (dedupe Payment/Balance fix)
+for name in ("payslip-statutory-partial-a.js", "payslip-statutory-partial-b.js", "payslip-statutory-partial.js"):
+  old_tag = f'<script src="./{name}?v=1"></script>'
+  new_tag = f'<script src="./{name}?v=2"></script>'
+  if old_tag in text:
+    text = text.replace(old_tag, new_tag, 1)
+    changed = True
+    print("bumped", name, "v1->v2")
+
 if changed:
   idx_p.write_text(text, encoding="utf-8"); print("wrote index.html")
 else:
