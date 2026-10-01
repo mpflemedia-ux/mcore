@@ -1,110 +1,39 @@
 #!/usr/bin/env python3
-"""Bake CRM Customer Source/Sumber into app/index.html.
-
-Idempotent. Edits ONLY:
-  - renderCustomerForm (i18n + #cf-source field)
-  - _crmSave (payload.source)
-  - _crmLoad (select + table column + i18n)
-No detail/SOA, public form, crm-scan, global CSS, overlay JS.
-"""
+"""Bake CRM Customer Source/Sumber into app/index.html. Idempotent. Form+Save+Load only."""
+import base64
 from pathlib import Path
-
-INDEX = Path('app/index.html')
-
-REPLACEMENTS = [
-    # Form i18n BM
-    (
-        "    notes:'Nota', saving:'Menyimpan...'",
-        "    notes:'Nota', source:'Sumber', saving:'Menyimpan...'",
-    ),
-    # Form i18n EN
-    (
-        "    notes:'Notes', saving:'Saving...'",
-        "    notes:'Notes', source:'Source', saving:'Saving...'",
-    ),
-    # Form field before notes
-    (
-        """      <div class=\"form-group\" style=\"grid-column:1/-1\">
-        <label class=\"form-label\">${t.notes}</label>
-        <textarea id=\"cf-notes\" class=\"form-input\" rows=\"3\" style=\"resize:vertical\">${cust.notes||''}</textarea>
-      </div>""",
-        """      <div class=\"form-group\" style=\"grid-column:1/-1\">
-        <label class=\"form-label\">${t.source||(APP.language==='bm'?'Sumber':'Source')}</label>
-        <input id=\"cf-source\" type=\"text\" class=\"form-input\" value=\"${cust.source||''}\" placeholder=\"Ceonita, MIHAS, TikTok, meetup...\">
-      </div>
-      <div class=\"form-group\" style=\"grid-column:1/-1\">
-        <label class=\"form-label\">${t.notes}</label>
-        <textarea id=\"cf-notes\" class=\"form-input\" rows=\"3\" style=\"resize:vertical\">${cust.notes||''}</textarea>
-      </div>""",
-    ),
-    # Save payload
-    (
-        "    notes: document.getElementById('cf-notes').value.trim()||null,",
-        "    notes: document.getElementById('cf-notes').value.trim()||null,\n"
-        "    source: document.getElementById('cf-source').value.trim()||null,",
-    ),
-    # List select
-    (
-        "sb.from('customers').select('id,name,email,phone,city,created_at', {count:'exact'})",
-        "sb.from('customers').select('id,name,email,phone,city,source,created_at', {count:'exact'})",
-    ),
-    # List i18n BM (inside _crmLoad)
-    (
-        "{ add:'Tambah Pelanggan', noData:'Tiada pelanggan lagi', noResult:'Tiada hasil carian', name:'Nama', email:'Emel', phone:'Telefon', city:'Bandar', created:'Dicipta', edit:'Edit', view:'Lihat', del:'Padam', delConfirm:'Padam pelanggan ini?', prev:'Sebelum', next:'Seterusnya', of:'dari', records:'rekod' }",
-        "{ add:'Tambah Pelanggan', noData:'Tiada pelanggan lagi', noResult:'Tiada hasil carian', name:'Nama', email:'Emel', phone:'Telefon', city:'Bandar', source:'Sumber', created:'Dicipta', edit:'Edit', view:'Lihat', del:'Padam', delConfirm:'Padam pelanggan ini?', prev:'Sebelum', next:'Seterusnya', of:'dari', records:'rekod' }",
-    ),
-    # List i18n EN (inside _crmLoad)
-    (
-        "{ add:'Add Customer', noData:'No customers yet', noResult:'No results found', name:'Name', email:'Email', phone:'Phone', city:'City', created:'Created', edit:'Edit', view:'View', del:'Delete', delConfirm:'Delete this customer?', prev:'Prev', next:'Next', of:'of', records:'records' }",
-        "{ add:'Add Customer', noData:'No customers yet', noResult:'No results found', name:'Name', email:'Email', phone:'Phone', city:'City', source:'Source', created:'Created', edit:'Edit', view:'View', del:'Delete', delConfirm:'Delete this customer?', prev:'Prev', next:'Next', of:'of', records:'records' }",
-    ),
-    # Table header
-    (
-        "<th>${t.name}</th><th>${t.email}</th><th>${t.phone}</th><th>${t.city}</th><th>${t.created}</th><th style=\"width:120px\"></th>",
-        "<th>${t.name}</th><th>${t.email}</th><th>${t.phone}</th><th>${t.city}</th><th>${t.source||(APP.language==='bm'?'Sumber':'Source')}</th><th>${t.created}</th><th style=\"width:120px\"></th>",
-    ),
-    # Table row cell (after city)
-    (
-        """        <td style=\"color:var(--text-2)\">${c.city||'-'}</td>
-        <td style=\"color:var(--text-3);font-size:12px\">${c.created_at?new Date(c.created_at).toLocaleDateString('en-MY'):'-'}</td>""",
-        """        <td style=\"color:var(--text-2)\">${c.city||'-'}</td>
-        <td style=\"color:var(--text-2)\">${c.source||'-'}</td>
-        <td style=\"color:var(--text-3);font-size:12px\">${c.created_at?new Date(c.created_at).toLocaleDateString('en-MY'):'-'}</td>""",
-    ),
+INDEX = Path("app/index.html")
+PAIRS = [
+  ('ICAgIG5vdGVzOidOb3RhJywgc2F2aW5nOidNZW55aW1wYW4uLi4n', 'ICAgIG5vdGVzOidOb3RhJywgc291cmNlOidTdW1iZXInLCBzYXZpbmc6J01lbnlpbXBhbi4uLic='),
+  ('ICAgIG5vdGVzOidOb3RlcycsIHNhdmluZzonU2F2aW5nLi4uJw==', 'ICAgIG5vdGVzOidOb3RlcycsIHNvdXJjZTonU291cmNlJywgc2F2aW5nOidTYXZpbmcuLi4n'),
+  ('ICAgICAgPGRpdiBjbGFzcz0iZm9ybS1ncm91cCIgc3R5bGU9ImdyaWQtY29sdW1uOjEvLTEiPgogICAgICAgIDxsYWJlbCBjbGFzcz0iZm9ybS1sYWJlbCI+JHt0Lm5vdGVzfTwvbGFiZWw+CiAgICAgICAgPHRleHRhcmVhIGlkPSJjZi1ub3RlcyIgY2xhc3M9ImZvcm0taW5wdXQiIHJvd3M9IjMiIHN0eWxlPSJyZXNpemU6dmVydGljYWwiPiR7Y3VzdC5ub3Rlc3x8Jyd9PC90ZXh0YXJlYT4KICAgICAgPC9kaXY+', 'ICAgICAgPGRpdiBjbGFzcz0iZm9ybS1ncm91cCIgc3R5bGU9ImdyaWQtY29sdW1uOjEvLTEiPgogICAgICAgIDxsYWJlbCBjbGFzcz0iZm9ybS1sYWJlbCI+JHt0LnNvdXJjZXx8KEFQUC5sYW5ndWFnZT09PSdibSc/J1N1bWJlcic6J1NvdXJjZScpfTwvbGFiZWw+CiAgICAgICAgPGlucHV0IGlkPSJjZi1zb3VyY2UiIHR5cGU9InRleHQiIGNsYXNzPSJmb3JtLWlucHV0IiB2YWx1ZT0iJHtjdXN0LnNvdXJjZXx8Jyd9IiBwbGFjZWhvbGRlcj0iQ2Vvbml0YSwgTUlIQVMsIFRpa1RvaywgbWVldHVwLi4uIj4KICAgICAgPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9ImZvcm0tZ3JvdXAiIHN0eWxlPSJncmlkLWNvbHVtbjoxLy0xIj4KICAgICAgICA8bGFiZWwgY2xhc3M9ImZvcm0tbGFiZWwiPiR7dC5ub3Rlc308L2xhYmVsPgogICAgICAgIDx0ZXh0YXJlYSBpZD0iY2Ytbm90ZXMiIGNsYXNzPSJmb3JtLWlucHV0IiByb3dzPSIzIiBzdHlsZT0icmVzaXplOnZlcnRpY2FsIj4ke2N1c3Qubm90ZXN8fCcnfTwvdGV4dGFyZWE+CiAgICAgIDwvZGl2Pg=='),
+  ('ICAgIG5vdGVzOiBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnY2Ytbm90ZXMnKS52YWx1ZS50cmltKCl8fG51bGws', 'ICAgIG5vdGVzOiBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnY2Ytbm90ZXMnKS52YWx1ZS50cmltKCl8fG51bGwsCiAgICBzb3VyY2U6IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdjZi1zb3VyY2UnKS52YWx1ZS50cmltKCl8fG51bGws'),
+  ('c2IuZnJvbSgnY3VzdG9tZXJzJykuc2VsZWN0KCdpZCxuYW1lLGVtYWlsLHBob25lLGNpdHksY3JlYXRlZF9hdCcsIHtjb3VudDonZXhhY3QnfSk=', 'c2IuZnJvbSgnY3VzdG9tZXJzJykuc2VsZWN0KCdpZCxuYW1lLGVtYWlsLHBob25lLGNpdHksc291cmNlLGNyZWF0ZWRfYXQnLCB7Y291bnQ6J2V4YWN0J30p'),
+  ('eyBhZGQ6J1RhbWJhaCBQZWxhbmdnYW4nLCBub0RhdGE6J1RpYWRhIHBlbGFuZ2dhbiBsYWdpJywgbm9SZXN1bHQ6J1RpYWRhIGhhc2lsIGNhcmlhbicsIG5hbWU6J05hbWEnLCBlbWFpbDonRW1lbCcsIHBob25lOidUZWxlZm9uJywgY2l0eTonQmFuZGFyJywgY3JlYXRlZDonRGljaXB0YScsIGVkaXQ6J0VkaXQnLCB2aWV3OidMaWhhdCcsIGRlbDonUGFkYW0nLCBkZWxDb25maXJtOidQYWRhbSBwZWxhbmdnYW4gaW5pPycsIHByZXY6J1NlYmVsdW0nLCBuZXh0OidTZXRlcnVzbnlhJywgb2Y6J2RhcmknLCByZWNvcmRzOidyZWtvZCcgfQ==', 'eyBhZGQ6J1RhbWJhaCBQZWxhbmdnYW4nLCBub0RhdGE6J1RpYWRhIHBlbGFuZ2dhbiBsYWdpJywgbm9SZXN1bHQ6J1RpYWRhIGhhc2lsIGNhcmlhbicsIG5hbWU6J05hbWEnLCBlbWFpbDonRW1lbCcsIHBob25lOidUZWxlZm9uJywgY2l0eTonQmFuZGFyJywgc291cmNlOidTdW1iZXInLCBjcmVhdGVkOidEaWNpcHRhJywgZWRpdDonRWRpdCcsIHZpZXc6J0xpaGF0JywgZGVsOidQYWRhbScsIGRlbENvbmZpcm06J1BhZGFtIHBlbGFuZ2dhbiBpbmk/JywgcHJldjonU2ViZWx1bScsIG5leHQ6J1NldGVydXNueWEnLCBvZjonZGFyaScsIHJlY29yZHM6J3Jla29kJyB9'),
+  ('eyBhZGQ6J0FkZCBDdXN0b21lcicsIG5vRGF0YTonTm8gY3VzdG9tZXJzIHlldCcsIG5vUmVzdWx0OidObyByZXN1bHRzIGZvdW5kJywgbmFtZTonTmFtZScsIGVtYWlsOidFbWFpbCcsIHBob25lOidQaG9uZScsIGNpdHk6J0NpdHknLCBjcmVhdGVkOidDcmVhdGVkJywgZWRpdDonRWRpdCcsIHZpZXc6J1ZpZXcnLCBkZWw6J0RlbGV0ZScsIGRlbENvbmZpcm06J0RlbGV0ZSB0aGlzIGN1c3RvbWVyPycsIHByZXY6J1ByZXYnLCBuZXh0OidOZXh0Jywgb2Y6J29mJywgcmVjb3JkczoncmVjb3JkcycgfQ==', 'eyBhZGQ6J0FkZCBDdXN0b21lcicsIG5vRGF0YTonTm8gY3VzdG9tZXJzIHlldCcsIG5vUmVzdWx0OidObyByZXN1bHRzIGZvdW5kJywgbmFtZTonTmFtZScsIGVtYWlsOidFbWFpbCcsIHBob25lOidQaG9uZScsIGNpdHk6J0NpdHknLCBzb3VyY2U6J1NvdXJjZScsIGNyZWF0ZWQ6J0NyZWF0ZWQnLCBlZGl0OidFZGl0JywgdmlldzonVmlldycsIGRlbDonRGVsZXRlJywgZGVsQ29uZmlybTonRGVsZXRlIHRoaXMgY3VzdG9tZXI/JywgcHJldjonUHJldicsIG5leHQ6J05leHQnLCBvZjonb2YnLCByZWNvcmRzOidyZWNvcmRzJyB9'),
+  ('PHRoPiR7dC5uYW1lfTwvdGg+PHRoPiR7dC5lbWFpbH08L3RoPjx0aD4ke3QucGhvbmV9PC90aD48dGg+JHt0LmNpdHl9PC90aD48dGg+JHt0LmNyZWF0ZWR9PC90aD48dGggc3R5bGU9IndpZHRoOjEyMHB4Ij48L3RoPg==', 'PHRoPiR7dC5uYW1lfTwvdGg+PHRoPiR7dC5lbWFpbH08L3RoPjx0aD4ke3QucGhvbmV9PC90aD48dGg+JHt0LmNpdHl9PC90aD48dGg+JHt0LnNvdXJjZXx8KEFQUC5sYW5ndWFnZT09PSdibSc/J1N1bWJlcic6J1NvdXJjZScpfTwvdGg+PHRoPiR7dC5jcmVhdGVkfTwvdGg+PHRoIHN0eWxlPSJ3aWR0aDoxMjBweCI+PC90aD4='),
+  ('ICAgICAgICA8dGQgc3R5bGU9ImNvbG9yOnZhcigtLXRleHQtMikiPiR7Yy5jaXR5fHwnLSd9PC90ZD4KICAgICAgICA8dGQgc3R5bGU9ImNvbG9yOnZhcigtLXRleHQtMyk7Zm9udC1zaXplOjEycHgiPiR7Yy5jcmVhdGVkX2F0P25ldyBEYXRlKGMuY3JlYXRlZF9hdCkudG9Mb2NhbGVEYXRlU3RyaW5nKCdlbi1NWScpOictJ308L3RkPg==', 'ICAgICAgICA8dGQgc3R5bGU9ImNvbG9yOnZhcigtLXRleHQtMikiPiR7Yy5jaXR5fHwnLSd9PC90ZD4KICAgICAgICA8dGQgc3R5bGU9ImNvbG9yOnZhcigtLXRleHQtMikiPiR7Yy5zb3VyY2V8fCctJ308L3RkPgogICAgICAgIDx0ZCBzdHlsZT0iY29sb3I6dmFyKC0tdGV4dC0zKTtmb250LXNpemU6MTJweCI+JHtjLmNyZWF0ZWRfYXQ/bmV3IERhdGUoYy5jcmVhdGVkX2F0KS50b0xvY2FsZURhdGVTdHJpbmcoJ2VuLU1ZJyk6Jy0nfTwvdGQ+'),
 ]
-
-
+def D(s):
+  return base64.b64decode(s).decode("utf-8")
 def main():
-    html = INDEX.read_text(encoding='utf-8')
-    if "id=\"cf-source\"" in html and "source,created_at" in html and "payload already" not in html:
-        # Idempotent: all key markers present
-        if all(
-            (
-                "source:'Sumber', saving:'Menyimpan...'" in html,
-                "source:'Source', saving:'Saving...'" in html,
-                "source: document.getElementById('cf-source')" in html,
-                "${c.source||'-'}" in html,
-            )
-        ):
-            print('already patched')
-            return
-
-    html2 = html
-    applied = 0
-    for old, new in REPLACEMENTS:
-        if new in html2 and old not in html2:
-            # this step already applied
-            continue
-        if old not in html2:
-            raise SystemExit(f'marker not found:\n{old[:120]}...')
-        html2 = html2.replace(old, new, 1)
-        applied += 1
-
-    if html2 == html:
-        raise SystemExit('no changes applied')
-    INDEX.write_text(html2, encoding='utf-8')
-    print(f'patched CRM customer source ({applied} replacements)')
-
-
-if __name__ == '__main__':
-    main()
+  html = INDEX.read_text(encoding="utf-8")
+  if 'id="cf-source"' in html and "source: document.getElementById('cf-source')" in html and "${c.source||'-'}" in html:
+    print("already patched")
+    return
+  html2 = html
+  applied = 0
+  for ob, nb in PAIRS:
+    old, new = D(ob), D(nb)
+    if new in html2 and old not in html2:
+      continue
+    if old not in html2:
+      raise SystemExit("marker not found: " + old[:120])
+    html2 = html2.replace(old, new, 1)
+    applied += 1
+  if html2 == html:
+    raise SystemExit("no changes applied")
+  INDEX.write_text(html2, encoding="utf-8")
+  print("patched CRM customer source (%d replacements)" % applied)
+if __name__ == "__main__":
+  main()
