@@ -15584,13 +15584,13 @@ function _crmSort(val) { _crmState.sort = val; _crmState.page = 1; _crmLoad() }
 
 async function _crmLoad() {
   if(!APP.tenant.id) return
-  const t = APP.language==='bm' ? { add:'Tambah Pelanggan', noData:'Tiada pelanggan lagi', noResult:'Tiada hasil carian', name:'Nama', email:'Emel', phone:'Telefon', city:'Bandar', created:'Dicipta', edit:'Edit', view:'Lihat', del:'Padam', delConfirm:'Padam pelanggan ini?', prev:'Sebelum', next:'Seterusnya', of:'dari', records:'rekod' }
-    : { add:'Add Customer', noData:'No customers yet', noResult:'No results found', name:'Name', email:'Email', phone:'Phone', city:'City', created:'Created', edit:'Edit', view:'View', del:'Delete', delConfirm:'Delete this customer?', prev:'Prev', next:'Next', of:'of', records:'records' }
+  const t = APP.language==='bm' ? { add:'Tambah Pelanggan', noData:'Tiada pelanggan lagi', noResult:'Tiada hasil carian', name:'Nama', email:'Emel', phone:'Telefon', city:'Bandar', source:'Sumber', created:'Dicipta', edit:'Edit', view:'Lihat', del:'Padam', delConfirm:'Padam pelanggan ini?', prev:'Sebelum', next:'Seterusnya', of:'dari', records:'rekod' }
+    : { add:'Add Customer', noData:'No customers yet', noResult:'No results found', name:'Name', email:'Email', phone:'Phone', city:'City', source:'Source', created:'Created', edit:'Edit', view:'View', del:'Delete', delConfirm:'Delete this customer?', prev:'Prev', next:'Next', of:'of', records:'records' }
 
   const wrap = document.getElementById('crm-table-wrap')
   if(wrap) wrap.innerHTML = '<div class="empty-state" style="padding:40px"><div class="spinner"></div></div>'
 
-  let q = sb.from('customers').select('id,name,email,phone,city,created_at', {count:'exact'})
+  let q = sb.from('customers').select('id,name,email,phone,city,source,created_at', {count:'exact'})
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
 
   if(_crmState.search) {
@@ -15615,13 +15615,14 @@ async function _crmLoad() {
   } else {
     wrap.innerHTML = `<table>
       <thead><tr>
-        <th>${t.name}</th><th>${t.email}</th><th>${t.phone}</th><th>${t.city}</th><th>${t.created}</th><th style="width:120px"></th>
+        <th>${t.name}</th><th>${t.email}</th><th>${t.phone}</th><th>${t.city}</th><th>${t.source||(APP.language==='bm'?'Sumber':'Source')}</th><th>${t.created}</th><th style="width:120px"></th>
       </tr></thead>
       <tbody>${data.map(c => `<tr onclick="openPage('crm',{view:'detail',id:'${c.id}'})" style="cursor:pointer">
         <td><strong>${c.name||'-'}</strong></td>
         <td style="color:var(--text-2)">${c.email||'-'}</td>
         <td style="color:var(--text-2)">${c.phone||'-'}</td>
         <td style="color:var(--text-2)">${c.city||'-'}</td>
+        <td style="color:var(--text-2)">${c.source||'-'}</td>
         <td style="color:var(--text-3);font-size:12px">${c.created_at?new Date(c.created_at).toLocaleDateString('en-MY'):'-'}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('crm',{view:'form',id:'${c.id}'})"><i class="ti ti-edit"></i></button>
@@ -15681,12 +15682,12 @@ async function renderCustomerForm(id=null) {
     addTitle:'Tambah Pelanggan', editTitle:'Edit Pelanggan', save:'Simpan', cancel:'Batal',
     name:'Nama *', email:'Emel', phone:'No. Telefon',
     addr:'Alamat', city:'Bandar', state:'Negeri', postcode:'Poskod',
-    notes:'Nota', saving:'Menyimpan...'
+    notes:'Nota', source:'Sumber', saving:'Menyimpan...'
   } : {
     addTitle:'Add Customer', editTitle:'Edit Customer', save:'Save', cancel:'Cancel',
     name:'Name *', email:'Email', phone:'Phone',
     addr:'Address', city:'City', state:'State', postcode:'Postcode',
-    notes:'Notes', saving:'Saving...'
+    notes:'Notes', source:'Source', saving:'Saving...'
   }
 
   const states = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','W.P. Kuala Lumpur','W.P. Labuan','W.P. Putrajaya']
@@ -15739,6 +15740,10 @@ async function renderCustomerForm(id=null) {
         </select>
       </div>
       <div class="form-group" style="grid-column:1/-1">
+        <label class="form-label">${t.source||(APP.language==='bm'?'Sumber':'Source')}</label>
+        <input id="cf-source" type="text" class="form-input" value="${cust.source||''}" placeholder="Ceonita, MIHAS, TikTok, meetup...">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
         <label class="form-label">${t.notes}</label>
         <textarea id="cf-notes" class="form-input" rows="3" style="resize:vertical">${cust.notes||''}</textarea>
       </div>
@@ -15767,6 +15772,7 @@ async function _crmSave(id) {
     postcode: document.getElementById('cf-postcode').value.trim()||null,
     state: document.getElementById('cf-state').value||null,
     notes: document.getElementById('cf-notes').value.trim()||null,
+    source: document.getElementById('cf-source').value.trim()||null,
     updated_at: new Date().toISOString()
   }
 
