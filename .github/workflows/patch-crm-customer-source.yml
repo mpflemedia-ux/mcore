@@ -1,0 +1,29 @@
+name: patch-crm-customer-source
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_crm_customer_source.py
+      - .github/workflows/patch-crm-customer-source.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Bake CRM customer Source/Sumber into index.html
+        run: python3 scripts/patch_crm_customer_source.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "feat(crm): bake customer Source/Sumber (cf-source + list column)"
+          git push
