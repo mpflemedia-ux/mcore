@@ -19,7 +19,7 @@ BEGIN
       stage = 'completed',
       module = COALESCE(NULLIF(TRIM(module), ''), 'hr'),
       description = 'Overlay payslip-accum-outstanding.js: under Balance Outstanding on print/PDF, show Accumulated Outstanding (BM: Baki Belum Bayar Terkumpul) = sum of tracked per-period balance_outstanding for tenant+employee through current (year,month). Computed on render (cache warm before detail/print); no denormalized column. Only when Payment/Balance section shows. Hafiz Jul–Sep → 8500.',
-      pr_url = 'https://github.com/mpflemedia-ux/mcore/pull/PR_NUMBER'
+      pr_url = 'https://github.com/mpflemedia-ux/mcore/pull/864'
     WHERE title ILIKE '%Accumulated Outstanding%'
        OR title ILIKE '%Baki Belum Bayar Terkumpul%'
        OR title ILIKE '%balance outstanding terkumpul%';
@@ -31,7 +31,7 @@ BEGIN
       'Overlay payslip-accum-outstanding.js: under Balance Outstanding on print/PDF, show Accumulated Outstanding (BM: Baki Belum Bayar Terkumpul) = sum of tracked per-period balance_outstanding for tenant+employee through current (year,month). Computed on render (cache warm before detail/print); no denormalized column. Only when Payment/Balance section shows. Hafiz Jul–Sep → 8500.',
       'hr',
       'completed',
-      'https://github.com/mpflemedia-ux/mcore/pull/PR_NUMBER'
+      'https://github.com/mpflemedia-ux/mcore/pull/864'
     );
   END IF;
 EXCEPTION WHEN undefined_column OR undefined_table THEN
