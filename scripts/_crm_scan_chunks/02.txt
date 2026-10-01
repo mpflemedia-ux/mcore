@@ -1,0 +1,13 @@
+
+    var isBm = APP.language === 'bm';
+    var t = isBm
+      ? { scanning: 'Mengimbas dokumen...', converting: 'Menukar PDF ke imej...', done: 'Dokumen diimbas — sila semak field.', err: 'Ralat imbas: ', badFile: 'Sila pilih fail imej atau PDF.' }
+      : { scanning: 'Scanning document...', converting: 'Converting PDF to image...', done: 'Document scanned — please review the fields.', err: 'Scan error: ', badFile: 'Please select an image or PDF file.' };
+    var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    var isImage = file.type.indexOf('image/') === 0;
+    if (!isPdf && !isImage) { showToast(t.badFile, 'warning'); event.target.value = ''; return; }
+    var statusEl = document.getElementById('cust-scan-status');
+    if (statusEl) statusEl.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> ' + t.scanning;
+    try {
+      var pageBlobs = [file];
+      if (isPdf

@@ -1,0 +1,27 @@
+a.data || {});
+      setVal('cf-name', r.name);
+      setVal('cf-email', r.email);
+      setVal('cf-phone', r.phone);
+      setVal('cf-addr', r.address);
+      setVal('cf-city', r.city);
+      setVal('cf-postcode', r.postcode);
+      var st = matchState(r.state);
+      if (st) setVal('cf-state', st);
+      appendNotes(r.notes);
+      if (statusEl) statusEl.textContent = t.done;
+      try { showToast(t.done, 'success'); } catch (e2) {}
+    } catch (err) {
+      var msg = err && err.message ? err.message : String(err);
+      if (statusEl) statusEl.textContent = t.err + msg;
+      showToast(t.err + msg, 'error');
+    }
+    event.target.value = '';
+  };
+  function inject() {
+    if (!document.getElementById('cf-name')) return;
+    if (document.getElementById('cust-scan-input')) return;
+    var nameWrap = document.getElementById('cf-name').closest('.form-group');
+    if (!nameWrap) return;
+    var isBm = APP.language === 'bm';
+    var label = isBm ? 'Imbas dokumen' : 'Scan document';
+    va

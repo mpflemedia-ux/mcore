@@ -1,0 +1,9 @@
+ments);
+      setTimeout(inject, 0);
+      setTimeout(inject, 300);
+      return r;
+    };
+    window.renderCustomerForm._crmScan = true;
+  }
+  setInterval(inject, 1200);
+})();

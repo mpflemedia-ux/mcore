@@ -1,0 +1,17 @@
+r hint = isBm
+      ? 'Kad nama, screenshot TikTok/IG, SSM, atau PDF pelanggan'
+      : 'Business card, TikTok/IG screenshot, SSM, or customer PDF';
+    var box = document.createElement('div');
+    box.className = 'form-group';
+    box.style.gridColumn = '1 / -1';
+    box.innerHTML = '<label class="form-label">' + label + '</label>' +
+      '<input type="file" accept="image/*,application/pdf" id="cust-scan-input" style="display:block;margin-top:4px">' +
+      '<div style="margin-top:4px;font-size:11px;color:var(--text-3)">' + hint + '</div>' +
+      '<div id="cust-scan-status" style="margin-top:4px;font-size:12px;color:var(--text-3)"></div>';
+    nameWrap.parentNode.insertBefore(box, nameWrap);
+    document.getElementById('cust-scan-input').onchange = function (e) { window._custScanDocument(e); };
+  }
+  var orig = window.renderCustomerForm;
+  if (typeof orig === 'function' && !orig._crmScan) {
+    window.renderCustomerForm = async function () {
+      var r = await orig.apply(this, argu
