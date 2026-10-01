@@ -1,0 +1,24 @@
+ElementById('cf-notes');
+    if (!el) return;
+    var existing = (el.value || '').trim();
+    var add = String(v).trim();
+    if (!add) return;
+    if (!existing) { el.value = add; return; }
+    if (existing.indexOf(add) >= 0) return;
+    el.value = existing + '\n' + add;
+  }
+  function inferCityState(r) {
+    if ((!r.city || !r.state) && r.address) {
+      var a = String(r.address).toLowerCase();
+      if (!r.city && (a.indexOf('kuala lumpur') >= 0 || /\bkl\b/.test(a))) r.city = 'Kuala Lumpur';
+      if (!r.state && (a.indexOf('kuala lumpur') >= 0 || /\bkl\b/.test(a) || (r.city && String(r.city).toLowerCase().indexOf('kuala') >= 0))) {
+        r.state = 'W.P. Kuala Lumpur';
+      }
+      if (!r.city && a.indexOf('selangor') >= 0) { r.city = r.city || ''; }
+      if (!r.state && a.indexOf('selangor') >= 0) r.state = 'Selangor';
+    }
+    return r;
+  }
+  window._custScanDocument = async function (event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) return;
