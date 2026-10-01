@@ -16,6 +16,7 @@ SCRIPTS = [
     ('booking-token-fix.js', '1'),
     ('booking-public-contrast.js', '1'),
     ('pdoc-invoice-terms.js', '4'),
+    ('pdoc-customer-lock.js', '8'),
     ('pv-desc-wrap.js', '1'),
     ('pv-preview-scroll.js', '3'),
     ('pdoc-preview-light.js', '1'),
