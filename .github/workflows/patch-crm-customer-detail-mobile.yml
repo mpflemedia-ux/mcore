@@ -1,0 +1,27 @@
+name: patch-crm-customer-detail-mobile
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_crm_customer_detail_mobile.py
+      - .github/workflows/patch-crm-customer-detail-mobile.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake CRM customer detail mobile LTR scroll into index.html
+        run: python3 scripts/patch_crm_customer_detail_mobile.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix(crm): bake customer detail Info+Invoices LTR scroll + 2-line wrap"
+          git push
