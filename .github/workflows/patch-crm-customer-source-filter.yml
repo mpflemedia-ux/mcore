@@ -22,8 +22,8 @@ jobs:
         run: |
           git config user.name "mcore-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
           git add app/index.html
           git diff --cached --quiet && echo 'nothing' && exit 0
           git commit -m "feat(crm): bake customer Source filter (#crm-source-filter)"
+          git pull --rebase origin main || true
           git push
