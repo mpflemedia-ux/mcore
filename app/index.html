@@ -24483,8 +24483,9 @@ async function renderInvDetail(id) {
       || rows.find(x => n.includes(String(x.name||'').toLowerCase()) || String(x.name||'').toLowerCase().includes(n.split(' - ')[0]))
       || null
   }
-  const custAddr = custPhone ? [custPhone.address_line1, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
-  const custPe = custPhone ? [custPhone.phone, custPhone.email].filter(Boolean).join(' · ') : ''
+  const _bt = (typeof _pdocCustBillTo==='function' && custPhone) ? _pdocCustBillTo(custPhone) : {addr:'',pe:''}
+  const custAddr = _bt.addr || (custPhone ? [custPhone.address_line1, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : '')
+  const custPe = _bt.pe || (custPhone ? [custPhone.phone, custPhone.email].filter(Boolean).join(' · ') : '')
   const balance = Number(inv.total||0) - Number(inv.paid_amt||0)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:t.unpaid
@@ -24973,7 +24974,8 @@ async function renderQuoForm(id=null) {
 
   const tn = id ? await _pdocGetTenant() : null
   const companyAddr = tn ? _pdocAddressLine(tn) : ''
-  const custAddr = custPhone ? [custPhone.address_line1, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : ''
+  const _btQ = (typeof _pdocCustBillTo==='function' && custPhone) ? _pdocCustBillTo(custPhone) : {addr:'',pe:''}
+  const custAddr = _btQ.addr || (custPhone ? [custPhone.address_line1, [custPhone.postcode,custPhone.city].filter(Boolean).join(' '), custPhone.state].filter(Boolean).join(', ') : '')
   const isBmQ = APP.language==='bm'
   const quoSubtotal = (_slItems||[]).reduce((s,it)=>s+Number(it.qty||0)*Number(it.unit_price||0),0)
 
