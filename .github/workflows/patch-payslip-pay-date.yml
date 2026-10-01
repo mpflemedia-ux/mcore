@@ -1,0 +1,28 @@
+name: patch-payslip-pay-date
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_payslip_pay_date.py
+      - app/payslip-pay-date.js
+      - .github/workflows/patch-payslip-pay-date.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake payslip-pay-date.js?v=1 into index.html
+        run: python3 scripts/patch_payslip_pay_date.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "chore: bake payslip-pay-date overlay cache bust v=1 into index.html"
+          git push
