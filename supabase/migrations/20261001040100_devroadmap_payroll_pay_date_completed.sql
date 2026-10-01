@@ -15,7 +15,7 @@ BEGIN
       stage = 'completed',
       module = COALESCE(NULLIF(TRIM(module), ''), 'hr'),
       description = 'payroll_records.pay_date (date) + backfill from generated_at (KL). Overlay payslip-pay-date.js: _pdocPayDate prefers pay_date else generated_at; Payslip Detail date editor (HR); new rows DEFAULT Asia/Kuala_Lumpur today. generated_at no longer sole display source.',
-      pr_url = 'https://github.com/mpflemedia-ux/mcore/pull/PAY_DATE_PR'
+      pr_url = 'https://github.com/mpflemedia-ux/mcore/pull/863'
     WHERE title ILIKE '%pay_date%payslip%'
        OR title ILIKE '%editable%Pay Date%'
        OR title ILIKE '%Tarikh Bayaran%pay_date%';
@@ -27,7 +27,7 @@ BEGIN
       'payroll_records.pay_date (date) + backfill from generated_at (KL). Overlay payslip-pay-date.js: _pdocPayDate prefers pay_date else generated_at; Payslip Detail date editor (HR); new rows DEFAULT Asia/Kuala_Lumpur today. generated_at no longer sole display source.',
       'hr',
       'completed',
-      'https://github.com/mpflemedia-ux/mcore/pull/PAY_DATE_PR'
+      'https://github.com/mpflemedia-ux/mcore/pull/863'
     );
   END IF;
 EXCEPTION WHEN undefined_column OR undefined_table THEN
