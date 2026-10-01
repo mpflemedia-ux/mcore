@@ -15531,7 +15531,7 @@ function renderCRM(params={}) {
 }
 
 // ─── Hari 15: Customer List ───────────────────────────────────────────────────
-let _crmState = { search:'', sort:'name', dir:'asc', page:1, perPage:20, total:0, data:[] }
+let _crmState = { search:'', sort:'name', dir:'asc', page:1, perPage:20, total:0, data:[], source:'' }
 
 async function renderCustomerList() {
   const t = APP.language==='bm' ? {
@@ -15563,6 +15563,9 @@ async function renderCustomerList() {
         <option value="name" ${_crmState.sort==='name'?'selected':''}>${APP.language==='bm'?'Isih':' Sort'}: ${t.name}</option>
         <option value="created_at" ${_crmState.sort==='created_at'?'selected':''}>${APP.language==='bm'?'Isih':'Sort'}: ${t.created}</option>
         <option value="city" ${_crmState.sort==='city'?'selected':''}>${APP.language==='bm'?'Isih':'Sort'}: ${t.city}</option>
+      </select>
+      <select id="crm-source-filter" class="form-select" style="width:auto;min-width:140px;max-width:200px" onchange="_crmState.source=this.value;_crmState.page=1;_crmLoad()">
+        <option value="">${APP.language==='bm'?'Semua sumber':'All sources'}</option>
       </select>
     </div>
     <div id="crm-table-wrap" style="overflow-x:auto">
@@ -15597,6 +15600,21 @@ async function _crmLoad() {
     const s = _crmState.search.trim()
     q = q.or(`name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`)
   }
+  if(_crmState.source) q = q.eq('source', _crmState.source)
+
+  // Tenant-specific source filter options (preserve selection; toolbar not re-rendered)
+  try {
+    const {data: srcRows} = await sb.from('customers').select('source')
+      .eq('tenant_id', APP.tenant.id).is('deleted_at', null).not('source', 'is', null).neq('source', '')
+    const filt = document.getElementById('crm-source-filter')
+    if (filt && srcRows) {
+      const keep = _crmState.source || ''
+      const uniq = [...new Set(srcRows.map(r => String(r.source||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b))
+      const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
+      const allLabel = APP.language==='bm'?'Semua sumber':'All sources'
+      filt.innerHTML = `<option value="">${allLabel}</option>` + uniq.map(s => `<option value="${esc(s)}" ${s===keep?'selected':''}>${esc(s)}</option>`).join('')
+    }
+  } catch (e) {}
 
   const from = (_crmState.page-1)*_crmState.perPage
   q = q.order(_crmState.sort, {ascending:_crmState.sort!=='created_at'})
@@ -15611,7 +15629,7 @@ async function _crmLoad() {
 
   if(!wrap) return
   if(!data || data.length === 0) {
-    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><i class="ti ti-users" style="font-size:48px;opacity:.2"></i><p>${_crmState.search ? t.noResult : t.noData}</p>${!_crmState.search?`<button class="btn btn-primary btn-sm" onclick="openPage('crm',{view:'form'})"><i class="ti ti-plus"></i> ${t.add}</button>`:''}</div>`
+    wrap.innerHTML = `<div class="empty-state" style="padding:60px"><i class="ti ti-users" style="font-size:48px;opacity:.2"></i><p>${(_crmState.search || _crmState.source) ? t.noResult : t.noData}</p>${!(_crmState.search || _crmState.source)?`<button class="btn btn-primary btn-sm" onclick="openPage('crm',{view:'form'})"><i class="ti ti-plus"></i> ${t.add}</button>`:''}</div>`
   } else {
     wrap.innerHTML = `<table>
       <thead><tr>
