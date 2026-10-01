@@ -1,0 +1,30 @@
+name: patch-settings-form-fit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - app/settings-form-fit.js
+      - scripts/patch_settings_form_fit.py
+      - .github/workflows/patch-settings-form-fit.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake settings-form-fit ?v=3 into index.html
+        run: python3 scripts/patch_settings_form_fit.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html scripts/patch_invoice_customer.py || true
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git pull --rebase origin main || true
+          git commit -m "fix(sales): bake settings-form-fit v3 (stop Invoice overlay)"
+          git push
