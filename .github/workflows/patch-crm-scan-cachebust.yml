@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       - name: Assemble crm-scan.js + bake ?v=2 into index.html
         run: python3 scripts/patch_crm_scan_cachebust.py
       - name: Commit
@@ -26,4 +27,5 @@ jobs:
           git add app/crm-scan.js app/index.html
           git diff --cached --quiet && echo 'nothing' && exit 0
           git commit -m "chore: assemble crm-scan.js V2 + cache bust v=2 into index.html"
+          git pull --rebase origin main
           git push
