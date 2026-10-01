@@ -83,7 +83,7 @@ SCRIPTS = [
     ('sd-dark-contrast.js', '1'),
     ('payslip-scroll.js', '1'),
     ('booking-free-confirm.js', '2'),
-    ('settings-form-fit.js', '2'),
+    ('settings-form-fit.js', '3'),
     ('keep-page-scroll.js', '1'),
     ('reco-scan-tally.js', '3'),
     ('reco-delete-confirm.js', '1'),
