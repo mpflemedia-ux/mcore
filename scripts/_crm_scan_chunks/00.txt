@@ -1,0 +1,25 @@
+/* Scan document onto Add/Edit Customer form (cf-* fields) — card / social / SSM */
+/* CRM_SCAN_DOCUMENT_V2 */
+(function () {
+  var STATES = ['Johor','Kedah','Kelantan','Melaka','Negeri Sembilan','Pahang','Perak','Perlis','Pulau Pinang','Sabah','Sarawak','Selangor','Terengganu','W.P. Kuala Lumpur','W.P. Labuan','W.P. Putrajaya'];
+  function matchState(v) {
+    if (!v) return '';
+    var s = String(v).trim().toLowerCase();
+    for (var i = 0; i < STATES.length; i++) {
+      if (STATES[i].toLowerCase() === s) return STATES[i];
+    }
+    for (var j = 0; j < STATES.length; j++) {
+      var n = STATES[j].toLowerCase();
+      if (n.indexOf(s) >= 0 || s.indexOf(n) >= 0) return STATES[j];
+    }
+    if (s.indexOf('kuala') >= 0 || s === 'kl') return 'W.P. Kuala Lumpur';
+    return '';
+  }
+  function setVal(id, v) {
+    var el = document.getElementById(id);
+    if (!el || v == null || v === '') return;
+    el.value = v;
+  }
+  function appendNotes(v) {
+    if (!v) return;
+    var el = document.get
