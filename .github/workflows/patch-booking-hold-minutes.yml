@@ -1,0 +1,31 @@
+name: patch-booking-hold-minutes
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_booking_hold_minutes.py
+      - scripts/_booking_hold_chunks/**
+      - .github/workflows/patch-booking-hold-minutes.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Bake hold-minutes JS + cachebust into index.html
+        run: python3 scripts/patch_booking_hold_minutes.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/booking.js app/booking-settings-ui.js app/booking-free-confirm.js app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "feat(booking): bake editable hold minutes (default 30) + cachebust"
+          git pull --rebase origin main
+          git push origin HEAD:main
