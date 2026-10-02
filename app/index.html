@@ -27860,11 +27860,11 @@ function _pvdDocHtml(b, lines, tn, isBm, accent) {
     <div style="padding:12px 16px;overflow-x:auto">
       <table class="pdoc-sd-table" style="width:100%"><thead><tr>
         <th style="width:36px">No</th>
-        <th>${isBm?'Penerima':'Payee'}</th>
-        <th>${isBm?'Kaedah':'Method'}</th>
-        <th>${isBm?'Bank / Ruj':'Bank / Ref'}</th>
-        <th>${isBm?'Tujuan':'Purpose'}</th>
-        <th style="text-align:right">${isBm?'Jumlah':'Amount'}</th>
+        <th style="width:30%">${isBm?'Penerima':'Payee'}</th>
+        <th style="width:11%">${isBm?'Kaedah':'Method'}</th>
+        <th style="width:17%">${isBm?'Bank / Ruj':'Bank / Ref'}</th>
+        <th style="width:24%">${isBm?'Tujuan':'Purpose'}</th>
+        <th style="width:13%;text-align:right">${isBm?'Jumlah':'Amount'}</th>
       </tr></thead>
       <tbody>
         ${lines.map((l,i)=>`<tr>
