@@ -22,11 +22,21 @@ BUMPS = {
 }
 
 
+def load_b64(name: str) -> str:
+    single = CHUNKS / (name + '.b64')
+    if single.exists():
+        return single.read_text(encoding='utf-8')
+    n_path = CHUNKS / (name + '.b64.n')
+    if not n_path.exists():
+        raise FileNotFoundError(name + ' b64 missing')
+    n = int(n_path.read_text(encoding='utf-8').strip())
+    return ''.join((CHUNKS / f'{name}.b64.part{i}').read_text(encoding='utf-8') for i in range(n))
+
+
 def main():
     changed = False
     for name in FILES:
-        b64_path = CHUNKS / (name + '.b64')
-        new = base64.b64decode(b64_path.read_text(encoding='utf-8').encode()).decode('utf-8')
+        new = base64.b64decode(load_b64(name).encode()).decode('utf-8')
         path = APP / name
         old = path.read_text(encoding='utf-8') if path.exists() else None
         if old != new:
