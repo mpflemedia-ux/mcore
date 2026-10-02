@@ -24,12 +24,23 @@
       '.pdoc-sd-scroll{overflow:visible!important;height:auto!important;max-height:none!important;}' +
       '.pdoc-sd-chunk-break{page-break-after:auto!important;break-after:auto!important;}' +
       '.pdoc-sd-chunk{display:block!important;page-break-inside:auto!important;}' +
-      '.pdoc-sd-table{width:100%!important;max-width:100%!important;' +
+      /* Drop screen syncCols px so print uses % below (~194mm usable) */
+      '.pdoc-sd-table{width:100%!important;max-width:100%!important;min-width:0!important;' +
         'table-layout:fixed!important;font-size:7px!important;border-collapse:collapse!important;}' +
       '.pdoc-sd-table th,.pdoc-sd-table td{' +
         'padding:2px 2px!important;font-size:7px!important;line-height:1.2!important;' +
         'white-space:normal!important;word-break:break-word!important;overflow:visible!important;' +
-        'vertical-align:top!important;}' +
+        'vertical-align:top!important;min-width:0!important;max-width:none!important;}' +
+      /* Content-biased print cols: shrink NO/Bank/Account; room for Payee/Allow/Stat/Ded/Net */
+      '.pdoc-sd-table th:nth-child(1),.pdoc-sd-table td:nth-child(1){width:3%!important;}' +
+      '.pdoc-sd-table th:nth-child(2),.pdoc-sd-table td:nth-child(2){width:16%!important;}' +
+      '.pdoc-sd-table th:nth-child(3),.pdoc-sd-table td:nth-child(3){width:8%!important;}' +
+      '.pdoc-sd-table th:nth-child(4),.pdoc-sd-table td:nth-child(4){width:9%!important;}' +
+      '.pdoc-sd-table th:nth-child(5),.pdoc-sd-table td:nth-child(5){width:8%!important;}' +
+      '.pdoc-sd-table th:nth-child(6),.pdoc-sd-table td:nth-child(6){width:18%!important;}' +
+      '.pdoc-sd-table th:nth-child(7),.pdoc-sd-table td:nth-child(7){width:17%!important;}' +
+      '.pdoc-sd-table th:nth-child(8),.pdoc-sd-table td:nth-child(8){width:12%!important;}' +
+      '.pdoc-sd-table th:nth-child(9),.pdoc-sd-table td:nth-child(9){width:9%!important;}' +
       '.pdoc-sd-table tr{page-break-inside:auto!important;break-inside:auto!important;}' +
       '.pdoc-sd-table thead{display:table-header-group!important;}' +
       '.pdoc-sd-payee{font-size:7.5px!important;white-space:normal!important;line-height:1.2!important;}' +
@@ -50,6 +61,20 @@
       '.pdoc-sd-sig-print,.pdoc-sig-print-table{font-size:7px!important;margin-top:4px!important;}' +
       '}';
     document.head.appendChild(s);
+  }
+
+  /** Clear syncCols screen px from .pdoc-sd-table so print % CSS wins. */
+  function stripInlineColWidths() {
+    document.querySelectorAll('.pdoc-sd-table').forEach(function (table) {
+      table.style.width = '';
+      table.style.minWidth = '';
+      table.style.maxWidth = '';
+      table.querySelectorAll('th,td').forEach(function (cell) {
+        cell.style.width = '';
+        cell.style.minWidth = '';
+        cell.style.maxWidth = '';
+      });
+    });
   }
 
   function isEmptyPrintText(t) {
@@ -128,6 +153,7 @@
     if (typeof window._pdocSetPageOrientation === 'function') {
       window._pdocSetPageOrientation('portrait', 8);
     }
+    stripInlineColWidths();
     css();
     refreshDense();
     hideEmptyLines();
