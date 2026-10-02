@@ -24,8 +24,13 @@ BUMPS = {
 
 
 def load_js(name: str) -> str:
-    path = CHUNKS / (name + '.gz.b64')
-    b64 = ''.join(path.read_text(encoding='utf-8').split())
+    single = CHUNKS / (name + '.gz.b64')
+    if single.exists():
+        b64 = ''.join(single.read_text(encoding='utf-8').split())
+    else:
+        n = int((CHUNKS / (name + '.gz.b64.n')).read_text(encoding='utf-8').strip())
+        raw = ''.join((CHUNKS / f'{name}.gz.b64.part{i}').read_text(encoding='utf-8') for i in range(n))
+        b64 = ''.join(raw.split())
     return gzip.decompress(base64.b64decode(b64.encode())).decode('utf-8')
 
 
