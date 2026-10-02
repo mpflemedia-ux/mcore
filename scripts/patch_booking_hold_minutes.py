@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Bake booking hold-minutes script cachebust into app/index.html (idempotent)."""
+"""Bake booking hold-minutes JS + cachebust into app/ (idempotent)."""
 from pathlib import Path
+import base64
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-INDEX = ROOT / 'app' / 'index.html'
+APP = ROOT / 'app'
+INDEX = APP / 'index.html'
+CHUNKS = Path(__file__).resolve().parent / '_booking_hold_chunks'
 
-# path -> desired ?v=
+FILES = [
+    'booking.js',
+    'booking-settings-ui.js',
+    'booking-free-confirm.js',
+]
+
 BUMPS = {
     'booking.js': '2',
     'booking-settings-ui.js': '2',
@@ -15,8 +23,19 @@ BUMPS = {
 
 
 def main():
-    html = INDEX.read_text(encoding='utf-8')
     changed = False
+    for name in FILES:
+        b64_path = CHUNKS / (name + '.b64')
+        new = base64.b64decode(b64_path.read_text(encoding='utf-8').encode()).decode('utf-8')
+        path = APP / name
+        old = path.read_text(encoding='utf-8') if path.exists() else None
+        if old != new:
+            path.write_text(new, encoding='utf-8')
+            changed = True
+            print('wrote', path)
+        else:
+            print('unchanged', path)
+    html = INDEX.read_text(encoding='utf-8')
     for path, ver in BUMPS.items():
         html2, n = re.subn(
             rf'(<script src="\./{re.escape(path)}\?v=)\d+(">)',
