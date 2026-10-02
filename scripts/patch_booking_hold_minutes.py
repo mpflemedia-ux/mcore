@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Bake booking hold-minutes JS + cachebust into app/ (idempotent)."""
+"""Bake booking hold-minutes JS + cachebust into app/ (idempotent).
+
+Chunks live on feat/booking-hold-minutes tip; bake may fetch them if missing on main.
+"""
 from pathlib import Path
 import base64
 import gzip
 import re
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'app'
 INDEX = APP / 'index.html'
 CHUNKS = Path(__file__).resolve().parent / '_booking_hold_chunks'
+
+# Verified tip containing clean gzip chunks + SQL
+CHUNK_REF = 'eaa3663a48ce6c91a3746bbf7a4bf0a0d6bc831c'
+CHUNK_BASE = f'https://raw.githubusercontent.com/mpflemedia-ux/mcore/{CHUNK_REF}/scripts/_booking_hold_chunks'
 
 FILES = [
     'booking.js',
@@ -21,6 +29,28 @@ BUMPS = {
     'booking-settings-ui.js': '2',
     'booking-free-confirm.js': '3',
 }
+
+NEEDED = [
+    'booking-free-confirm.js.gz.b64',
+    'booking-settings-ui.js.gz.b64.n',
+    'booking-settings-ui.js.gz.b64.part0',
+    'booking-settings-ui.js.gz.b64.part1',
+    'booking.js.gz.b64.n',
+    'booking.js.gz.b64.part0',
+    'booking.js.gz.b64.part1',
+]
+
+
+def ensure_chunks():
+    CHUNKS.mkdir(parents=True, exist_ok=True)
+    for name in NEEDED:
+        path = CHUNKS / name
+        if path.exists() and path.stat().st_size > 0:
+            continue
+        url = f'{CHUNK_BASE}/{name}'
+        print('fetch', url)
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            path.write_bytes(resp.read())
 
 
 def load_js(name: str) -> str:
@@ -35,6 +65,7 @@ def load_js(name: str) -> str:
 
 
 def main():
+    ensure_chunks()
     changed = False
     for name in FILES:
         new = load_js(name)
