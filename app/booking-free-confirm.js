@@ -44,7 +44,7 @@
       if (!box) return;
       Array.prototype.forEach.call(box.querySelectorAll('p'), function (p) {
         var t = p.textContent || '';
-        if (/held 15 min/i.test(t)) p.textContent = 'Slot confirmed. No payment required.';
+        if (/held \d+ min/i.test(t)) p.textContent = 'Slot confirmed. No payment required.';
         else if (/confirm payment/i.test(t)) p.remove();
         else if (/pay invoice/i.test(t)) p.remove();
       });
