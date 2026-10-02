@@ -30601,8 +30601,39 @@ async function renderSalaryDisbursement(month, year) {
       <th style="width:10%;text-align:right">${t.netPay}</th>
     </tr></thead>`
       const _sdRowHtml = (r, i) => {
-      const bankName = r.employees?.bank_name ? _aiEscapeHtml(r.employees.bank_name) : '—'
-      const bankAcc = r.employees?.bank_account_no ? _aiEscapeHtml(r.employees.bank_account_no) : '—'
+      const _bankRaw = r.employees?.bank_name
+      const _accRaw = r.employees?.bank_account_no
+      const bankName = (_bankRaw && String(_bankRaw).trim() && String(_bankRaw).trim() !== '0') ? _aiEscapeHtml(String(_bankRaw).trim()) : '—'
+      const bankAcc = (_accRaw != null && String(_accRaw).trim() && String(_accRaw).trim() !== '0') ? _aiEscapeHtml(String(_accRaw).trim()) : '—'
+      const _a1 = Number(r.allowance_1||0) > 0
+      const _a2 = Number(r.allowance_2||0) > 0
+      const _a3 = Number(r.allowance_3||0) > 0
+      const _epf = Number(r.epf_employee||0) > 0
+      const _socso = Number(r.socso_employee||0) > 0
+      const _eis = Number(r.eis_employee||0) > 0
+      const _pcb = Number(r.pcb||0) > 0
+      const _zakat = Number(r.zakat||0) > 0
+      const _adv = Number(r.advance||0) > 0
+      const _d1 = Number(r.deduction_1||0) > 0
+      const _d2 = Number(r.deduction_2||0) > 0
+      const _allowDense = [
+        _a1 ? (_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_1,r.allowance_1)+': <strong>'+_sdPrintAmt(r.allowance_1)+'</strong>') : '',
+        _a2 ? (_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_2,r.allowance_2)+': <strong>'+_sdPrintAmt(r.allowance_2)+'</strong>') : '',
+        _a3 ? (_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_3,r.allowance_3)+': <strong>'+_sdPrintAmt(r.allowance_3)+'</strong>') : '',
+        Number(r.commission||0) > 0 ? ((isBm?'Komisen':'Commission')+': <strong>'+_sdPrintAmt(r.commission)+'</strong>') : ''
+      ].filter(Boolean).join(' · ')
+      const _statDense = [
+        _epf ? ('EPF <strong>'+_sdPrintAmt(r.epf_employee)+'</strong>') : '',
+        _socso ? ('SOCSO <strong>'+_sdPrintAmt(r.socso_employee)+'</strong>') : '',
+        _eis ? ('EIS <strong>'+_sdPrintAmt(r.eis_employee)+'</strong>') : '',
+        _pcb ? ('PCB <strong>'+_sdPrintAmt(r.pcb)+'</strong>') : '',
+        _zakat ? ('Zakat <strong>'+_sdPrintAmt(r.zakat)+'</strong>') : ''
+      ].filter(Boolean).join(' · ')
+      const _dedDense = [
+        _adv ? ((isBm?'Pend.':'Adv.')+' <strong>'+_sdPrintAmt(r.advance)+'</strong>') : '',
+        _d1 ? (_sdPrintType(SD_DEDUCTION_TYPES,r.deduction_type_1,r.deduction_1)+': <strong>'+_sdPrintAmt(r.deduction_1)+'</strong>') : '',
+        _d2 ? (_sdPrintType(SD_DEDUCTION_TYPES,r.deduction_type_2,r.deduction_2)+': <strong>'+_sdPrintAmt(r.deduction_2)+'</strong>') : ''
+      ].filter(Boolean).join(' · ')
       return `<tr>
       <td style="color:#94A3B8;font-size:11px">${i+1}</td>
       <td>
@@ -30612,60 +30643,69 @@ async function renderSalaryDisbursement(month, year) {
       <td style="font-size:12px;font-family:ui-monospace,monospace;color:#334155;letter-spacing:.02em">${bankAcc}</td>
       <td class="pdoc-sd-basic">${formatRM(r.basic_salary)}</td>
       <td>
-        <div class="pdoc-sd-stack">
+        <div class="print-only pdoc-sd-print-dense" id="sd-print-allow-dense-${r.id}">${_allowDense}</div>
+        <div class="pdoc-sd-stack no-print">
           <div class="pdoc-sd-line">
-            <span class="print-only pdoc-sd-print-line" id="sd-print-atype1-${r.id}">${Number(r.allowance_1)>0?_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_1,r.allowance_1)+': <strong>'+_sdPrintAmt(r.allowance_1)+'</strong>':''}</span>
-            <select class="form-select no-print" id="sd-atype1-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_1)}</select>
-            <input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a1-${r.id}" value="${r.allowance_1||0}" oninput="_sdRecalc()">
+            <select class="form-select" id="sd-atype1-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_1)}</select>
+            <input type="number" step="0.01" min="0" class="form-input" id="sd-a1-${r.id}" value="${r.allowance_1||0}" oninput="_sdRecalc()">
           </div>
           <div class="pdoc-sd-line">
-            <span class="print-only pdoc-sd-print-line" id="sd-print-atype2-${r.id}">${Number(r.allowance_2)>0?_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_2,r.allowance_2)+': <strong>'+_sdPrintAmt(r.allowance_2)+'</strong>':''}</span>
-            <select class="form-select no-print" id="sd-atype2-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_2)}</select>
-            <input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a2-${r.id}" value="${r.allowance_2||0}" oninput="_sdRecalc()">
+            <select class="form-select" id="sd-atype2-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_2)}</select>
+            <input type="number" step="0.01" min="0" class="form-input" id="sd-a2-${r.id}" value="${r.allowance_2||0}" oninput="_sdRecalc()">
           </div>
           <div class="pdoc-sd-line">
-            <span class="print-only pdoc-sd-print-line" id="sd-print-atype3-${r.id}">${Number(r.allowance_3)>0?_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_3,r.allowance_3)+': <strong>'+_sdPrintAmt(r.allowance_3)+'</strong>':''}</span>
-            <select class="form-select no-print" id="sd-atype3-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select>
-            <input type="number" step="0.01" min="0" class="form-input no-print" id="sd-a3-${r.id}" value="${r.allowance_3||0}" oninput="_sdRecalc()">
+            <select class="form-select" id="sd-atype3-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_ALLOWANCE_TYPES, r.allowance_type_3)}</select>
+            <input type="number" step="0.01" min="0" class="form-input" id="sd-a3-${r.id}" value="${r.allowance_3||0}" oninput="_sdRecalc()">
           </div>
           ${Number(r.commission||0) > 0 ? `<div class="pdoc-sd-line"><label>${isBm?'Komisen':'Commission'}</label><span style="font-weight:600;color:var(--success,#16A34A)">${formatRM(r.commission)}</span></div>` : ''}
         </div>
-        <span class="print-only" id="sd-print-a1-${r.id}" style="display:none"></span>
-        <span class="print-only" id="sd-print-a2-${r.id}" style="display:none"></span>
-        <span class="print-only" id="sd-print-a3-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-atype1-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-atype2-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-atype3-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-a1-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-a2-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-a3-${r.id}" style="display:none"></span>
       </td>
       <td>
-        <div class="pdoc-sd-stack">
-          <div class="pdoc-sd-line"><label>EPF</label><span class="print-only pdoc-sd-print-line" id="sd-print-epf-${r.id}">${_sdPrintAmt(r.epf_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-epf-${r.id}" value="${r.epf_employee||0}" oninput="_sdRecalc()"></div>
-          <div class="pdoc-sd-line"><label>SOCSO</label><span class="print-only pdoc-sd-print-line" id="sd-print-socso-${r.id}">${_sdPrintAmt(r.socso_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-${r.id}" value="${r.socso_employee||0}" oninput="_sdRecalc()"></div>
-          <div class="pdoc-sd-line"><label>EIS</label><span class="print-only pdoc-sd-print-line" id="sd-print-eis-${r.id}">${_sdPrintAmt(r.eis_employee)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-${r.id}" value="${r.eis_employee||0}" oninput="_sdRecalc()"></div>
-          <div class="pdoc-sd-line"><label>PCB</label><span class="print-only pdoc-sd-print-line" id="sd-print-pcb-${r.id}">${_sdPrintAmt(r.pcb)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-pcb-${r.id}" value="${r.pcb||0}" oninput="_sdRecalc()"></div>
-          <div class="pdoc-sd-line"><label>Zakat</label><span class="print-only pdoc-sd-print-line" id="sd-print-zakat-${r.id}">${_sdPrintAmt(r.zakat)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-zakat-${r.id}" value="${r.zakat||0}" oninput="_sdRecalc()"></div>
-          <div class="pdoc-sd-employer-note">${isBm?'Majikan':'Er'}: EPF ${_sdPrintAmt(r.epf_employer)} · SOCSO ${_sdPrintAmt(r.socso_employer)} · EIS ${_sdPrintAmt(r.eis_employer)}</div>
+        <div class="print-only pdoc-sd-print-dense" id="sd-print-stat-dense-${r.id}">${_statDense}</div>
+        <div class="pdoc-sd-employer-note"><span class="print-only pdoc-sd-employer-print">${isBm?'Majikan':'Er'}: EPF ${_sdPrintAmt(r.epf_employer)} · SOCSO ${_sdPrintAmt(r.socso_employer)} · EIS ${_sdPrintAmt(r.eis_employer)}</span></div>
+        <div class="pdoc-sd-stack no-print">
+          <div class="pdoc-sd-line"><label>EPF</label><input type="number" step="0.01" min="0" class="form-input" id="sd-epf-${r.id}" value="${r.epf_employee||0}" oninput="_sdRecalc()"></div>
+          <div class="pdoc-sd-line"><label>SOCSO</label><input type="number" step="0.01" min="0" class="form-input" id="sd-socso-${r.id}" value="${r.socso_employee||0}" oninput="_sdRecalc()"></div>
+          <div class="pdoc-sd-line"><label>EIS</label><input type="number" step="0.01" min="0" class="form-input" id="sd-eis-${r.id}" value="${r.eis_employee||0}" oninput="_sdRecalc()"></div>
+          <div class="pdoc-sd-line"><label>PCB</label><input type="number" step="0.01" min="0" class="form-input" id="sd-pcb-${r.id}" value="${r.pcb||0}" oninput="_sdRecalc()"></div>
+          <div class="pdoc-sd-line"><label>Zakat</label><input type="number" step="0.01" min="0" class="form-input" id="sd-zakat-${r.id}" value="${r.zakat||0}" oninput="_sdRecalc()"></div>
         </div>
+        <span class="no-print" id="sd-print-epf-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-socso-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-eis-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-pcb-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-zakat-${r.id}" style="display:none"></span>
       </td>
       <td>
-        <div class="pdoc-sd-stack">
-          <div class="pdoc-sd-line"><label>${isBm?'Pend.':'Adv.'}</label><span class="print-only pdoc-sd-print-line" id="sd-print-adv-${r.id}">${_sdPrintAmt(r.advance)}</span><input type="number" step="0.01" min="0" class="form-input no-print" id="sd-adv-${r.id}" value="${r.advance||0}" oninput="_sdRecalc()"></div>
-          ${(window._sdAdvancesByEmployee[r.employee_id]||[]).length ? `<div class="pdoc-sd-line no-print">
+        <div class="print-only pdoc-sd-print-dense" id="sd-print-ded-dense-${r.id}">${_dedDense}</div>
+        <div class="pdoc-sd-stack no-print">
+          <div class="pdoc-sd-line"><label>${isBm?'Pend.':'Adv.'}</label><input type="number" step="0.01" min="0" class="form-input" id="sd-adv-${r.id}" value="${r.advance||0}" oninput="_sdRecalc()"></div>
+          ${(window._sdAdvancesByEmployee[r.employee_id]||[]).length ? `<div class="pdoc-sd-line">
             <select class="form-select" id="sd-advsel-${r.id}" style="font-size:11px" onchange="_sdAdvancePick('${r.id}')">
               <option value="">${isBm?'-- Potong Panjar --':'-- Deduct Advance --'}</option>
               ${(window._sdAdvancesByEmployee[r.employee_id]||[]).map(a=>`<option value="${a.id}" data-outstanding="${a.outstanding_amount}">${formatDate(a.disbursed_at)} · ${formatRM(a.outstanding_amount)}</option>`).join('')}
             </select>
           </div>` : ''}
           <div class="pdoc-sd-line">
-            <span class="print-only pdoc-sd-print-line" id="sd-print-dtype1-${r.id}">${Number(r.deduction_1)>0?_sdPrintType(SD_DEDUCTION_TYPES,r.deduction_type_1,r.deduction_1)+': <strong>'+_sdPrintAmt(r.deduction_1)+'</strong>':''}</span>
-            <select class="form-select no-print" id="sd-dtype1-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select>
-            <input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d1-${r.id}" value="${r.deduction_1||0}" oninput="_sdRecalc()">
+            <select class="form-select" id="sd-dtype1-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_1)}</select>
+            <input type="number" step="0.01" min="0" class="form-input" id="sd-d1-${r.id}" value="${r.deduction_1||0}" oninput="_sdRecalc()">
           </div>
           <div class="pdoc-sd-line">
-            <span class="print-only pdoc-sd-print-line" id="sd-print-dtype2-${r.id}">${Number(r.deduction_2)>0?_sdPrintType(SD_DEDUCTION_TYPES,r.deduction_type_2,r.deduction_2)+': <strong>'+_sdPrintAmt(r.deduction_2)+'</strong>':''}</span>
-            <select class="form-select no-print" id="sd-dtype2-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_2)}</select>
-            <input type="number" step="0.01" min="0" class="form-input no-print" id="sd-d2-${r.id}" value="${r.deduction_2||0}" oninput="_sdRecalc()">
+            <select class="form-select" id="sd-dtype2-${r.id}" onchange="_sdRecalc()">${_sdTypeOptions(SD_DEDUCTION_TYPES, r.deduction_type_2)}</select>
+            <input type="number" step="0.01" min="0" class="form-input" id="sd-d2-${r.id}" value="${r.deduction_2||0}" oninput="_sdRecalc()">
           </div>
         </div>
-        <span class="print-only" id="sd-print-d1-${r.id}" style="display:none"></span>
-        <span class="print-only" id="sd-print-d2-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-adv-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-dtype1-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-dtype2-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-d1-${r.id}" style="display:none"></span>
+        <span class="no-print" id="sd-print-d2-${r.id}" style="display:none"></span>
       </td>
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`
@@ -37120,8 +37160,8 @@ if('serviceWorker' in navigator){
 <script src="./jnl-print.js?v=2"></script>
 <script src="./jnl-search.js?v=1"></script>
 <script src="./coa-seed-advanced.js?v=2"></script>
-<script src="./sd-employer-edit.js?v=6"></script>
-<script src="./sd-print-fit.js?v=1"></script>
+<script src="./sd-employer-edit.js?v=7"></script>
+<script src="./sd-print-fit.js?v=2"></script>
 <script src="./sd-table-fit.js?v=9"></script>
 <script src="./sd-dark-contrast.js?v=1"></script>
 <script src="./payslip-scroll.js?v=1"></script>
