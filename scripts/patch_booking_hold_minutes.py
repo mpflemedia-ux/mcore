@@ -2,6 +2,7 @@
 """Bake booking hold-minutes JS + cachebust into app/ (idempotent)."""
 from pathlib import Path
 import base64
+import gzip
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,21 +23,16 @@ BUMPS = {
 }
 
 
-def load_b64(name: str) -> str:
-    single = CHUNKS / (name + '.b64')
-    if single.exists():
-        return single.read_text(encoding='utf-8')
-    n_path = CHUNKS / (name + '.b64.n')
-    if not n_path.exists():
-        raise FileNotFoundError(name + ' b64 missing')
-    n = int(n_path.read_text(encoding='utf-8').strip())
-    return ''.join((CHUNKS / f'{name}.b64.part{i}').read_text(encoding='utf-8') for i in range(n))
+def load_js(name: str) -> str:
+    path = CHUNKS / (name + '.gz.b64')
+    b64 = ''.join(path.read_text(encoding='utf-8').split())
+    return gzip.decompress(base64.b64decode(b64.encode())).decode('utf-8')
 
 
 def main():
     changed = False
     for name in FILES:
-        new = base64.b64decode(load_b64(name).encode()).decode('utf-8')
+        new = load_js(name)
         path = APP / name
         old = path.read_text(encoding='utf-8') if path.exists() else None
         if old != new:
