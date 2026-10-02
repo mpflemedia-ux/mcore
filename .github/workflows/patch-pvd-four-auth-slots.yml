@@ -22,8 +22,8 @@ jobs:
         run: |
           git config user.name "mcore-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
           git add app/index.html
-          git diff --cached --quiet && echo 'nothing' && exit 0
+          if git diff --cached --quiet; then echo 'nothing'; exit 0; fi
           git commit -m "feat(pvd): bake 4 auth slots (Prepared/Checked/First/Second)"
+          git pull --rebase origin main || true
           git push
