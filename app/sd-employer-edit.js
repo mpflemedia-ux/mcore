@@ -19,6 +19,11 @@
     return m ? Number(m[1]) : 0;
   }
 
+  function fmtAmt(n) {
+    if (typeof formatRM === 'function') return Number(n) > 0 ? formatRM(n) : '-';
+    return Number(n) > 0 ? String(n) : '-';
+  }
+
   function killFab() {
     var fab = document.getElementById('sd-er-save-fab');
     if (fab && fab.parentNode) fab.parentNode.removeChild(fab);
@@ -32,26 +37,59 @@
     return ids;
   }
 
+  function paintPrintSpan(el, id) {
+    var isBm = typeof APP !== 'undefined' && APP.language === 'bm';
+    var epf = val('sd-epf-er-' + id);
+    var socso = val('sd-socso-er-' + id);
+    var eis = val('sd-eis-er-' + id);
+    var span = el.querySelector('.pdoc-sd-employer-print');
+    if (!span) {
+      span = document.createElement('span');
+      span.className = 'print-only pdoc-sd-employer-print';
+      el.insertBefore(span, el.firstChild);
+    }
+    span.textContent = (isBm ? 'Majikan' : 'Er') + ': EPF ' + fmtAmt(epf) +
+      ' \u00b7 SOCSO ' + fmtAmt(socso) + ' \u00b7 EIS ' + fmtAmt(eis);
+  }
+
   function inject() {
     killFab();
     var notes = document.querySelectorAll('.pdoc-sd-employer-note');
     if (!notes.length) return;
     var isBm = typeof APP !== 'undefined' && APP.language === 'bm';
     notes.forEach(function (el) {
-      if (!el || el.getAttribute('data-er-edit') === '1') return;
+      if (!el || el.getAttribute('data-er-edit') === '1') {
+        if (el && el.getAttribute('data-er-edit') === '1') {
+          var wrap0 = el.closest('td') || el.parentElement;
+          var epf0 = wrap0 && wrap0.querySelector('input[id^="sd-epf-"]:not([id*="-er-"])');
+          var id0 = epf0 && String(epf0.id).replace('sd-epf-', '');
+          if (id0) paintPrintSpan(el, id0);
+        }
+        return;
+      }
       var wrap = el.closest('td') || el.parentElement;
       var epfInp = wrap && wrap.querySelector('input[id^="sd-epf-"]:not([id*="-er-"])');
       var id = epfInp && String(epfInp.id).replace('sd-epf-', '');
       if (!id) return;
       var src = el.textContent || '';
+      var epfEr = parseAmt(src, 'EPF');
+      var socsoEr = parseAmt(src, 'SOCSO');
+      var eisEr = parseAmt(src, 'EIS');
       el.setAttribute('data-er-edit', '1');
+      // Keep print-visible employer amounts; screen-only edit inputs beside them.
       el.innerHTML =
-        '<div class="pdoc-sd-line"><label>' + (isBm ? 'EPF Mjkn' : 'Er EPF') + '</label>' +
-        '<input type="number" step="0.01" min="0" class="form-input no-print" id="sd-epf-er-' + id + '" value="' + parseAmt(src, 'EPF') + '" oninput="_sdRecalc()"></div>' +
-        '<div class="pdoc-sd-line"><label>' + (isBm ? 'SOCSO Mjkn' : 'Er SOCSO') + '</label>' +
-        '<input type="number" step="0.01" min="0" class="form-input no-print" id="sd-socso-er-' + id + '" value="' + parseAmt(src, 'SOCSO') + '" oninput="_sdRecalc()"></div>' +
-        '<div class="pdoc-sd-line"><label>' + (isBm ? 'EIS Mjkn' : 'Er EIS') + '</label>' +
-        '<input type="number" step="0.01" min="0" class="form-input no-print" id="sd-eis-er-' + id + '" value="' + parseAmt(src, 'EIS') + '" oninput="_sdRecalc()"></div>';
+        '<span class="print-only pdoc-sd-employer-print">' +
+          (isBm ? 'Majikan' : 'Er') + ': EPF ' + fmtAmt(epfEr) +
+          ' \u00b7 SOCSO ' + fmtAmt(socsoEr) + ' \u00b7 EIS ' + fmtAmt(eisEr) +
+        '</span>' +
+        '<div class="no-print pdoc-sd-er-edit">' +
+          '<div class="pdoc-sd-line"><label>' + (isBm ? 'EPF Mjkn' : 'Er EPF') + '</label>' +
+          '<input type="number" step="0.01" min="0" class="form-input" id="sd-epf-er-' + id + '" value="' + epfEr + '" oninput="_sdRecalc()"></div>' +
+          '<div class="pdoc-sd-line"><label>' + (isBm ? 'SOCSO Mjkn' : 'Er SOCSO') + '</label>' +
+          '<input type="number" step="0.01" min="0" class="form-input" id="sd-socso-er-' + id + '" value="' + socsoEr + '" oninput="_sdRecalc()"></div>' +
+          '<div class="pdoc-sd-line"><label>' + (isBm ? 'EIS Mjkn' : 'Er EIS') + '</label>' +
+          '<input type="number" step="0.01" min="0" class="form-input" id="sd-eis-er-' + id + '" value="' + eisEr + '" oninput="_sdRecalc()"></div>' +
+        '</div>';
     });
   }
 
@@ -72,6 +110,10 @@
         var n = Number(String(netEl.textContent || '').replace(/[^0-9.-]/g, ''));
         if (Number.isFinite(n)) net += n;
       }
+      var note = document.querySelector('#sd-epf-' + id) &&
+        (document.getElementById('sd-epf-' + id).closest('td') || {}).querySelector &&
+        document.getElementById('sd-epf-' + id).closest('td').querySelector('.pdoc-sd-employer-note');
+      if (note) paintPrintSpan(note, id);
     });
     var epf = epfEe + epfEr, socso = socsoEe + socsoEr, eis = eisEe + eisEr;
     var budget = net + epf + socso + eis + pcb + zakat;
@@ -139,28 +181,28 @@
 
   function wrapRecalc() {
     var orig = window._sdRecalc;
-    if (typeof orig !== 'function' || orig._erEdit6) return;
+    if (typeof orig !== 'function' || orig._erEdit7) return;
     window._sdRecalc = function () {
       orig.apply(this, arguments);
       inject();
       paintTotals();
     };
-    window._sdRecalc._erEdit6 = true;
+    window._sdRecalc._erEdit7 = true;
   }
 
   function wrapSave() {
     var orig = window._sdSaveAll;
-    if (typeof orig !== 'function' || orig._erEdit6) return;
+    if (typeof orig !== 'function' || orig._erEdit7) return;
     window._sdSaveAll = async function () {
       wrapValues();
       await orig.apply(this, arguments);
     };
-    window._sdSaveAll._erEdit6 = true;
+    window._sdSaveAll._erEdit7 = true;
   }
 
   function wrapRender() {
     var orig = window.renderSalaryDisbursement;
-    if (typeof orig !== 'function' || orig._erEdit6) return;
+    if (typeof orig !== 'function' || orig._erEdit7) return;
     window.renderSalaryDisbursement = function () {
       var r = orig.apply(this, arguments);
       var go = function () {
@@ -171,7 +213,7 @@
       else setTimeout(go, 80);
       return r;
     };
-    window.renderSalaryDisbursement._erEdit6 = true;
+    window.renderSalaryDisbursement._erEdit7 = true;
   }
 
   killFab();
