@@ -29,7 +29,22 @@ def load_fragment():
     raise SystemExit("fragment not found")
 
 
+def materialize_employer_edit():
+    p = Path("app/sd-employer-edit.js")
+    b = Path("scripts/sd_employer_edit.js.gz.b64")
+    if not b.exists():
+        return False
+    raw = base64.b64decode(b.read_text(encoding="ascii").strip())
+    text = gzip.decompress(raw).decode("utf-8")
+    if "pdoc-sd-employer-print" not in text or "_erEdit7" not in text:
+        raise SystemExit("employer-edit fragment missing markers")
+    p.write_text(text, encoding="utf-8")
+    print("materialized app/sd-employer-edit.js from gz.b64")
+    return True
+
+
 def main():
+    materialize_employer_edit()
     html = INDEX.read_text(encoding="utf-8")
     if "sd-print-allow-dense-" in html and "sd-print-fit.js?v=2" in html and "sd-employer-edit.js?v=7" in html:
         print("already patched")

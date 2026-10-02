@@ -7,6 +7,7 @@ on:
       - scripts/patch_sd_print_a4_portrait.py
       - scripts/sd_print_a4_rowhtml.fragment.js
       - scripts/sd_print_a4_rowhtml.fragment.js.gz.b64
+      - scripts/sd_employer_edit.js.gz.b64
       - .github/workflows/patch-sd-print-a4-portrait.yml
       - app/sd-print-fit.js
       - app/sd-employer-edit.js
