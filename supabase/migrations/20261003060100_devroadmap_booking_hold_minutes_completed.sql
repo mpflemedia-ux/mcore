@@ -3,6 +3,7 @@
 --   20261003060000_booking_hold_minutes.sql (RPC + board hold_minutes).
 -- No new table/column: uses tenants.config->>'booking_hold_minutes' via merge_tenant_config.
 -- Badge window in booking-card-ui.js (15*60*1000) left alone — UI "fresh" badge, not hold TTL.
+-- Live bake SHA: 0695ed4dba1842c4766179efa30f9452049a73c8
 
 DO $$
 BEGIN
@@ -17,7 +18,7 @@ BEGIN
       stage = 'completed',
       module = COALESCE(NULLIF(TRIM(module), ''), 'booking'),
       description = 'Tenant-configurable paid public booking hold TTL. Default 30 min (was hardcoded 15). Stored in tenants.config.booking_hold_minutes (clamp 5–1440). create_public_booking + get_public_booking_board use same value; Settings → Public booking has Hold minutes field saved via merge_tenant_config; app/booking.js HOLD note dynamic from board/RPC. Free bookings still skip hold. booking-card-ui fresh badge (15 min) left — UI-only, not hold TTL. Does not touch CSS global, print, sidebar, openPage, or unrelated modules.',
-      pr_url = 'https://github.com/mpflemedia-ux/mcore/commit/PLACEHOLDER_BAKE_SHA'
+      pr_url = 'https://github.com/mpflemedia-ux/mcore/commit/0695ed4dba1842c4766179efa30f9452049a73c8'
     WHERE title ILIKE '%booking%hold%min%'
        OR title ILIKE '%hold minutes%'
        OR title ILIKE '%booking hold TTL%';
@@ -29,7 +30,7 @@ BEGIN
       'Tenant-configurable paid public booking hold TTL. Default 30 min (was hardcoded 15). Stored in tenants.config.booking_hold_minutes (clamp 5–1440). create_public_booking + get_public_booking_board use same value; Settings → Public booking has Hold minutes field saved via merge_tenant_config; app/booking.js HOLD note dynamic from board/RPC. Free bookings still skip hold. booking-card-ui fresh badge (15 min) left — UI-only, not hold TTL. Does not touch CSS global, print, sidebar, openPage, or unrelated modules.',
       'booking',
       'completed',
-      'https://github.com/mpflemedia-ux/mcore/commit/PLACEHOLDER_BAKE_SHA'
+      'https://github.com/mpflemedia-ux/mcore/commit/0695ed4dba1842c4766179efa30f9452049a73c8'
     );
   END IF;
 EXCEPTION WHEN undefined_column OR undefined_table THEN
