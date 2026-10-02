@@ -17,7 +17,7 @@ BEGIN
       stage = 'completed',
       module = COALESCE(NULLIF(TRIM(module), ''), 'booking'),
       description = 'Tenant-configurable paid public booking hold TTL. Default 30 min (was hardcoded 15). Stored in tenants.config.booking_hold_minutes (clamp 5–1440). create_public_booking + get_public_booking_board use same value; Settings → Public booking has Hold minutes field saved via merge_tenant_config; app/booking.js HOLD note dynamic from board/RPC. Free bookings still skip hold. booking-card-ui fresh badge (15 min) left — UI-only, not hold TTL. Does not touch CSS global, print, sidebar, openPage, or unrelated modules.',
-      pr_url = 'PLACEHOLDER_COMMIT_URL'
+      pr_url = 'https://github.com/mpflemedia-ux/mcore/commit/dc94fb44fbbe55e37368b444f9c605c363d17b6c'
     WHERE title ILIKE '%booking%hold%min%'
        OR title ILIKE '%hold minutes%'
        OR title ILIKE '%booking hold TTL%';
@@ -29,7 +29,7 @@ BEGIN
       'Tenant-configurable paid public booking hold TTL. Default 30 min (was hardcoded 15). Stored in tenants.config.booking_hold_minutes (clamp 5–1440). create_public_booking + get_public_booking_board use same value; Settings → Public booking has Hold minutes field saved via merge_tenant_config; app/booking.js HOLD note dynamic from board/RPC. Free bookings still skip hold. booking-card-ui fresh badge (15 min) left — UI-only, not hold TTL. Does not touch CSS global, print, sidebar, openPage, or unrelated modules.',
       'booking',
       'completed',
-      'PLACEHOLDER_COMMIT_URL'
+      'https://github.com/mpflemedia-ux/mcore/commit/dc94fb44fbbe55e37368b444f9c605c363d17b6c'
     );
   END IF;
 EXCEPTION WHEN undefined_column OR undefined_table THEN
