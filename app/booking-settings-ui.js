@@ -47,8 +47,8 @@
     });
   }
   function paint(box) {
-    if (!box || box.getAttribute('data-bk-ui') === '2') return;
-    box.setAttribute('data-bk-ui', '2');
+    if (!box || box.getAttribute('data-bk-ui') === '3') return;
+    box.setAttribute('data-bk-ui', '3');
     var isBm = APP.language === 'bm';
     var days = isBm
       ? [['0','Ahd'],['1','Isn'],['2','Sel'],['3','Rab'],['4','Kha'],['5','Jum'],['6','Sab']]
@@ -59,6 +59,10 @@
     box.innerHTML =
       '<strong>' + (isBm ? 'Booking awam' : 'Public booking') + '</strong>' +
       '<div style="font-size:12px;color:var(--text-3);margin:6px 0 10px">' + (isBm ? 'Link customer pilih slot & tempah.' : 'Customer picks a slot and books.') + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px">' +
+      '<label style="font-size:12px">' + (isBm ? 'Hold (minit)' : 'Hold minutes') +
+      ' <input id="bk-hold-mins" type="number" min="5" max="1440" value="30" class="form-input" style="width:80px"></label>' +
+      '<button type="button" class="btn btn-outline btn-sm" id="bk-hold-save">' + (isBm ? 'Simpan hold' : 'Save hold') + '</button></div>' +
       '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:13px">' +
       '<label><input type="radio" name="bk-kind" value="session" checked> ' + (isBm ? 'Sesi' : 'Session') + '</label>' +
       '<label><input type="radio" name="bk-kind" value="event"> ' + (isBm ? 'Acara' : 'Event') + '</label></div>' +
@@ -123,6 +127,38 @@
       try { await navigator.clipboard.writeText(url); } catch (e) {}
       msg.textContent = url;
     };
+    async function loadHold() {
+      var inp = document.getElementById('bk-hold-mins');
+      if (!inp || !window.sb || !APP.tenant) return;
+      var mins = 30;
+      try {
+        var q = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle();
+        var cfg = (q.data && q.data.config) || (APP.tenant.config) || {};
+        if (cfg.booking_hold_minutes != null) mins = Number(cfg.booking_hold_minutes) || 30;
+      } catch (e) {
+        if (APP.tenant.config && APP.tenant.config.booking_hold_minutes != null)
+          mins = Number(APP.tenant.config.booking_hold_minutes) || 30;
+      }
+      if (mins < 5) mins = 5;
+      if (mins > 1440) mins = 1440;
+      inp.value = String(mins);
+    }
+    var holdSave = document.getElementById('bk-hold-save');
+    if (holdSave) holdSave.onclick = async function () {
+      var msg = document.getElementById('bk-svc-msg');
+      var n = Math.round(Number((document.getElementById('bk-hold-mins') || {}).value || 30));
+      if (!isFinite(n)) n = 30;
+      if (n < 5) n = 5;
+      if (n > 1440) n = 1440;
+      var inp = document.getElementById('bk-hold-mins');
+      if (inp) inp.value = String(n);
+      if (!window.sb || !APP.tenant) { if (msg) msg.textContent = 'Not signed in'; return; }
+      var r = await sb.rpc('merge_tenant_config', { p_tenant_id: APP.tenant.id, p_patch: { booking_hold_minutes: n } });
+      if (r.error) { if (msg) msg.textContent = r.error.message; return; }
+      APP.tenant.config = Object.assign({}, APP.tenant.config || {}, { booking_hold_minutes: n });
+      if (msg) msg.textContent = isBm ? ('Hold disimpan: ' + n + ' minit.') : ('Hold saved: ' + n + ' min.');
+    };
+    loadHold();
     loadList();
   }
   function boot() {

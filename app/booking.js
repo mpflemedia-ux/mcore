@@ -1,6 +1,16 @@
 /* Customer booking — public page + dashboard card + settings link */
 (function () {
-  var HOLD_NOTE = 'Slot held 15 min until payment.';
+  var holdMinutes = 30;
+  function clampHoldMins(n) {
+    var m = Math.round(Number(n));
+    if (!isFinite(m)) m = 30;
+    if (m < 5) m = 5;
+    if (m > 1440) m = 1440;
+    return m;
+  }
+  function holdNote(mins) {
+    return 'Slot held ' + clampHoldMins(mins) + ' min until payment.';
+  }
   function qs(name) {
     try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; }
   }
@@ -70,6 +80,7 @@
       return true;
     }
     var board = res.data || {};
+    holdMinutes = clampHoldMins(board.hold_minutes != null ? board.hold_minutes : holdMinutes);
     var services = board.services || [];
     root.innerHTML = '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px"><div style="font-size:12px;color:#64748b;letter-spacing:.06em;text-transform:uppercase">Booking</div><h1 style="margin:4px 0 8px;font-size:22px">' + esc(board.tenant_name || 'Book a slot') + '</h1><label style="font-size:13px">Date <input id="bk-date" type="date" value="' + esc(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px"></div></div>';
     document.getElementById('bk-date').onchange = function () {
@@ -104,7 +115,8 @@
       if (r.error) { err.style.display = 'block'; err.textContent = r.error.message; return; }
       var d = r.data || {};
       var pay = d.pay_token ? (location.origin + '/app/?public_inv=' + encodeURIComponent(d.pay_token)) : '';
-      box.innerHTML = '<div style="background:#fff;border-radius:14px;padding:22px;max-width:420px"><h3>Held</h3><p>' + HOLD_NOTE + '</p>' + (pay ? '<p><a href="' + pay + '">Pay invoice</a></p>' : '<p>Tenant will confirm payment.</p>') + '<p style="font-size:12px;color:#64748b">' + esc(d.service) + '</p></div>';
+      var mins = d.hold_minutes != null ? d.hold_minutes : holdMinutes;
+      box.innerHTML = '<div style="background:#fff;border-radius:14px;padding:22px;max-width:420px"><h3>Held</h3><p>' + holdNote(mins) + '</p>' + (pay ? '<p><a href="' + pay + '">Pay invoice</a></p>' : '<p>Tenant will confirm payment.</p>') + '<p style="font-size:12px;color:#64748b">' + esc(d.service) + '</p></div>';
     };
   }
   async function ensureToken() {
