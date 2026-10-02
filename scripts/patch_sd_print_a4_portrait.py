@@ -3,6 +3,7 @@
 
 Scope ONLY: app/index.html — const _sdRowHtml inside renderSalaryDisbursement,
 plus cache-bust bumps for sd-employer-edit.js / sd-print-fit.js.
+Also materializes app/sd-employer-edit.js from scripts/sd_employer_edit.js.gz.b64 when present.
 
 Does NOT touch: global/print CSS unrelated, sidebar, openPage, PVD,
 wrap/overlay, CREATE OR REPLACE SQL, sd-table-fit.js.
@@ -34,10 +35,15 @@ def materialize_employer_edit():
     b = Path("scripts/sd_employer_edit.js.gz.b64")
     if not b.exists():
         return False
-    raw = base64.b64decode(b.read_text(encoding="ascii").strip())
-    text = gzip.decompress(raw).decode("utf-8")
+    try:
+        raw = base64.b64decode(b.read_text(encoding="ascii").strip())
+        text = gzip.decompress(raw).decode("utf-8")
+    except Exception as e:
+        print("warn: employer-edit gz.b64 decode failed:", e)
+        return False
     if "pdoc-sd-employer-print" not in text or "_erEdit7" not in text:
-        raise SystemExit("employer-edit fragment missing markers")
+        print("warn: employer-edit fragment missing markers")
+        return False
     p.write_text(text, encoding="utf-8")
     print("materialized app/sd-employer-edit.js from gz.b64")
     return True
