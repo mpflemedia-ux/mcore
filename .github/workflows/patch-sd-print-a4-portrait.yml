@@ -1,0 +1,31 @@
+name: patch-sd-print-a4-portrait
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_sd_print_a4_portrait.py
+      - .github/workflows/patch-sd-print-a4-portrait.yml
+      - app/sd-print-fit.js
+      - app/sd-employer-edit.js
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Bake SD A4 portrait print into index.html
+        run: python3 scripts/patch_sd_print_a4_portrait.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add app/index.html app/sd-print-fit.js app/sd-employer-edit.js
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix(sd): bake A4 portrait compact print (dense rows, employer print, no stray 0)"
+          git push
