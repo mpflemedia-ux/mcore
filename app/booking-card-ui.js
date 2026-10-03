@@ -1,6 +1,6 @@
-/* Bookings card: default all upcoming + date/status/sort + amend/delete */
+/* Bookings card: default all dates + date/status/time asc-desc + amend/delete */
 (function () {
-  var STATE = { range: 'upcoming', status: 'all', sort: 'starts', force: false };
+  var STATE = { range: 'all', status: 'all', sort: 'starts', force: false };
   function isBm() { return APP.language === 'bm'; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -51,7 +51,8 @@
       '<option value="cancelled">' + (isBm() ? 'Dibatalkan' : 'Cancelled') + '</option>' +
       '<option value="expired">' + (isBm() ? 'Tamat' : 'Expired') + '</option></select>' +
       '<select id="bk-sort" class="form-input" style="width:auto;font-size:12px;padding:4px 6px">' +
-      '<option value="starts">' + (isBm() ? 'Masa' : 'Time') + '</option>' +
+      '<option value="starts">' + (isBm() ? 'Masa menaik' : 'Time ascending') + '</option>' +
+      '<option value="starts_desc">' + (isBm() ? 'Masa menurun' : 'Time descending') + '</option>' +
       '<option value="status">Status</option></select>';
     var rangeEl = document.getElementById('bk-range');
     var statusEl = document.getElementById('bk-status');
@@ -106,6 +107,23 @@
     }
     return html;
   }
+  function clearListScroll(body) {
+    if (!body) return;
+    body.style.maxHeight = '';
+    body.style.overflowY = '';
+    body.style.overflowX = '';
+  }
+  function fitListScroll(body) {
+    var rows = body.querySelectorAll('details[data-bk-row]');
+    if (rows.length <= 5) { clearListScroll(body); return; }
+    var h = 0;
+    var i;
+    for (i = 0; i < 5; i++) h += rows[i].offsetHeight;
+    if (!h) h = 5 * 40;
+    body.style.maxHeight = h + 'px';
+    body.style.overflowY = 'auto';
+    body.style.overflowX = 'hidden';
+  }
   async function paint() {
     var card = document.getElementById('db-sec-booking');
     var body = document.getElementById('db-book-body');
@@ -119,8 +137,9 @@
       .eq('tenant_id', APP.tenant.id)
       .gte('starts_at', b.start)
       .lte('starts_at', b.end)
-      .order('starts_at');
+      .order('starts_at', { ascending: STATE.sort !== 'starts_desc' });
     if (q.error) {
+      clearListScroll(body);
       body.textContent = q.error.message || (isBm() ? 'Gagal muat tempahan.' : 'Could not load bookings.');
       return;
     }
@@ -137,8 +156,17 @@
     if (STATE.sort === 'status') {
       var order = { hold: 0, pending_payment: 1, confirmed: 2, payment_failed: 3, cancelled: 4, expired: 5 };
       rows.sort(function (a, c) { return (order[a.status] || 9) - (order[c.status] || 9); });
+    } else {
+      rows.sort(function (a, c) {
+        var ta = new Date(a.starts_at).getTime();
+        var tc = new Date(c.starts_at).getTime();
+        if (isNaN(ta)) ta = 0;
+        if (isNaN(tc)) tc = 0;
+        return STATE.sort === 'starts_desc' ? (tc - ta) : (ta - tc);
+      });
     }
     if (!rows.length) {
+      clearListScroll(body);
       body.textContent = isBm() ? 'Tiada tempahan untuk tapisan ini.' : 'No bookings for this filter.';
       return;
     }
@@ -160,6 +188,7 @@
         actions(r) +
         '</details>';
     }).join('');
+    fitListScroll(body);
   }
   window.__bkCardPaint = function () { STATE.force = true; return paint(); };
   var last = 0;

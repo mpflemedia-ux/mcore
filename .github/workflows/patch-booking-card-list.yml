@@ -1,0 +1,51 @@
+name: patch-booking-card-list
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - app/booking-card-ui.js
+      - .github/workflows/patch-booking-card-list.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Cachebust booking-card-ui.js script tag only
+        run: |
+          python3 - << 'PY'
+          from pathlib import Path
+          import re
+          p = Path('app/index.html')
+          html = p.read_text(encoding='utf-8')
+          html2, n = re.subn(
+              r'(<script src="\./booking-card-ui\.js\?v=)2("><\/script>)',
+              r'\g<1>3\2',
+              html,
+              count=1,
+          )
+          if n == 0:
+              if 'booking-card-ui.js?v=' not in html:
+                  raise SystemExit('booking-card-ui script tag missing')
+              print('tag present but not v=2; leave it')
+          elif html2 != html:
+              p.write_text(html2, encoding='utf-8')
+              print('bumped booking-card-ui.js -> v=3')
+          else:
+              print('unchanged')
+          PY
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "feat(booking): cachebust booking card list (scroll, all dates, time sort)"
+          git pull --rebase origin main
+          git push origin HEAD:main
