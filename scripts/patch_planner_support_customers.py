@@ -24,8 +24,8 @@ OLD_LOAD = """async function _plannerLoadTenantOptions() {
   try {
     const { data } = await sb.from('tenants').select('id,name,code').is('deleted_at', null).order('name').limit(200)
     const cur = sel.value
-    sel.innerHTML = '<option value=\"\">\u2014</option>' + (data || []).map(x =>
-      `<option value=\"${x.id}\">${_aiEscapeHtml(x.name || x.code || x.id)}</option>`).join('')
+    sel.innerHTML = '<option value="">—</option>' + (data || []).map(x =>
+      `<option value="${x.id}">${_aiEscapeHtml(x.name || x.code || x.id)}</option>`).join('')
     if (cur) sel.value = cur
   } catch (e) { console.warn('planner tenants', e) }
 }"""
@@ -48,8 +48,8 @@ NEW_LOAD = """async function _plannerLoadTenantOptions() {
       data = res.data || []
     }
     const cur = sel.value
-    sel.innerHTML = '<option value=\"\">\u2014</option>' + (data || []).map(x =>
-      `<option value=\"${x.id}\">${_aiEscapeHtml(x.name || x.code || x.id)}</option>`).join('')
+    sel.innerHTML = '<option value="">—</option>' + (data || []).map(x =>
+      `<option value="${x.id}">${_aiEscapeHtml(x.name || x.code || x.id)}</option>`).join('')
     if (cur) sel.value = cur
   } catch (e) { console.warn(support ? 'planner customers' : 'planner tenants', e) }
 }"""
@@ -165,6 +165,7 @@ def apply():
         applied.append(name)
     if html2 == html:
         raise SystemExit("no changes applied")
+    # guard: non-support path must not assign customer ids into related_tenant_id inside support branch
     if "payload.customer_id = clientPick" not in html2:
         raise SystemExit("customer_id assign missing")
     if html2.count("function _plannerInSupport()") != 1:
