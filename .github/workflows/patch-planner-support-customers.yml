@@ -1,0 +1,29 @@
+name: patch-planner-support-customers
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_planner_support_customers.py
+      - .github/workflows/patch-planner-support-customers.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Bake planner support-mode CRM client into index.html
+        run: python3 scripts/patch_planner_support_customers.py
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "feat(planner): bake support-mode client dropdown as tenant CRM customers"
+          git push
