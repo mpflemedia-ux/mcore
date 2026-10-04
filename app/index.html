@@ -3686,6 +3686,7 @@ function openBarcodeScanner(onScanSuccess) {
   const onDecode = (decodedText) => { _scannerHandleSuccess(decodedText) }
   const onMiss = () => {}
   const startWith = (videoConstraints) => {
+    if(!overlay.classList.contains('active')) return
     _scannerHtml5Qrcode.start(
       videoConstraints.deviceId ? { deviceId: videoConstraints.deviceId } : { facingMode: 'environment' },
       { fps: 10, qrbox: qrbox, videoConstraints: videoConstraints },
@@ -3699,10 +3700,15 @@ function openBarcodeScanner(onScanSuccess) {
         if(!track || typeof track.applyConstraints !== 'function') return
         let caps = {}
         try { caps = track.getCapabilities ? track.getCapabilities() : {} } catch(e) {}
-        const set = { focusMode: 'continuous' }
-        if(caps.pointsOfInterest) set.pointsOfInterest = [{ x: 0.5, y: 0.5 }]
-        track.applyConstraints({ advanced: [set] }).catch(() => {})
-        if(overlay.classList.contains('active') && _scannerHtml5Qrcode) setTimeout(kickFocus, 1500)
+        const modes = caps.focusMode || []
+        const has = (m) => modes.indexOf(m) >= 0
+        const apply = (set) => track.applyConstraints({ advanced: [set] }).catch(() => {})
+        if(caps.zoom && typeof caps.zoom.min === 'number' && caps.zoom.min < 0.99 && (caps.zoom.max || 1) >= 1) apply({ zoom: 1 })
+        const focus = { focusMode: 'continuous' }
+        if(caps.pointsOfInterest) focus.pointsOfInterest = [{ x: 0.5, y: 0.5 }]
+        if(has('continuous') || !modes.length) apply(focus)
+        if(has('single-shot')) setTimeout(() => { if(_scannerHtml5Qrcode) apply({ focusMode: 'single-shot' }) }, 350)
+        if(overlay.classList.contains('active') && _scannerHtml5Qrcode) setTimeout(kickFocus, 1600)
       }
       kickFocus()
     }).catch(err => {
@@ -3711,49 +3717,121 @@ function openBarcodeScanner(onScanSuccess) {
     })
   }
   const fallback = { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] }
-  Html5Qrcode.getCameras().then(cameras => {
-    const list = cameras || []
-    const back = list.filter(c => c && /back|rear|environment|belakang/i.test(c.label || ''))
-    const pool = back.length ? back : list.filter(c => c && c.id)
-    const main = pool.find(c => !/ultra|wide|macro|depth|tele|bokeh/i.test(c.label || '')) || pool[0]
-    if(main && main.id) {
-      startWith({ deviceId: { exact: main.id }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] })
-    } else {
-      startWith(fallback)
+  const pickMain = (list) => {
+    const labeledBack = list.filter(c => c && c.id && /back|rear|environment|belakang/i.test(c.label || ''))
+    const pool = labeledBack.length ? labeledBack : list.filter(c => c && c.id && !/facing front|user|depan|selfie/i.test(c.label || ''))
+    const candidates = pool.length ? pool : list.filter(c => c && c.id)
+    const tryOne = (index, best) => {
+      if(index >= candidates.length) return Promise.resolve(best && best.cam)
+      const cam = candidates[index]
+      return navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: cam.id } }, audio: false }).then(stream => {
+        const track = stream.getVideoTracks()[0]
+        let caps = {}
+        try { caps = track.getCapabilities ? track.getCapabilities() : {} } catch(e) {}
+        const w = caps.width && caps.width.max ? caps.width.max : 0
+        const torch = caps.torch ? 1 : 0
+        const bad = /ultra|wide|macro|depth|tele|bokeh/i.test(cam.label || '') ? 1 : 0
+        const score = (bad ? -1000000 : 0) + torch * 100000 + w
+        stream.getTracks().forEach(t => t.stop())
+        const nextBest = !best || score > best.score ? { cam: cam, score: score } : best
+        return tryOne(index + 1, nextBest)
+      }).catch(() => tryOne(index + 1, best))
     }
+    return tryOne(0, null)
+  }
+  Html5Qrcode.getCameras().then(cameras => {
+    return pickMain(cameras || []).then(main => {
+      setTimeout(() => {
+        if(!overlay.classList.contains('active')) return
+        if(main && main.id) {
+          startWith({ deviceId: { exact: main.id }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] })
+        } else {
+          startWith(fallback)
+        }
+      }, 300)
+    })
   }).catch(() => startWith(fallback))
 }
-
 
 function _scannerFileSelected(event) {
   const isBm = APP.language==='bm'
   const file = event.target.files && event.target.files[0]
   event.target.value = ''
   if(!file) return
-  if(typeof Html5Qrcode === 'undefined') {
-    _scannerShowError(isBm ? 'Kamera tidak tersedia, sila taip manual.' : 'Camera not available, please type manually.')
-    return
+  const fail = () => {
+    showToast(isBm ? 'Tidak dapat imbas imej ini.' : 'Could not scan this image.', 'error')
+    const overlay = document.getElementById('barcode-scanner-overlay')
+    if(!overlay || !overlay.classList.contains('active')) return
+    const prev = _scannerHtml5Qrcode
+    _scannerHtml5Qrcode = null
+    const again = () => openBarcodeScanner(_scannerOnSuccess)
+    if(prev && typeof prev.stop === 'function') {
+      try {
+        const stopping = prev.stop()
+        if(stopping && typeof stopping.then === 'function') {
+          stopping.then(again).catch(again)
+          return
+        }
+      } catch(e) {}
+    }
+    again()
   }
-  const run = (scanner) => {
-    scanner.scanFile(file, true).then(decodedText => {
-      _scannerHandleSuccess(decodedText)
-    }).catch(err => {
-      console.error('Barcode file scan error:', err)
-      showToast(isBm ? 'Tidak dapat imbas imej ini.' : 'Could not scan this image.', 'error')
-    })
-  }
-  const fresh = () => new Html5Qrcode('scanner-region', { useBarCodeDetectorIfSupported: false })
-  const scanner = _scannerHtml5Qrcode
-  if(scanner && typeof scanner.stop === 'function') {
-    try {
-      const stopping = scanner.stop()
-      if(stopping && typeof stopping.then === 'function') {
-        stopping.then(() => run(scanner)).catch(() => run(fresh()))
-        return
+  const succeed = (text) => { if(text) _scannerHandleSuccess(text); else fail() }
+  const zxing = () => {
+    if(typeof Html5Qrcode === 'undefined') { fail(); return }
+    const run = (scanner) => {
+      try {
+        const pending = scanner.scanFile(file, false)
+        if(pending && typeof pending.then === 'function') {
+          pending.then(succeed).catch(err => {
+            console.error('Barcode file scan error:', err)
+            fail()
+          })
+        } else fail()
+      } catch(err) {
+        console.error('Barcode file scan error:', err)
+        fail()
       }
-    } catch(e) {}
+    }
+    const fresh = () => new Html5Qrcode('scanner-region', { useBarCodeDetectorIfSupported: false })
+    const scanner = _scannerHtml5Qrcode
+    if(scanner && typeof scanner.stop === 'function') {
+      try {
+        const stopping = scanner.stop()
+        if(stopping && typeof stopping.then === 'function') {
+          stopping.then(() => run(scanner)).catch(() => run(fresh()))
+          return
+        }
+      } catch(e) {}
+    }
+    run(scanner || fresh())
   }
-  run(scanner || fresh())
+  if(typeof BarcodeDetector === 'undefined') { zxing(); return }
+  const formatsPromise = typeof BarcodeDetector.getSupportedFormats === 'function' ? BarcodeDetector.getSupportedFormats() : Promise.resolve([])
+  formatsPromise.then(supported => {
+    const want = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','itf','codabar','qr_code','data_matrix','pdf417','aztec']
+    const formats = (supported || []).length ? want.filter(f => supported.indexOf(f) >= 0) : want
+    const detector = formats.length ? new BarcodeDetector({ formats: formats }) : new BarcodeDetector()
+    return createImageBitmap(file).then(bitmap => {
+      const maxEdge = 1600
+      const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
+      const w = Math.max(1, Math.round(bitmap.width * scale))
+      const h = Math.max(1, Math.round(bitmap.height * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(bitmap, 0, 0, w, h)
+      if(bitmap.close) bitmap.close()
+      return detector.detect(canvas)
+    })
+  }).then(codes => {
+    if(codes && codes[0] && codes[0].rawValue) succeed(codes[0].rawValue)
+    else zxing()
+  }).catch(err => {
+    console.error('Barcode file scan error:', err)
+    zxing()
+  })
 }
 
 function _scannerManualSubmit() {
