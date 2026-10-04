@@ -3684,7 +3684,7 @@ function openBarcodeScanner(onScanSuccess) {
   _scannerHtml5Qrcode = new Html5Qrcode('scanner-region', { useBarCodeDetectorIfSupported: false })
   _scannerHtml5Qrcode.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: function(w, h){ return { width: Math.max(50, Math.floor(w * 0.9)), height: Math.max(50, Math.min(120, Math.floor(h * 0.32))) } } },
+    { fps: 10, qrbox: function(w, h){ return { width: Math.max(50, Math.floor(w * 0.92)), height: Math.max(50, Math.floor(h * 0.7)) } }, videoConstraints: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: 'continuous' }] } },
     (decodedText) => { _scannerHandleSuccess(decodedText) },
     () => { /* per-frame scan miss — ignore, keep scanning */ }
   ).catch(err => {
