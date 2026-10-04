@@ -62,7 +62,7 @@
   }
   function escHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+      return ({ '&': '\x26amp;', '<': '\x26lt;', '>': '\x26gt;', '"': '\x26quot;', "'": '\x26#39;' })[c];
     });
   }
   function staffLabel(s) {
@@ -74,6 +74,7 @@
     return !!board && (board.pick_staff === true || board.pick_staff === 'true');
   }
   function renderStaffPick(token, board, date, root) {
+    var isBm = typeof APP !== 'undefined' && APP.language === 'bm';
     var staff = (board.staff || []).filter(function (s) { return s && s.id; });
     var selectedId = qs('staff');
     var sel = null;
@@ -87,28 +88,28 @@
     }).join(' ');
     var body = '';
     if (!staff.length) {
-      body = '<p style="color:#64748b">No staff assigned yet.</p>';
+      body = '<p style="color:#64748b">' + (isBm ? 'Tiada staf ditugaskan lagi.' : 'No staff assigned yet.') + '</p>';
     } else if (!sel) {
-      body = '<p style="color:#64748b;font-size:13px">Pick a staff member, then a service and time.</p>';
+      body = '<p style="color:#64748b;font-size:13px">' + (isBm ? 'Pilih staf, kemudian servis dan masa.' : 'Pick a staff member, then a service and time.') + '</p>';
     } else {
       var ids = {};
       (sel.service_ids || []).forEach(function (id) { ids[String(id)] = true; });
       var services = (board.services || []).filter(function (svc) { return ids[String(svc.id)]; });
       if (!services.length) {
-        body = '<p style="color:#64748b">No services for this staff.</p>';
+        body = '<p style="color:#64748b">' + (isBm ? 'Tiada servis untuk staf ini.' : 'No services for this staff.') + '</p>';
       } else {
-        body = '<label style="font-size:13px">Date <input id="bk-date" type="date" value="' + escHtml(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px">' +
+        body = '<label style="font-size:13px">' + (isBm ? 'Tarikh' : 'Date') + ' <input id="bk-date" type="date" value="' + escHtml(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px">' +
           services.map(function (svc) {
             var slots = slotTimes(svc, date).map(function (sl) {
               var busy = takenCount(board, svc.id, sl.start, sel.id) >= 1;
               var full = busy || takenCount(board, svc.id, sl.start) >= Number(svc.capacity || 1);
-              return '<button type="button" class="bk-slot" data-sid="' + escHtml(svc.id) + '" data-start="' + escHtml(sl.start) + '" data-name="' + escHtml(svc.name) + '" data-price="' + escHtml(svc.price) + '" data-staff="' + escHtml(sel.id) + '" data-staff-name="' + escHtml(staffLabel(sel)) + '" ' + (full ? 'disabled style="opacity:.4"' : '') + ' style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">' + escHtml(sl.label || fmtTime(sl.start)) + (full ? ' · full' : '') + '</button>';
+              return '<button type="button" class="bk-slot" data-sid="' + escHtml(svc.id) + '" data-start="' + escHtml(sl.start) + '" data-name="' + escHtml(svc.name) + '" data-price="' + escHtml(svc.price) + '" data-staff="' + escHtml(sel.id) + '" data-staff-name="' + escHtml(staffLabel(sel)) + '" ' + (full ? 'disabled style="opacity:.4"' : '') + ' style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">' + escHtml(sl.label || fmtTime(sl.start)) + (full ? (isBm ? ' · penuh' : ' · full') : '') + '</button>';
             }).join(' ');
-            return '<div style="border-top:1px solid #e2e8f0;padding:14px 0"><div style="font-weight:700">' + escHtml(svc.name) + '</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">RM ' + Number(svc.price || 0).toFixed(2) + ' · ' + escHtml(svc.duration_min) + ' min · ' + escHtml(staffLabel(sel)) + '</div><div style="display:flex;flex-wrap:wrap;gap:8px">' + (slots || '<span style="color:#94a3b8">No slot</span>') + '</div></div>';
+            return '<div style="border-top:1px solid #e2e8f0;padding:14px 0"><div style="font-weight:700">' + escHtml(svc.name) + '</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">RM ' + Number(svc.price || 0).toFixed(2) + ' · ' + escHtml(svc.duration_min) + (isBm ? ' minit · ' : ' min · ') + escHtml(staffLabel(sel)) + '</div><div style="display:flex;flex-wrap:wrap;gap:8px">' + (slots || ('<span style="color:#94a3b8">' + (isBm ? 'Tiada slot' : 'No slot') + '</span>')) + '</div></div>';
           }).join('') + '</div>';
       }
     }
-    root.innerHTML = '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px"><div style="font-size:12px;color:#64748b;letter-spacing:.06em;text-transform:uppercase">Booking</div><h1 style="margin:4px 0 8px;font-size:22px">' + escHtml(board.tenant_name || 'Book a slot') + '</h1><div style="font-size:13px;margin:0 0 8px">Staff</div><div style="display:flex;flex-wrap:wrap;gap:8px">' + staffBtns + '</div><div style="margin-top:16px">' + body + '</div></div>';
+    root.innerHTML = '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px"><div style="font-size:12px;color:#64748b;letter-spacing:.06em;text-transform:uppercase">' + (isBm ? 'Tempahan' : 'Booking') + '</div><h1 style="margin:4px 0 8px;font-size:22px">' + escHtml(board.tenant_name || (isBm ? 'Tempah slot' : 'Book a slot')) + '</h1><div style="font-size:13px;margin:0 0 8px">' + (isBm ? 'Staf' : 'Staff') + '</div><div style="display:flex;flex-wrap:wrap;gap:8px">' + staffBtns + '</div><div style="margin-top:16px">' + body + '</div></div>';
     root.querySelectorAll('.bk-staff').forEach(function (btn) {
       btn.onclick = function () {
         var u = new URL(location.href);
