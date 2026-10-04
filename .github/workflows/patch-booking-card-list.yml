@@ -6,6 +6,7 @@ on:
     paths:
       - app/booking-card-ui.js
       - app/booking-state.js
+      - scripts/patch_booking_card_terminal.py
       - .github/workflows/patch-booking-card-list.yml
 permissions:
   contents: write
@@ -18,37 +19,14 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - name: Cachebust booking card and state scripts only
-        run: |
-          python3 - << 'PY'
-          from pathlib import Path
-          p = Path('app/index.html')
-          html = p.read_text(encoding='utf-8')
-          repls = [
-              ('<script src="./booking-card-ui.js?v=5"></script>', '<script src="./booking-card-ui.js?v=6"></script>'),
-              ('<script src="./booking-state.js?v=2"></script>', '<script src="./booking-state.js?v=3"></script>'),
-          ]
-          n = 0
-          for a, b in repls:
-              c = html.count(a)
-              if c == 1:
-                  html = html.replace(a, b, 1)
-                  n += 1
-                  print('bumped', b)
-              elif b in html and a not in html:
-                  print('already', b)
-              else:
-                  print('MISSING_OR_DUP', a, 'count', c)
-          if n:
-              p.write_text(html, encoding='utf-8')
-          print('changes', n)
-          PY
+      - name: Restore card script and cachebust v=7
+        run: python3 scripts/patch_booking_card_terminal.py
       - name: Commit
         run: |
           git config user.name "mcore-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/index.html
+          git add app/booking-card-ui.js app/index.html
           git diff --cached --quiet && echo 'nothing' && exit 0
-          git commit -m "feat(booking): cachebust delete expired/cancelled scripts"
+          git commit -m "fix(booking): restore card script with Delete on expired and cancelled"
           git pull --rebase origin main
           git push origin HEAD:main
