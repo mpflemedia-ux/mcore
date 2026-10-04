@@ -132,12 +132,21 @@
     if (!STATE.force && body.querySelector('details[open]')) return;
     STATE.force = false;
     var b = bounds();
+    var cols = 'id,customer_name,customer_email,customer_phone,starts_at,ends_at,status,quote_ref,payment_channel,created_at,notes,activity_id,booking_services(name)';
     var q = await sb.from('bookings')
-      .select('id,customer_name,customer_email,customer_phone,starts_at,ends_at,status,quote_ref,payment_channel,created_at,notes,activity_id,booking_services(name)')
+      .select(cols + ',staff_id,employees(name,nickname)')
       .eq('tenant_id', APP.tenant.id)
       .gte('starts_at', b.start)
       .lte('starts_at', b.end)
       .order('starts_at', { ascending: STATE.sort !== 'starts_desc' });
+    if (q.error) {
+      q = await sb.from('bookings')
+        .select(cols)
+        .eq('tenant_id', APP.tenant.id)
+        .gte('starts_at', b.start)
+        .lte('starts_at', b.end)
+        .order('starts_at', { ascending: STATE.sort !== 'starts_desc' });
+    }
     if (q.error) {
       clearListScroll(body);
       body.textContent = q.error.message || (isBm() ? 'Gagal muat tempahan.' : 'Could not load bookings.');
@@ -172,12 +181,18 @@
     }
     body.innerHTML = rows.map(function (r) {
       var svc = r.booking_services && r.booking_services.name ? r.booking_services.name : 'Booking';
+      var em = r.employees;
+      if (Array.isArray(em)) em = em[0];
+      var staff = '';
+      if (em) staff = (em.nickname && String(em.nickname).trim()) || (em.name && String(em.name).trim()) || '';
       return '<details data-bk-row="' + esc(r.id) + '" style="padding:8px 0;border-bottom:1px solid var(--border,#e2e8f0)">' +
         '<summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px">' +
         '<span>' + esc(fmt(r.starts_at)) + ' · ' + esc(r.customer_name || '-') + ' · ' + esc(svc) +
+        (staff ? ' · ' + esc(staff) : '') +
         (r.quote_ref ? ' · ' + esc(r.quote_ref) : '') + '</span><strong style="font-size:11px">' +
         esc(String(r.status || '').toUpperCase()) + '</strong></summary>' +
         '<div style="font-size:12px;color:var(--db-text3);margin-top:8px;line-height:1.5">' +
+        (staff ? '<div>Staff: ' + esc(staff) + '</div>' : '') +
         '<div>' + (isBm() ? 'Nama' : 'Name') + ': ' + esc(r.customer_name || '-') + '</div>' +
         '<div>Email: ' + esc(r.customer_email || '-') + '</div>' +
         '<div>' + (isBm() ? 'Telefon' : 'Phone') + ': ' + esc(r.customer_phone || '-') + '</div>' +
