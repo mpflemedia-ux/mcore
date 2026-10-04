@@ -1,0 +1,54 @@
+name: public-invoice-rm-once
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: format public invoice amounts as RM
+        run: |
+          python3 - << 'PY'
+          from pathlib import Path
+          p = Path("app/public.html")
+          data = p.read_text(encoding="utf-8")
+          old_fn = "function rm(n){return Number(n||0).toFixed(2)}"
+          new_fn = "function rm(n){return 'RM'+Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}"
+          if data.count(old_fn) != 1:
+              raise SystemExit("rm() count " + str(data.count(old_fn)))
+          data = data.replace(old_fn, new_fn, 1)
+          pairs = [
+              (">MYR '+rm(it.line_total)", ">'+rm(it.line_total)"),
+              ("Subtotal: MYR '", "Subtotal: '"),
+              ("SST: MYR '", "SST: '"),
+              ("Total: MYR '", "Total: '"),
+              ("Paid: MYR '", "Paid: '"),
+              ("Balance: MYR '", "Balance: '"),
+          ]
+          for old, new in pairs:
+              n = data.count(old)
+              if n != 1:
+                  raise SystemExit("count %s for %s" % (n, old))
+              data = data.replace(old, new, 1)
+          if "MYR" in data:
+              raise SystemExit("MYR still present")
+          if data.count(new_fn) != 1:
+              raise SystemExit("new rm missing")
+          p.write_text(data, encoding="utf-8")
+          PY
+
+      - name: commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/public.html
+          git rm .github/workflows/public-invoice-rm-once.yml
+          git commit -m "fix(invoice): show public invoice amounts as RM4,750.00"
+          git push origin HEAD:main
