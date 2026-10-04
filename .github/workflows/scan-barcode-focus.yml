@@ -1,0 +1,40 @@
+name: scan barcode focus
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reapply autofocus
+        run: |
+          python3 - << 'PY'
+          import base64
+          from pathlib import Path
+          p = Path('app/index.html')
+          text = p.read_text()
+          old = base64.b64decode('ICBfc2Nhbm5lckh0bWw1UXJjb2RlLnN0YXJ0KAogICAgeyBmYWNpbmdNb2RlOiAnZW52aXJvbm1lbnQnIH0sCiAgICB7IGZwczogMTAsIHFyYm94OiBmdW5jdGlvbih3LCBoKXsgcmV0dXJuIHsgd2lkdGg6IE1hdGgubWF4KDUwLCBNYXRoLmZsb29yKHcgKiAwLjkyKSksIGhlaWdodDogTWF0aC5tYXgoNTAsIE1hdGguZmxvb3IoaCAqIDAuNykpIH0gfSwgdmlkZW9Db25zdHJhaW50czogeyBmYWNpbmdNb2RlOiB7IGlkZWFsOiAnZW52aXJvbm1lbnQnIH0sIHdpZHRoOiB7IGlkZWFsOiAxMjgwIH0sIGhlaWdodDogeyBpZGVhbDogNzIwIH0sIGFkdmFuY2VkOiBbeyBmb2N1c01vZGU6ICdjb250aW51b3VzJyB9XSB9IH0sCiAgICAoZGVjb2RlZFRleHQpID0+IHsgX3NjYW5uZXJIYW5kbGVTdWNjZXNzKGRlY29kZWRUZXh0KSB9LAogICAgKCkgPT4geyAvKiBwZXItZnJhbWUgc2NhbiBtaXNzIOKAlCBpZ25vcmUsIGtlZXAgc2Nhbm5pbmcgKi8gfQogICkuY2F0Y2goZXJyID0+IHsKICAgIGNvbnNvbGUuZXJyb3IoJ0JhcmNvZGUgc2Nhbm5lciBzdGFydCBlcnJvcjonLCBlcnIpCiAgICBfc2Nhbm5lclNob3dFcnJvcihpc0JtID8gJ0thbWVyYSB0aWRhayB0ZXJzZWRpYSwgc2lsYSB0YWlwIG1hbnVhbC4nIDogJ0NhbWVyYSBub3QgYXZhaWxhYmxlLCBwbGVhc2UgdHlwZSBtYW51YWxseS4nKQogIH0p').decode()
+          new = base64.b64decode('ICBfc2Nhbm5lckh0bWw1UXJjb2RlLnN0YXJ0KAogICAgeyBmYWNpbmdNb2RlOiAnZW52aXJvbm1lbnQnIH0sCiAgICB7IGZwczogMTAsIHFyYm94OiBmdW5jdGlvbih3LCBoKXsgcmV0dXJuIHsgd2lkdGg6IE1hdGgubWF4KDUwLCBNYXRoLmZsb29yKHcgKiAwLjkyKSksIGhlaWdodDogTWF0aC5tYXgoNTAsIE1hdGguZmxvb3IoaCAqIDAuNykpIH0gfSwgdmlkZW9Db25zdHJhaW50czogeyBmYWNpbmdNb2RlOiB7IGlkZWFsOiAnZW52aXJvbm1lbnQnIH0sIHdpZHRoOiB7IGlkZWFsOiAxMjgwIH0sIGhlaWdodDogeyBpZGVhbDogNzIwIH0sIGFkdmFuY2VkOiBbeyBmb2N1c01vZGU6ICdjb250aW51b3VzJyB9XSB9IH0sCiAgICAoZGVjb2RlZFRleHQpID0+IHsgX3NjYW5uZXJIYW5kbGVTdWNjZXNzKGRlY29kZWRUZXh0KSB9LAogICAgKCkgPT4geyAvKiBwZXItZnJhbWUgc2NhbiBtaXNzIOKAlCBpZ25vcmUsIGtlZXAgc2Nhbm5pbmcgKi8gfQogICkudGhlbigoKSA9PiB7CiAgICBjb25zdCBraWNrRm9jdXMgPSAoKSA9PiB7CiAgICAgIGlmKCFfc2Nhbm5lckh0bWw1UXJjb2RlIHx8IHR5cGVvZiBfc2Nhbm5lckh0bWw1UXJjb2RlLmFwcGx5VmlkZW9Db25zdHJhaW50cyAhPT0gJ2Z1bmN0aW9uJykgcmV0dXJuCiAgICAgIHRyeSB7CiAgICAgICAgX3NjYW5uZXJIdG1sNVFyY29kZS5hcHBseVZpZGVvQ29uc3RyYWludHMoeyBhZHZhbmNlZDogW3sgZm9jdXNNb2RlOiAnY29udGludW91cycgfV0gfSkuY2F0Y2goKCkgPT4ge30pCiAgICAgIH0gY2F0Y2goZSkge30KICAgIH0KICAgIGtpY2tGb2N1cygpCiAgICBzZXRUaW1lb3V0KGtpY2tGb2N1cywgNTAwKQogIH0pLmNhdGNoKGVyciA9PiB7CiAgICBjb25zb2xlLmVycm9yKCdCYXJjb2RlIHNjYW5uZXIgc3RhcnQgZXJyb3I6JywgZXJyKQogICAgX3NjYW5uZXJTaG93RXJyb3IoaXNCbSA/ICdLYW1lcmEgdGlkYWsgdGVyc2VkaWEsIHNpbGEgdGFpcCBtYW51YWwuJyA6ICdDYW1lcmEgbm90IGF2YWlsYWJsZSwgcGxlYXNlIHR5cGUgbWFudWFsbHkuJykKICB9KQ==').decode()
+          n = text.count(old)
+          if n != 1:
+              raise SystemExit('expected 1 scanner start, found %s' % n)
+          text = text.replace(old, new, 1)
+          if text.count('kickFocus') != 3:
+              raise SystemExit('focus kick missing')
+          if text.count('_scannerHtml5Qrcode.start(') != 1:
+              raise SystemExit('start call count changed')
+          if 'function openBarcodeScanner' not in text:
+              raise SystemExit('scanner function missing')
+          p.write_text(text)
+          print('patched', len(text))
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git rm -f .github/workflows/scan-barcode-focus.yml
+          git commit -m "fix(scan): reapply continuous autofocus after camera starts"
+          git push origin HEAD:main
