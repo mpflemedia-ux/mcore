@@ -28,7 +28,7 @@ const SUPABASE_URL='https://wjqhhnjlgoigoagsnsen.supabase.co'
 const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw'
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON)
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
-function rm(n){return Number(n||0).toFixed(2)}
+function rm(n){return 'RM'+Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}
 ;(async function(){
   const root=document.getElementById('root')
   const token=new URLSearchParams(location.search).get('public_inv')
@@ -42,7 +42,7 @@ function rm(n){return Number(n||0).toFixed(2)}
   const custPe=[inv.customer_phone,inv.customer_email].filter(Boolean).join(' | ')
   const qr=inv.payment_qr_url||''
   const terms=String(inv.invoice_terms||'').trim()
-  const lines=items.length?items.map(it=>'<div class="line"><div style="font-weight:700;color:#0f172a">'+esc(it.description)+'</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px;color:#334155"><span>Qty '+esc(it.qty)+' x '+rm(it.unit_price)+'</span><span style="font-weight:800;color:#0f172a">MYR '+rm(it.line_total)+'</span></div></div>').join(''):'<div class="line">No lines</div>'
+  const lines=items.length?items.map(it=>'<div class="line"><div style="font-weight:700;color:#0f172a">'+esc(it.description)+'</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px;color:#334155"><span>Qty '+esc(it.qty)+' x '+rm(it.unit_price)+'</span><span style="font-weight:800;color:#0f172a">'+rm(it.line_total)+'</span></div></div>').join(''):'<div class="line">No lines</div>'
   root.innerHTML='<div class="wrap">'
     +'<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">'
     +(inv.logo_url?'<img src="'+esc(inv.logo_url)+'" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:#fff">':'')
@@ -60,10 +60,10 @@ function rm(n){return Number(n||0).toFixed(2)}
     +'<div><div class="muted">Issue / Due</div><div class="val">'+esc(inv.issue_date||'')+' / '+esc(inv.due_date||'-')+'</div></div>'
     +'</div><div style="border-top:1px solid #e2e8f0">'+lines+'</div>'
     +'<div style="margin-top:16px;text-align:right;color:#0f172a">'
-    +(Number(inv.tax_amt)>0?'<div>Subtotal: MYR '+rm(inv.subtotal)+'</div><div>SST: MYR '+rm(inv.tax_amt)+'</div>':'')
-    +'<div style="font-size:18px;font-weight:800;margin-top:6px">Total: MYR '+rm(inv.total)+'</div>'
-    +'<div style="color:#15803d;font-weight:700">Paid: MYR '+rm(inv.paid_amt)+'</div>'
-    +'<div style="color:#b91c1c;font-weight:800">Balance: MYR '+rm(Number(inv.total||0)-Number(inv.paid_amt||0))+'</div></div>'
+    +(Number(inv.tax_amt)>0?'<div>Subtotal: '+rm(inv.subtotal)+'</div><div>SST: '+rm(inv.tax_amt)+'</div>':'')
+    +'<div style="font-size:18px;font-weight:800;margin-top:6px">Total: '+rm(inv.total)+'</div>'
+    +'<div style="color:#15803d;font-weight:700">Paid: '+rm(inv.paid_amt)+'</div>'
+    +'<div style="color:#b91c1c;font-weight:800">Balance: '+rm(Number(inv.total||0)-Number(inv.paid_amt||0))+'</div></div>'
     +(terms?'<div class="terms">'+esc(terms)+'</div>':'')
     +((qr||inv.bank_name||inv.account_number)?'<div class="pay"><div class="muted" style="text-align:center;letter-spacing:.06em;text-transform:uppercase;color:#0E7490;margin-bottom:10px">Payment</div>'
       +(qr?'<img src="'+esc(qr)+'" alt="Payment QR">':'')
