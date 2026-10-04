@@ -87,10 +87,30 @@
     if (fresh && fresh.status === 'confirmed') await ensurePlanner(fresh);
     toast(APP.language === 'bm' ? 'Tempahan dipinda' : 'Booking amended');
   }
+  async function removeTerminalBooking(id) {
+    var q = sb.from('bookings').delete().eq('id', id).in('status', ['expired', 'cancelled']);
+    if (APP.tenant && APP.tenant.id) q = q.eq('tenant_id', APP.tenant.id);
+    var d = await q;
+    if (d.error) return d.error;
+    var still = await sb.from('bookings').select('id').eq('id', id).maybeSingle();
+    if (still.error) return still.error;
+    if (still.data) return { message: 'Booking was not removed' };
+    return null;
+  }
   async function deleteBooking(id) {
-    var ok = confirm(APP.language === 'bm' ? 'Padam / batal tempahan ini?' : 'Delete / cancel this booking?');
-    if (!ok) return;
     var b = await loadBooking(id);
+    var terminal = b && (b.status === 'expired' || b.status === 'cancelled');
+    var ok = confirm(terminal
+      ? (APP.language === 'bm' ? 'Padam tempahan ini dari senarai?' : 'Remove this booking from the list?')
+      : (APP.language === 'bm' ? 'Padam / batal tempahan ini?' : 'Delete / cancel this booking?'));
+    if (!ok) return;
+    if (terminal) {
+      await cancelPlanner(b);
+      var err = await removeTerminalBooking(id);
+      if (err) { toast(err.message || 'Delete failed', 'error'); return; }
+      toast(APP.language === 'bm' ? 'Tempahan dipadam' : 'Booking deleted');
+      return;
+    }
     var r = await sb.rpc('cancel_booking', { p_booking_id: id });
     if (r.error) {
       var u = await sb.from('bookings').update({
