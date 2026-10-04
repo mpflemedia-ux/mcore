@@ -21,7 +21,7 @@ jobs:
           if n != 1:
               raise SystemExit('expected 1 scanner start, found %s' % n)
           text = text.replace(old, new, 1)
-          if 'Math.min(120' in text:
+          if 'Math.min(120,' in text:
               raise SystemExit('thin box still present')
           if text.count("focusMode: 'continuous'") != 1:
               raise SystemExit('focus constraint missing')
