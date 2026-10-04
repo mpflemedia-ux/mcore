@@ -1,0 +1,40 @@
+name: sd one table
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: One salary table
+        run: |
+          python3 - << 'PY'
+          import base64
+          from pathlib import Path
+          p = Path('app/index.html')
+          text = p.read_text()
+          old = base64.b64decode('ICAgICAgbGV0IF9zZFRhYmxlcyA9ICcnCiAgICAgIGZvciAobGV0IF9zID0gMDsgX3MgPCBkYXRhLmxlbmd0aDsgX3MgKz0gX3NkUGFnZVNpemUpIHsKICAgICAgICBjb25zdCBfY2h1bmsgPSBkYXRhLnNsaWNlKF9zLCBfcyArIF9zZFBhZ2VTaXplKQogICAgICAgIGNvbnN0IF9tb3JlID0gX3MgKyBfc2RQYWdlU2l6ZSA8IGRhdGEubGVuZ3RoCiAgICAgICAgX3NkVGFibGVzICs9IGA8ZGl2IGNsYXNzPSJwZG9jLXNkLWNodW5rJHtfbW9yZSA/ICcgcGRvYy1zZC1jaHVuay1icmVhaycgOiAnJ30iPjx0YWJsZSBjbGFzcz0icGRvYy1zZC10YWJsZSI+JHtfc2RUaGVhZH08dGJvZHk+YAogICAgICAgIF9zZFRhYmxlcyArPSBfY2h1bmsubWFwKChyLCBqKSA9PiBfc2RSb3dIdG1sKHIsIF9zICsgaikpLmpvaW4oJycpCiAgICAgICAgX3NkVGFibGVzICs9IGA8L3Rib2R5PjwvdGFibGU+PC9kaXY+YAogICAgICB9CiAgICAgIHJldHVybiBfc2RUYWJsZXMK').decode()
+          new = base64.b64decode('ICAgICAgcmV0dXJuIGA8dGFibGUgY2xhc3M9InBkb2Mtc2QtdGFibGUiPiR7X3NkVGhlYWR9PHRib2R5PmAgKyBkYXRhLm1hcCgociwgaSkgPT4gX3NkUm93SHRtbChyLCBpKSkuam9pbignJykgKyBgPC90Ym9keT48L3RhYmxlPmAK').decode()
+          n = text.count(old)
+          if n != 1:
+              raise SystemExit('expected 1 salary chunk loop, found %s' % n)
+          text = text.replace(old, new, 1)
+          if 'pdoc-sd-chunk${' in text:
+              raise SystemExit('chunk header still emitted')
+          if 'function renderSalaryDisbursement' not in text:
+              raise SystemExit('render function missing')
+          if '.pdoc-sd-table thead { display:table-header-group' not in text:
+              raise SystemExit('print header rule missing')
+          p.write_text(text)
+          print('patched', len(text))
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git rm -f .github/workflows/sd-one-table.yml
+          git commit -m "fix(payroll): salary print header repeats only on a new page"
+          git push origin HEAD:main
