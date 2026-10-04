@@ -3681,10 +3681,10 @@ function openBarcodeScanner(onScanSuccess) {
     return
   }
 
-  _scannerHtml5Qrcode = new Html5Qrcode('scanner-region')
+  _scannerHtml5Qrcode = new Html5Qrcode('scanner-region', { useBarCodeDetectorIfSupported: false })
   _scannerHtml5Qrcode.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: 220 },
+    { fps: 10, qrbox: function(w, h){ return { width: Math.max(50, Math.floor(w * 0.9)), height: Math.max(50, Math.min(120, Math.floor(h * 0.32))) } } },
     (decodedText) => { _scannerHandleSuccess(decodedText) },
     () => { /* per-frame scan miss — ignore, keep scanning */ }
   ).catch(err => {
