@@ -1,0 +1,83 @@
+name: patch-booking-public-scroll
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-booking-public-scroll.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Public book root scroll container and cachebust those scripts only
+        run: |
+          python3 - << 'PY'
+          from pathlib import Path
+          def sub(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              n = text.count(old)
+              if n == 0:
+                  if new in text:
+                      print('already', path)
+                      return
+                  raise SystemExit('MISSING in %s' % path)
+              if n != 1:
+                  raise SystemExit('count %s %s' % (n, path))
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print('patched', path)
+          sub(
+              'app/booking.js',
+              "root.style.cssText = 'min-height:100vh;background:#F8FAFC;padding:24px 16px;font-family:Inter,system-ui,sans-serif';",
+              "root.style.cssText = 'position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#F8FAFC;padding:24px 16px;font-family:Inter,system-ui,sans-serif';",
+          )
+          sub(
+              'app/booking-public-contrast.js',
+              "root.style.cssText = 'min-height:100vh;background:#F1F5F9;padding:24px 16px;font-family:Inter,system-ui,sans-serif;color:#0F172A';",
+              "root.style.cssText = 'position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#F1F5F9;padding:24px 16px;font-family:Inter,system-ui,sans-serif;color:#0F172A';",
+          )
+          html_path = Path('app/index.html')
+          h = html_path.read_text(encoding='utf-8')
+          shell = 'html,body{height:100%;max-height:100%;overflow:hidden;'
+          app = '#app{display:flex;height:100%;height:100dvh;max-height:100dvh;overflow:hidden}'
+          if shell not in h or app not in h:
+              raise SystemExit('shell overflow missing before edit')
+          repls = [
+              ('<script src="./booking.js?v=4"></script>', '<script src="./booking.js?v=5"></script>'),
+              ('<script src="./booking-public-contrast.js?v=1"></script>', '<script src="./booking-public-contrast.js?v=2"></script>'),
+          ]
+          changed = False
+          for a, b in repls:
+              if a in h:
+                  if h.count(a) != 1:
+                      raise SystemExit('script count ' + a)
+                  h = h.replace(a, b, 1)
+                  changed = True
+                  print('bumped', b)
+              elif b in h:
+                  print('already', b)
+              else:
+                  raise SystemExit('MISSING ' + a)
+          if changed:
+              html_path.write_text(h, encoding='utf-8')
+          h2 = html_path.read_text(encoding='utf-8')
+          if shell not in h2 or app not in h2:
+              raise SystemExit('shell overflow changed')
+          print('shell overflow unchanged')
+          PY
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/booking.js app/booking-public-contrast.js app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix(booking): public book root is the scroll container"
+          git pull --rebase origin main
+          git push origin HEAD:main
