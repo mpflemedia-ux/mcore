@@ -3687,7 +3687,16 @@ function openBarcodeScanner(onScanSuccess) {
     { fps: 10, qrbox: function(w, h){ return { width: Math.max(50, Math.floor(w * 0.92)), height: Math.max(50, Math.floor(h * 0.7)) } }, videoConstraints: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: 'continuous' }] } },
     (decodedText) => { _scannerHandleSuccess(decodedText) },
     () => { /* per-frame scan miss — ignore, keep scanning */ }
-  ).catch(err => {
+  ).then(() => {
+    const kickFocus = () => {
+      if(!_scannerHtml5Qrcode || typeof _scannerHtml5Qrcode.applyVideoConstraints !== 'function') return
+      try {
+        _scannerHtml5Qrcode.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {})
+      } catch(e) {}
+    }
+    kickFocus()
+    setTimeout(kickFocus, 500)
+  }).catch(err => {
     console.error('Barcode scanner start error:', err)
     _scannerShowError(isBm ? 'Kamera tidak tersedia, sila taip manual.' : 'Camera not available, please type manually.')
   })
