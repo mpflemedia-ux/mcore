@@ -5507,14 +5507,14 @@ async function toggleLang() {
     await sb.from('user_profiles').update({language: APP.language}).eq('id', APP.user.id)
   }
 }
-// Header refresh button — reuses the same nexerp_last_params reconstruction
-// toggleLang() uses (see above) so a manual refresh stays on the current
-// sub-tab/sub-view instead of falling back to that page's default view.
+// Header refresh button - hard-reload this document so a new index.html
+// (and its ?v= scripts) load. GitHub Pages caches HTML max-age=600, so
+// location.reload() alone can still be stale. A cache-busting query is a
+// different cache key. Keep path + hash; stay on this origin (relative URL).
 function refreshCurrentPage() {
-  let lastParams = {}
-  try { lastParams = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') } catch(e) {}
-  openPage(APP.currentPage||'dashboard', lastParams)
-  showToast(APP.language==='bm'?'Dimuat semula.':'Refreshed.', 'info')
+  const url = new URL(location.href)
+  url.searchParams.set('_', String(Date.now()))
+  location.replace(url.pathname + url.search + url.hash)
 }
 function closeUserDropdown() {
   document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('open'))
