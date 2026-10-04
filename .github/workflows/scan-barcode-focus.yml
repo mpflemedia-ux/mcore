@@ -1,0 +1,40 @@
+name: scan barcode focus
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refocus the live track
+        run: |
+          python3 - << 'PY'
+          import base64
+          from pathlib import Path
+          p = Path('app/index.html')
+          text = p.read_text()
+          old = base64.b64decode('ICApLnRoZW4oKCkgPT4gewogICAgY29uc3Qga2lja0ZvY3VzID0gKCkgPT4gewogICAgICBpZighX3NjYW5uZXJIdG1sNVFyY29kZSB8fCB0eXBlb2YgX3NjYW5uZXJIdG1sNVFyY29kZS5hcHBseVZpZGVvQ29uc3RyYWludHMgIT09ICdmdW5jdGlvbicpIHJldHVybgogICAgICB0cnkgewogICAgICAgIF9zY2FubmVySHRtbDVRcmNvZGUuYXBwbHlWaWRlb0NvbnN0cmFpbnRzKHsgYWR2YW5jZWQ6IFt7IGZvY3VzTW9kZTogJ2NvbnRpbnVvdXMnIH1dIH0pLmNhdGNoKCgpID0+IHt9KQogICAgICB9IGNhdGNoKGUpIHt9CiAgICB9CiAgICBraWNrRm9jdXMoKQogICAgc2V0VGltZW91dChraWNrRm9jdXMsIDUwMCkKICB9KS5jYXRjaChlcnIgPT4gew==').decode()
+          new = base64.b64decode('ICApLnRoZW4oKCkgPT4gewogICAgY29uc3Qga2lja0ZvY3VzID0gKCkgPT4gewogICAgICBpZighX3NjYW5uZXJIdG1sNVFyY29kZSkgcmV0dXJuCiAgICAgIGNvbnN0IHZpZGVvID0gcmVnaW9uRWwucXVlcnlTZWxlY3RvcigndmlkZW8nKQogICAgICBjb25zdCB0cmFjayA9IHZpZGVvICYmIHZpZGVvLnNyY09iamVjdCAmJiB2aWRlby5zcmNPYmplY3QuZ2V0VmlkZW9UcmFja3MgJiYgdmlkZW8uc3JjT2JqZWN0LmdldFZpZGVvVHJhY2tzKClbMF0KICAgICAgaWYoIXRyYWNrIHx8IHR5cGVvZiB0cmFjay5hcHBseUNvbnN0cmFpbnRzICE9PSAnZnVuY3Rpb24nKSByZXR1cm4KICAgICAgbGV0IGNhcHMgPSB7fQogICAgICB0cnkgeyBjYXBzID0gdHJhY2suZ2V0Q2FwYWJpbGl0aWVzID8gdHJhY2suZ2V0Q2FwYWJpbGl0aWVzKCkgOiB7fSB9IGNhdGNoKGUpIHt9CiAgICAgIGNvbnN0IG1vZGVzID0gY2Fwcy5mb2N1c01vZGUgfHwgW10KICAgICAgY29uc3QgYWR2YW5jZWQgPSBbXQogICAgICBpZihjYXBzLnBvaW50c09mSW50ZXJlc3QpIHsKICAgICAgICBjb25zdCBzZXQgPSB7IHBvaW50c09mSW50ZXJlc3Q6IFt7IHg6IDAuNSwgeTogMC41IH1dIH0KICAgICAgICBpZihtb2Rlcy5pbmRleE9mKCdjb250aW51b3VzJykgPj0gMCkgc2V0LmZvY3VzTW9kZSA9ICdjb250aW51b3VzJwogICAgICAgIGVsc2UgaWYobW9kZXMuaW5kZXhPZignbWFudWFsJykgPj0gMCkgc2V0LmZvY3VzTW9kZSA9ICdtYW51YWwnCiAgICAgICAgYWR2YW5jZWQucHVzaChzZXQpCiAgICAgIH0gZWxzZSBpZihtb2Rlcy5pbmRleE9mKCdjb250aW51b3VzJykgPj0gMCkgewogICAgICAgIGFkdmFuY2VkLnB1c2goeyBmb2N1c01vZGU6ICdjb250aW51b3VzJyB9KQogICAgICB9IGVsc2UgaWYobW9kZXMuaW5kZXhPZignc2luZ2xlLXNob3QnKSA+PSAwKSB7CiAgICAgICAgYWR2YW5jZWQucHVzaCh7IGZvY3VzTW9kZTogJ3NpbmdsZS1zaG90JyB9KQogICAgICB9CiAgICAgIGlmKCFhZHZhbmNlZC5sZW5ndGgpIHJldHVybgogICAgICB0cmFjay5hcHBseUNvbnN0cmFpbnRzKHsgYWR2YW5jZWQ6IGFkdmFuY2VkIH0pLmNhdGNoKCgpID0+IHt9KQogICAgICBpZihvdmVybGF5LmNsYXNzTGlzdC5jb250YWlucygnYWN0aXZlJykgJiYgX3NjYW5uZXJIdG1sNVFyY29kZSkgc2V0VGltZW91dChraWNrRm9jdXMsIDEyMDApCiAgICB9CiAgICBraWNrRm9jdXMoKQogIH0pLmNhdGNoKGVyciA9PiB7').decode()
+          n = text.count(old)
+          if n != 1:
+              raise SystemExit('expected 1 focus kick, found %s' % n)
+          text = text.replace(old, new, 1)
+          if text.count('pointsOfInterest') != 2:
+              raise SystemExit('focus point missing')
+          if text.count('_scannerHtml5Qrcode.start(') != 1:
+              raise SystemExit('start call count changed')
+          if 'function openBarcodeScanner' not in text:
+              raise SystemExit('scanner function missing')
+          p.write_text(text)
+          print('patched', len(text))
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git rm -f .github/workflows/scan-barcode-focus.yml
+          git commit -m "fix(scan): refocus the live camera track on the barcode"
+          git push origin HEAD:main
