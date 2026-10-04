@@ -1,0 +1,19 @@
+name: scan barcode focus
+on:
+  workflow_dispatch:
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Main camera and file scan
+        run: |
+          python3 - << 'PY'
+          import base64
+          from pathlib import Path
+          p = Path('app/index.html')
+          text = p.read_text()
+          old1 = base64.b64decode(Path('/tmp/no').read_text())
+          PY
