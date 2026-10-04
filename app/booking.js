@@ -1,6 +1,7 @@
 /* Customer booking — public page + dashboard card + settings link */
 (function () {
   var holdMinutes = 30;
+  var publicAddons = [];
   function clampHoldMins(n) {
     var m = Math.round(Number(n));
     if (!isFinite(m)) m = 30;
@@ -149,6 +150,7 @@
       return true;
     }
     var board = res.data || {};
+    publicAddons = board.addons || [];
     holdMinutes = clampHoldMins(board.hold_minutes != null ? board.hold_minutes : holdMinutes);
     if (pickStaffOn(board)) return renderStaffPick(token, board, date, root);
     var services = board.services || [];
@@ -174,7 +176,14 @@
     var root = document.getElementById('public-book-root');
     var box = document.createElement('div');
     box.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px';
-    box.innerHTML = '<form id="bk-form" style="background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%"><h3 style="margin:0 0 8px">Book ' + esc(ds.name) + (ds.staffName ? ' · ' + esc(ds.staffName) : '') + '</h3><p style="color:#64748b;font-size:13px">' + esc(fmtTime(ds.start)) + ' · RM ' + Number(ds.price || 0).toFixed(2) + '</p><input required name="name" placeholder="Full name" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="email" type="email" placeholder="Email" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="phone" placeholder="Phone" style="width:100%;margin:0 0 12px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="bk-cancel">Cancel</button><button type="submit" style="background:#0E7490;color:#fff;border:0;border-radius:8px;padding:8px 14px">Confirm hold</button></div><p id="bk-err" style="color:#b91c1c;font-size:12px;display:none"></p></form>';
+    var addonHtml = '';
+    if (publicAddons && publicAddons.length) {
+      addonHtml = '<div style="font-size:13px;font-weight:600;margin:4px 0 8px">Add-ons</div>' + publicAddons.map(function (a) {
+        var unit = a.unit ? ' / ' + esc(a.unit) : '';
+        return '<label style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:13px"><span>' + esc(a.name || a.code) + ' · RM ' + Number(a.price || 0).toFixed(2) + unit + '</span><input data-code="' + esc(a.code) + '" type="number" min="0" step="1" value="0" style="width:72px;padding:8px;border:1px solid #cbd5e1;border-radius:8px"></label>';
+      }).join('');
+    }
+    box.innerHTML = '<form id="bk-form" style="background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%;max-height:90vh;overflow:auto"><h3 style="margin:0 0 8px">Book ' + esc(ds.name) + (ds.staffName ? ' · ' + esc(ds.staffName) : '') + '</h3><p style="color:#64748b;font-size:13px">' + esc(fmtTime(ds.start)) + ' · RM ' + Number(ds.price || 0).toFixed(2) + '</p>' + addonHtml + '<input required name="name" placeholder="Full name" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="email" type="email" placeholder="Email" style="width:100%;margin:0 0 8px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><input name="phone" placeholder="Phone" style="width:100%;margin:0 0 12px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="bk-cancel">Cancel</button><button type="submit" style="background:#0E7490;color:#fff;border:0;border-radius:8px;padding:8px 14px">Confirm hold</button></div><p id="bk-err" style="color:#b91c1c;font-size:12px;display:none"></p></form>';
     root.appendChild(box);
     document.getElementById('bk-cancel').onclick = function () { box.remove(); };
     document.getElementById('bk-form').onsubmit = async function (ev) {
@@ -183,6 +192,12 @@
       var err = document.getElementById('bk-err');
       var payload = { p_token: token, p_service_id: ds.sid, p_starts_at: ds.start, p_name: fd.get('name'), p_email: fd.get('email') || '', p_phone: fd.get('phone') || '' };
       if (ds.staff) payload.p_staff_id = ds.staff;
+      var addons = [];
+      ev.target.querySelectorAll('input[data-code]').forEach(function (inp) {
+        var q = Number(inp.value || 0);
+        if (q > 0 && inp.getAttribute('data-code')) addons.push({ code: inp.getAttribute('data-code'), qty: q });
+      });
+      if (addons.length) payload.p_addons = addons;
       var r = await sb.rpc('create_public_booking', payload);
       if (r.error) { err.style.display = 'block'; err.textContent = r.error.message; return; }
       var d = r.data || {};
