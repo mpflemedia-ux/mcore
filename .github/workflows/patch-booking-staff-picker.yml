@@ -1,3 +1,55 @@
 name: patch-booking-staff-picker
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - app/booking.js
+      - app/booking-settings-ui.js
+      - app/booking-card-ui.js
+      - .github/workflows/patch-booking-staff-picker.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Cachebust staff-picker scripts only
+        run: |
+          python3 - << 'PY'
+          from pathlib import Path
+          p = Path('app/index.html')
+          html = p.read_text(encoding='utf-8')
+          repls = [
+              ('<script src="./booking.js?v=2"></script>', '<script src="./booking.js?v=3"></script>'),
+              ('<script src="./booking-settings-ui.js?v=2"></script>', '<script src="./booking-settings-ui.js?v=3"></script>'),
+              ('<script src="./booking-card-ui.js?v=3"></script>', '<script src="./booking-card-ui.js?v=4"></script>'),
+          ]
+          n = 0
+          for a, b in repls:
+              if a in html:
+                  html = html.replace(a, b, 1)
+                  n += 1
+                  print('bumped', b)
+              elif b in html:
+                  print('already', b)
+              else:
+                  print('MISSING', a)
+          if n:
+              p.write_text(html, encoding='utf-8')
+          print('changes', n)
+          PY
+      - name: Commit
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "feat(booking): cachebust staff picker scripts"
+          git pull --rebase origin main
+          git push origin HEAD:main
