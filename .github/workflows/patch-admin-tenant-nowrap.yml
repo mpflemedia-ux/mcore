@@ -1,0 +1,77 @@
+name: patch-admin-tenant-nowrap
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-admin-tenant-nowrap.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Admin tenant company and code one line inside the table scroll
+        run: |
+          python3 - << 'PY'
+          from pathlib import Path
+          p = Path('app/index.html')
+          text = p.read_text(encoding='utf-8')
+          if len(text) < 2000000:
+              raise SystemExit('index too small before edit %s' % len(text))
+          repls = [
+              (
+                  '<div style="overflow-x:auto"><table><thead><tr>\n    <th style="width:32px"><input type="checkbox" id="admin-select-all"',
+                  '<div style="overflow-x:auto;max-width:100%;min-width:0;-webkit-overflow-scrolling:touch"><table><thead><tr>\n    <th style="width:32px"><input type="checkbox" id="admin-select-all"',
+              ),
+              (
+                  """<td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>""",
+                  """<td style=\"white-space:nowrap;word-break:normal\"><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>""",
+              ),
+              (
+                  """<td style=\"font-size:12px;color:var(--text-3)\">${_aiEscapeHtml(d.code||'-')}</td>""",
+                  """<td style=\"font-size:12px;color:var(--text-3);white-space:nowrap;word-break:normal\">${_aiEscapeHtml(d.code||'-')}</td>""",
+              ),
+              (
+                  '<td onclick="event.stopPropagation()" style="min-width:12rem"><select class="form-select admin-plan-select"',
+                  '<td onclick="event.stopPropagation()" style="min-width:12rem;white-space:nowrap;word-break:normal"><select class="form-select admin-plan-select"',
+              ),
+          ]
+          for old, new in repls:
+              n = text.count(old)
+              if n == 0 and new in text:
+                  print('already', old[:60])
+                  continue
+              if n != 1:
+                  raise SystemExit('count %s for %s' % (n, old[:80]))
+              text = text.replace(old, new, 1)
+              print('patched', old[:60])
+          if len(text) < 2000000:
+              raise SystemExit('index too small after edit %s' % len(text))
+          for c in (
+              'white-space:nowrap;word-break:normal"><strong>',
+              'font-size:12px;color:var(--text-3);white-space:nowrap;word-break:normal',
+              'min-width:12rem;white-space:nowrap;word-break:normal"><select class="form-select admin-plan-select"',
+              'overflow-x:auto;max-width:100%;min-width:0;-webkit-overflow-scrolling:touch"><table><thead><tr>',
+          ):
+              if text.count(c) != 1:
+                  raise SystemExit('missing or dup %s count=%s' % (c[:70], text.count(c)))
+          p.write_text(text, encoding='utf-8')
+          print('wrote', len(text))
+          PY
+      - name: Commit index only and drop this one-shot workflow
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git rm -f .github/workflows/patch-admin-tenant-nowrap.yml
+          git diff --cached --stat
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix(admin): keep tenant company and code on one scrollable line"
+          git pull --rebase origin main
+          git push origin HEAD:main
