@@ -1,0 +1,3 @@
+name: patch-booking-staff-picker
+on:
+  workflow_dispatch:
