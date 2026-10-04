@@ -30749,15 +30749,7 @@ async function renderSalaryDisbursement(month, year) {
       <td class="pdoc-sd-net" id="sd-net-${r.id}">${formatRM(r.net_pay)}</td>
     </tr>`
       }
-      let _sdTables = ''
-      for (let _s = 0; _s < data.length; _s += _sdPageSize) {
-        const _chunk = data.slice(_s, _s + _sdPageSize)
-        const _more = _s + _sdPageSize < data.length
-        _sdTables += `<div class="pdoc-sd-chunk${_more ? ' pdoc-sd-chunk-break' : ''}"><table class="pdoc-sd-table">${_sdThead}<tbody>`
-        _sdTables += _chunk.map((r, j) => _sdRowHtml(r, _s + j)).join('')
-        _sdTables += `</tbody></table></div>`
-      }
-      return _sdTables
+      return `<table class="pdoc-sd-table">${_sdThead}<tbody>` + data.map((r, i) => _sdRowHtml(r, i)).join('') + `</tbody></table>`
     })()}
   </div>
     <div class="pdoc-sd-closing">
