@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - app/booking-card-ui.js
+      - app/booking-state.js
       - .github/workflows/patch-booking-card-list.yml
 permissions:
   contents: write
@@ -17,28 +18,30 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - name: Cachebust booking-card-ui.js script tag only
+      - name: Cachebust booking card and state scripts only
         run: |
           python3 - << 'PY'
           from pathlib import Path
-          import re
           p = Path('app/index.html')
           html = p.read_text(encoding='utf-8')
-          html2, n = re.subn(
-              r'(<script src="\./booking-card-ui\.js\?v=)2("><\/script>)',
-              r'\g<1>3\2',
-              html,
-              count=1,
-          )
-          if n == 0:
-              if 'booking-card-ui.js?v=' not in html:
-                  raise SystemExit('booking-card-ui script tag missing')
-              print('tag present but not v=2; leave it')
-          elif html2 != html:
-              p.write_text(html2, encoding='utf-8')
-              print('bumped booking-card-ui.js -> v=3')
-          else:
-              print('unchanged')
+          repls = [
+              ('<script src="./booking-card-ui.js?v=5"></script>', '<script src="./booking-card-ui.js?v=6"></script>'),
+              ('<script src="./booking-state.js?v=2"></script>', '<script src="./booking-state.js?v=3"></script>'),
+          ]
+          n = 0
+          for a, b in repls:
+              c = html.count(a)
+              if c == 1:
+                  html = html.replace(a, b, 1)
+                  n += 1
+                  print('bumped', b)
+              elif b in html and a not in html:
+                  print('already', b)
+              else:
+                  print('MISSING_OR_DUP', a, 'count', c)
+          if n:
+              p.write_text(html, encoding='utf-8')
+          print('changes', n)
           PY
       - name: Commit
         run: |
@@ -46,6 +49,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/index.html
           git diff --cached --quiet && echo 'nothing' && exit 0
-          git commit -m "feat(booking): cachebust booking card list (scroll, all dates, time sort)"
+          git commit -m "feat(booking): cachebust delete expired/cancelled scripts"
           git pull --rebase origin main
           git push origin HEAD:main
