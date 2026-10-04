@@ -3689,13 +3689,29 @@ function openBarcodeScanner(onScanSuccess) {
     () => { /* per-frame scan miss — ignore, keep scanning */ }
   ).then(() => {
     const kickFocus = () => {
-      if(!_scannerHtml5Qrcode || typeof _scannerHtml5Qrcode.applyVideoConstraints !== 'function') return
-      try {
-        _scannerHtml5Qrcode.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {})
-      } catch(e) {}
+      if(!_scannerHtml5Qrcode) return
+      const video = regionEl.querySelector('video')
+      const track = video && video.srcObject && video.srcObject.getVideoTracks && video.srcObject.getVideoTracks()[0]
+      if(!track || typeof track.applyConstraints !== 'function') return
+      let caps = {}
+      try { caps = track.getCapabilities ? track.getCapabilities() : {} } catch(e) {}
+      const modes = caps.focusMode || []
+      const advanced = []
+      if(caps.pointsOfInterest) {
+        const set = { pointsOfInterest: [{ x: 0.5, y: 0.5 }] }
+        if(modes.indexOf('continuous') >= 0) set.focusMode = 'continuous'
+        else if(modes.indexOf('manual') >= 0) set.focusMode = 'manual'
+        advanced.push(set)
+      } else if(modes.indexOf('continuous') >= 0) {
+        advanced.push({ focusMode: 'continuous' })
+      } else if(modes.indexOf('single-shot') >= 0) {
+        advanced.push({ focusMode: 'single-shot' })
+      }
+      if(!advanced.length) return
+      track.applyConstraints({ advanced: advanced }).catch(() => {})
+      if(overlay.classList.contains('active') && _scannerHtml5Qrcode) setTimeout(kickFocus, 1200)
     }
     kickFocus()
-    setTimeout(kickFocus, 500)
   }).catch(err => {
     console.error('Barcode scanner start error:', err)
     _scannerShowError(isBm ? 'Kamera tidak tersedia, sila taip manual.' : 'Camera not available, please type manually.')
