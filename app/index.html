@@ -10847,15 +10847,15 @@ function _adminClientsRenderTable() {
   }
 
   host.innerHTML = `
-  <div style="overflow-x:auto"><table><thead><tr>
+  <div style="overflow-x:auto;max-width:100%;min-width:0;-webkit-overflow-scrolling:touch"><table><thead><tr>
     <th style="width:32px"><input type="checkbox" id="admin-select-all" onchange="_toggleSelectAllTenants(this)"></th>
     ${th('name', t.name)}${th('code', t.code)}${th('plan', t.plan)}${th('status', t.status)}${th('onboard', t.onboard)}${th('trialEnds', t.trialEnds)}${th('planExpires', t.planExpires)}${th('users', t.users)}${th('created', t.created)}<th></th>
   </tr></thead><tbody>
   ${slice.map(d => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'tenant',id:'${d.id}'})">
     <td onclick="event.stopPropagation()"><input type="checkbox" class="admin-tenant-chk" data-tenant-id="${d.id}" onchange="_onTenantCheckChange()"></td>
-    <td><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
-    <td style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(d.code||'-')}</td>
-    <td onclick="event.stopPropagation()" style="min-width:12rem"><select class="form-select admin-plan-select" style="font-size:12px;padding:4px 8px;min-width:11.5rem;width:auto;max-width:16rem" data-tenant-id="${d.id}" data-prev="${d.plan_id||''}" onchange="_onPlanChange(this)">${planOptions(d)}</select></td>
+    <td style="white-space:nowrap;word-break:normal"><strong>${_aiEscapeHtml(d.name||'-')}</strong></td>
+    <td style="font-size:12px;color:var(--text-3);white-space:nowrap;word-break:normal">${_aiEscapeHtml(d.code||'-')}</td>
+    <td onclick="event.stopPropagation()" style="min-width:12rem;white-space:nowrap;word-break:normal"><select class="form-select admin-plan-select" style="font-size:12px;padding:4px 8px;min-width:11.5rem;width:auto;max-width:16rem" data-tenant-id="${d.id}" data-prev="${d.plan_id||''}" onchange="_onPlanChange(this)">${planOptions(d)}</select></td>
     <td style="color:${d.is_active===false?'var(--danger)':'var(--success)'}">${d.is_active===false?(isBm?'Digantung':'Suspended'):(isBm?'Aktif':'Active')}</td>
     ${onboardCell(d)}
     ${d.is_trial ? expiryCell(d.trial_ends_at) : `<td style="color:var(--text-3)">—</td>`}
