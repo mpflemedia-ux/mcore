@@ -43,12 +43,79 @@
       btn.onclick = async function () {
         await sb.from('booking_services').update({ is_active: false }).eq('id', btn.getAttribute('data-id')).eq('tenant_id', APP.tenant.id);
         loadList();
+        loadAssign();
+      };
+    });
+  }
+  async function loadPickStaff() {
+    var inp = document.getElementById('bk-pick-staff');
+    if (!inp || !window.sb || !APP.tenant) return;
+    var on = false;
+    try {
+      var q = await sb.from('tenants').select('config').eq('id', APP.tenant.id).maybeSingle();
+      var cfg = (q.data && q.data.config) || (APP.tenant.config) || {};
+      on = cfg.booking_customer_pick_staff === true || cfg.booking_customer_pick_staff === 'true';
+    } catch (e) {
+      var c = (APP.tenant && APP.tenant.config) || {};
+      on = c.booking_customer_pick_staff === true || c.booking_customer_pick_staff === 'true';
+    }
+    inp.checked = !!on;
+    if (inp._bkPickBound) return;
+    inp._bkPickBound = true;
+    inp.onchange = async function () {
+      var msg = document.getElementById('bk-svc-msg');
+      var want = !!inp.checked;
+      if (!window.sb || !APP.tenant) { if (msg) msg.textContent = 'Not signed in'; return; }
+      var r = await sb.rpc('merge_tenant_config', { p_tenant_id: APP.tenant.id, p_patch: { booking_customer_pick_staff: want } });
+      if (r.error) { inp.checked = !want; if (msg) msg.textContent = r.error.message; return; }
+      APP.tenant.config = Object.assign({}, APP.tenant.config || {}, { booking_customer_pick_staff: want });
+      if (msg) msg.textContent = want ? 'Customer pilih staff: on.' : 'Customer pilih staff: off.';
+    };
+  }
+  async function loadAssign() {
+    var host = document.getElementById('bk-staff-assign');
+    if (!host || !window.sb || !APP.tenant) return;
+    var isBm = APP.language === 'bm';
+    var em = await sb.from('employees').select('id,name,nickname').eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name');
+    var sv = await sb.from('booking_services').select('id,name,is_active').eq('tenant_id', APP.tenant.id).eq('is_active', true).order('name');
+    var asg = await sb.from('booking_service_staff').select('service_id,employee_id').eq('tenant_id', APP.tenant.id);
+    if (em.error || sv.error || asg.error) {
+      host.textContent = ((em.error || sv.error || asg.error).message) || 'Run booking staff SQL first.';
+      return;
+    }
+    var people = (em.data || []).filter(function (e) { return e && e.id && !e.deleted_at; });
+    var services = (sv.data || []).filter(function (s) { return s && s.is_active !== false; });
+    if (!people.length) { host.innerHTML = '<div style="font-size:12px;color:var(--text-3)">' + (isBm ? 'Tiada staf.' : 'No staff.') + '</div>'; return; }
+    if (!services.length) { host.innerHTML = '<div style="font-size:12px;color:var(--text-3)">' + (isBm ? 'Tambah servis dulu.' : 'Add a service first.') + '</div>'; return; }
+    var on = {};
+    (asg.data || []).forEach(function (a) { on[String(a.employee_id) + ':' + String(a.service_id)] = true; });
+    host.innerHTML = people.map(function (e) {
+      var label = (e.nickname && String(e.nickname).trim()) || (e.name && String(e.name).trim()) || 'Staff';
+      var boxes = services.map(function (s) {
+        var key = String(e.id) + ':' + String(s.id);
+        return '<label style="display:inline-flex;gap:4px;align-items:center;margin:0 10px 4px 0;font-size:12px"><input type="checkbox" class="bk-staff-asg" data-emp="' + esc(e.id) + '" data-svc="' + esc(s.id) + '"' + (on[key] ? ' checked' : '') + '> ' + esc(s.name) + '</label>';
+      }).join('');
+      return '<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-weight:600;margin-bottom:4px">' + esc(label) + '</div><div>' + boxes + '</div></div>';
+    }).join('');
+    host.querySelectorAll('.bk-staff-asg').forEach(function (box) {
+      box.onchange = async function () {
+        var msg = document.getElementById('bk-svc-msg');
+        var emp = box.getAttribute('data-emp');
+        var svc = box.getAttribute('data-svc');
+        var r;
+        if (box.checked) {
+          r = await sb.from('booking_service_staff').upsert({ tenant_id: APP.tenant.id, service_id: svc, employee_id: emp }, { onConflict: 'service_id,employee_id' });
+        } else {
+          r = await sb.from('booking_service_staff').delete().eq('tenant_id', APP.tenant.id).eq('service_id', svc).eq('employee_id', emp);
+        }
+        if (r.error) { box.checked = !box.checked; if (msg) msg.textContent = r.error.message; return; }
+        if (msg) msg.textContent = box.checked ? (isBm ? 'Ditugaskan.' : 'Assigned.') : (isBm ? 'Tidak ditugaskan.' : 'Not assigned.');
       };
     });
   }
   function paint(box) {
-    if (!box || box.getAttribute('data-bk-ui') === '3') return;
-    box.setAttribute('data-bk-ui', '3');
+    if (!box || box.getAttribute('data-bk-ui') === '4') return;
+    box.setAttribute('data-bk-ui', '4');
     var isBm = APP.language === 'bm';
     var days = isBm
       ? [['0','Ahd'],['1','Isn'],['2','Sel'],['3','Rab'],['4','Kha'],['5','Jum'],['6','Sab']]
@@ -63,6 +130,7 @@
       '<label style="font-size:12px">' + (isBm ? 'Hold (minit)' : 'Hold minutes') +
       ' <input id="bk-hold-mins" type="number" min="5" max="1440" value="30" class="form-input" style="width:80px"></label>' +
       '<button type="button" class="btn btn-outline btn-sm" id="bk-hold-save">' + (isBm ? 'Simpan hold' : 'Save hold') + '</button></div>' +
+      '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:0 0 12px"><input type="checkbox" id="bk-pick-staff"> Customer pilih staff</label>' +
       '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:13px">' +
       '<label><input type="radio" name="bk-kind" value="session" checked> ' + (isBm ? 'Sesi' : 'Session') + '</label>' +
       '<label><input type="radio" name="bk-kind" value="event"> ' + (isBm ? 'Acara' : 'Event') + '</label></div>' +
@@ -84,7 +152,10 @@
       '<button type="button" class="btn btn-primary btn-sm" id="bk-link-btn">' + (isBm ? 'Salin link awam' : 'Copy public link') + '</button></div>' +
       '<div id="bk-svc-msg" style="font-size:12px;margin-top:8px"></div>' +
       '<div style="font-size:12px;font-weight:600;margin:14px 0 6px">' + (isBm ? 'Servis sedia ada' : 'Existing services') + '</div>' +
-      '<div id="bk-svc-list"></div>';
+      '<div id="bk-svc-list"></div>' +
+      '<div style="font-size:12px;font-weight:600;margin:14px 0 6px">Staff ↔ service</div>' +
+      '<div style="font-size:12px;color:var(--text-3);margin:0 0 8px">' + (isBm ? 'Tanda = ditugaskan. Tidak bertanda = tidak ditugaskan.' : 'Ticked = assigned. Unticked = not assigned.') + '</div>' +
+      '<div id="bk-staff-assign" style="font-size:13px"></div>';
     box.querySelectorAll('input[name=bk-kind]').forEach(function (r) { r.onchange = toggleKind; });
     toggleKind();
     var add = document.getElementById('bk-svc-add');
@@ -111,7 +182,7 @@
       }
       var r = await sb.from('booking_services').insert(row);
       msg.textContent = r.error ? r.error.message : (isBm ? 'Servis ditambah.' : 'Service added.');
-      if (!r.error) loadList();
+      if (!r.error) { loadList(); loadAssign(); }
     };
     var link = document.getElementById('bk-link-btn');
     if (link) link.onclick = async function () {
@@ -159,7 +230,9 @@
       if (msg) msg.textContent = isBm ? ('Hold disimpan: ' + n + ' minit.') : ('Hold saved: ' + n + ' min.');
     };
     loadHold();
+    loadPickStaff();
     loadList();
+    loadAssign();
   }
   function boot() {
     var box = bkSettingsBox();
