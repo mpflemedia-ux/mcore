@@ -1,0 +1,29 @@
+name: patch-header-hard-refresh
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_header_hard_refresh.py
+      - .github/workflows/patch-header-hard-refresh.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch refreshCurrentPage only
+        run: python3 scripts/patch_header_hard_refresh.py
+      - name: Commit index.html and remove one-shot patcher
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git rm -f scripts/patch_header_hard_refresh.py .github/workflows/patch-header-hard-refresh.yml
+          git diff --cached --quiet && echo "nothing to commit" && exit 1
+          git commit -m "fix(app): hard-reload header refresh past GitHub Pages HTML cache"
+          git push origin HEAD:main
