@@ -9,7 +9,7 @@
     var auth = document.getElementById('auth-page');
     if (auth) auth.style.display = 'none';
     document.body.style.background = '#F1F5F9';
-    root.style.cssText = 'min-height:100vh;background:#F1F5F9;padding:24px 16px;font-family:Inter,system-ui,sans-serif;color:#0F172A';
+    root.style.cssText = 'position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#F1F5F9;padding:24px 16px;font-family:Inter,system-ui,sans-serif;color:#0F172A';
     root.querySelectorAll('*').forEach(function (el) {
       var tag = el.tagName;
       if (tag === 'BUTTON') {

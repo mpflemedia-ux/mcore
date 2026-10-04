@@ -138,7 +138,7 @@
     if (!root) {
       root = document.createElement('div');
       root.id = 'public-book-root';
-      root.style.cssText = 'min-height:100vh;background:#F8FAFC;padding:24px 16px;font-family:Inter,system-ui,sans-serif';
+      root.style.cssText = 'position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#F8FAFC;padding:24px 16px;font-family:Inter,system-ui,sans-serif';
       document.body.appendChild(root);
     }
     var date = qs('date') || new Date().toISOString().slice(0, 10);
