@@ -5,7 +5,7 @@
   }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+      return ({ '&': '&', '<': '<', '>': '>', '"': '"', "'": '&#39;' })[c];
     });
   }
   function maskFromChecks() {
@@ -69,7 +69,10 @@
       var r = await sb.rpc('merge_tenant_config', { p_tenant_id: APP.tenant.id, p_patch: { booking_customer_pick_staff: want } });
       if (r.error) { inp.checked = !want; if (msg) msg.textContent = r.error.message; return; }
       APP.tenant.config = Object.assign({}, APP.tenant.config || {}, { booking_customer_pick_staff: want });
-      if (msg) msg.textContent = want ? 'Customer pilih staff: on.' : 'Customer pilih staff: off.';
+      var isBmNow = APP.language === 'bm';
+      if (msg) msg.textContent = isBmNow
+        ? (want ? 'Pelanggan pilih staf: dihidupkan.' : 'Pelanggan pilih staf: dimatikan.')
+        : (want ? 'Customer picks staff: on.' : 'Customer picks staff: off.');
     };
   }
   async function loadAssign() {
@@ -130,7 +133,7 @@
       '<label style="font-size:12px">' + (isBm ? 'Hold (minit)' : 'Hold minutes') +
       ' <input id="bk-hold-mins" type="number" min="5" max="1440" value="30" class="form-input" style="width:80px"></label>' +
       '<button type="button" class="btn btn-outline btn-sm" id="bk-hold-save">' + (isBm ? 'Simpan hold' : 'Save hold') + '</button></div>' +
-      '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:0 0 12px"><input type="checkbox" id="bk-pick-staff"> Customer pilih staff</label>' +
+      '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:0 0 12px"><input type="checkbox" id="bk-pick-staff"> ' + (isBm ? 'Pelanggan pilih staf' : 'Customer picks staff') + '</label>' +
       '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:13px">' +
       '<label><input type="radio" name="bk-kind" value="session" checked> ' + (isBm ? 'Sesi' : 'Session') + '</label>' +
       '<label><input type="radio" name="bk-kind" value="event"> ' + (isBm ? 'Acara' : 'Event') + '</label></div>' +
@@ -153,7 +156,7 @@
       '<div id="bk-svc-msg" style="font-size:12px;margin-top:8px"></div>' +
       '<div style="font-size:12px;font-weight:600;margin:14px 0 6px">' + (isBm ? 'Servis sedia ada' : 'Existing services') + '</div>' +
       '<div id="bk-svc-list"></div>' +
-      '<div style="font-size:12px;font-weight:600;margin:14px 0 6px">Staff ↔ service</div>' +
+      '<div style="font-size:12px;font-weight:600;margin:14px 0 6px">' + (isBm ? 'Staf ↔ servis' : 'Staff ↔ service') + '</div>' +
       '<div style="font-size:12px;color:var(--text-3);margin:0 0 8px">' + (isBm ? 'Tanda = ditugaskan. Tidak bertanda = tidak ditugaskan.' : 'Ticked = assigned. Unticked = not assigned.') + '</div>' +
       '<div id="bk-staff-assign" style="font-size:13px"></div>';
     box.querySelectorAll('input[name=bk-kind]').forEach(function (r) { r.onchange = toggleKind; });
