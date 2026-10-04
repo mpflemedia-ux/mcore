@@ -4,7 +4,7 @@
   function isBm() { return APP.language === 'bm'; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+      return ({ '&': '\x26amp;', '<': '\x26lt;', '>': '\x26gt;', '"': '\x26quot;', "'": '\x26#39;' })[c];
     });
   }
   function fmt(iso) {
@@ -192,7 +192,7 @@
         (r.quote_ref ? ' · ' + esc(r.quote_ref) : '') + '</span><strong style="font-size:11px">' +
         esc(String(r.status || '').toUpperCase()) + '</strong></summary>' +
         '<div style="font-size:12px;color:var(--db-text3);margin-top:8px;line-height:1.5">' +
-        (staff ? '<div>Staff: ' + esc(staff) + '</div>' : '') +
+        (staff ? '<div>' + (isBm() ? 'Staf' : 'Staff') + ': ' + esc(staff) + '</div>' : '') +
         '<div>' + (isBm() ? 'Nama' : 'Name') + ': ' + esc(r.customer_name || '-') + '</div>' +
         '<div>Email: ' + esc(r.customer_email || '-') + '</div>' +
         '<div>' + (isBm() ? 'Telefon' : 'Phone') + ': ' + esc(r.customer_phone || '-') + '</div>' +
