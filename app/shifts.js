@@ -1,8 +1,8 @@
 (function () {
   var KINDS = [
     { key: 'morning', en: 'Morning', bm: 'Pagi', start: '09:00', end: '17:00', bg: '#F5E6C8', fg: '#8A5A00' },
-    { key: 'mid', en: 'Mid', bm: 'Tengah', start: '12:00', end: '20:00', bg: '#F3D7D2', fg: '#8A3B32' },
-    { key: 'closing', en: 'Closing', bm: 'Tutup', start: '16:00', end: '22:00', bg: '#D7E8D4', fg: '#2F6B45' },
+    { key: 'mid', en: 'Afternoon', bm: 'Tengahari', start: '12:00', end: '20:00', bg: '#F3D7D2', fg: '#8A3B32' },
+    { key: 'closing', en: 'Night', bm: 'Malam', start: '16:00', end: '22:00', bg: '#D7E8D4', fg: '#2F6B45' },
     { key: 'off', en: 'Off', bm: 'Off', start: '', end: '', bg: '#E7E5E4', fg: '#57534E' }
   ];
   function spanHours(k) {
