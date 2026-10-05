@@ -6766,24 +6766,26 @@ function _dbLoadShiftsCard() {
     sb.from('employees').select('id,name,nickname').eq('tenant_id', APP.tenant.id).is('deleted_at', null)
   ]).then(function (res) {
     if (res[0].error) { el.textContent = res[0].error.message; return }
-    const names = {}
-    ;(res[1].data || []).forEach(e => { names[e.id] = (e.nickname && e.nickname.trim()) || e.name })
-    const rows = (res[0].data || []).filter(r => r.kind !== 'off')
+    const byEmp = {}
+    ;(res[0].data || []).forEach(r => { byEmp[r.employee_id] = r.kind })
+    const staff = res[1].data || []
     const counts = { morning: 0, mid: 0, closing: 0 }
-    rows.forEach(r => { if (counts[r.kind] != null) counts[r.kind] += 1 })
-    const list = rows.map(r => {
-      const m = meta[r.kind] || meta.morning
-      const when = m.start ? _dbShiftClock(m.start) + '–' + _dbShiftClock(m.end) : ''
-      return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;min-height:40px;padding:4px 0;border-top:1px solid var(--border)">' +
-        '<b>' + String(names[r.employee_id] || '—').replace(/[&<>]/g, '') + '</b>' +
+    staff.forEach(e => { if (counts[byEmp[e.id]] != null) counts[byEmp[e.id]] += 1 })
+    const list = staff.map(e => {
+      const kind = byEmp[e.id]
+      const m = meta[kind] || { en: 'No shift', bm: 'Tiada syif', start: '', end: '', bg: 'transparent', fg: 'var(--db-text3)' }
+      const when = m.start ? ' ' + _dbShiftClock(m.start) + '–' + _dbShiftClock(m.end) : ''
+      const label = (e.nickname && e.nickname.trim()) || e.name || '—'
+      return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;height:36px;border-top:1px solid var(--border)">' +
+        '<b style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + String(label).replace(/[&<>]/g, '') + '</b>' +
         '<span style="background:' + m.bg + ';color:' + m.fg + ';border-radius:8px;padding:2px 8px;font-size:12px;white-space:nowrap">' +
-        (isBm ? m.bm : m.en) + ' ' + when + '</span></div>'
+        (isBm ? m.bm : m.en) + when + '</span></div>'
     }).join('')
     el.innerHTML = '<div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:8px">' +
       '<button type="button" class="db-btn" id="db-shift-prev">‹</button>' +
       '<button type="button" class="db-btn" id="db-shift-today">' + (picked === today ? (isBm ? 'Hari ini' : 'Today') : picked) + '</button>' +
       '<button type="button" class="db-btn" id="db-shift-next">›</button></div>' +
-      '<div style="max-height:220px;overflow-y:auto">' + (list || '<div style="color:var(--db-text3);font-size:13px">' + (isBm ? 'Tiada syif pada tarikh ini' : 'No shift on this date') + '</div>') + '</div>' +
+      '<div style="max-height:180px;overflow-y:auto">' + (list || '<div style="color:var(--db-text3);font-size:13px">' + (isBm ? 'Tiada syif pada tarikh ini' : 'No shift on this date') + '</div>') + '</div>' +
       '<div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + counts.morning + ' ' + (isBm ? 'pagi' : 'morning') + ' · ' + counts.mid + ' ' + (isBm ? 'tengah' : 'mid') + ' · ' + counts.closing + ' ' + (isBm ? 'tutup' : 'closing') + '</div>'
     document.getElementById('db-shift-prev').onclick = function () { _dbShiftStep(-1) }
     document.getElementById('db-shift-next').onclick = function () { _dbShiftStep(1) }
