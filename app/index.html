@@ -5937,6 +5937,17 @@ function renderDashboard() {
       <div id="db-planner-body"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>` : ''}
 
+    <div class="db-card" style="margin-bottom:14px" id="db-sec-projects">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div>
+          <div class="db-card-title"><i class="ti ti-layout-kanban"></i> ${isBm?'Projek':'Projects'}</div>
+          <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Kerja semasa':'Current work'}</div>
+        </div>
+        <button type="button" class="db-btn" onclick="openPage('projects')"><i class="ti ti-arrow-right"></i> ${isBm?'Buka penuh':'Open full'}</button>
+      </div>
+      <div id="db-projects-body"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+    </div>
+
     <!-- People (narrower) + Staff Attendance Tracker (wider) -->
     <div class="db-people-row-2">
       <div class="db-card" id="db-sec-people">
@@ -6678,6 +6689,7 @@ async function loadDashboardData() {
   try { _dbRenderTopCustomers(thisMonth) } catch(e) { console.warn('top cust', e) }
   try { await _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
   try { if (typeof _planAllowsPlanner === 'function' && _planAllowsPlanner() && typeof _dbLoadPlanner === 'function') _dbLoadPlanner() } catch(e) { console.warn('planner', e) }
+  try { if (typeof _dbLoadProjectsCard === 'function') _dbLoadProjectsCard() } catch(e) { console.warn('projects card', e) }
   try { _dbLoadPeople() } catch(e) { console.warn('people', e) }
   try { _dbLoadRecentActivity() } catch(e) { console.warn('activity', e) }
   try { _dbLoadAttTracker() } catch(e) { console.warn('att tracker', e) }
@@ -6699,6 +6711,59 @@ async function loadDashboardData() {
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
+
+function _dbOpenProject(id) {
+  openPage('projects', id ? { id: id } : {})
+}
+async function _dbLoadProjectsCard() {
+  const el = document.getElementById('db-projects-body')
+  if (!el || !APP.tenant?.id) return
+  const isBm = APP.language === 'bm'
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: projects, error } = await sb.from('projects')
+    .select('id,name,kind,customer_id,color')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    .order('created_at', { ascending: false })
+  if (error) { el.textContent = error.message; return }
+  const list = projects || []
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Belum ada projek' : 'No project yet') +
+      ' <button type="button" class="db-btn" onclick="openPage(\'projects\')">+ ' + (isBm ? 'Projek' : 'Project') + '</button></div>'
+    return
+  }
+  const ids = list.map(p => p.id)
+  const custIds = list.map(p => p.customer_id).filter(Boolean)
+  const [taskRes, custRes] = await Promise.all([
+    sb.from('project_tasks').select('project_id,column_key,due_date').in('project_id', ids).eq('tenant_id', APP.tenant.id).is('deleted_at', null),
+    custIds.length ? sb.from('customers').select('id,name').in('id', custIds).eq('tenant_id', APP.tenant.id) : Promise.resolve({ data: [] })
+  ])
+  const tasks = taskRes.data || []
+  const names = {}
+  ;(custRes.data || []).forEach(c => { names[c.id] = c.name })
+  const rows = list.map(p => {
+    const mine = tasks.filter(x => String(x.project_id) === String(p.id))
+    const total = mine.length
+    const done = mine.filter(x => x.column_key === 'done').length
+    const overdue = mine.filter(x => x.due_date && String(x.due_date).slice(0, 10) < today && x.column_key !== 'done').length
+    return { ...p, total, done, overdue, pct: total ? Math.round(done * 100 / total) : 0, active: !total || done < total }
+  }).filter(p => p.active)
+  const shown = rows.slice(0, 3)
+  const overdueN = rows.reduce((n, p) => n + p.overdue, 0)
+  if (!shown.length) {
+    el.innerHTML = '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Semua projek siap' : 'All projects done') + '</div>'
+    return
+  }
+  el.innerHTML = shown.map(p => {
+    const sub = p.kind === 'client' ? (names[p.customer_id] || (isBm ? 'Klien' : 'Client')) : (isBm ? 'Dalaman' : 'Internal')
+    const late = p.overdue ? '<span style="color:var(--danger);font-size:12px">' + p.overdue + ' ' + (isBm ? 'lewat' : 'overdue') + '</span>' : ''
+    return '<button type="button" onclick="_dbOpenProject(\'' + p.id + '\')" style="display:block;width:100%;text-align:left;padding:8px 0;border-top:1px solid var(--border);color:inherit">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px"><b>' + String(p.name).replace(/[&<>]/g, '') + '</b>' + late + '</div>' +
+      '<div style="font-size:12px;color:var(--db-text3);margin:2px 0 6px"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (p.color || '#22D3EE') + ';margin-right:6px"></i>' + sub + '</div>' +
+      '<div style="height:6px;background:var(--border);border-radius:99px;overflow:hidden"><i style="display:block;height:100%;width:' + p.pct + '%;background:#22D3EE"></i></div>' +
+      '<div style="text-align:right;font-size:11px;color:var(--db-text3)">' + p.pct + '%</div></button>'
+  }).join('') + '<div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + rows.length + ' ' + (isBm ? 'sedang jalan' : 'in progress') + ' · ' + overdueN + ' ' + (isBm ? 'lewat' : 'overdue') + '</div>'
+}
+
 
 
 /** Dashboard Planner card (platform_admin) — month grid + legend + filterable list */
@@ -37287,7 +37352,7 @@ if('serviceWorker' in navigator){
 <script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=1"></script>
 <script src="./booking-shortcut.js?v=1"></script>
-<script src="./projects.js?v=2"></script>
+<script src="./projects.js?v=3"></script>
 <script src="./booking-token-fix.js?v=1"></script>
 <script src="./booking-public-contrast.js?v=1"></script>
 <script src="./pv-desc-wrap.js?v=1"></script>
