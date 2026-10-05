@@ -374,11 +374,12 @@
     state.tab = 'files';
     refresh();
   }
-  window.renderProjects = function () {
+  window.renderProjects = function (params) {
     if (typeof canAccess === 'function' && !canAccess('core')) {
       showToast(t('Access denied', 'Akses ditolak'), 'error');
       return;
     }
+    if (params && params.id) state.projectId = params.id;
     refresh();
   };
 })();
