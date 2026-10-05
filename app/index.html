@@ -3035,12 +3035,14 @@ async function loadNotifications() {
     } catch(e) { console.warn('db notifications', e) }
     const catIcon = { sales:'ti-receipt', inventory:'ti-box', purchasing:'ti-shopping-cart', finance:'ti-report-money', hr:'ti-users' }
     const catPage = { sales:'sales', inventory:'inventory', purchasing:'purchasing', finance:'accounting', hr:'hr' }
+    const _bm2en = [[/^Entri jurnal baru/,'New journal entry'],[/^Kehadiran direkod/,'Attendance recorded'],[/^Produk baru ditambah/,'New product added'],[/^Invois baru:/,'New invoice:'],[/^Pekerja baru ditambah/,'New employee added'],[/^Bayaran diterima/,'Payment received'],[/^Baucar bayaran baru/,'New payment voucher'],[/^Jualan POS baru/,'New POS sale'],[/^PO baru/,'New PO'],[/^Tuntutan perbelanjaan baru/,'New expense claim'],[/^GRN direkod/,'GRN recorded']]
+    const _ttl = s => { s = String(s||''); if (isBm) return s; for (const [re,en] of _bm2en) if (re.test(s)) return s.replace(re,en); return s }
     dbNotifs.forEach(n => {
       if (prefs[n.category] === false) return
       const it = {
         kind: n.category, ref: n.id, ts: new Date(n.created_at).getTime(),
         icon: catIcon[n.category] || 'ti-bell', color: 'var(--primary)',
-        text: n.title, meta: n.body || '',
+        text: _ttl(n.title), meta: n.body || '',
         go: () => { sb.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).then(()=>{},()=>{}); openPage(catPage[n.category] || 'dashboard') }
       }
       items.push(it)
