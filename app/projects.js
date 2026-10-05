@@ -8,7 +8,7 @@
   ];
   var TAGS = ['Planning', 'Design', 'Development', 'Testing', 'Launch', 'Admin'];
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], projectId: null, tab: 'board', filter: '', group: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], projectId: null, tab: 'board', filter: '', group: '', assignee: '', sort: 'due' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -46,6 +46,7 @@
     return state.tasks.filter(function (task) {
       if (q && String(task.title || '').toLowerCase().indexOf(q) < 0 && String(task.tag || '').toLowerCase().indexOf(q) < 0) return false;
       if (state.group && task.tag !== state.group) return false;
+      if (state.assignee && String(task.assignee_employee_id || '') !== String(state.assignee)) return false;
       return true;
     });
   }
@@ -68,7 +69,7 @@
     if (!state.projectId && state.projects[0]) state.projectId = state.projects[0].id;
     if (state.projectId && !state.projects.some(function (p) { return String(p.id) === String(state.projectId); })) state.projectId = state.projects[0] ? state.projects[0].id : null;
     var tasks = state.projectId
-      ? await sb.from('project_tasks').select('id,project_id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,sort_order,created_at').eq('tenant_id', tenant).eq('project_id', state.projectId).is('deleted_at', null).order('sort_order')
+      ? await sb.from('project_tasks').select('id,project_id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,sort_order,created_at,is_important,is_urgent').eq('tenant_id', tenant).eq('project_id', state.projectId).is('deleted_at', null).order('sort_order')
       : { data: [] };
     if (tasks.error) throw tasks.error;
     state.tasks = tasks.data || [];
@@ -161,12 +162,42 @@
       (rows || '<p class="pj-muted">' + esc(t('No files yet', 'Belum ada fail')) + '</p>') + '</div>';
   }
 
+
+  function quadOf(task) {
+    if (task.is_important && task.is_urgent) return 'do';
+    if (task.is_important) return 'schedule';
+    if (task.is_urgent) return 'delegate';
+    return 'later';
+  }
+  function matrixHtml(list) {
+    var quads = [
+      { key: 'do', en: 'Do', bm: 'Buat' },
+      { key: 'schedule', en: 'Schedule', bm: 'Jadual' },
+      { key: 'delegate', en: 'Delegate', bm: 'Serah' },
+      { key: 'later', en: 'Defer', bm: 'Tangguh' }
+    ];
+    var open = list.filter(function (task) { return task.column_key !== 'done'; });
+    open.sort(function (a, b) {
+      if (state.sort === 'title') return String(a.title).localeCompare(String(b.title));
+      return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
+    });
+    var staff = '<option value="">' + esc(t('All staff', 'Semua staff')) + '</option>' + state.employees.map(function (e) {
+      return '<option value="' + esc(e.id) + '"' + (String(state.assignee) === String(e.id) ? ' selected' : '') + '>' + esc(nick(e)) + '</option>';
+    }).join('');
+    var bars = '<div class="pj-tools"><select id="pj-assignee">' + staff + '</select><select id="pj-sort"><option value="due"' + (state.sort === 'due' ? ' selected' : '') + '>' + esc(t('Sort by due', 'Susun ikut due')) + '</option><option value="title"' + (state.sort === 'title' ? ' selected' : '') + '>' + esc(t('Sort by title', 'Susun ikut tajuk')) + '</option></select></div>';
+    return bars + '<div class="pj-matrix">' + quads.map(function (q) {
+      var rows = open.filter(function (task) { return quadOf(task) === q.key; }).map(function (task) {
+        return '<div class="pj-card" draggable="true" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><small>' + esc(nick(empById(task.assignee_employee_id))) + ' · ' + esc(fmt(task.due_date)) + '</small></div>';
+      }).join('');
+      return '<div class="pj-quad" data-quad="' + q.key + '"><b>' + esc(t(q.en, q.bm)) + '</b><div class="pj-quad-list">' + (rows || '<p class="pj-muted">' + esc(t('Empty', 'Kosong')) + '</p>') + '</div></div>';
+    }).join('') + '</div>';
+  }
   function pageHtml() {
     var proj = currentProject();
     var list = visibleTasks();
     var st = stats(state.tasks);
     var tab = state.tab;
-    var body = tab === 'list' ? listHtml(list) : tab === 'timeline' ? timelineHtml(list) : tab === 'files' ? filesHtml() : tab === 'overview' ? overviewHtml(proj, st) : boardHtml(list);
+    var body = tab === 'list' ? listHtml(list) : tab === 'timeline' ? timelineHtml(list) : tab === 'files' ? filesHtml() : tab === 'overview' ? overviewHtml(proj, st) : tab === 'matrix' ? matrixHtml(list) : boardHtml(list);
     return '<style>' + css() + '</style><div class="pj-wrap">' +
       '<aside class="pj-side"><div class="pj-side-h">' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
       state.projects.map(function (p, i) {
@@ -180,8 +211,8 @@
       '</div><div class="pj-tools"><input id="pj-q" placeholder="' + esc(t('Search tasks', 'Cari task')) + '" value="' + esc(state.filter) + '">' +
       '<select id="pj-g"><option value="">' + esc(t('Group by tag', 'Kumpul ikut tag')) + '</option>' + TAGS.map(function (tag) { return '<option' + (state.group === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select>' +
       '<button type="button" id="pj-task" class="btn btn-sm btn-primary"' + (proj ? '' : ' disabled') + '>+ ' + esc(t('New Task', 'Task Baru')) + '</button></div></header>' +
-      '<nav class="pj-tabs">' + ['board', 'timeline', 'list', 'files', 'overview'].map(function (key) {
-        var labels = { board: [ 'Board', 'Papan' ], timeline: [ 'Timeline', 'Garis Masa' ], list: [ 'List', 'Senarai' ], files: [ 'Files', 'Fail' ], overview: [ 'Overview', 'Ringkasan' ] };
+      '<nav class="pj-tabs">' + ['board', 'matrix', 'timeline', 'list', 'files', 'overview'].map(function (key) {
+        var labels = { board: [ 'Board', 'Papan' ], timeline: [ 'Timeline', 'Garis Masa' ], list: [ 'List', 'Senarai' ], files: [ 'Files', 'Fail' ], overview: [ 'Overview', 'Ringkasan' ], matrix: [ 'Matrix', 'Matrix' ] };
         return '<button type="button" data-tab="' + key + '"' + (tab === key ? ' class="on"' : '') + '>' + esc(t(labels[key][0], labels[key][1])) + '</button>';
       }).join('') + '</nav>' + body + statsHtml(st) + '</section></div>' + formHtml();
   }
@@ -220,7 +251,7 @@
       '.pj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}' +
       '.pj-top{justify-content:space-between;gap:12px;flex-wrap:wrap} .pj-top small{display:block;color:var(--text-3)}' +
       '.pj-tools input,.pj-tools select,.pj-detail input,.pj-detail select,.pj-detail textarea,.pj-modal input,.pj-modal select{border:1px solid var(--border);background:var(--bg-card);color:var(--text);border-radius:8px;padding:6px 8px}' +
-      '.pj-tabs{display:flex;gap:12px;border-bottom:1px solid var(--border)} .pj-tabs button{padding:8px 2px;color:var(--text-2)} .pj-tabs button.on{color:var(--primary);border-bottom:2px solid var(--primary)}' +
+      '.pj-tabs{display:flex;gap:12px;border-bottom:1px solid var(--border);overflow-x:auto} .pj-tabs button{padding:8px 2px;color:var(--text-2);white-space:nowrap} .pj-tabs button.on{color:var(--primary);border-bottom:2px solid var(--primary)} .pj-matrix{display:grid;grid-template-columns:1fr 1fr;gap:10px} .pj-quad{border:1px solid var(--border);border-radius:12px;padding:8px;min-height:160px} .pj-quad-list{max-height:220px;overflow-y:auto}' +
       '.pj-board{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px}' +
       '.pj-col{min-width:230px;flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px}' +
       '.pj-col header{display:flex;justify-content:space-between;margin-bottom:8px}' +
@@ -252,6 +283,19 @@
     main.querySelectorAll('[data-tab]').forEach(function (btn) {
       btn.onclick = function () { state.tab = btn.getAttribute('data-tab'); paint(); };
     });
+    var assignee = document.getElementById('pj-assignee');
+    if (assignee) assignee.onchange = function () { state.assignee = assignee.value; paint(); };
+    var sort = document.getElementById('pj-sort');
+    if (sort) sort.onchange = function () { state.sort = sort.value; paint(); };
+    main.querySelectorAll('.pj-quad').forEach(function (zone) {
+      zone.ondragover = function (e) { e.preventDefault(); };
+      zone.ondrop = function (e) {
+        e.preventDefault();
+        var id = e.dataTransfer.getData('text/plain');
+        if (id) setQuad(id, zone.getAttribute('data-quad'));
+      };
+    });
+
     var q = document.getElementById('pj-q');
     if (q) q.oninput = function () { state.filter = q.value; paint(); q.focus(); };
     var g = document.getElementById('pj-g');
@@ -294,6 +338,12 @@
       var pub = sb.storage.from('company-assets').getPublicUrl(path);
       return { name: f.name, url: pub && pub.data ? pub.data.publicUrl : '' };
     });
+  }
+  async function setQuad(id, quad) {
+    var patch = { is_important: quad === 'do' || quad === 'schedule', is_urgent: quad === 'do' || quad === 'delegate' };
+    var up = await sb.from('project_tasks').update(patch).eq('id', id).eq('tenant_id', tid());
+    if (up.error) { showToast(up.error.message, 'error'); return; }
+    refresh();
   }
   async function refresh() {
     try { await loadAll(); await loadFiles(); paint(); }
