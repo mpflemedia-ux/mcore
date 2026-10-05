@@ -6756,8 +6756,8 @@ function _dbLoadShiftsCard() {
   const cfg = (APP.tenant.config && APP.tenant.config.shift_hours) || {}
   const meta = {
     morning: { en: 'Morning', bm: 'Pagi', start: '09:00', end: '17:00', bg: '#F5E6C8', fg: '#8A5A00' },
-    mid: { en: 'Mid', bm: 'Tengah', start: '12:00', end: '20:00', bg: '#F3D7D2', fg: '#8A3B32' },
-    closing: { en: 'Closing', bm: 'Tutup', start: '16:00', end: '22:00', bg: '#D7E8D4', fg: '#2F6B45' },
+    mid: { en: 'Afternoon', bm: 'Tengahari', start: '12:00', end: '20:00', bg: '#F3D7D2', fg: '#8A3B32' },
+    closing: { en: 'Night', bm: 'Malam', start: '16:00', end: '22:00', bg: '#D7E8D4', fg: '#2F6B45' },
     off: { en: 'Off', bm: 'Off', start: '', end: '', bg: '#E7E5E4', fg: '#57534E' }
   }
   Object.keys(meta).forEach(k => { if (cfg[k]) { meta[k].start = cfg[k].start || meta[k].start; meta[k].end = cfg[k].end || meta[k].end } })
@@ -6786,7 +6786,7 @@ function _dbLoadShiftsCard() {
       '<button type="button" class="db-btn" id="db-shift-today">' + (picked === today ? (isBm ? 'Hari ini' : 'Today') : picked) + '</button>' +
       '<button type="button" class="db-btn" id="db-shift-next">›</button></div>' +
       '<div style="max-height:180px;overflow-y:auto">' + (list || '<div style="color:var(--db-text3);font-size:13px">' + (isBm ? 'Tiada syif pada tarikh ini' : 'No shift on this date') + '</div>') + '</div>' +
-      '<div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + counts.morning + ' ' + (isBm ? 'pagi' : 'morning') + ' · ' + counts.mid + ' ' + (isBm ? 'tengah' : 'mid') + ' · ' + counts.closing + ' ' + (isBm ? 'tutup' : 'closing') + '</div>'
+      '<div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + counts.morning + ' ' + (isBm ? 'pagi' : 'morning') + ' · ' + counts.mid + ' ' + (isBm ? 'tengahari' : 'afternoon') + ' · ' + counts.closing + ' ' + (isBm ? 'malam' : 'night') + '</div>'
     document.getElementById('db-shift-prev').onclick = function () { _dbShiftStep(-1) }
     document.getElementById('db-shift-next').onclick = function () { _dbShiftStep(1) }
     document.getElementById('db-shift-today').onclick = function () { window._dbShiftDay = today; _dbLoadShiftsCard() }
@@ -37434,7 +37434,7 @@ if('serviceWorker' in navigator){
 <script src="./booking.js?v=1"></script>
 <script src="./booking-shortcut.js?v=1"></script>
 <script src="./projects.js?v=3"></script>
-<script src="./shifts.js?v=3"></script>
+<script src="./shifts.js?v=4"></script>
 <script src="./booking-token-fix.js?v=1"></script>
 <script src="./booking-public-contrast.js?v=1"></script>
 <script src="./pv-desc-wrap.js?v=1"></script>
