@@ -5674,6 +5674,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&document.getElement
 
 function _dbShortcutsHtml(isBm) {
   // Scroll to cards ON the dashboard (not navigate away to other modules)
+  // LOCK: every new dashboard card (id db-sec-*) must get a shortcut item here, same order as the card.
   const items = [
     { id:'db-kpi-grid', icon:'ti-layout-grid', en:'KPI Cards', bm:'Kad KPI' },
     { id:'db-sec-trend', icon:'ti-chart-area-line', en:'Sales Trend', bm:'Trend Jualan' },
@@ -5688,6 +5689,7 @@ function _dbShortcutsHtml(isBm) {
     { id:'db-sec-stock', icon:'ti-box', en:'Low Stock', bm:'Stok Rendah' },
     ...(isPlatformAdmin() ? [{ id:'db-sec-content', icon:'ti-brand-tiktok', en:'Content Planner', bm:'Perancang Kandungan' }] : []),
     ...((typeof _planAllowsPlanner === 'function' && _planAllowsPlanner()) ? [{ id:'db-sec-planner', icon:'ti-calendar-event', en:'Planner', bm:'Perancang' }] : []),
+    { id:'db-sec-projects', icon:'ti-layout-kanban', en:'Projects', bm:'Projek' },
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
     { id:'db-sec-ai', icon:'ti-sparkles', en:'AI Insight', bm:'AI Insight' },
