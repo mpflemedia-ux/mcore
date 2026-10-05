@@ -1,1 +1,80 @@
-FROM_DISK
+name: og-link-preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Write JPEG after magic-byte check, patch og:image, commit, delete workflow
+        run: |
+          python3 - << 'PY'
+          import base64, hashlib, subprocess
+          from pathlib import Path
+          src = Path('.github/workflows/og-link-preview.yml').read_text(encoding='utf-8')
+          lines = src.splitlines()
+          try:
+              a = lines.index('# BEGIN_JPEG_B64')
+              b = lines.index('# END_JPEG_B64')
+          except ValueError:
+              raise SystemExit('markers missing')
+          chunk = []
+          for line in lines[a+1:b]:
+              if not line.startswith('# '):
+                  raise SystemExit('bad b64 line')
+              chunk.append(line[2:].strip())
+          raw = base64.b64decode(''.join(chunk), validate=True)
+          digest = hashlib.sha256(raw).hexdigest()
+          expect = 'd718b92ef34bcd57887fa52388f954d590ae00b154b7154053ba2b928a456f92'
+          if raw[:3] != b'\xff\xd8\xff' or len(raw) != 29748 or digest != expect:
+              raise SystemExit('refuse commit magic=%s len=%s sha=%s' % (raw[:3].hex(), len(raw), digest))
+          Path('assets').mkdir(exist_ok=True)
+          Path('assets/og.jpg').write_bytes(raw)
+          print('wrote assets/og.jpg', len(raw), digest)
+
+          root = Path('index.html')
+          text = root.read_text(encoding='utf-8')
+          old_img = '<meta property="og:image" content="https://mpflemedia.my/assets/icon-512.png">'
+          new_img = '<meta property="og:image" content="https://mpflemedia.my/assets/og.jpg">'
+          old_w = '<meta property="og:image:width" content="512">'
+          new_w = '<meta property="og:image:width" content="303">'
+          old_h = '<meta property="og:image:height" content="512">'
+          new_h = '<meta property="og:image:height" content="304">'
+          old_tw = '<meta name="twitter:image" content="https://mpflemedia.my/assets/icon-512.png">'
+          new_tw = '<meta name="twitter:image" content="https://mpflemedia.my/assets/og.jpg">'
+          for label, old in (('og:image', old_img), ('width', old_w), ('height', old_h), ('twitter', old_tw)):
+              if text.count(old) != 1:
+                  raise SystemExit('%s count %s' % (label, text.count(old)))
+          text = text.replace(old_img, new_img, 1)
+          # type tag once, immediately after the image url
+          type_tag = '<meta property="og:image:type" content="image/jpeg">'
+          if type_tag not in text:
+              text = text.replace(new_img, new_img + '\n' + type_tag, 1)
+          text = text.replace(old_w, new_w, 1)
+          text = text.replace(old_h, new_h, 1)
+          text = text.replace(old_tw, new_tw, 1)
+          if 'https://mpflemedia.my/assets/icon-512.png' not in text:
+              raise SystemExit('json-ld logo unexpectedly removed')
+          if text.count('https://mpflemedia.my/assets/og.jpg') != 2:
+              raise SystemExit('jpg url count %s' % text.count('https://mpflemedia.my/assets/og.jpg'))
+          if not text.startswith('<!DOCTYPE html>'):
+              raise SystemExit('doctype lost')
+          root.write_text(text, encoding='utf-8')
+          print('patched index.html')
+
+          subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'add', 'assets/og.jpg', 'index.html'], check=True)
+          subprocess.run(['git', 'rm', '-f', '.github/workflows/og-link-preview.yml'], check=True)
+          subprocess.run(['git', 'commit', '-m', 'fix(og): square jpeg link preview for WhatsApp'], check=True)
+          subprocess.run(['git', 'pull', '--rebase', 'origin', 'main'], check=True)
+          subprocess.run(['git', 'push', 'origin', 'HEAD:main'], check=True)
+          print(subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
+          PY
+# BEGIN_JPEG_B64
