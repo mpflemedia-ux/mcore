@@ -1974,6 +1974,7 @@ const NAV_ITEMS = [
   { section:'Main' },
   { id:'dashboard',  icon:'ti-layout-dashboard', label_en:'Dashboard',   label_bm:'Papan Pemuka', module:'core' },
   { id:'planner',    icon:'ti-calendar-event',   label_en:'Planner',     label_bm:'Perancang',    module:'planner' },
+  { id:'projects',   icon:'ti-layout-kanban',    label_en:'Projects',    label_bm:'Projek',       module:'core' },
   { section:'Operations' },
   { id:'crm',        icon:'ti-users',             label_en:'Customers',   label_bm:'Pelanggan',    module:'crm' },
   { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },
@@ -3390,6 +3391,7 @@ function openPage(page, params={}) {
         }, 2500);
         break
       case 'planner':    _safeRender(() => renderPlanner(params)); break
+      case 'projects':   _safeRender(() => renderProjects(params)); break
       case 'crm':        _safeRender(() => renderCRM(params)); break
       case 'sales':      _safeRender(() => renderSales(params)); break
       case 'pos':        _safeRender(() => renderPOS(params)); break
@@ -37285,6 +37287,7 @@ if('serviceWorker' in navigator){
 <script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=6"></script>
 <script src="./booking-shortcut.js?v=1"></script>
+<script src="./projects.js?v=1"></script>
 <script src="./booking-token-fix.js?v=1"></script>
 <script src="./booking-public-contrast.js?v=2"></script>
 <script src="./pv-desc-wrap.js?v=1"></script>
