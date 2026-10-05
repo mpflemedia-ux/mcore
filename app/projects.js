@@ -8,7 +8,7 @@
   ];
   var TAGS = ['Planning', 'Design', 'Development', 'Testing', 'Launch', 'Admin'];
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], projectId: null, tab: 'board', filter: '', group: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], projectId: null, tab: 'board', filter: '', group: '' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -146,8 +146,19 @@
     return '<div class="pj-scroll"><div class="pj-tl"><div class="pj-weeks">' + weeks.map(function (w) { return '<span>' + esc(fmt(w.toISOString().slice(0, 10))) + '</span>'; }).join('') + '</div>' + (groups || '<p>' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</div></div>';
   }
 
+  function fileFolder() {
+    return tid() + '/projects/' + state.projectId;
+  }
   function filesHtml() {
-    return '<div class="pj-empty">' + esc(t('Files come in a later phase. Board, list, and timeline are live.', 'Fail masuk fasa kemudian. Papan, senarai, dan timeline dah hidup.')) + '</div>';
+    var proj = currentProject();
+    if (!proj) return '<div class="pj-empty">' + esc(t('Create a project first', 'Buat projek dulu')) + '</div>';
+    var rows = (state.files || []).map(function (f) {
+      var href = f.url || '#';
+      return '<div class="pj-file"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a><button type="button" data-file="' + esc(f.name) + '">' + esc(t('Delete', 'Padam')) + '</button></div>';
+    }).join('');
+    return '<div class="pj-files"><label class="btn btn-sm btn-primary">' + esc(t('Upload file', 'Muat naik fail')) +
+      '<input id="pj-file" type="file" hidden></label>' +
+      (rows || '<p class="pj-muted">' + esc(t('No files yet', 'Belum ada fail')) + '</p>') + '</div>';
   }
 
   function pageHtml() {
@@ -223,7 +234,7 @@
       '.pj-scroll{overflow-x:auto} .pj-table{width:100%;border-collapse:collapse} .pj-table th,.pj-table td{border-bottom:1px solid var(--border);padding:8px;text-align:left;white-space:nowrap}' +
       '.pj-tl{min-width:760px} .pj-weeks{display:grid;grid-template-columns:repeat(8,1fr);color:var(--text-3);font-size:11px;margin-bottom:8px}' +
       '.pj-trow{display:grid;grid-template-columns:180px 1fr;gap:8px;align-items:center;margin:4px 0} .pj-track{position:relative;height:14px;background:var(--border);border-radius:8px} .pj-track i{position:absolute;top:2px;bottom:2px;background:var(--primary);border-radius:6px}' +
-      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
+      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-file{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:8px 10px} .pj-file a{color:var(--primary);word-break:break-all} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
       '@media(max-width:800px){.pj-wrap{flex-direction:column}.pj-side{width:auto;max-height:160px}.pj-stats{grid-template-columns:repeat(2,1fr)}}';
   }
 
@@ -266,10 +277,26 @@
         moveTask(ev.dataTransfer.getData('text/plain'), col.getAttribute('data-col'));
       };
     });
+    var fileInput = document.getElementById('pj-file');
+    if (fileInput) fileInput.onchange = function () { uploadFile(fileInput.files && fileInput.files[0]); };
+    main.querySelectorAll('[data-file]').forEach(function (btn) {
+      btn.onclick = function () { deleteFile(btn.getAttribute('data-file')); };
+    });
   }
 
+  async function loadFiles() {
+    state.files = [];
+    if (!state.projectId) return;
+    var listed = await sb.storage.from('company-assets').list(fileFolder(), { limit: 100, sortBy: { column: 'name', order: 'asc' } });
+    if (listed.error) throw listed.error;
+    state.files = (listed.data || []).filter(function (f) { return f && f.name && f.name !== '.emptyFolderPlaceholder'; }).map(function (f) {
+      var path = fileFolder() + '/' + f.name;
+      var pub = sb.storage.from('company-assets').getPublicUrl(path);
+      return { name: f.name, url: pub && pub.data ? pub.data.publicUrl : '' };
+    });
+  }
   async function refresh() {
-    try { await loadAll(); paint(); }
+    try { await loadAll(); await loadFiles(); paint(); }
     catch (err) {
       var main = document.getElementById('main');
       var msg = (err && err.message) || String(err);
@@ -327,6 +354,26 @@
     refresh();
   }
 
+  function safeName(name) {
+    var clean = String(name || 'file').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+    return (Date.now() + '-' + (clean || 'file')).slice(0, 120);
+  }
+  async function uploadFile(file) {
+    if (!file || !state.projectId) return;
+    var path = fileFolder() + '/' + safeName(file.name);
+    var up = await sb.storage.from('company-assets').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+    if (up.error) { showToast(up.error.message, 'error'); return; }
+    showToast(t('Uploaded', 'Dimuat naik'), 'success');
+    state.tab = 'files';
+    refresh();
+  }
+  async function deleteFile(name) {
+    if (!name || !state.projectId) return;
+    var gone = await sb.storage.from('company-assets').remove([fileFolder() + '/' + name]);
+    if (gone.error) { showToast(gone.error.message, 'error'); return; }
+    state.tab = 'files';
+    refresh();
+  }
   window.renderProjects = function () {
     if (typeof canAccess === 'function' && !canAccess('core')) {
       showToast(t('Access denied', 'Akses ditolak'), 'error');
