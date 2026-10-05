@@ -28698,7 +28698,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
   <div class="card" style="max-width:600px;padding:20px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="emp-name" class="form-input" value="${_aiEscapeHtml(src.name||'')}"></div>
-      <div class="form-group" style="grid-column:1/-1"><label class="form-label">Staff ID</label><input id="emp-staff-code" class="form-input" value="${_aiEscapeHtml(src.staff_code||'')}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label class="form-label">Staff ID</label><input id="emp-staff-code" class="form-input" data-no-titlecase="1" autocapitalize="characters" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" value="${_aiEscapeHtml(String(src.staff_code||'').trim().toUpperCase())}"></div>
       <div class="form-group"><label class="form-label">${t.ic}</label><input id="emp-ic" class="form-input" placeholder="${t.icPh}" value="${src.ic_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.position}</label><input id="emp-position" class="form-input" value="${_aiEscapeHtml(src.position||'')}"></div>
       <div class="form-group"><label class="form-label">${t.workBase||(isBm?'Lokasi kerja':'Work base')}</label>
@@ -28806,7 +28806,7 @@ async function _employeeSave(id, fromApplicantId) {
   if(!name) { showToast(isBm?'Nama diperlukan':'Name is required', 'error'); return }
   if(ic && !validateIC(ic)) { showToast(isBm?'Format IC tidak sah (XXXXXX-XX-XXXX)':'Invalid IC format (XXXXXX-XX-XXXX)', 'error'); return }
   // Staff ID: empty string stored as NULL. Generate only on insert when the box is empty.
-  let staffCode = String((document.getElementById('emp-staff-code')||{}).value||'').trim()
+  let staffCode = String((document.getElementById('emp-staff-code')||{}).value||'').trim().toUpperCase()
   if(!id && !staffCode) {
     let code = (APP.tenant && APP.tenant.code != null) ? String(APP.tenant.code).trim() : ''
     let tname = (APP.tenant && APP.tenant.name != null) ? String(APP.tenant.name) : ''
@@ -28832,7 +28832,7 @@ async function _employeeSave(id, fromApplicantId) {
         if(m) { const n = parseInt(m[1], 10); if(n > maxN) maxN = n }
       })
     } catch(e) {}
-    staffCode = prefix + '-' + String(maxN + 1).padStart(4, '0')
+    staffCode = (prefix + '-' + String(maxN + 1).padStart(4, '0')).toUpperCase()
   }
   const payload = {
     tenant_id: APP.tenant.id,
