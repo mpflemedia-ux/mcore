@@ -17,11 +17,32 @@ jobs:
           python3 - << 'PY'
           import base64, hashlib
           from pathlib import Path
+          expected = {
+            'p00': 'a14ba0928f712353b96147244d9127c560c74acb2fd21cdcacf6153aaf1aa599',
+            'p01': 'cd5782b00d236ee73b2cf8ceade3faaca31cc8221a5fedd8ef60aa826fd307bf',
+            'p02': '456b55ce3a9229fa8e41d2757fa26310984d1fa9e454d7c3a5756556938ba02a',
+            'p03': '04ddc08e299cc6b180ea0845f1c81811dfdae4040ab16489533c99535bfa90df',
+            'p04': 'de6569774cefd66be47ca3c2b3890639a84c4a44214c175fd31fb96b7d2061ed',
+            'p05': '327696a8231fbafc173a382179a3ea51e355b3b695257a316bedd5a0429936cd',
+            'p06': '96577c2a1eb53659fc089ec4f59f4ae9e08c496b7d2219b1ae142c20a998c33f',
+            'p07': '0228db25fc5759a3177b1af740231661a7b90546a77e6fa49049eb509aee8d9f',
+            'p08': 'cd3302a1cbf65bcf23d3f6a2dff57be488192e178099d315fd08aac07ef66323',
+            'p09': '472fa1ec34a94fe444eb6a68d2e30cc777c082909bfe2b976360733ef281a51f',
+            'p10': '5223759356bd7d3756cefb46dde14d965758ace1d449bb93dda65ff6743962b6',
+            'p11': 'ec82044cf3e3f86b12fa0be1b098ae562eee973ca747c6ca6d8d6b85712d59e4',
+            'p12': '3cd5575415004a83e1c0b63883a7b357ae5ce20b1f6dec2512235fb6f9c0947a',
+          }
           parts = sorted(Path('.github/ogb64').glob('p*'))
           if len(parts) != 13:
               raise SystemExit('part count %s' % len(parts))
-          b64 = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
-          raw = base64.b64decode(b64, validate=True)
+          chunks = []
+          for p in parts:
+              text = p.read_text(encoding='utf-8').strip()
+              digest = hashlib.sha256(text.encode()).hexdigest()
+              if expected.get(p.name) != digest:
+                  raise SystemExit('part %s sha %s len %s' % (p.name, digest, len(text)))
+              chunks.append(text)
+          raw = base64.b64decode(''.join(chunks), validate=True)
           digest = hashlib.sha256(raw).hexdigest()
           expect = 'd7244eeefe6529cfaa5d319ca5609cc3428d201b119daef92df1dc05a8fd77b6'
           if digest != expect or len(raw) != 116849 or raw[:2] != b'\xff\xd8':
@@ -64,8 +85,7 @@ jobs:
           anchor = '<title>M-Core by MPFLE Media \u2014 Business OS for Malaysian SMEs</title>'
           if h.count(anchor) != 1:
               raise SystemExit('app title count %s' % h.count(anchor))
-          head = h[:8000]
-          if 'og:image' in head:
+          if 'property="og:image"' in h[:12000]:
               raise SystemExit('app head already has og:image')
           insert = anchor + '\n' + '\n'.join([
               '<meta property="og:image" content="https://mpflemedia.my/assets/og.jpg">',
