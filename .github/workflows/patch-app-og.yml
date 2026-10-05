@@ -1,0 +1,83 @@
+name: patch-app-og
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Insert og:image metas into app/index.html head
+        run: |
+          python3 - << 'ENDPATCH'
+          from pathlib import Path
+          import sys
+          p = Path('app/index.html')
+          text = p.read_text(encoding='utf-8')
+          anchor = '<title>M-Core by MPFLE Media — Business OS for Malaysian SMEs</title>'
+          n_anchor = text.count(anchor)
+          if n_anchor != 1:
+              print('FAIL anchor count', n_anchor)
+              sys.exit(1)
+          print('OK anchor once')
+          og_before = text.count('og:')
+          tw_before = text.count('twitter:')
+          if og_before != 0:
+              print('FAIL og: count before', og_before)
+              sys.exit(1)
+          if tw_before != 0:
+              print('FAIL twitter: count before', tw_before)
+              sys.exit(1)
+          print('OK og:0 twitter:0 before')
+          insert = (
+              anchor + '\n'
+              + '<meta property="og:type" content="website">\n'
+              + '<meta property="og:title" content="M-Core by MPFLE Media — Business OS for Malaysian SMEs">\n'
+              + '<meta property="og:image" content="https://mpflemedia.my/assets/og.jpg">\n'
+              + '<meta property="og:image:type" content="image/jpeg">\n'
+              + '<meta property="og:image:width" content="400">\n'
+              + '<meta property="og:image:height" content="400">\n'
+              + '<meta name="twitter:image" content="https://mpflemedia.my/assets/og.jpg">'
+          )
+          text = text.replace(anchor, insert, 1)
+          p.write_text(text, encoding='utf-8')
+          print('wrote', p)
+          text2 = p.read_text(encoding='utf-8')
+          if text2.count(anchor) != 1:
+              print('FAIL title after', text2.count(anchor))
+              sys.exit(1)
+          # 'og:image' also appears in og:image:type/width/height; count the exact meta tag
+          if text2.count('property="og:image" content="https://mpflemedia.my/assets/og.jpg"') != 1:
+              print('FAIL og:image meta after', text2.count('property="og:image" content="https://mpflemedia.my/assets/og.jpg"'))
+              sys.exit(1)
+          if 'https://mpflemedia.my/assets/og.jpg' not in text2:
+              print('FAIL og.jpg url missing')
+              sys.exit(1)
+          # ensure insert sits immediately after title
+          i = text2.find(anchor)
+          expected_next = '\n<meta property="og:type" content="website">'
+          if text2[i+len(anchor):i+len(anchor)+len(expected_next)] != expected_next:
+              print('FAIL not immediately after title')
+              print(repr(text2[i+len(anchor):i+len(anchor)+120]))
+              sys.exit(1)
+          print('OK after: title once, og:image once, placement correct')
+          ENDPATCH
+      - name: Commit patch and remove this workflow
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- app/index.html
+          if git diff --cached --quiet; then
+            echo "index unchanged"
+          else
+            git commit -m "fix(app): og:image for WhatsApp link preview on /app links"
+          fi
+          git rm -f -- .github/workflows/patch-app-og.yml
+          git commit -m "chore: remove one-shot app og workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
