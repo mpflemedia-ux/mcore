@@ -1986,6 +1986,7 @@ const NAV_ITEMS = [
   { id:'production', icon:'ti-tools',             label_en:'Production',  label_bm:'Pengeluaran',  module:'production' },
   { section:'People' },
   { id:'hr',         icon:'ti-id-badge-2',        label_en:'HR & Payroll', label_bm:'SDM & Gaji',   module:'hr' },
+  { id:'shifts',     icon:'ti-calendar-time',    label_en:'Shifts',      label_bm:'Syif',         module:'hr' },
   { id:'applicants', icon:'ti-user-search',       label_en:'Job Applicants', label_bm:'Permohonan Kerja', module:'hr_recruit' },
   { section:'Finance' },
   { id:'accounting', icon:'ti-calculator',        label_en:'Accounting',  label_bm:'Perakaunan',   module:'accounting' },
@@ -3401,6 +3402,7 @@ function openPage(page, params={}) {
       case 'purchasing': _safeRender(() => renderPurchasing(params)); break
       case 'production': _safeRender(() => renderProduction(params)); break
       case 'hr':         _safeRender(() => renderHR(params)); break
+      case 'shifts':     _safeRender(() => renderShifts(params)); break
       case 'applicants': _safeRender(() => renderJobApplicants(params)); break
       case 'accounting': _safeRender(() => renderAccounting(params)); break
       case 'expense_claims':
@@ -5690,6 +5692,7 @@ function _dbShortcutsHtml(isBm) {
     ...(isPlatformAdmin() ? [{ id:'db-sec-content', icon:'ti-brand-tiktok', en:'Content Planner', bm:'Perancang Kandungan' }] : []),
     ...((typeof _planAllowsPlanner === 'function' && _planAllowsPlanner()) ? [{ id:'db-sec-planner', icon:'ti-calendar-event', en:'Planner', bm:'Perancang' }] : []),
     { id:'db-sec-projects', icon:'ti-layout-kanban', en:'Projects', bm:'Projek' },
+    { id:'db-sec-shifts', icon:'ti-calendar-time', en:'Shifts', bm:'Syif' },
     { id:'db-sec-people', icon:'ti-user-circle', en:'People', bm:'Pasukan' },
     { id:'db-sec-tracker', icon:'ti-calendar-stats', en:'Att. Tracker', bm:'Tracker' },
     { id:'db-sec-ai', icon:'ti-sparkles', en:'AI Insight', bm:'AI Insight' },
@@ -5948,6 +5951,17 @@ function renderDashboard() {
         <button type="button" class="db-btn" onclick="openPage('projects')"><i class="ti ti-arrow-right"></i> ${isBm?'Buka penuh':'Open full'}</button>
       </div>
       <div id="db-projects-body"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
+    </div>
+
+    <div class="db-card" style="margin-bottom:14px" id="db-sec-shifts">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div>
+          <div class="db-card-title"><i class="ti ti-calendar-time"></i> ${isBm?'Syif':'Shifts'}</div>
+          <div style="font-size:12px;color:var(--db-text3);margin-top:2px">${isBm?'Minggu ini':'This week'}</div>
+        </div>
+        <button type="button" class="db-btn" onclick="openPage('shifts')"><i class="ti ti-arrow-right"></i> ${isBm?'Buka penuh':'Open full'}</button>
+      </div>
+      <div id="db-shifts-body"><div style="color:var(--db-text4);font-size:13px;padding:8px 0;text-align:center">${isBm?'Memuatkan...':'Loading...'}</div></div>
     </div>
 
     <!-- People (narrower) + Staff Attendance Tracker (wider) -->
@@ -6692,6 +6706,7 @@ async function loadDashboardData() {
   try { await _dbRenderLowStock() } catch(e) { console.warn('low stock', e) }
   try { if (typeof _planAllowsPlanner === 'function' && _planAllowsPlanner() && typeof _dbLoadPlanner === 'function') _dbLoadPlanner() } catch(e) { console.warn('planner', e) }
   try { if (typeof _dbLoadProjectsCard === 'function') _dbLoadProjectsCard() } catch(e) { console.warn('projects card', e) }
+  try { if (typeof _dbLoadShiftsCard === 'function') _dbLoadShiftsCard() } catch(e) { console.warn('shifts card', e) }
   try { _dbLoadPeople() } catch(e) { console.warn('people', e) }
   try { _dbLoadRecentActivity() } catch(e) { console.warn('activity', e) }
   try { _dbLoadAttTracker() } catch(e) { console.warn('att tracker', e) }
@@ -6713,6 +6728,27 @@ async function loadDashboardData() {
 }
 
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
+
+
+function _dbLoadShiftsCard() {
+  const el = document.getElementById('db-shifts-body')
+  if (!el || !APP.tenant?.id) return
+  const isBm = APP.language === 'bm'
+  const now = new Date()
+  const day = now.getDay() || 7
+  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1)
+  const sun = new Date(mon.getTime()); sun.setDate(mon.getDate() + 6)
+  const from = mon.toISOString().slice(0, 10)
+  const to = sun.toISOString().slice(0, 10)
+  sb.from('shifts').select('id,kind').eq('tenant_id', APP.tenant.id).is('deleted_at', null).gte('shift_date', from).lte('shift_date', to)
+    .then(function (res) {
+      if (res.error) { el.textContent = res.error.message; return }
+      const rows = res.data || []
+      const open = rows.filter(function (r) { return r.kind === 'open' }).length
+      el.innerHTML = '<div style="font-size:22px;font-weight:700">' + rows.length + '</div><div style="font-size:12px;color:var(--db-text3)">' +
+        (isBm ? 'syif minggu ini' : 'shifts this week') + ' · ' + open + ' ' + (isBm ? 'kosong' : 'open') + '</div>'
+    })
+}
 
 function _dbOpenProject(id) {
   openPage('projects', id ? { id: id } : {})
@@ -37355,6 +37391,7 @@ if('serviceWorker' in navigator){
 <script src="./booking.js?v=1"></script>
 <script src="./booking-shortcut.js?v=1"></script>
 <script src="./projects.js?v=3"></script>
+<script src="./shifts.js?v=1"></script>
 <script src="./booking-token-fix.js?v=1"></script>
 <script src="./booking-public-contrast.js?v=1"></script>
 <script src="./pv-desc-wrap.js?v=1"></script>
