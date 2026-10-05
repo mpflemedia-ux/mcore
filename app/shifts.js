@@ -1,10 +1,27 @@
 (function () {
   var KINDS = [
-    { key: 'morning', en: 'Morning', bm: 'Pagi', hours: 8, bg: '#F5E6C8', fg: '#8A5A00' },
-    { key: 'mid', en: 'Mid', bm: 'Tengah', hours: 8, bg: '#F3D7D2', fg: '#8A3B32' },
-    { key: 'closing', en: 'Closing', bm: 'Tutup', hours: 6, bg: '#D7E8D4', fg: '#2F6B45' },
-    { key: 'off', en: 'Off', bm: 'Off', hours: 0, bg: '#E7E5E4', fg: '#57534E' }
+    { key: 'morning', en: 'Morning', bm: 'Pagi', start: '09:00', end: '17:00', bg: '#F5E6C8', fg: '#8A5A00' },
+    { key: 'mid', en: 'Mid', bm: 'Tengah', start: '12:00', end: '20:00', bg: '#F3D7D2', fg: '#8A3B32' },
+    { key: 'closing', en: 'Closing', bm: 'Tutup', start: '16:00', end: '22:00', bg: '#D7E8D4', fg: '#2F6B45' },
+    { key: 'off', en: 'Off', bm: 'Off', start: '', end: '', bg: '#E7E5E4', fg: '#57534E' }
   ];
+  function spanHours(k) {
+    if (!k.start || !k.end) return 0;
+    var a = k.start.split(':'), b = k.end.split(':');
+    var mins = (Number(b[0]) * 60 + Number(b[1])) - (Number(a[0]) * 60 + Number(a[1]));
+    if (mins < 0) mins += 24 * 60;
+    return Math.round(mins / 6) / 10;
+  }
+  function applyHours() {
+    var cfg = (APP.tenant && APP.tenant.config && APP.tenant.config.shift_hours) || {};
+    KINDS.forEach(function (k) {
+      if (k.key === 'off') return;
+      var row = cfg[k.key] || {};
+      if (row.start) k.start = row.start;
+      if (row.end) k.end = row.end;
+    });
+  }
+  function range(k) { return k.start && k.end ? k.start + '–' + k.end : ''; }
   var state = { week: null, employees: [], shifts: [], leaves: [], swaps: [] };
 
   function t(en, bm) { return (typeof APP !== 'undefined' && APP.language === 'bm') ? bm : en; }
@@ -49,7 +66,7 @@
     var s = shiftAt(emp, day);
     if (!s) return '<button type="button" class="sh-cell" data-emp="' + esc(emp.id) + '" data-day="' + day + '" style="background:transparent;color:var(--text-3)">+</button>';
     var k = kindOf(s.kind);
-    return '<button type="button" class="sh-cell" data-emp="' + esc(emp.id) + '" data-day="' + day + '" style="background:' + k.bg + ';color:' + k.fg + '">' + esc(t(k.en, k.bm)) + '</button>';
+    return '<button type="button" class="sh-cell" data-emp="' + esc(emp.id) + '" data-day="' + day + '" style="background:' + k.bg + ';color:' + k.fg + '">' + esc(t(k.en, k.bm)) + '<br>' + esc(range(k)) + '</button>';
   }
 
   function gridHtml() {
@@ -68,7 +85,7 @@
   function hours(emp) {
     return days().reduce(function (n, d) {
       var s = shiftAt(emp, iso(d));
-      return n + (s ? kindOf(s.kind).hours : 0);
+      return n + (s ? spanHours(kindOf(s.kind)) : 0);
     }, 0);
   }
   function openShifts() {
@@ -103,8 +120,17 @@
       '</div>';
   }
 
+
+  function hoursForm() {
+    return '<div class="sh-card"><b>' + esc(t('Shift hours', 'Jam syif')) + '</b><div class="sh-muted">' + esc(t('Tenant setting. Not payroll.', 'Set tenant. Bukan gaji.')) + '</div>' +
+      KINDS.filter(function (k) { return k.key !== 'off'; }).map(function (k) {
+        return '<label class="sh-muted">' + esc(t(k.en, k.bm)) +
+          ' <input data-sh="' + k.key + '" data-part="start" type="time" value="' + esc(k.start) + '">' +
+          ' <input data-sh="' + k.key + '" data-part="end" type="time" value="' + esc(k.end) + '"></label>';
+      }).join('') + '<div><button type="button" id="sh-save-hours" class="btn btn-sm btn-primary">' + esc(t('Save hours', 'Simpan jam')) + '</button></div></div>';
+  }
   function legend() {
-    return '<div class="sh-muted">' + KINDS.map(function (k) { return '<span style="display:inline-block;margin-right:10px;color:' + k.fg + '">' + esc(t(k.en, k.bm)) + '</span>'; }).join('') + esc(t('Leave', 'Cuti')) + '</div>';
+    return '<div class="sh-muted">' + KINDS.map(function (k) { return '<span style="display:inline-block;margin-right:10px;color:' + k.fg + '">' + esc(t(k.en, k.bm)) + ' ' + esc(range(k)) + '</span>'; }).join('') + esc(t('Leave', 'Cuti')) + '</div>' + hoursForm();
   }
 
   function paint() {
@@ -117,6 +143,8 @@
     document.getElementById('sh-prev').onclick = function () { state.week = addDays(state.week, -7); refresh(); };
     document.getElementById('sh-next').onclick = function () { state.week = addDays(state.week, 7); refresh(); };
     document.getElementById('sh-today').onclick = function () { state.week = monday(new Date()); refresh(); };
+    var saveHours = document.getElementById('sh-save-hours');
+    if (saveHours) saveHours.onclick = saveShiftHours;
     main.querySelectorAll('.sh-cell[data-emp]').forEach(function (btn) {
       btn.onclick = function () { cycle(btn.getAttribute('data-emp'), btn.getAttribute('data-day')); };
     });
@@ -170,6 +198,22 @@
     refresh();
   }
 
+
+  async function saveShiftHours() {
+    var patch = {};
+    document.querySelectorAll('[data-sh]').forEach(function (el) {
+      var key = el.getAttribute('data-sh');
+      patch[key] = patch[key] || {};
+      patch[key][el.getAttribute('data-part')] = el.value;
+    });
+    try {
+      if (typeof _tenantConfigPatch === 'function') await _tenantConfigPatch({ shift_hours: patch });
+      else throw new Error('config save missing');
+      applyHours();
+      showToast(t('Saved', 'Disimpan'), 'success');
+      paint();
+    } catch (err) { showToast((err && err.message) || String(err), 'error'); }
+  }
   async function refresh() {
     try { await load(); paint(); }
     catch (err) {
@@ -186,6 +230,7 @@
       return;
     }
     state.week = state.week || monday(new Date());
+    applyHours();
     refresh();
   };
 })();
