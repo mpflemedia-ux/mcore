@@ -21,7 +21,14 @@
       if (row.end) k.end = row.end;
     });
   }
-  function range(k) { return k.start && k.end ? k.start + '–' + k.end : ''; }
+  function clock(hm) {
+    var p = String(hm || '').split(':');
+    if (!p[0]) return '';
+    var h = Number(p[0]);
+    var m = p[1] || '00';
+    return (h % 12 || 12) + ':' + m + ' ' + (h >= 12 ? 'PM' : 'AM');
+  }
+  function range(k) { return k.start && k.end ? clock(k.start) + '–' + clock(k.end) : ''; }
   var state = { week: null, employees: [], shifts: [], leaves: [], swaps: [] };
 
   function t(en, bm) { return (typeof APP !== 'undefined' && APP.language === 'bm') ? bm : en; }
@@ -54,7 +61,7 @@
       '.sh-grid{border-collapse:collapse;min-width:720px;width:100%}' +
       '.sh-grid th,.sh-grid td{border-bottom:1px solid var(--border);padding:8px;font-size:12px;text-align:center}' +
       '.sh-grid th:first-child,.sh-grid td:first-child{text-align:left;position:sticky;left:0;background:var(--bg-card)}' +
-      '.sh-cell{border:0;border-radius:8px;padding:6px 4px;min-width:72px;font-size:11px;cursor:pointer}' +
+      '.sh-cell{border:0;border-radius:8px;padding:6px 4px;min-width:84px;font-size:11px;cursor:pointer;line-height:1.2;white-space:normal}' +
       '.sh-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}' +
       '.sh-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px}' +
       '.sh-muted{color:var(--text-2);font-size:12px}';
