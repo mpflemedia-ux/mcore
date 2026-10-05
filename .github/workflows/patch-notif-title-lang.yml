@@ -1,1 +1,93 @@
-x
+name: patch-notif-title-lang
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Patch loadNotifications DB title lang in app/index.html
+        run: |
+          python3 - << 'ENDPATCH'
+          from pathlib import Path
+          import sys
+          p = Path('app/index.html')
+          text = p.read_text(encoding='utf-8')
+          old = "    const catIcon = { sales:'ti-receipt', inventory:'ti-box', purchasing:'ti-shopping-cart', finance:'ti-report-money', hr:'ti-users' }\n    const catPage = { sales:'sales', inventory:'inventory', purchasing:'purchasing', finance:'accounting', hr:'hr' }\n    dbNotifs.forEach(n => {\n      if (prefs[n.category] === false) return\n      const it = {\n        kind: n.category, ref: n.id, ts: new Date(n.created_at).getTime(),\n        icon: catIcon[n.category] || 'ti-bell', color: 'var(--primary)',\n        text: n.title, meta: n.body || '',"
+          new = "    const catIcon = { sales:'ti-receipt', inventory:'ti-box', purchasing:'ti-shopping-cart', finance:'ti-report-money', hr:'ti-users' }\n    const catPage = { sales:'sales', inventory:'inventory', purchasing:'purchasing', finance:'accounting', hr:'hr' }\n    const _bm2en = [[/^Entri jurnal baru/,'New journal entry'],[/^Kehadiran direkod/,'Attendance recorded'],[/^Produk baru ditambah/,'New product added'],[/^Invois baru:/,'New invoice:'],[/^Pekerja baru ditambah/,'New employee added'],[/^Bayaran diterima/,'Payment received'],[/^Baucar bayaran baru/,'New payment voucher'],[/^Jualan POS baru/,'New POS sale'],[/^PO baru/,'New PO'],[/^Tuntutan perbelanjaan baru/,'New expense claim'],[/^GRN direkod/,'GRN recorded']]\n    const _ttl = s => { s = String(s||''); if (isBm) return s; for (const [re,en] of _bm2en) if (re.test(s)) return s.replace(re,en); return s }\n    dbNotifs.forEach(n => {\n      if (prefs[n.category] === false) return\n      const it = {\n        kind: n.category, ref: n.id, ts: new Date(n.created_at).getTime(),\n        icon: catIcon[n.category] || 'ti-bell', color: 'var(--primary)',\n        text: _ttl(n.title), meta: n.body || '',"
+          anchors = [
+            ("text: n.title, meta: n.body || '',", "text: n.title mapping"),
+            ("const catIcon = { sales:'ti-receipt', inventory:'ti-box', purchasing:'ti-shopping-cart', finance:'ti-report-money', hr:'ti-users' }", "catIcon"),
+            ("const catPage = { sales:'sales', inventory:'inventory', purchasing:'purchasing', finance:'accounting', hr:'hr' }", "catPage"),
+            (old, "full old block"),
+          ]
+          for a, label in anchors:
+              n = text.count(a)
+              if n != 1:
+                  print('FAIL anchor', label, 'count', n)
+                  sys.exit(1)
+              print('OK once', label)
+          if '_bm2en' in text or 'text: _ttl(n.title)' in text:
+              print('already patched')
+          else:
+              text = text.replace(old, new, 1)
+              p.write_text(text, encoding='utf-8')
+              print('wrote', p)
+          text2 = p.read_text(encoding='utf-8')
+          for a, label in [
+              ("const _bm2en = [[/^Entri jurnal baru/", "_bm2en"),
+              ("text: _ttl(n.title), meta: n.body || '',", "text: _ttl(n.title)"),
+              ("const _ttl = s => { s = String(s||''); if (isBm) return s;", "_ttl"),
+          ]:
+              n = text2.count(a)
+              if n != 1:
+                  print('FAIL after', label, 'count', n)
+                  sys.exit(1)
+              print('OK after once', label)
+          if 'text: n.title, meta: n.body ||' in text2:
+              print('FAIL old text: n.title still present')
+              sys.exit(1)
+          ENDPATCH
+      - name: Syntax-check _ttl fragment with node
+        run: |
+          cat > /tmp/ttl-check.js << 'ENDJS'
+          const isBm = false;
+          const _bm2en = [[/^Entri jurnal baru/,'New journal entry'],[/^Kehadiran direkod/,'Attendance recorded'],[/^Produk baru ditambah/,'New product added'],[/^Invois baru:/,'New invoice:'],[/^Pekerja baru ditambah/,'New employee added'],[/^Bayaran diterima/,'Payment received'],[/^Baucar bayaran baru/,'New payment voucher'],[/^Jualan POS baru/,'New POS sale'],[/^PO baru/,'New PO'],[/^Tuntutan perbelanjaan baru/,'New expense claim'],[/^GRN direkod/,'GRN recorded']]
+          const _ttl = s => { s = String(s||''); if (isBm) return s; for (const [re,en] of _bm2en) if (re.test(s)) return s.replace(re,en); return s }
+          ENDJS
+          node --check /tmp/ttl-check.js
+          python3 - << 'ENDCHK'
+          from pathlib import Path
+          import sys
+          html = Path('app/index.html').read_text(encoding='utf-8')
+          if html.count('const _bm2en') != 1:
+              print('FAIL _bm2en count', html.count('const _bm2en')); sys.exit(1)
+          if html.count('text: _ttl(n.title)') != 1:
+              print('FAIL _ttl mapping count'); sys.exit(1)
+          i = html.find('async function loadNotifications()')
+          j = html.find('const _bm2en')
+          k = html.find('text: _ttl(n.title)')
+          if not (i >= 0 and i < j < k):
+              print('FAIL order', i, j, k); sys.exit(1)
+          print('OK placement inside file after loadNotifications')
+          ENDCHK
+      - name: Commit patch and remove this workflow
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- app/index.html
+          if git diff --cached --quiet; then
+            echo "index unchanged"
+          else
+            git commit -m "fix(notifications): show DB notification titles in English when UI is English"
+          fi
+          git rm -f -- .github/workflows/patch-notif-title-lang.yml
+          git commit -m "chore: remove one-shot notif title lang workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
