@@ -6749,13 +6749,13 @@ async function _dbLoadProjectsCard() {
     const overdue = mine.filter(x => x.due_date && String(x.due_date).slice(0, 10) < today && x.column_key !== 'done').length
     return { ...p, total, done, overdue, pct: total ? Math.round(done * 100 / total) : 0, active: !total || done < total }
   }).filter(p => p.active)
-  const shown = rows.slice(0, 3)
+  const shown = rows
   const overdueN = rows.reduce((n, p) => n + p.overdue, 0)
   if (!shown.length) {
     el.innerHTML = '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Semua projek siap' : 'All projects done') + '</div>'
     return
   }
-  el.innerHTML = shown.map(p => {
+  el.innerHTML = '<div style="max-height:390px;overflow-y:auto">' + shown.map(p => {
     const sub = p.kind === 'client' ? (names[p.customer_id] || (isBm ? 'Klien' : 'Client')) : (isBm ? 'Dalaman' : 'Internal')
     const late = p.overdue ? '<span style="color:var(--danger);font-size:12px">' + p.overdue + ' ' + (isBm ? 'lewat' : 'overdue') + '</span>' : ''
     return '<button type="button" onclick="_dbOpenProject(\'' + p.id + '\')" style="display:block;width:100%;text-align:left;padding:8px 0;border-top:1px solid var(--border);color:inherit">' +
@@ -6763,7 +6763,7 @@ async function _dbLoadProjectsCard() {
       '<div style="font-size:12px;color:var(--db-text3);margin:2px 0 6px"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (p.color || '#22D3EE') + ';margin-right:6px"></i>' + sub + '</div>' +
       '<div style="height:6px;background:var(--border);border-radius:99px;overflow:hidden"><i style="display:block;height:100%;width:' + p.pct + '%;background:#22D3EE"></i></div>' +
       '<div style="text-align:right;font-size:11px;color:var(--db-text3)">' + p.pct + '%</div></button>'
-  }).join('') + '<div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + rows.length + ' ' + (isBm ? 'sedang jalan' : 'in progress') + ' · ' + overdueN + ' ' + (isBm ? 'lewat' : 'overdue') + '</div>'
+  }).join('') + '</div><div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + rows.length + ' ' + (isBm ? 'sedang jalan' : 'in progress') + ' · ' + overdueN + ' ' + (isBm ? 'lewat' : 'overdue') + '</div>'
 }
 
 
