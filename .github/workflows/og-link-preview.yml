@@ -1,0 +1,96 @@
+name: og-link-preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Write square JPEG and point link-preview meta at it
+        run: |
+          python3 - << 'PY'
+          import base64, hashlib
+          from pathlib import Path
+          parts = sorted(Path('.github/ogb64').glob('p*'))
+          if len(parts) != 13:
+              raise SystemExit('part count %s' % len(parts))
+          b64 = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+          raw = base64.b64decode(b64, validate=True)
+          digest = hashlib.sha256(raw).hexdigest()
+          expect = 'd7244eeefe6529cfaa5d319ca5609cc3428d201b119daef92df1dc05a8fd77b6'
+          if digest != expect or len(raw) != 116849 or raw[:2] != b'\xff\xd8':
+              raise SystemExit('bad image %s %s' % (digest, len(raw)))
+          Path('assets').mkdir(exist_ok=True)
+          Path('assets/og.jpg').write_bytes(raw)
+          print('wrote assets/og.jpg', len(raw))
+
+          root = Path('index.html')
+          text = root.read_text(encoding='utf-8')
+          old = (
+              '<meta property="og:image" content="https://mpflemedia.my/assets/icon-512.png">\n'
+              '<meta property="og:image:width" content="512">\n'
+              '<meta property="og:image:height" content="512">'
+          )
+          new = (
+              '<meta property="og:image" content="https://mpflemedia.my/assets/og.jpg">\n'
+              '<meta property="og:image:type" content="image/jpeg">\n'
+              '<meta property="og:image:width" content="1200">\n'
+              '<meta property="og:image:height" content="1200">'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('root og block count %s' % text.count(old))
+          text = text.replace(old, new, 1)
+          old_tw = '<meta name="twitter:image" content="https://mpflemedia.my/assets/icon-512.png">'
+          new_tw = '<meta name="twitter:image" content="https://mpflemedia.my/assets/og.jpg">'
+          if text.count(old_tw) != 1:
+              raise SystemExit('twitter count %s' % text.count(old_tw))
+          text = text.replace(old_tw, new_tw, 1)
+          if not text.startswith('<!DOCTYPE html>'):
+              raise SystemExit('root doctype lost')
+          if 'assets/icon-512.png' not in text:
+              raise SystemExit('json-ld logo unexpectedly removed')
+          root.write_text(text, encoding='utf-8')
+          print('patched index.html')
+
+          app = Path('app/index.html')
+          h = app.read_text(encoding='utf-8')
+          before = len(h)
+          anchor = '<title>M-Core by MPFLE Media \u2014 Business OS for Malaysian SMEs</title>'
+          if h.count(anchor) != 1:
+              raise SystemExit('app title count %s' % h.count(anchor))
+          head = h[:8000]
+          if 'og:image' in head:
+              raise SystemExit('app head already has og:image')
+          insert = anchor + '\n' + '\n'.join([
+              '<meta property="og:image" content="https://mpflemedia.my/assets/og.jpg">',
+              '<meta property="og:image:type" content="image/jpeg">',
+              '<meta property="og:image:width" content="1200">',
+              '<meta property="og:image:height" content="1200">',
+              '<meta name="twitter:card" content="summary">',
+              '<meta name="twitter:image" content="https://mpflemedia.my/assets/og.jpg">',
+          ])
+          h = h.replace(anchor, insert, 1)
+          if not h.startswith('<!DOCTYPE html>'):
+              raise SystemExit('app doctype lost')
+          if len(h) < before or len(h) - before > 800:
+              raise SystemExit('app size delta suspicious %s' % (len(h) - before))
+          app.write_text(h, encoding='utf-8')
+          print('patched app/index.html delta', len(h) - before)
+          PY
+      - name: Commit and remove this workflow
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/og.jpg index.html app/index.html
+          git rm -r .github/ogb64
+          git rm -f .github/workflows/og-link-preview.yml
+          git diff --cached --quiet && echo 'nothing' && exit 0
+          git commit -m "fix(og): square jpeg link preview for WhatsApp"
+          git pull --rebase origin main
+          git push origin HEAD:main
