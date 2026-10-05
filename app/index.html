@@ -6730,24 +6730,48 @@ async function loadDashboardData() {
 function t_dash(key) { return LANG[APP.language].dashboard[key] || key }
 
 
+function _dbShiftClock(hm) {
+  const p = String(hm || '').split(':')
+  if (!p[0]) return ''
+  const h = Number(p[0])
+  return (h % 12 || 12) + ':' + (p[1] || '00') + ' ' + (h >= 12 ? 'PM' : 'AM')
+}
 function _dbLoadShiftsCard() {
   const el = document.getElementById('db-shifts-body')
   if (!el || !APP.tenant?.id) return
   const isBm = APP.language === 'bm'
   const now = new Date()
-  const day = now.getDay() || 7
-  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1)
-  const sun = new Date(mon.getTime()); sun.setDate(mon.getDate() + 6)
-  const from = mon.toISOString().slice(0, 10)
-  const to = sun.toISOString().slice(0, 10)
-  sb.from('shifts').select('id,kind').eq('tenant_id', APP.tenant.id).is('deleted_at', null).gte('shift_date', from).lte('shift_date', to)
-    .then(function (res) {
-      if (res.error) { el.textContent = res.error.message; return }
-      const rows = res.data || []
-      const open = rows.filter(function (r) { return r.kind === 'open' }).length
-      el.innerHTML = '<div style="font-size:22px;font-weight:700">' + rows.length + '</div><div style="font-size:12px;color:var(--db-text3)">' +
-        (isBm ? 'syif minggu ini' : 'shifts this week') + ' · ' + open + ' ' + (isBm ? 'kosong' : 'open') + '</div>'
-    })
+  const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0')
+  const cfg = (APP.tenant.config && APP.tenant.config.shift_hours) || {}
+  const meta = {
+    morning: { en: 'Morning', bm: 'Pagi', start: '09:00', end: '17:00', bg: '#F5E6C8', fg: '#8A5A00' },
+    mid: { en: 'Mid', bm: 'Tengah', start: '12:00', end: '20:00', bg: '#F3D7D2', fg: '#8A3B32' },
+    closing: { en: 'Closing', bm: 'Tutup', start: '16:00', end: '22:00', bg: '#D7E8D4', fg: '#2F6B45' },
+    off: { en: 'Off', bm: 'Off', start: '', end: '', bg: '#E7E5E4', fg: '#57534E' }
+  }
+  Object.keys(meta).forEach(k => { if (cfg[k]) { meta[k].start = cfg[k].start || meta[k].start; meta[k].end = cfg[k].end || meta[k].end } })
+  Promise.all([
+    sb.from('shifts').select('employee_id,kind').eq('tenant_id', APP.tenant.id).is('deleted_at', null).eq('shift_date', today),
+    sb.from('employees').select('id,name,nickname').eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  ]).then(function (res) {
+    if (res[0].error) { el.textContent = res[0].error.message; return }
+    const names = {}
+    ;(res[1].data || []).forEach(e => { names[e.id] = (e.nickname && e.nickname.trim()) || e.name })
+    const rows = (res[0].data || []).filter(r => r.kind !== 'off')
+    const counts = { morning: 0, mid: 0, closing: 0 }
+    rows.forEach(r => { if (counts[r.kind] != null) counts[r.kind] += 1 })
+    const list = rows.slice(0, 8).map(r => {
+      const m = meta[r.kind] || meta.morning
+      const when = m.start ? _dbShiftClock(m.start) + '–' + _dbShiftClock(m.end) : ''
+      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--border)">' +
+        '<b>' + String(names[r.employee_id] || '—').replace(/[&<>]/g, '') + '</b>' +
+        '<span style="background:' + m.bg + ';color:' + m.fg + ';border-radius:8px;padding:2px 8px;font-size:12px">' +
+        (isBm ? m.bm : m.en) + ' ' + when + '</span></div>'
+    }).join('')
+    el.innerHTML = '<div style="font-size:12px;color:var(--db-text3);margin-bottom:6px">' + (isBm ? 'Hari ini' : 'Today') + ' · ' + today + '</div>' +
+      '<div style="max-height:240px;overflow-y:auto">' + (list || '<div style="color:var(--db-text3);font-size:13px">' + (isBm ? 'Tiada syif hari ini' : 'No shift today') + '</div>') + '</div>' +
+      '<div style="font-size:12px;color:var(--db-text3);padding-top:6px">' + counts.morning + ' ' + (isBm ? 'pagi' : 'morning') + ' · ' + counts.mid + ' ' + (isBm ? 'tengah' : 'mid') + ' · ' + counts.closing + ' ' + (isBm ? 'tutup' : 'closing') + '</div>'
+  })
 }
 
 function _dbOpenProject(id) {
