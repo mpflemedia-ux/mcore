@@ -94,6 +94,12 @@
       '<label>' + esc(t('Start', 'Mula')) + '<input data-f="start_date" type="date" value="' + esc(String(task.start_date || '').slice(0, 10)) + '"></label>' +
       '<label>' + esc(t('Due', 'Due')) + '<input data-f="due_date" type="date" value="' + esc(String(task.due_date || '').slice(0, 10)) + '"></label>' +
       '<label>' + esc(t('Progress', 'Kemajuan')) + '<input data-f="progress" type="number" min="0" max="100" value="' + pct + '"></label>' +
+      '<label>' + esc(t('Matrix', 'Matrix')) + '<select data-f="matrix">' +
+        '<option value="do"' + (quadOf(task) === 'do' ? ' selected' : '') + '>' + esc(t('Important + urgent', 'Penting + segera')) + '</option>' +
+        '<option value="schedule"' + (quadOf(task) === 'schedule' ? ' selected' : '') + '>' + esc(t('Important only', 'Penting sahaja')) + '</option>' +
+        '<option value="delegate"' + (quadOf(task) === 'delegate' ? ' selected' : '') + '>' + esc(t('Urgent only', 'Segera sahaja')) + '</option>' +
+        '<option value="later"' + (quadOf(task) === 'later' ? ' selected' : '') + '>' + esc(t('Neither', 'Dua-dua tidak')) + '</option>' +
+      '</select></label>' +
       '<label>' + esc(t('Notes', 'Nota')) + '<textarea data-f="notes">' + esc(task.notes || '') + '</textarea></label>' +
       '<div class="pj-row"><button type="button" class="btn btn-sm btn-primary" data-act="save">' + esc(t('Save', 'Simpan')) + '</button>' +
       '<button type="button" class="btn btn-sm btn-outline" data-act="del">' + esc(t('Delete', 'Padam')) + '</button></div></details></article>';
@@ -187,7 +193,7 @@
     var bars = '<div class="pj-tools"><select id="pj-assignee">' + staff + '</select><select id="pj-sort"><option value="due"' + (state.sort === 'due' ? ' selected' : '') + '>' + esc(t('Sort by due', 'Susun ikut due')) + '</option><option value="title"' + (state.sort === 'title' ? ' selected' : '') + '>' + esc(t('Sort by title', 'Susun ikut tajuk')) + '</option></select></div>';
     return bars + '<div class="pj-matrix">' + quads.map(function (q) {
       var rows = open.filter(function (task) { return quadOf(task) === q.key; }).map(function (task) {
-        return '<div class="pj-card" draggable="true" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><small>' + esc(nick(empById(task.assignee_employee_id))) + ' · ' + esc(fmt(task.due_date)) + '</small></div>';
+        return '<div class="pj-card" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><small>' + esc(nick(empById(task.assignee_employee_id))) + ' · ' + esc(fmt(task.due_date)) + '</small></div>';
       }).join('');
       return '<div class="pj-quad" data-quad="' + q.key + '"><b>' + esc(t(q.en, q.bm)) + '</b><div class="pj-quad-list">' + (rows || '<p class="pj-muted">' + esc(t('Empty', 'Kosong')) + '</p>') + '</div></div>';
     }).join('') + '</div>';
@@ -287,14 +293,6 @@
     if (assignee) assignee.onchange = function () { state.assignee = assignee.value; paint(); };
     var sort = document.getElementById('pj-sort');
     if (sort) sort.onchange = function () { state.sort = sort.value; paint(); };
-    main.querySelectorAll('.pj-quad').forEach(function (zone) {
-      zone.ondragover = function (e) { e.preventDefault(); };
-      zone.ondrop = function (e) {
-        e.preventDefault();
-        var id = e.dataTransfer.getData('text/plain');
-        if (id) setQuad(id, zone.getAttribute('data-quad'));
-      };
-    });
 
     var q = document.getElementById('pj-q');
     if (q) q.oninput = function () { state.filter = q.value; paint(); q.focus(); };
@@ -385,7 +383,9 @@
       start_date: val('start_date') || null,
       due_date: val('due_date') || null,
       progress: Math.max(0, Math.min(100, Number(val('progress')) || 0)),
-      notes: val('notes')
+      notes: val('notes'),
+      is_important: val('matrix') === 'do' || val('matrix') === 'schedule',
+      is_urgent: val('matrix') === 'do' || val('matrix') === 'delegate'
     };
     var up = await sb.from('project_tasks').update(patch).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
