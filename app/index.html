@@ -5207,6 +5207,10 @@ async function _tryJoinInvite(user, token, fullName) {
 
 async function loadUserSession(user, opts={}) {
   if(!user){showAuthPage();return}
+  try {
+    const pub = new URLSearchParams(location.search)
+    if(pub.get('public_quo') || pub.get('public_inv')) return
+  } catch(e) {}
   if(_sessionLoadPromise && _sessionLoadUserId === user.id && !opts.skipPin) return _sessionLoadPromise
   _sessionLoadUserId = user.id
   _sessionLoadPromise = (async () => {
