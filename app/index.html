@@ -24354,16 +24354,16 @@ async function _invExportEInvoice(id) {
 
 async function _quoPublicLink(id) {
   const isBm = APP.language==='bm'
-  const {data: quo} = await sb.from('quotations').select('id,public_token,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
-  if(!quo) { showToast('Not found','error'); return }
-  let token = quo.public_token
+  const sqlHint = 'ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token text;'
+  const {data: quo, error: loadErr} = await sb.from('quotations').select('id,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(loadErr || !quo) { showToast(loadErr ? loadErr.message : 'Not found', 'error'); return }
+  const tok = await sb.from('quotations').select('public_token').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+  if(tok.error) { showToast((isBm?'Lajur token tiada. SQL: ':'Token column missing. SQL: ') + sqlHint + ' ' + tok.error.message, 'error'); return }
+  let token = tok.data && tok.data.public_token
   if(!token) {
     token = (crypto.randomUUID && crypto.randomUUID().replace(/-/g,'')) || (Date.now().toString(36)+Math.random().toString(36).slice(2))
     const {error} = await sb.from('quotations').update({ public_token: token }).eq('id',id).eq('tenant_id',APP.tenant.id)
-    if(error) {
-      showToast((isBm?'Gagal jana link. SQL: ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token text; ':'Failed. SQL: ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token text; ') + error.message, 'error')
-      return
-    }
+    if(error) { showToast((isBm?'Gagal jana link. SQL: ':'Failed. SQL: ') + sqlHint + ' ' + error.message, 'error'); return }
   }
   const base = (location.origin + location.pathname).replace(/index\.html$/,'').replace(/\/?$/, '/')
   const link = base + '?public_quo=' + encodeURIComponent(token)
