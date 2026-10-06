@@ -29338,11 +29338,15 @@ async function renderApplicantForm(id) {
   </div>
 
   <style>
-    #app-form-fit{overflow-x:auto;-webkit-overflow-scrolling:touch}
-    #app-form-fit .app-row{display:grid;grid-template-columns:repeat(3,minmax(168px,1fr));gap:12px;min-width:540px}
-    #app-form-fit .app-row2{display:grid;grid-template-columns:repeat(2,minmax(168px,1fr));gap:12px;min-width:360px}
-    #app-form-fit .form-input,#app-form-fit .form-select{width:100%;box-sizing:border-box}
-    #app-form-fit .form-label{white-space:nowrap}
+    #app-form-fit{max-width:100%;overflow-x:hidden}
+    #app-form-fit .app-row,#app-form-fit .app-row2{display:grid;grid-template-columns:1fr;gap:12px}
+    #app-form-fit .form-input,#app-form-fit .form-select{width:100%;max-width:100%;box-sizing:border-box}
+    #app-form-fit .form-label{white-space:normal}
+    #app-form-fit table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    @media(min-width:800px){
+      #app-form-fit .app-row{grid-template-columns:repeat(3,minmax(0,1fr))}
+      #app-form-fit .app-row2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
   </style>
   <div id="app-form-fit" class="card" style="max-width:900px;margin-top:16px;padding:20px">
     <div style="font-weight:700;margin-bottom:12px">${t.sec1}</div>
