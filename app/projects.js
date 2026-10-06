@@ -56,7 +56,8 @@
     var progress = list.filter(function (x) { return x.column_key === 'progress'; }).length;
     var done = list.filter(function (x) { return x.column_key === 'done'; }).length;
     var overdue = list.filter(function (x) { return x.due_date && String(x.due_date).slice(0, 10) < today && x.column_key !== 'done'; }).length;
-    var pct = total ? Math.round((done / total) * 100) : 0;
+    var sum = list.reduce(function (n, x) { return n + Math.max(0, Math.min(100, Number(x.progress) || 0)); }, 0);
+    var pct = total ? Math.round(sum / total) : 0;
     return { total: total, progress: progress, done: done, overdue: overdue, pct: pct };
   }
 
