@@ -11448,7 +11448,7 @@ async function _loadTenantPaymentHistory(tenantId) {
   if(error) { host.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">${_aiEscapeHtml(error.message)}</div>`; return }
   if(!data || !data.length) { host.innerHTML = `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${isBm?'Tiada bayaran lagi':'No payments yet'}</p></div>`; return }
   const methodLabel = m => ({ cash: isBm?'Tunai':'Cash', bank_transfer: isBm?'Pindahan Bank':'Bank Transfer', online_banking: isBm?'Perbankan Online':'Online Banking', card: isBm?'Kad':'Card' }[m] || m || '-')
-  host.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>${isBm?'Tarikh':'Date'}</th><th style="text-align:right">${isBm?'Jumlah':'Amount'}</th><th>${isBm?'Kaedah':'Method'}</th><th>${isBm?'Tempoh Liputan':'Coverage'}</th><th></th></tr></thead>
+  host.innerHTML = `<div class="app-scroll"><table><thead><tr><th>${isBm?'Tarikh':'Date'}</th><th style="text-align:right">${isBm?'Jumlah':'Amount'}</th><th>${isBm?'Kaedah':'Method'}</th><th>${isBm?'Tempoh Liputan':'Coverage'}</th><th></th></tr></thead>
     <tbody>${data.map(p=>`<tr>
       <td style="font-size:12px">${formatDate(p.payment_date)}</td>
       <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
@@ -14226,7 +14226,7 @@ async function renderSettings(params={}) {
       <div style="border-top:1px solid var(--border);padding-top:12px">
         <div style="font-weight:600;font-size:13px;margin-bottom:8px">${mp.history}</div>
         ${!myPlanPayments.length ? `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${mp.noPayments}</p></div>` :
-        `<div style="overflow-x:auto"><table><thead><tr><th>${mp.date}</th><th style="text-align:right">${mp.amount}</th><th>${mp.method}</th><th>${mp.coverage}</th></tr></thead>
+        `<div class="app-scroll"><table><thead><tr><th>${mp.date}</th><th style="text-align:right">${mp.amount}</th><th>${mp.method}</th><th>${mp.coverage}</th></tr></thead>
         <tbody>${myPlanPayments.map(p=>`<tr>
           <td style="font-size:12px">${formatDate(p.payment_date)}</td>
           <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
@@ -17058,7 +17058,7 @@ async function _pcLoadList(t, isBm) {
   const spentMap = {}
   ;(exps||[]).forEach(e => { spentMap[e.float_id] = (spentMap[e.float_id]||0) + Number(e.amount||0) })
 
-  wrap.innerHTML = `<div style="overflow-x:auto"><table>
+  wrap.innerHTML = `<div class="app-scroll"><table>
     <thead><tr>
       <th>${t.holder}</th><th>${t.date}</th><th style="text-align:right">${t.amount}</th>
       <th style="text-align:right">${t.spent}</th><th style="text-align:right">${t.balance}</th><th>Status</th>
@@ -29342,7 +29342,9 @@ async function renderApplicantForm(id) {
     #app-form-fit .app-row,#app-form-fit .app-row2{display:grid;grid-template-columns:1fr;gap:12px}
     #app-form-fit .form-input,#app-form-fit .form-select{width:100%;max-width:100%;box-sizing:border-box}
     #app-form-fit .form-label{white-space:normal}
-    #app-form-fit table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    #app-form-fit .app-scroll{width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    #app-form-fit .app-scroll table{width:640px;max-width:none;table-layout:fixed}
+    #app-form-fit .app-scroll th,#app-form-fit .app-scroll td{min-width:140px}
     @media(min-width:800px){
       #app-form-fit .app-row{grid-template-columns:repeat(3,minmax(0,1fr))}
       #app-form-fit .app-row2{grid-template-columns:repeat(2,minmax(0,1fr))}
