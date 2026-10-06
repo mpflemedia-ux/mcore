@@ -157,10 +157,13 @@
   function fileFolder() {
     return tid() + '/projects/' + state.projectId;
   }
-  function fileKind(name) {
-    var ext = String(name || '').split('.').pop().toLowerCase();
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].indexOf(ext) >= 0) return 'image';
-    if (ext === 'pdf') return 'pdf';
+  function fileKind(name, type) {
+    var mime = String(type || '').toLowerCase();
+    if (mime.indexOf('image/') === 0) return 'image';
+    if (mime.indexOf('pdf') >= 0) return 'pdf';
+    var n = String(name || '').toLowerCase();
+    if (/\.(png|jpe?g|gif|webp)$/.test(n)) return 'image';
+    if (/\.pdf$/.test(n)) return 'pdf';
     return 'file';
   }
   function filesHtml() {
@@ -168,7 +171,7 @@
     if (!proj) return '<div class="pj-empty">' + esc(t('Create a project first', 'Buat projek dulu')) + '</div>';
     var rows = (state.files || []).map(function (f) {
       var href = f.url || '#';
-      var kind = fileKind(f.name);
+      var kind = fileKind(f.name, f.type);
       var thumb = kind === 'image'
         ? '<img class="pj-thumb" src="' + esc(href) + '" alt="">'
         : '<span class="pj-thumb pj-thumb-file">' + esc(kind === 'pdf' ? 'PDF' : 'FILE') + '</span>';
@@ -360,7 +363,7 @@
     state.files = (listed.data || []).filter(function (f) { return f && f.name && f.name !== '.emptyFolderPlaceholder'; }).map(function (f) {
       var path = fileFolder() + '/' + f.name;
       var pub = sb.storage.from('company-assets').getPublicUrl(path);
-      return { name: f.name, url: pub && pub.data ? pub.data.publicUrl : '' };
+      return { name: f.name, type: f.metadata && (f.metadata.mimetype || f.metadata.contentType), url: pub && pub.data ? pub.data.publicUrl : '' };
     });
   }
   async function setQuad(id, quad) {
@@ -446,9 +449,11 @@
   async function deleteFile(name) {
     if (!name || !state.projectId) return;
     if (!window.confirm(t('Delete this file?', 'Padam fail ini?'))) return;
-    var gone = await sb.storage.from('company-assets').remove([fileFolder() + '/' + name]);
+    var path = fileFolder() + '/' + name;
+    var gone = await sb.storage.from('company-assets').remove([path]);
     if (gone.error) { showToast(gone.error.message, 'error'); return; }
     if (!gone.data || !gone.data.length) { showToast(t('Not deleted. Run the storage delete SQL.', 'Tidak dipadam. Jalankan SQL delete storage.'), 'error'); return; }
+    state.files = (state.files || []).filter(function (f) { return f.name !== name; });
     showToast(t('Deleted', 'Dipadam'), 'success');
     state.tab = 'files';
     refresh();
@@ -458,6 +463,8 @@
     var next = window.prompt(t('New file name', 'Nama fail baru'), name);
     if (!next || next === name) return;
     var clean = String(next).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+    var oldExt = (String(name).match(/\.[A-Za-z0-9]+$/) || [''])[0];
+    if (oldExt && clean.indexOf('.') < 0) clean += oldExt;
     if (!clean) { showToast(t('Invalid name', 'Nama tidak sah'), 'error'); return; }
     var moved = await sb.storage.from('company-assets').move(fileFolder() + '/' + name, fileFolder() + '/' + clean);
     if (moved.error) { showToast(moved.error.message, 'error'); return; }
