@@ -193,7 +193,7 @@
     var bars = '<div class="pj-tools"><select id="pj-assignee">' + staff + '</select><select id="pj-sort"><option value="due"' + (state.sort === 'due' ? ' selected' : '') + '>' + esc(t('Sort by due', 'Susun ikut due')) + '</option><option value="title"' + (state.sort === 'title' ? ' selected' : '') + '>' + esc(t('Sort by title', 'Susun ikut tajuk')) + '</option></select></div>';
     return bars + '<div class="pj-matrix">' + quads.map(function (q) {
       var rows = open.filter(function (task) { return quadOf(task) === q.key; }).map(function (task) {
-        return '<div class="pj-card" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><small>' + esc(nick(empById(task.assignee_employee_id))) + ' · ' + esc(fmt(task.due_date)) + '</small></div>';
+        return '<div class="pj-mcard" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><span>' + esc(nick(empById(task.assignee_employee_id)) || t('Unassigned', 'Tiada assignee')) + '</span><span>' + esc(fmt(task.due_date)) + '</span></div>';
       }).join('');
       return '<div class="pj-quad" data-quad="' + q.key + '"><b>' + esc(t(q.en, q.bm)) + '</b><div class="pj-quad-list">' + (rows || '<p class="pj-muted">' + esc(t('Empty', 'Kosong')) + '</p>') + '</div></div>';
     }).join('') + '</div>';
@@ -257,7 +257,7 @@
       '.pj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}' +
       '.pj-top{justify-content:space-between;gap:12px;flex-wrap:wrap} .pj-top small{display:block;color:var(--text-3)}' +
       '.pj-tools input,.pj-tools select,.pj-detail input,.pj-detail select,.pj-detail textarea,.pj-modal input,.pj-modal select{border:1px solid var(--border);background:var(--bg-card);color:var(--text);border-radius:8px;padding:6px 8px}' +
-      '.pj-main{min-width:0;overflow-x:auto} .pj-top,.pj-tools,.pj-tabs{max-width:100%} .pj-tabs{display:flex;gap:12px;border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch} .pj-tabs button{padding:8px 2px;color:var(--text-2);white-space:nowrap} .pj-tabs button.on{color:var(--primary);border-bottom:2px solid var(--primary)} .pj-matrix{display:grid;grid-template-columns:1fr 1fr;gap:10px} .pj-quad{border:1px solid var(--border);border-radius:12px;padding:8px;min-height:160px} .pj-quad-list{max-height:220px;overflow-y:auto}' +
+      '.pj-main{min-width:0;overflow-x:auto} .pj-top,.pj-tools,.pj-tabs{max-width:100%} .pj-tabs{display:flex;gap:12px;border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch} .pj-tabs button{padding:8px 2px;color:var(--text-2);white-space:nowrap} .pj-tabs button.on{color:var(--primary);border-bottom:2px solid var(--primary)} .pj-matrix{display:grid;grid-template-columns:1fr;gap:10px} .pj-quad{border:1px solid var(--border);border-radius:12px;padding:10px;min-height:72px} .pj-quad>b{display:block;margin-bottom:6px} .pj-quad-list{max-height:220px;overflow-y:auto} .pj-mcard{display:flex;flex-direction:column;gap:2px;padding:8px;border:1px solid var(--border);border-radius:10px;margin-top:6px} .pj-mcard b{font-size:14px;line-height:1.35;word-break:break-word} .pj-mcard span{font-size:12px;color:var(--text-2)} @media(min-width:800px){.pj-matrix{grid-template-columns:1fr 1fr}}' +
       '.pj-board{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px}' +
       '.pj-col{min-width:230px;flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px}' +
       '.pj-col header{display:flex;justify-content:space-between;margin-bottom:8px}' +
