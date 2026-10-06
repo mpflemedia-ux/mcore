@@ -157,12 +157,25 @@
   function fileFolder() {
     return tid() + '/projects/' + state.projectId;
   }
+  function fileKind(name) {
+    var ext = String(name || '').split('.').pop().toLowerCase();
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].indexOf(ext) >= 0) return 'image';
+    if (ext === 'pdf') return 'pdf';
+    return 'file';
+  }
   function filesHtml() {
     var proj = currentProject();
     if (!proj) return '<div class="pj-empty">' + esc(t('Create a project first', 'Buat projek dulu')) + '</div>';
     var rows = (state.files || []).map(function (f) {
       var href = f.url || '#';
-      return '<div class="pj-file"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a><button type="button" data-file="' + esc(f.name) + '">' + esc(t('Delete', 'Padam')) + '</button></div>';
+      var kind = fileKind(f.name);
+      var thumb = kind === 'image'
+        ? '<img class="pj-thumb" src="' + esc(href) + '" alt="">'
+        : '<span class="pj-thumb pj-thumb-file">' + esc(kind === 'pdf' ? 'PDF' : 'FILE') + '</span>';
+      return '<article class="pj-file">' + thumb +
+        '<div class="pj-file-main"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a></div>' +
+        '<div class="pj-file-acts"><button type="button" data-act="file-rename" data-file="' + esc(f.name) + '">' + esc(t('Rename', 'Tukar nama')) + '</button>' +
+        '<button type="button" class="pj-del" data-act="file-del" data-file="' + esc(f.name) + '">' + esc(t('Delete', 'Padam')) + '</button></div></article>';
     }).join('');
     return '<div class="pj-files"><label class="btn btn-sm btn-primary">' + esc(t('Upload file', 'Muat naik fail')) +
       '<input id="pj-file" type="file" hidden></label>' +
@@ -272,7 +285,7 @@
       '.pj-scroll{overflow-x:auto} .pj-table{width:100%;border-collapse:collapse} .pj-table th,.pj-table td{border-bottom:1px solid var(--border);padding:8px;text-align:left;white-space:nowrap}' +
       '.pj-tl{min-width:760px} .pj-weeks{display:grid;grid-template-columns:repeat(8,1fr);color:var(--text-3);font-size:11px;margin-bottom:8px}' +
       '.pj-trow{display:grid;grid-template-columns:180px 1fr;gap:8px;align-items:center;margin:4px 0} .pj-track{position:relative;height:14px;background:var(--border);border-radius:8px} .pj-track i{position:absolute;top:2px;bottom:2px;background:var(--primary);border-radius:6px}' +
-      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-file{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:8px 10px} .pj-file a{color:var(--primary);word-break:break-all} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
+      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-file{display:flex;gap:10px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px} .pj-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:0 0 56px;background:var(--bg)} .pj-thumb-file{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text)} .pj-file-main{min-width:0;flex:1} .pj-file a{color:var(--primary);word-break:break-word} .pj-file-acts{display:flex;gap:6px;flex:0 0 auto} .pj-file-acts button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:6px 8px} .pj-del{border-color:#b91c1c !important;background:#b91c1c !important;color:#fff !important} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
       '@media(max-width:800px){.pj-wrap{flex-direction:column}.pj-side{width:auto;max-height:160px}.pj-stats{grid-template-columns:repeat(2,1fr)}}';
   }
 
@@ -331,8 +344,11 @@
     });
     var fileInput = document.getElementById('pj-file');
     if (fileInput) fileInput.onchange = function () { uploadFile(fileInput.files && fileInput.files[0]); };
-    main.querySelectorAll('[data-file]').forEach(function (btn) {
-      btn.onclick = function () { deleteFile(btn.getAttribute('data-file')); };
+    main.querySelectorAll('[data-act="file-del"]').forEach(function (btn) {
+      btn.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); deleteFile(btn.getAttribute('data-file')); };
+    });
+    main.querySelectorAll('[data-act="file-rename"]').forEach(function (btn) {
+      btn.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); renameFile(btn.getAttribute('data-file')); };
     });
   }
 
@@ -429,8 +445,22 @@
   }
   async function deleteFile(name) {
     if (!name || !state.projectId) return;
+    if (!window.confirm(t('Delete this file?', 'Padam fail ini?'))) return;
     var gone = await sb.storage.from('company-assets').remove([fileFolder() + '/' + name]);
     if (gone.error) { showToast(gone.error.message, 'error'); return; }
+    showToast(t('Deleted', 'Dipadam'), 'success');
+    state.tab = 'files';
+    refresh();
+  }
+  async function renameFile(name) {
+    if (!name || !state.projectId) return;
+    var next = window.prompt(t('New file name', 'Nama fail baru'), name);
+    if (!next || next === name) return;
+    var clean = String(next).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+    if (!clean) { showToast(t('Invalid name', 'Nama tidak sah'), 'error'); return; }
+    var moved = await sb.storage.from('company-assets').move(fileFolder() + '/' + name, fileFolder() + '/' + clean);
+    if (moved.error) { showToast(moved.error.message, 'error'); return; }
+    showToast(t('Renamed', 'Nama ditukar'), 'success');
     state.tab = 'files';
     refresh();
   }
