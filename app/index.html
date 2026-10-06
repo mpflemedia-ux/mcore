@@ -29340,7 +29340,7 @@ async function renderApplicantForm(id) {
   <style>
     #app-form-fit{max-width:100%;overflow-x:hidden}
     #app-form-fit .app-row,#app-form-fit .app-row2{display:grid;grid-template-columns:1fr;gap:12px}
-    #app-form-fit .form-input,#app-form-fit .form-select{width:100%;max-width:100%;box-sizing:border-box}
+    #app-form-fit .form-input,#app-form-fit .form-select,#app-form-fit input[type=date]{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
     #app-form-fit .form-label{white-space:normal}
     #app-form-fit .app-scroll{width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
     #app-form-fit .app-scroll table{width:640px;max-width:none;table-layout:fixed}
@@ -29421,7 +29421,7 @@ async function renderApplicantForm(id) {
     </div>
 
     <div style="font-weight:700;margin:20px 0 12px">${t.secOffice}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div class="app-row">
       <div class="form-group"><label class="form-label">${t.interviewDate}</label><input id="app-interview-date" type="date" class="form-input" value="${app.interview_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.interviewedBy}</label><input id="app-interviewed-by" class="form-input" value="${_aiEscapeHtml(app.interviewed_by||'')}"></div>
       <div class="form-group"><label class="form-label">${t.status}</label>
