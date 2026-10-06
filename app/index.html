@@ -18065,7 +18065,7 @@ async function renderFADetail(id) {
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('accounting',{view:'fixed-assets'})">← ${t.back}</div>
   </div></div>
   <div class="card" style="max-width:800px;padding:20px">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div class="app-row">
       <div><div style="color:var(--text-3);font-size:12px">${t.category}</div>${asset.category||'-'}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.purchaseDate}</div>${formatDate(asset.purchase_date)}</div>
       <div><div style="color:var(--text-3);font-size:12px">${t.status}</div><span style="color:${asset.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${asset.status==='active'?t.active:t.disposed}</span></div>
@@ -28857,7 +28857,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
     <i class="ti ti-info-circle" style="color:var(--warning)"></i> ${t.fromApplicant}
   </div>` : ''}
   <div class="card" style="max-width:600px;padding:20px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="app-row2">
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.name}</label><input id="emp-name" class="form-input" value="${_aiEscapeHtml(src.name||'')}"></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">Staff ID</label><input id="emp-staff-code" class="form-input" data-no-titlecase="1" autocapitalize="characters" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" value="${_aiEscapeHtml(String(src.staff_code||'').trim().toUpperCase())}"></div>
       <div class="form-group"><label class="form-label">${t.ic}</label><input id="emp-ic" class="form-input" placeholder="${t.icPh}" value="${src.ic_no||''}"></div>
@@ -28921,7 +28921,7 @@ async function renderEmployeeForm(id, fromApplicantId) {
     <div class="card-title" style="margin-bottom:4px">${isBm?'PIN Log Masuk POS':'POS Login PIN'}</div>
     <p style="font-size:12px;color:var(--text-3);margin-bottom:14px">${isBm?'Digunakan staf untuk log masuk shift di terminal POS (Mula Shift). 4-6 digit.':'Used by staff to clock in to a shift at the POS terminal (Start Shift). 4-6 digits.'}</p>
     <div id="emp-pin-err" class="auth-error" style="display:none"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="app-row2">
       <div class="form-group"><label class="form-label">${isBm?'PIN Baru':'New PIN'}</label><input id="emp-pin" type="password" inputmode="numeric" maxlength="6" class="form-input" placeholder="••••"></div>
       <div class="form-group"><label class="form-label">${isBm?'Sahkan PIN':'Confirm PIN'}</label><input id="emp-pin-confirm" type="password" inputmode="numeric" maxlength="6" class="form-input" placeholder="••••"></div>
     </div>
@@ -29337,16 +29337,23 @@ async function renderApplicantForm(id) {
     <div id="app-scan-status" style="margin-top:8px;font-size:13px;color:var(--text-3)"></div>
   </div>
 
-  <div class="card" style="max-width:900px;margin-top:16px;padding:20px">
+  <style>
+    #app-form-fit{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    #app-form-fit .app-row{display:grid;grid-template-columns:repeat(3,minmax(168px,1fr));gap:12px;min-width:540px}
+    #app-form-fit .app-row2{display:grid;grid-template-columns:repeat(2,minmax(168px,1fr));gap:12px;min-width:360px}
+    #app-form-fit .form-input,#app-form-fit .form-select{width:100%;box-sizing:border-box}
+    #app-form-fit .form-label{white-space:nowrap}
+  </style>
+  <div id="app-form-fit" class="card" style="max-width:900px;margin-top:16px;padding:20px">
     <div style="font-weight:700;margin-bottom:12px">${t.sec1}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div class="app-row">
       <div class="form-group"><label class="form-label">${t.positionApplied}</label><input id="app-position" class="form-input" value="${_aiEscapeHtml(app.position_applied||'')}"></div>
       <div class="form-group"><label class="form-label">${t.expectedSalary}</label><input id="app-salary" type="number" step="0.01" min="0" class="form-input" value="${app.expected_salary??''}"></div>
       <div class="form-group"><label class="form-label">${t.availableDate}</label><input id="app-available-date" type="date" class="form-input" value="${app.available_date||''}"></div>
     </div>
 
     <div style="font-weight:700;margin:20px 0 12px">${t.sec2}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+    <div class="app-row">
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.fullName}</label><input id="app-name" class="form-input" value="${_aiEscapeHtml(app.full_name||'')}"></div>
       <div class="form-group"><label class="form-label">${t.ic}</label><input id="app-ic" class="form-input" placeholder="XXXXXX-XX-XXXX" value="${app.ic_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.dob}</label><input id="app-dob" type="date" class="form-input" value="${app.dob||''}"></div>
