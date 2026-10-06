@@ -8,7 +8,7 @@
   ];
   var TAGS = ['Planning', 'Design', 'Development', 'Testing', 'Launch', 'Admin'];
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], projectId: null, tab: 'board', filter: '', group: '', assignee: '', sort: 'due' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], projectId: null, tab: 'board', filter: '', group: '', assignee: '', sort: 'due', focus: '' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -87,7 +87,7 @@
       (task.tag ? '<span class="pj-tag">' + esc(task.tag) + '</span>' : '') +
       '<div class="pj-card-meta"><span>' + esc(nick(who) || t('Unassigned', 'Tiada assignee')) + '</span><span>' + esc(fmt(task.due_date)) + '</span></div>' +
       '<div class="pj-bar"><i style="width:' + pct + '%"></i></div><div class="pj-pct">' + pct + '%</div>' +
-      '<details class="pj-detail"><summary>' + esc(t('Detail', 'Butiran')) + '</summary>' +
+      '<details class="pj-detail"' + (String(state.focus) === String(task.id) ? ' open' : '') + '><summary>' + esc(t('Detail', 'Butiran')) + '</summary>' +
       '<label>' + esc(t('Title', 'Tajuk')) + '<input data-f="title" value="' + esc(task.title) + '"></label>' +
       '<label>' + esc(t('Tag', 'Tag')) + '<select data-f="tag">' + TAGS.map(function (tag) { return '<option' + (task.tag === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select></label>' +
       '<label>' + esc(t('Assignee', 'Assignee')) + '<select data-f="assignee_employee_id"><option value="">—</option>' + state.employees.map(function (e) { return '<option value="' + esc(e.id) + '"' + (String(e.id) === String(task.assignee_employee_id) ? ' selected' : '') + '>' + esc(nick(e)) + '</option>'; }).join('') + '</select></label>' +
@@ -193,7 +193,7 @@
     var bars = '<div class="pj-tools"><select id="pj-assignee">' + staff + '</select><select id="pj-sort"><option value="due"' + (state.sort === 'due' ? ' selected' : '') + '>' + esc(t('Sort by due', 'Susun ikut due')) + '</option><option value="title"' + (state.sort === 'title' ? ' selected' : '') + '>' + esc(t('Sort by title', 'Susun ikut tajuk')) + '</option></select></div>';
     return bars + '<div class="pj-matrix">' + quads.map(function (q) {
       var rows = open.filter(function (task) { return quadOf(task) === q.key; }).map(function (task) {
-        return '<div class="pj-mcard" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><span>' + esc(nick(empById(task.assignee_employee_id)) || t('Unassigned', 'Tiada assignee')) + '</span><span>' + esc(fmt(task.due_date)) + '</span></div>';
+        return '<button type="button" class="pj-mcard" data-id="' + esc(task.id) + '"><b>' + esc(task.title) + '</b><span>' + esc(nick(empById(task.assignee_employee_id)) || t('Unassigned', 'Tiada assignee')) + '</span><span>' + esc(fmt(task.due_date)) + '</span></button>';
       }).join('');
       return '<div class="pj-quad" data-quad="' + q.key + '"><b>' + esc(t(q.en, q.bm)) + '</b><div class="pj-quad-list">' + (rows || '<p class="pj-muted">' + esc(t('Empty', 'Kosong')) + '</p>') + '</div></div>';
     }).join('') + '</div>';
@@ -257,7 +257,7 @@
       '.pj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}' +
       '.pj-top{justify-content:space-between;gap:12px;flex-wrap:wrap} .pj-top small{display:block;color:var(--text-3)}' +
       '.pj-tools input,.pj-tools select,.pj-detail input,.pj-detail select,.pj-detail textarea,.pj-modal input,.pj-modal select{border:1px solid var(--border);background:var(--bg-card);color:var(--text);border-radius:8px;padding:6px 8px}' +
-      '.pj-main{min-width:0;overflow-x:auto} .pj-top,.pj-tools,.pj-tabs{max-width:100%} .pj-tabs{display:flex;gap:12px;border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch} .pj-tabs button{padding:8px 2px;color:var(--text-2);white-space:nowrap} .pj-tabs button.on{color:var(--primary);border-bottom:2px solid var(--primary)} .pj-matrix{display:grid;grid-template-columns:1fr;gap:10px} .pj-quad{border:1px solid var(--border);border-radius:12px;padding:10px;min-height:72px} .pj-quad>b{display:block;margin-bottom:6px} .pj-quad-list{max-height:220px;overflow-y:auto} .pj-mcard{display:flex;flex-direction:column;gap:2px;padding:8px;border:1px solid var(--border);border-radius:10px;margin-top:6px} .pj-mcard b{font-size:14px;line-height:1.35;word-break:break-word} .pj-mcard span{font-size:12px;color:var(--text-2)} @media(min-width:800px){.pj-matrix{grid-template-columns:1fr 1fr}}' +
+      '.pj-main{min-width:0;overflow-x:auto} .pj-top,.pj-tools,.pj-tabs{max-width:100%} .pj-tabs{display:flex;gap:12px;border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch} .pj-tabs button{padding:8px 2px;color:var(--text-2);white-space:nowrap} .pj-tabs button.on{color:var(--primary);border-bottom:2px solid var(--primary)} .pj-matrix{display:grid;grid-template-columns:1fr;gap:10px} .pj-quad{border:1px solid var(--border);border-radius:12px;padding:10px;min-height:72px} .pj-quad>b{display:block;margin-bottom:6px} .pj-quad-list{max-height:220px;overflow-y:auto} .pj-mcard{display:flex;flex-direction:column;gap:2px;padding:8px;border:1px solid var(--border);border-radius:10px;margin-top:6px;width:100%;text-align:left;background:var(--bg-card);color:var(--text);cursor:pointer} .pj-mcard b{font-size:14px;line-height:1.35;word-break:break-word} .pj-mcard span{font-size:12px;color:var(--text-2)} @media(min-width:800px){.pj-matrix{grid-template-columns:1fr 1fr}}' +
       '.pj-board{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px}' +
       '.pj-col{min-width:230px;flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px}' +
       '.pj-col header{display:flex;justify-content:space-between;margin-bottom:8px}' +
@@ -307,6 +307,15 @@
     var add = document.getElementById('pj-task');
     if (add) add.onclick = function () { addTask('backlog'); };
     main.querySelectorAll('[data-add]').forEach(function (btn) { btn.onclick = function () { addTask(btn.getAttribute('data-add')); }; });
+    main.querySelectorAll('.pj-mcard').forEach(function (card) {
+      card.onclick = function () {
+        state.focus = card.getAttribute('data-id');
+        state.tab = 'board';
+        paint();
+        var opened = document.querySelector('.pj-card[data-id="' + state.focus + '"]');
+        if (opened) opened.scrollIntoView({ block: 'center' });
+      };
+    });
     main.querySelectorAll('.pj-card').forEach(function (card) {
       card.ondragstart = function (ev) { ev.dataTransfer.setData('text/plain', card.getAttribute('data-id')); };
       card.querySelector('[data-act="save"]').onclick = function (ev) { ev.preventDefault(); saveTask(card); };
