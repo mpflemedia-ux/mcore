@@ -448,6 +448,7 @@
     if (!window.confirm(t('Delete this file?', 'Padam fail ini?'))) return;
     var gone = await sb.storage.from('company-assets').remove([fileFolder() + '/' + name]);
     if (gone.error) { showToast(gone.error.message, 'error'); return; }
+    if (!gone.data || !gone.data.length) { showToast(t('Not deleted. Run the storage delete SQL.', 'Tidak dipadam. Jalankan SQL delete storage.'), 'error'); return; }
     showToast(t('Deleted', 'Dipadam'), 'success');
     state.tab = 'files';
     refresh();
