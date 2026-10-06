@@ -8,7 +8,7 @@
   ];
   var TAGS = ['Planning', 'Design', 'Development', 'Testing', 'Launch', 'Admin'];
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], projectId: null, tab: 'board', filter: '', group: '', assignee: '', sort: 'due', focus: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', filter: '', group: '', assignee: '', sort: 'due', focus: '' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -83,8 +83,10 @@
   function cardHtml(task) {
     var who = empById(task.assignee_employee_id);
     var pct = Math.max(0, Math.min(100, Number(task.progress) || 0));
+    var linked = taskFile(task.id);
+    var fileBit = linked ? '<div class="pj-card-file">' + (fileKind(linked.name, linked.type) === 'image' ? '<img src="' + esc(linked.url) + '" alt="">' : '<span>FILE</span>') + '<b>' + esc(linked.name) + '</b></div>' : '';
     return '<article class="pj-card" draggable="true" data-id="' + esc(task.id) + '">' +
-      '<div class="pj-card-title">' + esc(task.title) + '</div>' +
+      '<div class="pj-card-title">' + esc(task.title) + '</div>' + fileBit +
       (task.tag ? '<span class="pj-tag">' + esc(task.tag) + '</span>' : '') +
       '<div class="pj-card-meta"><span>' + esc(nick(who) || t('Unassigned', 'Tiada assignee')) + '</span><span>' + esc(fmt(task.due_date)) + '</span></div>' +
       '<div class="pj-bar"><i style="width:' + pct + '%"></i></div><div class="pj-pct">' + pct + '%</div>' +
@@ -175,8 +177,12 @@
       var thumb = kind === 'image'
         ? '<img class="pj-thumb" src="' + esc(href) + '" alt="">'
         : '<span class="pj-thumb pj-thumb-file">' + esc(kind === 'pdf' ? 'PDF' : 'FILE') + '</span>';
+      var link = (state.links || []).filter(function (l) { return l.file_name === f.name; })[0];
+      var opts = '<option value="">' + esc(t('Unlinked', 'Belum dipaut')) + '</option>' + state.tasks.map(function (task) {
+        return '<option value="' + esc(task.id) + '"' + (link && String(link.task_id) === String(task.id) ? ' selected' : '') + '>' + esc(task.title) + '</option>';
+      }).join('');
       return '<article class="pj-file">' + thumb +
-        '<div class="pj-file-main"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a></div>' +
+        '<div class="pj-file-main"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a><select data-act="file-link" data-file="' + esc(f.name) + '">' + opts + '</select></div>' +
         '<div class="pj-file-acts"><button type="button" data-act="file-rename" data-file="' + esc(f.name) + '">' + esc(t('Rename', 'Tukar nama')) + '</button>' +
         '<button type="button" class="pj-del" data-act="file-del" data-file="' + esc(f.name) + '">' + esc(t('Delete', 'Padam')) + '</button></div></article>';
     }).join('');
@@ -288,7 +294,7 @@
       '.pj-scroll{overflow-x:auto} .pj-table{width:100%;border-collapse:collapse} .pj-table th,.pj-table td{border-bottom:1px solid var(--border);padding:8px;text-align:left;white-space:nowrap}' +
       '.pj-tl{min-width:760px} .pj-weeks{display:grid;grid-template-columns:repeat(8,1fr);color:var(--text-3);font-size:11px;margin-bottom:8px}' +
       '.pj-trow{display:grid;grid-template-columns:180px 1fr;gap:8px;align-items:center;margin:4px 0} .pj-track{position:relative;height:14px;background:var(--border);border-radius:8px} .pj-track i{position:absolute;top:2px;bottom:2px;background:var(--primary);border-radius:6px}' +
-      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-file{display:flex;gap:10px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px} .pj-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:0 0 56px;background:var(--bg)} .pj-thumb-file{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text)} .pj-file-main{min-width:0;flex:1} .pj-file a{color:var(--primary);word-break:break-word} .pj-file-acts{display:flex;gap:6px;flex:0 0 auto} .pj-file-acts button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:6px 8px} .pj-del{border-color:#b91c1c !important;background:#b91c1c !important;color:#fff !important} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
+      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-file{display:flex;gap:10px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px} .pj-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:0 0 56px;background:var(--bg)} .pj-thumb-file{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text)} .pj-file-main{min-width:0;flex:1} .pj-file a{color:var(--primary);word-break:break-word} .pj-file-acts{display:flex;gap:6px;flex:0 0 auto} .pj-file-acts button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:6px 8px} .pj-file-main select,.pj-card-file{display:block;width:100%;margin-top:6px} .pj-card-file{display:flex;gap:6px;align-items:center} .pj-card-file img,.pj-card-file span{width:36px;height:36px;object-fit:cover;border-radius:6px;background:var(--bg-card);display:flex;align-items:center;justify-content:center;font-size:10px} .pj-card-file b{font-size:11px;font-weight:600;word-break:break-word} .pj-del{border-color:#b91c1c !important;background:#b91c1c !important;color:#fff !important} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
       '@media(max-width:800px){.pj-wrap{flex-direction:column}.pj-side{width:auto;max-height:160px}.pj-stats{grid-template-columns:repeat(2,1fr)}}';
   }
 
@@ -353,6 +359,9 @@
     main.querySelectorAll('[data-act="file-rename"]').forEach(function (btn) {
       btn.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); renameFile(btn.getAttribute('data-file')); };
     });
+    main.querySelectorAll('[data-act="file-link"]').forEach(function (sel) {
+      sel.onchange = function () { linkFile(sel.getAttribute('data-file'), sel.value); };
+    });
   }
 
   async function loadFiles() {
@@ -365,6 +374,21 @@
       var pub = sb.storage.from('company-assets').getPublicUrl(path);
       return { name: f.name, type: f.metadata && (f.metadata.mimetype || f.metadata.contentType), url: pub && pub.data ? pub.data.publicUrl : '' };
     });
+    var links = await sb.from('project_file_links').select('file_name,task_id').eq('tenant_id', tid()).eq('project_id', state.projectId);
+    state.links = links.error ? [] : (links.data || []);
+  }
+  function taskFile(taskId) {
+    var hit = (state.links || []).filter(function (l) { return String(l.task_id) === String(taskId); })[0];
+    if (!hit) return null;
+    return (state.files || []).filter(function (f) { return f.name === hit.file_name; })[0] || null;
+  }
+  async function linkFile(name, taskId) {
+    if (!name || !state.projectId) return;
+    var row = { tenant_id: tid(), project_id: state.projectId, task_id: taskId || null, file_name: name };
+    var up = await sb.from('project_file_links').upsert(row, { onConflict: 'project_id,file_name' });
+    if (up.error) { showToast(up.error.message, 'error'); return; }
+    showToast(taskId ? t('Linked', 'Dipaut') : t('Unlinked', 'Dinyahpaut'), 'success');
+    refresh();
   }
   async function setQuad(id, quad) {
     var patch = { is_important: quad === 'do' || quad === 'schedule', is_urgent: quad === 'do' || quad === 'delegate' };
@@ -454,6 +478,7 @@
     if (gone.error) { showToast(gone.error.message, 'error'); return; }
     if (!gone.data || !gone.data.length) { showToast(t('Not deleted. Run the storage delete SQL.', 'Tidak dipadam. Jalankan SQL delete storage.'), 'error'); return; }
     state.files = (state.files || []).filter(function (f) { return f.name !== name; });
+    await sb.from('project_file_links').delete().eq('project_id', state.projectId).eq('file_name', name);
     showToast(t('Deleted', 'Dipadam'), 'success');
     state.tab = 'files';
     refresh();
@@ -468,6 +493,7 @@
     if (!clean) { showToast(t('Invalid name', 'Nama tidak sah'), 'error'); return; }
     var moved = await sb.storage.from('company-assets').move(fileFolder() + '/' + name, fileFolder() + '/' + clean);
     if (moved.error) { showToast(moved.error.message, 'error'); return; }
+    await sb.from('project_file_links').update({ file_name: clean }).eq('project_id', state.projectId).eq('file_name', name);
     showToast(t('Renamed', 'Nama ditukar'), 'success');
     state.tab = 'files';
     refresh();
