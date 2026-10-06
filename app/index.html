@@ -6819,7 +6819,7 @@ async function _dbLoadProjectsCard() {
   const ids = list.map(p => p.id)
   const custIds = list.map(p => p.customer_id).filter(Boolean)
   const [taskRes, custRes] = await Promise.all([
-    sb.from('project_tasks').select('project_id,column_key,due_date').in('project_id', ids).eq('tenant_id', APP.tenant.id).is('deleted_at', null),
+    sb.from('project_tasks').select('project_id,column_key,due_date,progress').in('project_id', ids).eq('tenant_id', APP.tenant.id).is('deleted_at', null),
     custIds.length ? sb.from('customers').select('id,name').in('id', custIds).eq('tenant_id', APP.tenant.id) : Promise.resolve({ data: [] })
   ])
   const tasks = taskRes.data || []
@@ -6830,7 +6830,7 @@ async function _dbLoadProjectsCard() {
     const total = mine.length
     const done = mine.filter(x => x.column_key === 'done').length
     const overdue = mine.filter(x => x.due_date && String(x.due_date).slice(0, 10) < today && x.column_key !== 'done').length
-    return { ...p, total, done, overdue, pct: total ? Math.round(done * 100 / total) : 0, active: !total || done < total }
+    const sum = mine.reduce((n, x) => n + Math.max(0, Math.min(100, Number(x.progress) || 0)), 0); return { ...p, total, done, overdue, pct: total ? Math.round(sum / total) : 0, active: !total || done < total }
   }).filter(p => p.active)
   const shown = rows
   const overdueN = rows.reduce((n, p) => n + p.overdue, 0)
@@ -37450,7 +37450,7 @@ if('serviceWorker' in navigator){
 <script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=1"></script>
 <script src="./booking-shortcut.js?v=1"></script>
-<script src="./projects.js?v=8"></script>
+<script src="./projects.js?v=9"></script>
 <script src="./shifts.js?v=4"></script>
 <script src="./booking-token-fix.js?v=1"></script>
 <script src="./booking-public-contrast.js?v=1"></script>
