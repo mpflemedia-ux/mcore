@@ -7,7 +7,7 @@ declare
 begin
   select id into empire
   from public.tenants
-  where deleted_at is null and name ilike '%brozky empire%'
+  where deleted_at is null and (name ilike '%brozky empire%' or name ilike '%brzky empire%')
   order by name
   limit 1;
 
