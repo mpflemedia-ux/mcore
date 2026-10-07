@@ -8,20 +8,16 @@ begin
 
   select id into club
   from public.tenants
-  where name ~* 'br[o]?zkey' and name ~* 'club'
-  order by (deleted_at is null) desc, name
+  where upper(code) = 'THEBRO41'
   limit 1;
 
   select id into empire
   from public.tenants
-  where id is distinct from club
-    and name ~* 'br[o]?zky'
-    and name ~* 'empire'
-  order by (deleted_at is null) desc, name
+  where upper(code) = 'BROZKY99'
   limit 1;
 
   if empire is null or club is null then
-    raise exception 'Tenant tidak dijumpai. empire=% club=% names=%', empire, club, (select string_agg(name, ' | ') from public.tenants where name ~* 'br[o]?zky');
+    raise exception 'Tenant tidak dijumpai. empire=% club=% codes=%', empire, club, (select string_agg(code || '=' || name, ' | ') from public.tenants where upper(code) in ('BROZKY99','THEBRO41'));
   end if;
 
   select array_agg(id) into ids
