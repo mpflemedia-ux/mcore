@@ -25,13 +25,15 @@ begin
   where tenant_id = empire
     and deleted_at is null
     and (
-      name ilike '%farid%razzaq%'
-      or name ilike '%lutfi%salim%'
-      or name ilike '%lufti%salim%'
+      name ilike '%farid%'
+      or name ilike '%lutfi%'
+      or name ilike '%lufti%'
     );
 
   if ids is null or cardinality(ids) <> 2 then
-    raise exception 'Patut jumpa 2 staff, jumpa %', coalesce(cardinality(ids), 0);
+    raise exception 'Patut jumpa 2 staff, jumpa %. empire staff=%',
+      coalesce(cardinality(ids), 0),
+      (select string_agg(name, ' | ') from public.employees where tenant_id = empire and deleted_at is null);
   end if;
 
   update public.employees
