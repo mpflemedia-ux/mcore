@@ -31383,6 +31383,19 @@ function _sdRecalc() {
     if(zPrint) zPrint.innerHTML = _sdPrintAmt(v.zakat)
     const pPrint = document.getElementById(`sd-print-pcb-${r.id}`)
     if(pPrint) pPrint.innerHTML = _sdPrintAmt(v.pcb)
+    const statPrint = document.getElementById(`sd-print-stat-dense-${r.id}`)
+    if(statPrint) {
+      const isBm = APP.language === 'bm'
+      statPrint.innerHTML = [
+        Number(v.epf_employee) > 0 ? ('EPF <strong>'+_sdPrintAmt(v.epf_employee)+'</strong>') : '',
+        Number(v.socso_employee) > 0 ? ('SOCSO <strong>'+_sdPrintAmt(v.socso_employee)+'</strong>') : '',
+        Number(v.eis_employee) > 0 ? ('EIS <strong>'+_sdPrintAmt(v.eis_employee)+'</strong>') : '',
+        Number(v.pcb) > 0 ? ('PCB <strong>'+_sdPrintAmt(v.pcb)+'</strong>') : '',
+        Number(v.zakat) > 0 ? ('Zakat <strong>'+_sdPrintAmt(v.zakat)+'</strong>') : ''
+      ].filter(Boolean).join(' · ')
+      const er = statPrint.parentElement && statPrint.parentElement.querySelector('.pdoc-sd-employer-print')
+      if(er) er.textContent = (isBm?'Majikan':'Er') + ': EPF ' + _sdPrintAmt(v.epf_employer) + ' · SOCSO ' + _sdPrintAmt(v.socso_employer) + ' · EIS ' + _sdPrintAmt(v.eis_employer)
+    }
     _sdMarkAmended(`sd-epf-${r.id}`, r.epf_employee)
     _sdMarkAmended(`sd-socso-${r.id}`, r.socso_employee)
     _sdMarkAmended(`sd-eis-${r.id}`, r.eis_employee)
