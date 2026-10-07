@@ -5,20 +5,23 @@ declare
   ids uuid[];
   rec record;
 begin
-  select id into empire
-  from public.tenants
-  where deleted_at is null and (name ilike '%brozky empire%' or name ilike '%brzky empire%')
-  order by name
-  limit 1;
 
   select id into club
   from public.tenants
-  where deleted_at is null and name ilike '%brozkey club%'
-  order by name
+  where name ~* 'br[o]?zkey' and name ~* 'club'
+  order by (deleted_at is null) desc, name
+  limit 1;
+
+  select id into empire
+  from public.tenants
+  where id is distinct from club
+    and name ~* 'br[o]?zky'
+    and name ~* 'empire'
+  order by (deleted_at is null) desc, name
   limit 1;
 
   if empire is null or club is null then
-    raise exception 'Tenant tidak dijumpai. empire=% club=%', empire, club;
+    raise exception 'Tenant tidak dijumpai. empire=% club=% names=%', empire, club, (select string_agg(name, ' | ') from public.tenants where name ~* 'br[o]?zky');
   end if;
 
   select array_agg(id) into ids
