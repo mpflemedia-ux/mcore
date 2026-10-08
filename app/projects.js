@@ -276,7 +276,7 @@
       '</div><div class="pj-tools"><input id="pj-q" placeholder="' + esc(t('Search tasks', 'Cari task')) + '" value="' + esc(state.filter) + '">' +
       '<select id="pj-g"><option value="">' + esc(t('Group by tag', 'Kumpul ikut tag')) + '</option>' + tagList().map(function (tag) { return '<option' + (state.group === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select>' +
       '<button type="button" id="pj-tags" class="btn btn-sm btn-outline">' + esc(t('Tags', 'Tag')) + '</button>' +
-      '<button type="button" id="pj-task" class="btn btn-sm btn-primary"' + (proj ? '' : ' disabled') + '>+ ' + esc(t('New Task', 'Task Baru')) + '</button></div></header>' + (state.tagPanel ? '<div class="pj-tags">' + tagList().map(function (tag) { return '<span>' + esc(tag) + '<button type="button" data-tag-edit="' + esc(tag) + '">' + esc(t('Edit', 'Ubah')) + '</button><button type="button" data-tag-del="' + esc(tag) + '">' + esc(t('Delete', 'Padam')) + '</button></span>'; }).join('') + '<button type="button" id="pj-tag-add" class="btn btn-sm btn-primary">' + esc(t('Add tag', 'Tambah tag')) + '</button></div>' : '') +
+      '<button type="button" id="pj-task" class="btn btn-sm btn-primary"' + (proj ? '' : ' disabled') + '>+ ' + esc(t('New Task', 'Task Baru')) + '</button></div></header>' + (state.tagPanel ? '<div class="pj-tags">' + tagList().map(function (tag) { return '<span><b>' + esc(tag) + '</b><button type="button" class="btn btn-sm btn-outline" data-tag-edit="' + esc(tag) + '">' + esc(t('Edit', 'Ubah')) + '</button><button type="button" class="btn btn-sm btn-outline" data-tag-del="' + esc(tag) + '">' + esc(t('Delete', 'Padam')) + '</button></span>'; }).join('') + '<button type="button" id="pj-tag-add" class="btn btn-sm btn-primary">' + esc(t('Add tag', 'Tambah tag')) + '</button></div>' : '') +
       '<nav class="pj-tabs">' + ['board', 'matrix', 'timeline', 'list', 'files', 'overview'].map(function (key) {
         var labels = { board: [ 'Board', 'Papan' ], timeline: [ 'Timeline', 'Garis Masa' ], list: [ 'List', 'Senarai' ], files: [ 'Files', 'Fail' ], overview: [ 'Overview', 'Ringkasan' ], matrix: [ 'Matrix', 'Matrix' ] };
         return '<button type="button" data-tab="' + key + '"' + (tab === key ? ' class="on"' : '') + '>' + esc(t(labels[key][0], labels[key][1])) + '</button>';
@@ -307,7 +307,7 @@
       '<div class="pj-row"><button class="btn btn-sm btn-primary" type="submit">' + esc(t('Save', 'Simpan')) + '</button><button type="button" class="btn btn-sm btn-outline" id="pj-cancel">' + esc(t('Cancel', 'Batal')) + '</button></div></form></div>';
   }
   function css() {
-    return '.pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
+    return '.pj-tags{display:flex;flex-direction:column;gap:8px;margin:8px 0;color:var(--text)} .pj-tags span{display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-card);color:var(--text)} .pj-tags b{flex:1;min-width:0;color:var(--text);font-size:14px} .pj-tags button{min-height:40px}.pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
       '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto}' +
       '.pj-side-h,.pj-top,.pj-tools,.pj-row{display:flex;align-items:center;gap:8px}' +
       '.pj-side-h{justify-content:space-between;margin-bottom:8px}' +
