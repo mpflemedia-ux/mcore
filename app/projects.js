@@ -6,9 +6,14 @@
     { key: 'review', en: 'Review', bm: 'Semakan' },
     { key: 'done', en: 'Done', bm: 'Siap' }
   ];
-  var TAGS = ['Planning', 'Design', 'Development', 'Testing', 'Launch', 'Admin'];
+  var TAGS = ['Administration', 'Finance', 'Human Resource', 'Brand & Marketing', 'Clients', 'Partners & Vendors', 'Projects', 'Legal', 'Operations', 'Archive'];
+  function tagList() {
+    var extra = (state.tasks || []).map(function (task) { return task.tag; }).filter(function (tag) { return tag && TAGS.indexOf(tag) < 0; });
+    return TAGS.concat(extra.filter(function (tag, i) { return extra.indexOf(tag) === i; }));
+  }
+
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', filter: '', group: '', assignee: '', sort: 'due', focus: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', focus: '' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -61,6 +66,29 @@
     return { total: total, progress: progress, done: done, overdue: overdue, pct: pct };
   }
 
+
+  async function loadTags() {
+    var res = await sb.from('project_tags').select('name,sort_order').eq('tenant_id', tid()).is('deleted_at', null).order('sort_order');
+    if (!res.error && res.data && res.data.length) TAGS = res.data.map(function (row) { return row.name; });
+  }
+  async function saveTag(name, previous) {
+    var clean = String(name || '').trim();
+    if (!clean) return;
+    if (previous) {
+      await sb.from('project_tags').update({ name: clean }).eq('tenant_id', tid()).eq('name', previous);
+      await sb.from('project_tasks').update({ tag: clean }).eq('tenant_id', tid()).eq('tag', previous);
+    } else {
+      await sb.from('project_tags').insert({ tenant_id: tid(), name: clean, sort_order: TAGS.length + 1 });
+    }
+    await loadTags();
+    refresh();
+  }
+  async function deleteTag(name) {
+    if (!window.confirm(t('Delete this tag?', 'Padam tag ini?'))) return;
+    await sb.from('project_tags').update({ deleted_at: new Date().toISOString() }).eq('tenant_id', tid()).eq('name', name);
+    await loadTags();
+    refresh();
+  }
   async function loadAll() {
     var tenant = tid();
     if (!tenant) throw new Error(t('No tenant', 'Tiada tenant'));
@@ -74,6 +102,7 @@
       : { data: [] };
     if (tasks.error) throw tasks.error;
     state.tasks = tasks.data || [];
+    try { await loadTags(); } catch (e) {}
     try { await syncPlanner(state.tasks); } catch (e) {}
     var em = await sb.from('employees').select('id,name,nickname').eq('tenant_id', tenant).is('deleted_at', null).order('name');
     state.employees = em.error ? [] : (em.data || []);
@@ -93,7 +122,7 @@
       '<div class="pj-bar"><i style="width:' + pct + '%"></i></div><div class="pj-pct">' + pct + '%</div>' +
       '<details class="pj-detail"' + (String(state.focus) === String(task.id) ? ' open' : '') + '><summary>' + esc(t('Detail', 'Butiran')) + '</summary>' +
       '<label>' + esc(t('Title', 'Tajuk')) + '<input data-f="title" value="' + esc(task.title) + '"></label>' +
-      '<label>' + esc(t('Tag', 'Tag')) + '<select data-f="tag">' + TAGS.map(function (tag) { return '<option' + (task.tag === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select></label>' +
+      '<label>' + esc(t('Tag', 'Tag')) + '<select data-f="tag">' + tagList().map(function (tag) { return '<option' + (task.tag === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select></label>' +
       '<label>' + esc(t('Assignee', 'Assignee')) + '<select data-f="assignee_employee_id"><option value="">—</option>' + state.employees.map(function (e) { return '<option value="' + esc(e.id) + '"' + (String(e.id) === String(task.assignee_employee_id) ? ' selected' : '') + '>' + esc(nick(e)) + '</option>'; }).join('') + '</select></label>' +
       '<label>' + esc(t('Start', 'Mula')) + '<input data-f="start_date" type="date" value="' + esc(String(task.start_date || '').slice(0, 10)) + '"></label>' +
       '<label>' + esc(t('Due', 'Due')) + '<input data-f="due_date" type="date" value="' + esc(String(task.due_date || '').slice(0, 10)) + '"></label>' +
@@ -145,7 +174,7 @@
     }
     var names = '';
     var bars = '';
-    TAGS.forEach(function (tag) {
+    tagList().forEach(function (tag) {
       var rows = list.filter(function (task) { return (task.tag || 'Admin') === tag; });
       if (!rows.length) return;
       names += '<b>' + esc(tag) + '</b>';
@@ -245,7 +274,8 @@
       '<header class="pj-top"><div><b>' + esc(proj ? proj.name : t('Projects', 'Projek')) + '</b>' +
       (proj && proj.kind === 'client' ? '<small>' + esc((custById(proj.customer_id) || {}).name || t('No customer', 'Tiada pelanggan')) + '</small>' : '<small>' + esc(t('Internal', 'Dalaman')) + '</small>') +
       '</div><div class="pj-tools"><input id="pj-q" placeholder="' + esc(t('Search tasks', 'Cari task')) + '" value="' + esc(state.filter) + '">' +
-      '<select id="pj-g"><option value="">' + esc(t('Group by tag', 'Kumpul ikut tag')) + '</option>' + TAGS.map(function (tag) { return '<option' + (state.group === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select>' +
+      '<select id="pj-g"><option value="">' + esc(t('Group by tag', 'Kumpul ikut tag')) + '</option>' + tagList().map(function (tag) { return '<option' + (state.group === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select>' +
+      '<button type="button" id="pj-tags" class="btn btn-sm btn-outline">' + esc(t('Tags', 'Tag')) + '</button>' +
       '<button type="button" id="pj-task" class="btn btn-sm btn-primary"' + (proj ? '' : ' disabled') + '>+ ' + esc(t('New Task', 'Task Baru')) + '</button></div></header>' +
       '<nav class="pj-tabs">' + ['board', 'matrix', 'timeline', 'list', 'files', 'overview'].map(function (key) {
         var labels = { board: [ 'Board', 'Papan' ], timeline: [ 'Timeline', 'Garis Masa' ], list: [ 'List', 'Senarai' ], files: [ 'Files', 'Fail' ], overview: [ 'Overview', 'Ringkasan' ], matrix: [ 'Matrix', 'Matrix' ] };
@@ -327,6 +357,17 @@
     if (q) q.oninput = function () { state.filter = q.value; paint(); q.focus(); };
     var g = document.getElementById('pj-g');
     if (g) g.onchange = function () { state.group = g.value; paint(); };
+
+    var tagsBtn = document.getElementById('pj-tags');
+    if (tagsBtn) tagsBtn.onclick = function () { state.tagPanel = !state.tagPanel; paint(); };
+    var addTag = document.getElementById('pj-tag-add');
+    if (addTag) addTag.onclick = function () { saveTag(window.prompt(t('Tag name', 'Nama tag'))); };
+    main.querySelectorAll('[data-tag-edit]').forEach(function (btn) {
+      btn.onclick = function () { saveTag(window.prompt(t('New name', 'Nama baharu'), btn.getAttribute('data-tag-edit')), btn.getAttribute('data-tag-edit')); };
+    });
+    main.querySelectorAll('[data-tag-del]').forEach(function (btn) {
+      btn.onclick = function () { deleteTag(btn.getAttribute('data-tag-del')); };
+    });
     var np = document.getElementById('pj-new');
     if (np) np.onclick = function () { document.getElementById('pj-modal').hidden = false; };
     var cancel = document.getElementById('pj-cancel');
