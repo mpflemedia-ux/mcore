@@ -74,6 +74,7 @@
       : { data: [] };
     if (tasks.error) throw tasks.error;
     state.tasks = tasks.data || [];
+    try { await syncPlanner(state.tasks); } catch (e) {}
     var em = await sb.from('employees').select('id,name,nickname').eq('tenant_id', tenant).is('deleted_at', null).order('name');
     state.employees = em.error ? [] : (em.data || []);
     var cu = await sb.from('customers').select('id,name').eq('tenant_id', tenant).is('deleted_at', null).order('name').limit(500);
@@ -454,9 +455,36 @@
     showToast(t('Saved', 'Disimpan'), 'success');
     refresh();
   }
+  async function syncPlanner(tasks) {
+    var tenant = tid();
+    if (!tenant || !tasks || !tasks.length) return;
+    var session = await sb.auth.getSession();
+    var uid = session && session.data && session.data.session && session.data.session.user && session.data.session.user.id;
+    if (!uid) return;
+    for (var i = 0; i < tasks.length; i++) {
+      var task = tasks[i];
+      var due = task.due_date ? String(task.due_date).slice(0, 10) + 'T01:00:00+08:00' : null;
+      var row = {
+        tenant_id: tenant,
+        owner_user_id: uid,
+        project_task_id: task.id,
+        title: task.title || 'Task',
+        activity_type: 'todo',
+        status: (task.column_key === 'done' || Number(task.progress) >= 100) ? 'done' : 'open',
+        due_at: due,
+        starts_at: due,
+        notes: task.notes || null
+      };
+      var existing = await sb.from('platform_activities').select('id').eq('tenant_id', tenant).eq('project_task_id', task.id).is('deleted_at', null).limit(1);
+      if (existing.error) return;
+      if (existing.data && existing.data[0]) await sb.from('platform_activities').update(row).eq('id', existing.data[0].id).eq('tenant_id', tenant);
+      else await sb.from('platform_activities').insert(row);
+    }
+  }
   async function delTask(id) {
     var up = await sb.from('project_tasks').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
+    await sb.from('platform_activities').update({ deleted_at: new Date().toISOString(), status: 'cancelled' }).eq('tenant_id', tid()).eq('project_task_id', id);
     refresh();
   }
   async function moveTask(id, col) {
