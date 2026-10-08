@@ -531,6 +531,7 @@
     var up = await sb.from('project_tasks').update(patch).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
     showToast(t('Saved', 'Disimpan'), 'success');
+    state.focus = '';
     refresh();
   }
   async function syncPlanner(tasks) {
