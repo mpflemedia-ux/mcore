@@ -13,7 +13,7 @@
   }
 
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', matrix: '', focus: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', matrix: '', tlSort: 'priority', focus: '' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -176,37 +176,38 @@
       var n = new Date(String(d).slice(0, 10) + 'T00:00:00').getTime();
       return Math.max(0, Math.min(100, ((n - origin) / span) * 100));
     }
-    var names = '';
-    var bars = '';
     var quads = [
       { key: 'do', en: 'Do', bm: 'Buat' },
       { key: 'schedule', en: 'Schedule', bm: 'Jadual' },
       { key: 'delegate', en: 'Delegate', bm: 'Serah' },
       { key: 'later', en: 'Defer', bm: 'Tangguh' }
     ];
-    var rows = list.filter(function (task) { return !state.matrix || quadOf(task) === state.matrix; });
-    quads.forEach(function (q) {
-      if (state.matrix && state.matrix !== q.key) return;
-      var group = rows.filter(function (task) { return quadOf(task) === q.key; });
-      group.sort(function (a, b) { return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999')); });
-      if (!group.length) return;
-      names += '<b>' + esc(t(q.en, q.bm)) + '</b>';
-      bars += '<div class="pj-tagspace"></div>';
-      group.forEach(function (task) {
+    var today = todayISO();
+    var weeksHead = weeks.slice(0, 3).map(function (w) { return '<span>' + esc(fmt(w.toISOString().slice(0, 10))) + '</span>'; }).join('');
+    var sections = quads.filter(function (q) { return !state.matrix || state.matrix === q.key; }).map(function (q) {
+      var group = list.filter(function (task) { return quadOf(task) === q.key; });
+      group.sort(function (a, b) {
+        if (state.tlSort === 'title') return String(a.title).localeCompare(String(b.title));
+        return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
+      });
+      var cards = group.map(function (task) {
         var a = left(task.start_date || task.created_at);
         var b = left(task.due_date || task.start_date || task.created_at);
-        if (b < a) b = a + 4;
-        var w = Math.max(4, b - a);
-        names += '<div class="pj-name">' + esc(task.title) + '</div>';
-        bars += '<div class="pj-track"><i style="left:' + a + '%;width:' + w + '%"></i></div>';
-      });
-    });
-    var head = '<div class="pj-weeks">' + weeks.map(function (w) { return '<span>' + esc(fmt(w.toISOString().slice(0, 10))) + '</span>'; }).join('') + '</div>';
+        if (b < a) b = a + 8;
+        var w = Math.max(8, b - a);
+        var late = task.due_date && String(task.due_date).slice(0, 10) < today && task.column_key !== 'done';
+        var days = late ? Math.round((new Date(today + 'T00:00:00') - new Date(String(task.due_date).slice(0, 10) + 'T00:00:00')) / 86400000) : 0;
+        return '<article class="pj-tlcard"><div><b>' + esc(task.title) + '</b>' +
+          (late ? '<small>' + esc(t('Overdue by ' + days + ' days', 'Lewat ' + days + ' hari')) + '</small>' : '') +
+          '</div><div class="pj-tltrack"><span>' + weeksHead + '</span><i style="left:' + a + '%;width:' + w + '%"></i></div></article>';
+      }).join('');
+      return '<section class="pj-tlsec"><b>' + esc(t(q.en, q.bm)) + '</b>' +
+        (cards || '<p class="pj-muted">' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</section>';
+    }).join('');
     var filter = '<div class="pj-tools"><select id="pj-matrix"><option value="">' + esc(t('Matrix: All', 'Matrix: Semua')) + '</option>' + quads.map(function (q) {
       return '<option value="' + q.key + '"' + (state.matrix === q.key ? ' selected' : '') + '>' + esc(t(q.en, q.bm)) + '</option>';
-    }).join('') + '</select></div>';
-    return filter + '<div class="pj-split"><div class="pj-names"><div class="pj-namehead"></div>' + (names || '') + '</div><div class="pj-scroll"><div class="pj-tl">' + head + (bars || '<p>' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</div></div></div>';
-  }
+    }).join('') + '</select><select id="pj-tl-sort"><option value="priority"' + (state.tlSort !== 'title' ? ' selected' : '') + '>' + esc(t('Sort: Priority', 'Susun: Keutamaan')) + '</option><option value="title"' + (state.tlSort === 'title' ? ' selected' : '') + '>' + esc(t('Sort: Title', 'Susun: Tajuk')) + '</option></select></div>';
+    return filter + '<div class="pj-tlcards">' + sections + '</div>';
 
   function fileFolder() {
     return tid() + '/projects/' + state.projectId;
@@ -323,7 +324,7 @@
       '<div class="pj-row"><button class="btn btn-sm btn-primary" type="submit">' + esc(t('Save', 'Simpan')) + '</button><button type="button" class="btn btn-sm btn-outline" id="pj-cancel">' + esc(t('Cancel', 'Batal')) + '</button></div></form></div>';
   }
   function css() {
-    return '.pj-tags{display:flex;flex-direction:column;gap:8px;margin:8px 0;color:var(--text)} .pj-tags span{display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-card);color:var(--text)} .pj-tags b{flex:1;min-width:0;color:var(--text);font-size:14px} .pj-tags button{min-height:40px}.pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
+    return '.pj-tags{display:flex;flex-direction:column;gap:8px;margin:8px 0;color:var(--text)} .pj-tags span{display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-card);color:var(--text)} .pj-tags b{flex:1;min-width:0;color:var(--text);font-size:14px} .pj-tags button{min-height:40px}.pj-tlcards{display:flex;flex-direction:column;gap:14px} .pj-tlsec>b{display:block;color:var(--primary);margin-bottom:8px} .pj-tlcard{display:flex;gap:8px;justify-content:space-between;align-items:center;border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--bg-card);color:var(--text);margin-bottom:8px} .pj-tlcard b{display:block;color:var(--text);font-size:14px;word-break:break-word} .pj-tlcard small{display:block;color:var(--danger);font-size:12px;margin-top:4px} .pj-tltrack{position:relative;flex:1;min-width:120px;height:28px} .pj-tltrack span{display:flex;justify-content:space-between;color:var(--text-3);font-size:10px} .pj-tltrack i{position:absolute;left:0;bottom:0;height:8px;border-radius:6px;background:var(--primary)} .pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
       '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto}' +
       '.pj-side-h,.pj-top,.pj-tools,.pj-row{display:flex;align-items:center;gap:8px}' +
       '.pj-side-h{justify-content:space-between;margin-bottom:8px}' +
@@ -366,6 +367,8 @@
     });
     var assignee = document.getElementById('pj-assignee');
     if (assignee) assignee.onchange = function () { state.assignee = assignee.value; paint(); };
+    var tlSort = document.getElementById('pj-tl-sort');
+    if (tlSort) tlSort.onchange = function () { state.tlSort = tlSort.value; paint(); };
     var matrix = document.getElementById('pj-matrix');
     if (matrix) matrix.onchange = function () { state.matrix = matrix.value; paint(); };
     var sort = document.getElementById('pj-sort');
