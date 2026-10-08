@@ -432,7 +432,7 @@
     var task = state.tasks.find(function (x) { return x.id === id; });
     var column = task ? task.column_key : 'backlog';
     if (progress >= 100) column = 'done';
-    else if (progress === 0 && column === 'progress') column = 'backlog';
+    else if (progress === 0 && column !== 'backlog') column = 'backlog';
     else if (progress > 0 && column === 'backlog') column = 'progress';
     var patch = {
       title: val('title').trim(),
