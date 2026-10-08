@@ -13,7 +13,7 @@
   }
 
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', focus: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', matrix: '', focus: '' };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -178,12 +178,21 @@
     }
     var names = '';
     var bars = '';
-    tagList().forEach(function (tag) {
-      var rows = list.filter(function (task) { return (task.tag || 'Admin') === tag; });
-      if (!rows.length) return;
-      names += '<b>' + esc(tag) + '</b>';
+    var quads = [
+      { key: 'do', en: 'Do', bm: 'Buat' },
+      { key: 'schedule', en: 'Schedule', bm: 'Jadual' },
+      { key: 'delegate', en: 'Delegate', bm: 'Serah' },
+      { key: 'later', en: 'Defer', bm: 'Tangguh' }
+    ];
+    var rows = list.filter(function (task) { return !state.matrix || quadOf(task) === state.matrix; });
+    quads.forEach(function (q) {
+      if (state.matrix && state.matrix !== q.key) return;
+      var group = rows.filter(function (task) { return quadOf(task) === q.key; });
+      group.sort(function (a, b) { return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999')); });
+      if (!group.length) return;
+      names += '<b>' + esc(t(q.en, q.bm)) + '</b>';
       bars += '<div class="pj-tagspace"></div>';
-      rows.forEach(function (task) {
+      group.forEach(function (task) {
         var a = left(task.start_date || task.created_at);
         var b = left(task.due_date || task.start_date || task.created_at);
         if (b < a) b = a + 4;
@@ -193,7 +202,10 @@
       });
     });
     var head = '<div class="pj-weeks">' + weeks.map(function (w) { return '<span>' + esc(fmt(w.toISOString().slice(0, 10))) + '</span>'; }).join('') + '</div>';
-    return '<div class="pj-split"><div class="pj-names"><div class="pj-namehead"></div>' + (names || '') + '</div><div class="pj-scroll"><div class="pj-tl">' + head + (bars || '<p>' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</div></div></div>';
+    var filter = '<div class="pj-tools"><select id="pj-matrix"><option value="">' + esc(t('Matrix: All', 'Matrix: Semua')) + '</option>' + quads.map(function (q) {
+      return '<option value="' + q.key + '"' + (state.matrix === q.key ? ' selected' : '') + '>' + esc(t(q.en, q.bm)) + '</option>';
+    }).join('') + '</select></div>';
+    return filter + '<div class="pj-split"><div class="pj-names"><div class="pj-namehead"></div>' + (names || '') + '</div><div class="pj-scroll"><div class="pj-tl">' + head + (bars || '<p>' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</div></div></div>';
   }
 
   function fileFolder() {
@@ -354,6 +366,8 @@
     });
     var assignee = document.getElementById('pj-assignee');
     if (assignee) assignee.onchange = function () { state.assignee = assignee.value; paint(); };
+    var matrix = document.getElementById('pj-matrix');
+    if (matrix) matrix.onchange = function () { state.matrix = matrix.value; paint(); };
     var sort = document.getElementById('pj-sort');
     if (sort) sort.onchange = function () { state.sort = sort.value; paint(); };
 
