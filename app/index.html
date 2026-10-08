@@ -6880,6 +6880,17 @@ function _dbPlannerDateKey(iso) {
   } catch (e) { return null }
 }
 
+
+async function _dbPlannerOpen(id) {
+  const row = (window._dbPlannerState && window._dbPlannerState.rows || []).find(r => String(r.id) === String(id))
+  if (!row) return
+  if (row.project_task_id) {
+    const task = await sb.from('project_tasks').select('id,project_id').eq('id', row.project_task_id).eq('tenant_id', APP.tenant.id).is('deleted_at', null).maybeSingle()
+    if (task.data) { openPage('projects', { id: task.data.project_id, taskId: task.data.id }); return }
+  }
+  openPage('planner')
+  setTimeout(function () { if (typeof _plannerOpenForm === 'function') _plannerOpenForm(id) }, 250)
+}
 async function _dbLoadPlanner() {
   const el = document.getElementById('db-planner-body')
   if (!el || !_planAllowsPlanner() || !APP.user?.id || !APP.tenant?.id) return
@@ -6887,7 +6898,7 @@ async function _dbLoadPlanner() {
   try {
     await _plannerEnsureMyHolidays()
     const { data, error } = await sb.from('platform_activities')
-      .select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,notes')
+      .select('id,title,activity_type,status,starts_at,ends_at,due_at,remind_at,notes,project_task_id')
       .eq('tenant_id', APP.tenant.id)
       .is('deleted_at', null)
       .order('starts_at', { ascending: true, nullsFirst: false })
@@ -6996,7 +7007,7 @@ function _dbRenderPlannerCard() {
     const od = (typeof _plannerIsOverdue === 'function') ? _plannerIsOverdue(r) : false
     const pastEvent = r.activity_type === 'event' && r.status === 'open' && (r.starts_at || r.due_at) && new Date(r.starts_at || r.due_at).getTime() < now
     return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
-      <div style="min-width:0;flex:1">
+      <div style="min-width:0;flex:1;cursor:pointer" onclick="_dbPlannerOpen('${r.id}')">
         <div style="font-size:13px;font-weight:600;color:var(--db-text,var(--text))">${_aiEscapeHtml(r.title)}</div>
         <div style="font-size:11px;color:var(--db-text3,var(--text-3));margin-top:2px">
           <span style="color:${_plannerTypeColor(r.activity_type)}">●</span>
@@ -37463,7 +37474,7 @@ if('serviceWorker' in navigator){
 <script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=1"></script>
 <script src="./booking-shortcut.js?v=1"></script>
-<script src="./projects.js?v=22"></script>
+<script src="./projects.js?v=23"></script>
 <script src="./shifts.js?v=4"></script>
 <script src="./booking-token-fix.js?v=1"></script>
 <script src="./booking-public-contrast.js?v=1"></script>
