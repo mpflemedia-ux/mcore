@@ -541,6 +541,7 @@
       return;
     }
     if (params && params.id) state.projectId = params.id;
+    if (params && params.taskId) state.focus = params.taskId;
     refresh();
   };
 })();
