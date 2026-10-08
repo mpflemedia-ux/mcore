@@ -85,7 +85,11 @@
   }
   async function deleteTag(name) {
     if (!window.confirm(t('Delete this tag?', 'Padam tag ini?'))) return;
-    await sb.from('project_tags').update({ deleted_at: new Date().toISOString() }).eq('tenant_id', tid()).eq('name', name);
+    var gone = await sb.from('project_tags').update({ deleted_at: new Date().toISOString() }).eq('tenant_id', tid()).eq('name', name);
+    var tasks = await sb.from('project_tasks').update({ tag: null }).eq('tenant_id', tid()).eq('tag', name);
+    if ((gone.error || tasks.error)) { showToast((gone.error || tasks.error).message, 'error'); return; }
+    TAGS = TAGS.filter(function (tag) { return tag !== name; });
+    state.tasks.forEach(function (task) { if (task.tag === name) task.tag = null; });
     await loadTags();
     refresh();
   }
