@@ -1,12 +1,16 @@
-select t.code, t.name as tenant, e.id, e.name, e.deleted_at, e.bank_account_no
+select t.code, t.name as tenant, e.id, e.name, e.deleted_at, e.bank_name, e.bank_account_no
 from public.employees e
 join public.tenants t on t.id = e.tenant_id
-where e.name ilike '%aziz%haime%'
-order by t.code, e.deleted_at nulls first;
+where e.bank_account_no like '%4973014044%'
+   or e.name ilike '%aziz%'
+   or replace(lower(e.name), ' ', '') like '%mohdaziz%'
+order by t.code, e.name;
 
-select t.code, pr.month, pr.year, pr.net_pay, e.name, e.deleted_at
+select t.code, pr.month, pr.year, pr.net_pay, pr.employee_id, e.name
 from public.payroll_records pr
-join public.employees e on e.id = pr.employee_id
+left join public.employees e on e.id = pr.employee_id
 join public.tenants t on t.id = pr.tenant_id
-where e.name ilike '%aziz%haime%'
-order by pr.year, pr.month;
+where upper(t.code) = 'BROZKY99'
+  and pr.year = 2026
+  and pr.month = 9
+order by e.name nulls last;
