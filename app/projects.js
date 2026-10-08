@@ -197,9 +197,11 @@
         var w = Math.max(8, b - a);
         var late = task.due_date && String(task.due_date).slice(0, 10) < today && task.column_key !== 'done';
         var days = late ? Math.round((new Date(today + 'T00:00:00') - new Date(String(task.due_date).slice(0, 10) + 'T00:00:00')) / 86400000) : 0;
+        var startLabel = fmt(task.start_date || task.created_at);
+        var dueLabel = fmt(task.due_date);
         return '<article class="pj-tlcard"><div><b>' + esc(task.title) + '</b>' +
           (late ? '<small>' + esc(t('Overdue by ' + days + ' days', 'Lewat ' + days + ' hari')) + '</small>' : '') +
-          '</div><div class="pj-tltrack"><span>' + weeksHead + '</span><i style="left:' + a + '%;width:' + w + '%"></i></div></article>';
+          '</div><div class="pj-tltrack"><span><b>' + esc(t('Start', 'Mula')) + ' ' + esc(startLabel || '-') + '</b><b>' + esc(t('Due', 'Siap')) + ' ' + esc(dueLabel || '-') + '</b></span><i style="left:' + a + '%;width:' + w + '%"></i></div></article>';
       }).join('');
       return '<section class="pj-tlsec"><b>' + esc(t(q.en, q.bm)) + '</b>' +
         (cards || '<p class="pj-muted">' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</section>';
