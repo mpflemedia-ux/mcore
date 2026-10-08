@@ -103,7 +103,7 @@
         '<option value="delegate"' + (quadOf(task) === 'delegate' ? ' selected' : '') + '>' + esc(t('Urgent only', 'Segera sahaja')) + '</option>' +
         '<option value="later"' + (quadOf(task) === 'later' ? ' selected' : '') + '>' + esc(t('Neither', 'Dua-dua tidak')) + '</option>' +
       '</select></label>' +
-      '<label>' + esc(t('Notes', 'Nota')) + '<textarea data-f="notes">' + esc(task.notes || '') + '</textarea></label>' +
+      '<label>' + esc(t('Notes', 'Nota')) + '<textarea class="pj-notes" data-f="notes" rows="4">' + esc(task.notes || '') + '</textarea></label>' +
       '<div class="pj-row"><button type="button" class="btn btn-sm btn-primary" data-act="save">' + esc(t('Save', 'Simpan')) + '</button>' +
       '<button type="button" class="btn btn-sm btn-outline" data-act="del">' + esc(t('Delete', 'Padam')) + '</button></div></details></article>';
   }
@@ -295,7 +295,7 @@
       '.pj-card-meta{display:flex;justify-content:space-between;color:var(--text-2);font-size:12px;margin-top:6px}' +
       '.pj-bar{height:6px;background:var(--border);border-radius:99px;margin-top:6px;overflow:hidden} .pj-bar i{display:block;height:100%;background:var(--primary)} .pj-pct{font-size:11px;color:var(--text-3);text-align:right}' +
       '.pj-add{width:100%;color:var(--text-3);padding:8px}' +
-      '.pj-detail{margin-top:6px} .pj-detail label{display:block;font-size:12px;margin-top:6px} .pj-detail input,.pj-detail select,.pj-detail textarea{width:100%;margin-top:2px}' +
+      '.pj-detail{margin-top:6px} .pj-detail label{display:block;font-size:12px;margin-top:6px} .pj-detail input,.pj-detail select,.pj-detail textarea{width:100%;margin-top:2px} .pj-notes{min-height:96px;resize:vertical;overflow:hidden;white-space:pre-wrap;line-height:1.4}' +
       '.pj-stats{display:grid;grid-template-columns:repeat(5,minmax(90px,1fr));gap:8px} .pj-stats div{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px} .pj-stats small{color:var(--text-3)} .pj-stats b{display:block;font-size:20px}' +
       '.pj-scroll{overflow-x:auto} .pj-table{width:100%;border-collapse:collapse} .pj-table th,.pj-table td{border-bottom:1px solid var(--border);padding:8px;text-align:left;white-space:nowrap}' +
       '.pj-split{display:flex;align-items:flex-start;gap:8px} .pj-names{flex:0 0 148px;min-width:0} .pj-namehead,.pj-weeks{height:18px} .pj-names b,.pj-tagspace{display:block;height:22px;margin-top:8px} .pj-name,.pj-track{height:36px;margin:4px 0} .pj-name{font-size:13px;line-height:18px;overflow:hidden} .pj-scroll{flex:1;min-width:0;overflow-x:auto} .pj-tl{min-width:576px} .pj-weeks{display:grid;grid-template-columns:repeat(8,minmax(72px,1fr));color:var(--text-3);font-size:11px} .pj-weeks span{white-space:nowrap} .pj-track{position:relative;background:var(--border);border-radius:8px} .pj-track i{position:absolute;top:11px;height:14px;background:var(--primary);border-radius:6px}' +
@@ -345,6 +345,9 @@
       };
     });
     main.querySelectorAll('.pj-card').forEach(function (card) {
+      var notes = card.querySelector('.pj-notes');
+      var fitNotes = function () { if (!notes) return; notes.style.height = 'auto'; notes.style.height = Math.max(notes.scrollHeight, 96) + 'px'; };
+      if (notes) { fitNotes(); notes.oninput = fitNotes; }
       card.querySelector('[data-act="save"]').onclick = function (ev) { ev.preventDefault(); saveTask(card); };
       card.querySelector('[data-act="del"]').onclick = function (ev) { ev.preventDefault(); delTask(card.getAttribute('data-id')); };
     });
