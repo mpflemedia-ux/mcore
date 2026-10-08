@@ -3548,7 +3548,7 @@ function _pdocPayDate(rec) {
 // Builds the portrait payslip letterhead document (screen preview + print
 // share the same markup — see MP Workspace's mp-workspace payslip format).
 function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
-  const earnRows = [{ label: (rec.basic_description && String(rec.basic_description).trim()) || t.basic, amount: rec.basic_salary, positive: false }]
+  const earnRows = [{ label: t.basic, amount: rec.basic_salary, positive: false }]
   ;[[rec.allowance_type_1, rec.allowance_1], [rec.allowance_type_2, rec.allowance_2], [rec.allowance_type_3, rec.allowance_3]].forEach(([type, amt]) => {
     if(Number(amt) > 0) earnRows.push({ label: _sdTypeLabel(SD_ALLOWANCE_TYPES, type), amount: amt, positive: true })
   })
