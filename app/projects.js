@@ -85,7 +85,7 @@
     var pct = Math.max(0, Math.min(100, Number(task.progress) || 0));
     var linked = taskFile(task.id);
     var fileBit = linked ? '<div class="pj-card-file">' + (fileKind(linked.name, linked.type) === 'image' ? '<img src="' + esc(linked.url) + '" alt="">' : '<span>FILE</span>') + '<b>' + esc(linked.name) + '</b></div>' : '';
-    return '<article class="pj-card" draggable="true" data-id="' + esc(task.id) + '">' +
+    return '<article class="pj-card" data-id="' + esc(task.id) + '">' +
       '<div class="pj-card-title">' + esc(task.title) + '</div>' + fileBit +
       (task.tag ? '<span class="pj-tag">' + esc(task.tag) + '</span>' : '') +
       '<div class="pj-card-meta"><span>' + esc(nick(who) || t('Unassigned', 'Tiada assignee')) + '</span><span>' + esc(fmt(task.due_date)) + '</span></div>' +
@@ -345,16 +345,10 @@
       };
     });
     main.querySelectorAll('.pj-card').forEach(function (card) {
-      card.ondragstart = function (ev) { ev.dataTransfer.setData('text/plain', card.getAttribute('data-id')); };
       card.querySelector('[data-act="save"]').onclick = function (ev) { ev.preventDefault(); saveTask(card); };
       card.querySelector('[data-act="del"]').onclick = function (ev) { ev.preventDefault(); delTask(card.getAttribute('data-id')); };
     });
     main.querySelectorAll('.pj-col').forEach(function (col) {
-      col.ondragover = function (ev) { ev.preventDefault(); };
-      col.ondrop = function (ev) {
-        ev.preventDefault();
-        moveTask(ev.dataTransfer.getData('text/plain'), col.getAttribute('data-col'));
-      };
     });
     var fileInput = document.getElementById('pj-file');
     if (fileInput) fileInput.onchange = function () { uploadFile(fileInput.files && fileInput.files[0]); };
@@ -434,13 +428,19 @@
   async function saveTask(card) {
     var id = card.getAttribute('data-id');
     var val = function (name) { var el = card.querySelector('[data-f="' + name + '"]'); return el ? el.value : ''; };
+    var progress = Math.max(0, Math.min(100, Number(val('progress')) || 0));
+    var task = state.tasks.find(function (x) { return x.id === id; });
+    var column = task ? task.column_key : 'backlog';
+    if (progress >= 100) column = 'done';
+    else if (progress > 0 && column === 'backlog') column = 'progress';
     var patch = {
       title: val('title').trim(),
       tag: val('tag'),
       assignee_employee_id: val('assignee_employee_id') || null,
       start_date: val('start_date') || null,
       due_date: val('due_date') || null,
-      progress: Math.max(0, Math.min(100, Number(val('progress')) || 0)),
+      progress: progress,
+      column_key: column,
       notes: val('notes'),
       is_important: val('matrix') === 'do' || val('matrix') === 'schedule',
       is_urgent: val('matrix') === 'do' || val('matrix') === 'delegate'
