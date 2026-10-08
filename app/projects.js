@@ -103,7 +103,7 @@
         '<option value="delegate"' + (quadOf(task) === 'delegate' ? ' selected' : '') + '>' + esc(t('Urgent only', 'Segera sahaja')) + '</option>' +
         '<option value="later"' + (quadOf(task) === 'later' ? ' selected' : '') + '>' + esc(t('Neither', 'Dua-dua tidak')) + '</option>' +
       '</select></label>' +
-      '<label>' + esc(t('Notes', 'Nota')) + '<textarea class="pj-notes" data-f="notes" rows="4">' + esc(task.notes || '') + '</textarea></label>' +
+      '<label>' + esc(t('Update', 'Kemaskini')) + '<textarea class="pj-notes" data-f="notes" rows="8">' + esc(task.notes || t('To do:\n\nIn progress:\n\nDone:\n', 'Perlu buat:\n\nSedang buat:\n\nSudah siap:\n')) + '</textarea></label>' +
       '<div class="pj-row"><button type="button" class="btn btn-sm btn-primary" data-act="save">' + esc(t('Save', 'Simpan')) + '</button>' +
       '<button type="button" class="btn btn-sm btn-outline" data-act="del">' + esc(t('Delete', 'Padam')) + '</button></div></details></article>';
   }
