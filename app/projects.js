@@ -164,17 +164,24 @@
     var start = new Date();
     start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
     var weeks = [];
-    for (var i = 0; i < 8; i++) {
+    for (var i = 0; i < 3; i++) {
       var w = new Date(start.getTime());
       w.setDate(start.getDate() + i * 7);
       weeks.push(w);
     }
     var origin = weeks[0].getTime();
-    var span = 56 * 86400000;
-    function left(d) {
+    var span = 21 * 86400000;
+    function pos(d) {
       if (!d) return 0;
       var n = new Date(String(d).slice(0, 10) + 'T00:00:00').getTime();
       return Math.max(0, Math.min(100, ((n - origin) / span) * 100));
+    }
+    function short(d) {
+      if (!d) return '';
+      var p = String(d).slice(0, 10).split('-');
+      var en = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var ms = ['Jan','Feb','Mac','Apr','Mei','Jun','Jul','Ogos','Sep','Okt','Nov','Dis'];
+      return Number(p[2]) + ' ' + (bm() ? ms : en)[Number(p[1]) - 1];
     }
     var quads = [
       { key: 'do', en: 'Do', bm: 'Buat' },
@@ -183,28 +190,34 @@
       { key: 'later', en: 'Defer', bm: 'Tangguh' }
     ];
     var today = todayISO();
-    var weeksHead = weeks.slice(0, 3).map(function (w) { return '<span>' + esc(fmt(w.toISOString().slice(0, 10))) + '</span>'; }).join('');
+    var head = weeks.map(function (w) { return '<em>' + esc(short(w.toISOString().slice(0, 10))) + '</em>'; }).join('');
+    var icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 11h4M17 9v4"></path><circle cx="10" cy="10" r="3"></circle><path d="M6 18c1-2 2.5-3 4-3s3 1 4 3"></path></svg>';
+    var cal = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M8 3v4M16 3v4M4 10h16"></path></svg>';
     var sections = quads.filter(function (q) { return !state.matrix || state.matrix === q.key; }).map(function (q) {
       var group = list.filter(function (task) { return quadOf(task) === q.key; });
       group.sort(function (a, b) {
         if (state.tlSort === 'title') return String(a.title).localeCompare(String(b.title));
         return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
       });
+      var empty = {
+        do: [t('No tasks to do', 'Tiada task untuk dibuat'), t('Tasks will appear here when they are important and urgent.', 'Task akan muncul di sini bila penting dan segera.')],
+        schedule: [t('No tasks to schedule', 'Tiada task untuk dijadualkan'), t('Tasks will appear here when they are important.', 'Task akan muncul di sini bila penting.')],
+        delegate: [t('No tasks to delegate', 'Tiada task untuk diserah'), t('Tasks will appear here when assigned to others.', 'Task akan muncul di sini bila diserah kepada orang lain.')],
+        later: [t('No tasks to defer', 'Tiada task untuk ditangguh'), t('Tasks will appear here when they are not urgent.', 'Task akan muncul di sini bila tidak segera.')]
+      }[q.key];
       var cards = group.map(function (task) {
-        var a = left(task.start_date || task.created_at);
-        var b = left(task.due_date || task.start_date || task.created_at);
-        if (b < a) b = a + 8;
-        var w = Math.max(8, b - a);
+        var a = pos(task.start_date || task.created_at);
+        var b = pos(task.due_date || task.start_date || task.created_at);
+        if (b < a) b = Math.min(100, a + 12);
+        var w = Math.max(12, b - a);
         var late = task.due_date && String(task.due_date).slice(0, 10) < today && task.column_key !== 'done';
-        var days = late ? Math.round((new Date(today + 'T00:00:00') - new Date(String(task.due_date).slice(0, 10) + 'T00:00:00')) / 86400000) : 0;
-        var startLabel = fmt(task.start_date || task.created_at);
-        var dueLabel = fmt(task.due_date);
+        var days = late ? Math.max(1, Math.round((new Date(today + 'T00:00:00') - new Date(String(task.due_date).slice(0, 10) + 'T00:00:00')) / 86400000)) : 0;
         return '<article class="pj-tlcard"><div><b>' + esc(task.title) + '</b>' +
-          (late ? '<small>' + esc(t('Overdue by ' + days + ' days', 'Lewat ' + days + ' hari')) + '</small>' : '') +
-          '</div><div class="pj-tltrack"><span><b>' + esc(t('Start', 'Mula')) + ' ' + esc(startLabel || '-') + '</b><b>' + esc(t('Due', 'Siap')) + ' ' + esc(dueLabel || '-') + '</b></span><i style="left:' + a + '%;width:' + w + '%"></i></div></article>';
+          (late ? '<small>' + cal + esc(t('Overdue by ' + days + ' days', 'Lewat ' + days + ' hari')) + '</small>' : '') +
+          '</div><div class="pj-tltrack"><span>' + head + '</span><u></u><i style="left:' + a + '%;width:' + w + '%"></i></div></article>';
       }).join('');
-      return '<section class="pj-tlsec"><b>' + esc(t(q.en, q.bm)) + '</b>' +
-        (cards || '<p class="pj-muted">' + esc(t('No tasks', 'Tiada task')) + '</p>') + '</section>';
+      return '<section class="pj-tlsec"><header><b>' + esc(t(q.en, q.bm)) + '</b><i></i></header>' +
+        (cards || '<div class="pj-tlempy">' + icon + '<b>' + esc(empty[0]) + '</b><span>' + esc(empty[1]) + '</span></div>') + '</section>';
     }).join('');
     var filter = '<div class="pj-tools"><select id="pj-matrix"><option value="">' + esc(t('Matrix: All', 'Matrix: Semua')) + '</option>' + quads.map(function (q) {
       return '<option value="' + q.key + '"' + (state.matrix === q.key ? ' selected' : '') + '>' + esc(t(q.en, q.bm)) + '</option>';
@@ -327,7 +340,7 @@
       '<div class="pj-row"><button class="btn btn-sm btn-primary" type="submit">' + esc(t('Save', 'Simpan')) + '</button><button type="button" class="btn btn-sm btn-outline" id="pj-cancel">' + esc(t('Cancel', 'Batal')) + '</button></div></form></div>';
   }
   function css() {
-    return '.pj-tags{display:flex;flex-direction:column;gap:8px;margin:8px 0;color:var(--text)} .pj-tags span{display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-card);color:var(--text)} .pj-tags b{flex:1;min-width:0;color:var(--text);font-size:14px} .pj-tags button{min-height:40px}.pj-tlcards{display:flex;flex-direction:column;gap:14px} .pj-tlsec>b{display:block;color:var(--primary);margin-bottom:8px} .pj-tlcard{display:flex;flex-direction:column;gap:8px;border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--bg-card);color:var(--text);margin-bottom:8px} .pj-tlcard b{display:block;color:var(--text);font-size:14px;line-height:1.35;word-break:break-word} .pj-tlcard small{display:block;color:var(--danger);font-size:12px;margin-top:4px} .pj-tltrack{position:relative;width:100%;height:36px} .pj-tltrack span{display:flex;gap:8px;justify-content:space-between;color:var(--text-3);font-size:11px} .pj-tltrack span b{font-weight:500} .pj-tltrack i{position:absolute;left:0;bottom:2px;height:8px;border-radius:6px;background:var(--primary)} .pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
+    return '.pj-tags{display:flex;flex-direction:column;gap:8px;margin:8px 0;color:var(--text)} .pj-tags span{display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-card);color:var(--text)} .pj-tags b{flex:1;min-width:0;color:var(--text);font-size:14px} .pj-tags button{min-height:40px}.pj-tlcards{display:flex;flex-direction:column;gap:16px} .pj-tlsec header{display:flex;align-items:center;gap:8px;margin-bottom:8px} .pj-tlsec header b{color:var(--primary);font-size:16px} .pj-tlsec header i{flex:1;height:1px;background:var(--primary)} .pj-tlcard{display:flex;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg-card);color:var(--text);margin-bottom:8px} .pj-tlcard>div:first-child{flex:1;min-width:0} .pj-tlcard b{display:block;color:var(--text);font-size:14px;line-height:1.35;word-break:break-word} .pj-tlcard small{display:flex;align-items:center;gap:4px;color:var(--danger);font-size:12px;margin-top:6px} .pj-tlcard small svg,.pj-tlempy svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8} .pj-tltrack{position:relative;flex:0 0 46%;min-width:140px;height:34px} .pj-tltrack span{display:flex;justify-content:space-between;gap:6px;color:var(--text-3);font-size:11px} .pj-tltrack u{position:absolute;left:0;right:0;bottom:4px;height:8px;border-radius:6px;background:var(--border)} .pj-tltrack i{position:absolute;bottom:4px;height:8px;border-radius:6px;background:var(--primary)} .pj-tlempy{display:flex;flex-direction:column;align-items:center;gap:4px;padding:18px 8px;color:var(--text-2);text-align:center} .pj-tlempy svg{width:36px;height:36px;color:var(--primary)} .pj-tlempy span{color:var(--text-3);font-size:12px} .pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
       '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto}' +
       '.pj-side-h,.pj-top,.pj-tools,.pj-row{display:flex;align-items:center;gap:8px}' +
       '.pj-side-h{justify-content:space-between;margin-bottom:8px}' +
