@@ -208,6 +208,7 @@
       return '<option value="' + q.key + '"' + (state.matrix === q.key ? ' selected' : '') + '>' + esc(t(q.en, q.bm)) + '</option>';
     }).join('') + '</select><select id="pj-tl-sort"><option value="priority"' + (state.tlSort !== 'title' ? ' selected' : '') + '>' + esc(t('Sort: Priority', 'Susun: Keutamaan')) + '</option><option value="title"' + (state.tlSort === 'title' ? ' selected' : '') + '>' + esc(t('Sort: Title', 'Susun: Tajuk')) + '</option></select></div>';
     return filter + '<div class="pj-tlcards">' + sections + '</div>';
+  }
 
   function fileFolder() {
     return tid() + '/projects/' + state.projectId;
