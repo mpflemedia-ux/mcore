@@ -236,7 +236,9 @@
 
   function initials(name) {
     var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-    return ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+    var a = (parts[0] || '?')[0] || '?';
+    var b = parts[1] ? (parts[1][0] || '') : '';
+    return (a + b).toUpperCase();
   }
   function roleLabel(role) {
     var key = String(role || '').toLowerCase();
