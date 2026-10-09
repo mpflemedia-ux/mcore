@@ -82,7 +82,7 @@
       sb.from('academy_missions').select('*').eq('tenant_id', tid()).is('deleted_at', null).order('day').order('sort'),
       sb.from('academy_modules').select('*').eq('tenant_id', tid()).is('deleted_at', null).order('sort'),
       sb.from('academy_progress').select('id,user_id,item_type,item_id,xp_awarded,completed_at').eq('tenant_id', tid()).is('deleted_at', null),
-      sb.from('user_profiles').select('id,name').eq('tenant_id', tid()).limit(200)
+      sb.from('user_profiles').select('id,full_name').eq('tenant_id', tid()).limit(200)
     ]);
     return {
       customers: results[0].data || [],
@@ -191,7 +191,7 @@
 
   function leaderboardHtml(data) {
     var people = {};
-    data.people.forEach(function (p) { people[p.id] = p.name || p.id; });
+    data.people.forEach(function (p) { people[p.id] = p.full_name || p.id; });
     var scores = {};
     data.progress.forEach(function (p) {
       if (state.board === 'month' && String(p.completed_at || '').slice(0, 7) !== klToday().slice(0, 7)) return;
