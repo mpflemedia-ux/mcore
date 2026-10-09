@@ -42,7 +42,7 @@ WITH tn AS (
   WHERE name = 'Phion Sdn. Bhd.' AND deleted_at IS NULL AND COALESCE(is_active, true) = true
   ORDER BY updated_at DESC NULLS LAST LIMIT 1
 ), who AS (
-  SELECT id FROM public.user_profiles p
+  SELECT p.id FROM public.user_profiles p
   JOIN tn ON tn.id = p.tenant_id
   LIMIT 1
 ), picked AS (
@@ -67,7 +67,7 @@ WITH tn AS (
   WHERE name = 'Phion Sdn. Bhd.' AND deleted_at IS NULL AND COALESCE(is_active, true) = true
   ORDER BY updated_at DESC NULLS LAST LIMIT 1
 ), who AS (
-  SELECT id FROM public.user_profiles p JOIN tn ON tn.id = p.tenant_id LIMIT 1
+  SELECT p.id FROM public.user_profiles p JOIN tn ON tn.id = p.tenant_id LIMIT 1
 ), picked AS (
   SELECT c.id, c.pipeline_stage
   FROM public.customers c JOIN tn ON tn.id = c.tenant_id
