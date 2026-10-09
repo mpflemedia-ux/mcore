@@ -106,16 +106,42 @@
     return (data.progress || []).filter(function (p) { return String(p.user_id) === String(uid()); });
   }
 
+  function realActivity(a) { return String(a.notes || '').indexOf('SA-SAMPLE') !== 0; }
+  function evidence(data, userId) {
+    var acts = data.activities.filter(function (a) { return String(a.user_id) === String(userId) && realActivity(a); });
+    var hist = data.history.filter(function (h) { return String(h.changed_by) === String(userId); });
+    var touched = {};
+    acts.forEach(function (a) { if (a.record_id) touched[a.record_id] = 1; });
+    var overdue = data.customers.filter(function (c) {
+      return touched[c.id] && c.next_follow_up_at && c.next_follow_up_at < klToday() && c.pipeline_stage !== 'signed';
+    }).length;
+    return {
+      talks: acts.filter(function (a) { return a.type === 'call' || a.type === 'whatsapp' || a.type === 'meeting'; }).length,
+      notes: acts.filter(function (a) { return a.type === 'note'; }).length,
+      moves: hist.filter(function (h) { return h.to_stage && h.to_stage !== h.from_stage; }).length,
+      discovery: hist.filter(function (h) { return h.to_stage === 'discovery'; }).length,
+      proposal: hist.filter(function (h) { return h.to_stage === 'proposal'; }).length,
+      verbal: hist.filter(function (h) { return h.to_stage === 'verbal'; }).length,
+      signed: hist.filter(function (h) { return h.to_stage === 'signed'; }).length,
+      follow: data.customers.filter(function (c) { return touched[c.id] && c.next_follow_up_at; }).length,
+      overdue: overdue
+    };
+  }
+  function missionDone(m, ev) {
+    var key = Number(m.day) + '-' + Number(m.sort);
+    var need = { '1-1': ev.follow >= 1, '1-2': ev.talks >= 5, '1-3': ev.follow >= 2, '2-1': ev.discovery >= 2, '2-2': ev.proposal >= 1, '2-3': ev.notes >= 1, '3-1': ev.proposal >= 1 && ev.talks >= 1, '3-2': ev.verbal >= 1, '3-3': ev.signed >= 1 };
+    return !!need[key];
+  }
   function achievements(data) {
-    var mine = myProgress(data);
-    var signedByMe = data.history.filter(function (h) { return h.to_stage === 'signed' && String(h.changed_by) === String(uid()); }).length;
-    var talks = data.activities.filter(function (a) { return String(a.user_id) === String(uid()) && (a.type === 'call' || a.type === 'whatsapp' || a.type === 'meeting'); }).length;
-    var proposals = data.history.filter(function (h) { return rank(h.to_stage) >= 3 && String(h.changed_by) === String(uid()); }).length;
+    var ev = evidence(data, uid());
+    var signedByMe = ev.signed;
+    var talks = ev.talks;
+    var proposals = ev.proposal;
     return [
       { en: 'First Close', bm: 'Tutup Pertama', ok: signedByMe > 0 },
       { en: 'First Conversation', bm: 'Perbualan Pertama', ok: talks > 0 },
       { en: 'Proposal Ready', bm: 'Cadangan Sedia', ok: proposals > 0 },
-      { en: 'Challenge Done', bm: 'Cabaran Selesai', ok: mine.filter(function (p) { return p.item_type === 'mission'; }).length >= 9 },
+      { en: 'Challenge Done', bm: 'Cabaran Selesai', ok: data.missions.filter(function (m) { return missionDone(m, ev); }).length >= 9 },
       { en: 'Academy Done', bm: 'Akademi Selesai', ok: mine.filter(function (p) { return p.item_type === 'module'; }).length >= 5 }
     ];
   }
@@ -129,8 +155,7 @@
     var verbal = data.customers.filter(function (c) { return c.pipeline_stage === 'verbal'; }).length;
     var target = Number((APP.tenant.config && APP.tenant.config.academy_signed_target) || 0);
     var targetPct = pct(signed, target);
-    var mine = myProgress(data);
-    var xp = mine.reduce(function (s, p) { return s + Number(p.xp_awarded || 0); }, 0);
+    var evMe = evidence(data, uid());
     var overdue = data.customers.filter(function (c) { return c.next_follow_up_at && c.next_follow_up_at < today && c.pipeline_stage !== 'signed'; });
     var conv = [
       ['Contacted → Discovery', ever(data.history, 'contacted'), ever(data.history, 'discovery')],
@@ -144,7 +169,7 @@
       kpi(t('Proposal stage & beyond', 'Peringkat cadangan dan ke atas'), proposalPlus) + kpi(t('Signed clients', 'Pelanggan ditandatangani'), signed) +
       '</div><p style="margin:8px 0 0;color:var(--text-muted)">' + esc(t('Verbal shown separately', 'Komitmen lisan dipapar berasingan')) + ': ' + verbal + '</p></div>' +
       '<div class="card" style="padding:12px;margin-bottom:10px"><b>' + esc(t('Team target (signed only)', 'Sasaran pasukan (ditandatangani sahaja)')) + '</b><p>' + signed + ' / ' + (target || '—') + ' · ' + (targetPct == null ? '—' : targetPct + '%') + '</p></div>' +
-      '<div class="card" style="padding:12px;margin-bottom:10px"><b>' + esc(t('Your progress', 'Kemajuan anda')) + '</b><p>XP ' + xp + ' · ' + esc(t('missions', 'misi')) + ' ' + mine.filter(function (p) { return p.item_type === 'mission'; }).length + '/9 · ' + esc(t('modules', 'modul')) + ' ' + mine.filter(function (p) { return p.item_type === 'module'; }).length + '/5</p><p>' + achievements(data).filter(function (a) { return a.ok; }).map(function (a) { return esc(t(a.en, a.bm)); }).join(', ') + '</p></div>' +
+      '<div class="card" style="padding:12px;margin-bottom:10px"><b>' + esc(t('Your progress', 'Kemajuan anda')) + '</b><p>' + esc(t('Conversations', 'Perbualan')) + ' ' + evMe.talks + ' · ' + esc(t('Stage changes', 'Tukar peringkat')) + ' ' + evMe.moves + ' · ' + esc(t('Signed', 'Ditandatangani')) + ' ' + evMe.signed + ' · ' + esc(t('Overdue', 'Lewat')) + ' ' + evMe.overdue + '</p><p>' + achievements(data).filter(function (a) { return a.ok; }).map(function (a) { return esc(t(a.en, a.bm)); }).join(', ') + '</p></div>' +
       '<div class="card" style="padding:12px;margin-bottom:10px"><b>' + esc(t('Conversion snapshot', 'Ringkasan penukaran')) + '</b>' + conv.map(function (c) { return '<p>' + esc(c[0]) + ': ' + pctText(c[2], c[1]) + '</p>'; }).join('') + '</div>' +
       (overdue.length ? '<button class="btn btn-sm" data-sa="overdue" style="background:#b91c1c;color:#fff;margin-bottom:8px">' + esc(t('Overdue follow-ups', 'Susulan tertunggak')) + ' ' + overdue.length + '</button>' : '') +
       '<div class="card" style="padding:12px"><b>' + esc(t('Recent prospects', 'Prospek terkini')) + '</b>' + recent.map(function (c) { return '<p>' + esc(c.name) + ' · ' + esc(c.next_follow_up_at || '—') + (c.next_follow_up_at && c.next_follow_up_at < today ? ' <span style="color:#b91c1c">' + esc(t('Overdue', 'Tertunggak')) + '</span>' : '') + '</p>'; }).join('') + '</div>';
@@ -152,13 +177,12 @@
   function kpi(label, value) { return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px"><span style="color:var(--text-muted);font-size:12px">' + esc(label) + '</span><b style="display:block;font-size:20px">' + esc(value) + '</b></div>'; }
 
   function challengeHtml(data) {
-    var done = {};
-    myProgress(data).forEach(function (p) { if (p.item_type === 'mission') done[p.item_id] = 1; });
+    var ev = evidence(data, uid());
     var days = [1, 2, 3].map(function (day) {
       var theme = day === 1 ? t('Build your list and start useful conversations.', 'Bina senarai dan mulakan perbualan yang berguna.') : day === 2 ? t('Understand needs and present a relevant offer.', 'Fahami keperluan dan bentang tawaran yang relevan.') : t('Agree next steps, confirm in writing and onboard.', 'Setuju langkah seterusnya, sahkan secara bertulis dan onboard.');
       var rows = data.missions.filter(function (m) { return Number(m.day) === day; }).map(function (m) {
-        return '<article class="card" style="padding:10px;margin-top:8px"><b>' + esc(t(m.title_en, m.title_bm)) + '</b><p>' + esc(t(m.desc_en, m.desc_bm)) + '</p><p>XP ' + Number(m.xp || 0) + '</p>' +
-          (done[m.id] ? '<span>' + esc(t('Done', 'Selesai')) + '</span>' : '<button class="btn btn-sm btn-primary" data-sa="done-mission" data-id="' + esc(m.id) + '" data-xp="' + Number(m.xp || 0) + '">' + esc(t('Mark done', 'Tanda selesai')) + '</button>') + '</article>';
+        var ok = missionDone(m, ev);
+        return '<article class="card" style="padding:10px;margin-top:8px"><b>' + esc(t(m.title_en, m.title_bm)) + '</b><p>' + esc(t(m.desc_en, m.desc_bm)) + '</p><span>' + esc(ok ? t('Done from activity', 'Selesai dari aktiviti') : t('Not yet', 'Belum')) + '</span></article>';
       }).join('');
       return '<section style="margin-bottom:12px"><b>' + esc(t('Day', 'Hari')) + ' ' + day + '</b><p style="color:var(--text-muted)">' + esc(theme) + '</p>' + rows + '</section>';
     }).join('');
@@ -192,22 +216,22 @@
   function leaderboardHtml(data) {
     var people = {};
     data.people.forEach(function (p) { people[p.id] = p.full_name || p.id; });
-    var scores = {};
-    data.progress.forEach(function (p) {
-      if (state.board === 'month' && String(p.completed_at || '').slice(0, 7) !== klToday().slice(0, 7)) return;
-      if (!scores[p.user_id]) scores[p.user_id] = { xp: 0, signed: 0 };
-      scores[p.user_id].xp += Number(p.xp_awarded || 0);
-    });
-    data.history.forEach(function (h) {
-      if (h.to_stage !== 'signed') return;
-      if (state.board === 'month' && String(h.changed_at || '').slice(0, 7) !== klToday().slice(0, 7)) return;
-      if (!scores[h.changed_by]) scores[h.changed_by] = { xp: 0, signed: 0 };
-      scores[h.changed_by].signed += 1;
-    });
-    var rows = Object.keys(scores).map(function (id) { return { id: id, name: people[id] || id, xp: scores[id].xp, signed: scores[id].signed }; });
-    rows.sort(function (a, b) { return (b.xp + b.signed * 100) - (a.xp + a.signed * 100); });
+    var month = klToday().slice(0, 7);
+    var ids = {};
+    data.activities.forEach(function (a) { if (realActivity(a) && a.user_id) ids[a.user_id] = 1; });
+    data.history.forEach(function (h) { if (h.changed_by) ids[h.changed_by] = 1; });
+    var rows = Object.keys(ids).map(function (id) {
+      var scoped = {
+        activities: data.activities.filter(function (a) { return state.board === 'all' || String(a.occurred_at || '').slice(0, 7) === month; }),
+        history: data.history.filter(function (h) { return state.board === 'all' || String(h.changed_at || '').slice(0, 7) === month; }),
+        customers: data.customers
+      };
+      var ev = evidence(scoped, id);
+      return { id: id, name: people[id] || id, talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
+    }).filter(function (r) { return r.talks || r.moves || r.signed || r.overdue; });
+    rows.sort(function (a, b) { return (b.signed * 100 + b.talks) - (a.signed * 100 + a.talks); });
     return '<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn btn-sm ' + (state.board === 'month' ? 'btn-primary' : 'btn-outline') + '" data-sa="board" data-v="month">' + esc(t('This month', 'Bulan ini')) + '</button><button class="btn btn-sm ' + (state.board === 'all' ? 'btn-primary' : 'btn-outline') + '" data-sa="board" data-v="all">' + esc(t('All time', 'Sepanjang masa')) + '</button></div>' +
-      (rows.map(function (r, i) { return '<p>' + (i + 1) + '. ' + esc(r.name) + ' · XP ' + r.xp + ' · ' + esc(t('Signed', 'Ditandatangani')) + ' ' + r.signed + '</p>'; }).join('') || '<p>' + esc(t('No scores yet', 'Belum ada markah')) + '</p>');
+      (rows.map(function (r, i) { return '<p>' + (i + 1) + '. ' + esc(r.name) + ' · ' + esc(t('Conversations', 'Perbualan')) + ' ' + r.talks + ' · ' + esc(t('Stage changes', 'Tukar peringkat')) + ' ' + r.moves + ' · ' + esc(t('Signed', 'Ditandatangani')) + ' ' + r.signed + ' · ' + esc(t('Overdue', 'Lewat')) + ' ' + r.overdue + '</p>'; }).join('') || '<p>' + esc(t('No scores yet', 'Belum ada markah')) + '</p>');
   }
 
   function settingsHtml() {
@@ -284,7 +308,6 @@
       if (act === 'tab') { state.tab = btn.getAttribute('data-v'); renderSalesAcademy(); }
       if (act === 'board') { state.board = btn.getAttribute('data-v'); renderSalesAcademy({ tab: 'board' }); }
       if (act === 'overdue') renderSalesAcademy({ tab: 'activity' });
-      if (act === 'done-mission') markDone('mission', btn.getAttribute('data-id'), btn.getAttribute('data-xp'));
       if (act === 'done-module') markDone('module', btn.getAttribute('data-id'), 20);
       if (act === 'csv') exportCsv(data);
       if (act === 'log') {
