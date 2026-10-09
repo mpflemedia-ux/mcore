@@ -1,15 +1,7 @@
--- Create Racus Studio token-staff invoice at RM 250 and return the row.
+-- Invoice for tenant code BROZKY99 only. Token staff, RM 250.
 WITH tn AS (
-  SELECT id
-  FROM public.tenants
-  WHERE deleted_at IS NULL
-    AND (
-      code = 'BROZKY99'
-      OR name ILIKE '%brzky empire%'
-      OR name ILIKE '%brzky impire%'
-      OR name = 'Brzky Empire'
-    )
-  ORDER BY CASE WHEN code = 'BROZKY99' THEN 0 ELSE 1 END
+  SELECT id FROM public.tenants
+  WHERE code = 'BROZKY99' AND deleted_at IS NULL
   LIMIT 1
 ), ins_cust AS (
   INSERT INTO public.customers (tenant_id, code, name, notes)
@@ -25,7 +17,6 @@ WITH tn AS (
   FROM public.customers c
   JOIN tn ON c.tenant_id = tn.id
   WHERE c.deleted_at IS NULL AND c.name ILIKE '%racus%'
-  ORDER BY c.created_at
   LIMIT 1
 ), ins_inv AS (
   INSERT INTO public.invoices (
@@ -46,14 +37,14 @@ WITH tn AS (
   RETURNING i.id
 ), ins_item AS (
   INSERT INTO public.invoice_items (tenant_id, invoice_id, description, qty, unit_price, line_total)
-  SELECT i.tenant_id, i.id, 'Token staff. Racus Studio Maybank 564397158599. Brzky Empire Public Bank 3242191926.', 1, 250, 250
+  SELECT i.tenant_id, i.id, 'Token staff', 1, 250, 250
   FROM public.invoices i
   JOIN cust ON i.tenant_id = cust.tenant_id
   WHERE i.ref_no = 'INV-20261009-RACUS' AND i.deleted_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM public.invoice_items ii WHERE ii.invoice_id = i.id)
   RETURNING invoice_id
 )
-SELECT i.ref_no, i.customer_name, i.total, i.status, t.name AS tenant
+SELECT t.code, t.name AS tenant, i.ref_no, i.customer_name, i.total, i.status
 FROM public.invoices i
 JOIN public.tenants t ON t.id = i.tenant_id
-WHERE i.ref_no = 'INV-20261009-RACUS' AND i.deleted_at IS NULL;
+WHERE t.code = 'BROZKY99' AND i.ref_no = 'INV-20261009-RACUS' AND i.deleted_at IS NULL;
