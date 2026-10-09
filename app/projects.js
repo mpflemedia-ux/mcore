@@ -579,9 +579,9 @@
   }
   async function uploadFile(file) {
     if (!file || !state.projectId) return;
-    var limit = 50 * 1024 * 1024;
+    var limit = 100 * 1024 * 1024;
     if (file.size > limit) {
-      showToast(t('File is over 50 MB. Compress it, or raise the storage limit.', 'Fail melebihi 50 MB. Kecilkan fail, atau naikkan had storan.'), 'error');
+      showToast(t('File is over 100 MB. Compress it first.', 'Fail melebihi 100 MB. Kecilkan fail dulu.'), 'error');
       return;
     }
     var body = file;
