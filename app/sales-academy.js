@@ -323,12 +323,27 @@
     a.click();
   }
 
+  function rememberPlace() {
+    var main = document.getElementById('main');
+    try {
+      localStorage.setItem('nexerp_last_page', 'sales_academy');
+      localStorage.setItem('nexerp_last_params', JSON.stringify({ tab: state.tab, board: state.board }));
+      if (main) sessionStorage.setItem('sa_scroll', String(main.scrollTop || 0));
+    } catch (e) {}
+  }
   window.renderSalesAcademy = async function (params) {
     if (typeof canAccess === 'function' && !canAccess('sales_academy')) {
       if (typeof renderAccessDenied === 'function') renderAccessDenied();
       return;
     }
+    if (!(params && params.tab)) {
+      try {
+        var saved = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}');
+        if (saved && saved.tab) params = Object.assign({}, params || {}, { tab: saved.tab, board: saved.board });
+      } catch (e) {}
+    }
     if (params && params.tab) state.tab = params.tab;
+    if (params && params.board) state.board = params.board;
     var main = document.getElementById('main');
     main.innerHTML = '<div class="card" style="padding:16px">' + esc(t('Loading Sales Academy', 'Memuatkan Akademi Jualan')) + '</div>';
     var seedErr = await ensureContent();
@@ -373,9 +388,12 @@
       if (el.getAttribute('data-sa') === 'filter') { state.stageFilter = el.value; renderSalesAcademy({ tab: 'activity' }); }
       if (el.getAttribute('data-sa') === 'sort') { state.sort = el.value; renderSalesAcademy({ tab: 'activity' }); }
     };
+    rememberPlace();
     paintChip(data);
     var box = document.getElementById('sa-q');
     if (box && state.tab === 'activity' && state.q) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    var sc = Number(sessionStorage.getItem('sa_scroll') || 0);
+    if (sc && main) main.scrollTop = sc;
   };
 
   function paintChip(data) {
