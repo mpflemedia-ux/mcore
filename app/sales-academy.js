@@ -82,7 +82,7 @@
       sb.from('academy_missions').select('*').eq('tenant_id', tid()).is('deleted_at', null).order('day').order('sort'),
       sb.from('academy_modules').select('*').eq('tenant_id', tid()).is('deleted_at', null).order('sort'),
       sb.from('academy_progress').select('id,user_id,item_type,item_id,xp_awarded,completed_at').eq('tenant_id', tid()).is('deleted_at', null),
-      sb.from('user_profiles').select('id,full_name').eq('tenant_id', tid()).limit(200)
+      sb.from('user_profiles').select('id,full_name,role').eq('tenant_id', tid()).limit(200)
     ]);
     return {
       customers: results[0].data || [],
@@ -213,9 +213,18 @@
     return rows + '<div class="card" style="padding:10px"><b>' + esc(t('Activity log', 'Log aktiviti')) + '</b>' + (log || '<p>' + esc(t('No activity yet', 'Belum ada aktiviti')) + '</p>') + '</div>';
   }
 
+  function initials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    return ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+  }
+  function roleLabel(role) {
+    var key = String(role || '').toLowerCase();
+    var map = { staff: ['Staff', 'Staf'], owner: ['Owner', 'Pemilik'], admin: ['Admin', 'Admin'], manager: ['Manager', 'Pengurus'] };
+    return map[key] ? t(map[key][0], map[key][1]) : role || '';
+  }
   function leaderboardHtml(data) {
     var people = {};
-    data.people.forEach(function (p) { people[p.id] = p.full_name || p.id; });
+    data.people.forEach(function (p) { people[p.id] = p; });
     var month = klToday().slice(0, 7);
     var ids = {};
     data.activities.forEach(function (a) { if (realActivity(a) && a.user_id) ids[a.user_id] = 1; });
@@ -227,11 +236,21 @@
         customers: data.customers
       };
       var ev = evidence(scoped, id);
-      return { id: id, name: people[id] || id, talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
+      var person = people[id] || {};
+      return { id: id, name: person.full_name || id, role: roleLabel(person.role), talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
     }).filter(function (r) { return r.talks || r.moves || r.signed || r.overdue; });
     rows.sort(function (a, b) { return (b.signed * 100 + b.talks) - (a.signed * 100 + a.talks); });
-    return '<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn btn-sm ' + (state.board === 'month' ? 'btn-primary' : 'btn-outline') + '" data-sa="board" data-v="month">' + esc(t('This month', 'Bulan ini')) + '</button><button class="btn btn-sm ' + (state.board === 'all' ? 'btn-primary' : 'btn-outline') + '" data-sa="board" data-v="all">' + esc(t('All time', 'Sepanjang masa')) + '</button></div>' +
-      (rows.map(function (r, i) { return '<p>' + (i + 1) + '. ' + esc(r.name) + ' · ' + esc(t('Conversations', 'Perbualan')) + ' ' + r.talks + ' · ' + esc(t('Stage changes', 'Tukar peringkat')) + ' ' + r.moves + ' · ' + esc(t('Signed', 'Ditandatangani')) + ' ' + r.signed + ' · ' + esc(t('Overdue', 'Lewat')) + ' ' + r.overdue + '</p>'; }).join('') || '<p>' + esc(t('No scores yet', 'Belum ada markah')) + '</p>');
+    var cell = function (label, value, late) {
+      return '<div class="sa-cell"><span>' + esc(label) + '</span><b' + (late ? ' class="sa-late"' : '') + '>' + value + '</b></div>';
+    };
+    var cards = rows.map(function (r) {
+      return '<article class="sa-card"><div class="sa-who"><span class="sa-av">' + esc(initials(r.name)) + '</span><div><b>' + esc(r.name) + '</b><small>' + esc(r.role) + '</small></div></div><div class="sa-grid">' +
+        cell(t('Conversations', 'Perbualan'), r.talks) + cell(t('Stage changes', 'Tukar peringkat'), r.moves) +
+        cell(t('Signed', 'Ditandatangani'), r.signed) + cell(t('Overdue', 'Lewat'), r.overdue, r.overdue > 0) + '</div></article>';
+    }).join('');
+    return '<style>.sa-cards{display:grid;gap:12px}.sa-card{border:1px solid var(--border);border-radius:16px;background:var(--card);overflow:hidden}.sa-who{display:flex;gap:12px;align-items:center;padding:14px}.sa-av{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text);font-weight:600}.sa-who b{display:block;color:var(--text)}.sa-who small{color:var(--text-muted)}.sa-grid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)}.sa-cell{padding:12px 14px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}.sa-cell span{display:block;color:var(--text-muted);font-size:13px}.sa-cell b{font-size:28px;color:var(--text);line-height:1.1}.sa-late{color:#b91c1c}.sa-cards .sa-cell:nth-child(2n){border-right:0}@media(min-width:900px){.sa-cards{grid-template-columns:1fr 1fr}}</style>' +
+      '<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn btn-sm ' + (state.board === 'month' ? 'btn-primary' : 'btn-outline') + '" data-sa="board" data-v="month">' + esc(t('This month', 'Bulan ini')) + '</button><button class="btn btn-sm ' + (state.board === 'all' ? 'btn-primary' : 'btn-outline') + '" data-sa="board" data-v="all">' + esc(t('All time', 'Sepanjang masa')) + '</button></div>' +
+      '<div class="sa-cards">' + (cards || '<p>' + esc(t('No scores yet', 'Belum ada markah')) + '</p>') + '</div>';
   }
 
   function settingsHtml() {
