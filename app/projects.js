@@ -300,7 +300,7 @@
       '<aside class="pj-side"><div class="pj-side-h">' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
       state.projects.map(function (p, i) {
         var on = String(p.id) === String(state.projectId) ? ' on' : '';
-        return '<button type="button" class="pj-proj' + on + '" data-proj="' + esc(p.id) + '"><i style="background:' + esc(p.color || COLORS[i % COLORS.length]) + '"></i><span>' + esc(p.name) + '</span><small>' + esc(p.kind === 'client' ? t('Client', 'Klien') : t('Internal', 'Dalaman')) + '</small></button>';
+        return '<div class="pj-proj' + on + '"><button type="button" data-proj="' + esc(p.id) + '"><i style="background:' + esc(p.color || COLORS[i % COLORS.length]) + '"></i><span>' + esc(p.name) + '</span></button><small>' + esc(p.kind === 'client' ? t('Client', 'Klien') : t('Internal', 'Dalaman')) + '</small><button type="button" data-proj-edit="' + esc(p.id) + '">' + esc(t('Edit', 'Ubah')) + '</button><button type="button" data-proj-del="' + esc(p.id) + '">' + esc(t('Delete', 'Padam')) + '</button></div>';
       }).join('') +
       (state.projects.length ? '' : '<p class="pj-muted">' + esc(t('No project yet', 'Belum ada projek')) + '</p>') +
       '</aside><section class="pj-main">' +
@@ -333,7 +333,8 @@
     return '<div class="pj-stats">' + cells.map(function (c) { return '<div><small>' + esc(c[0]) + '</small><b>' + esc(c[1]) + '</b></div>'; }).join('') + '</div>';
   }
   function formHtml() {
-    return '<div id="pj-modal" class="pj-modal" hidden><form id="pj-form"><h3>' + esc(t('New project', 'Projek baru')) + '</h3>' +
+    return '<div id="pj-modal" class="pj-modal" hidden><form id="pj-form"><h3 id="pj-form-title">' + esc(t('New project', 'Projek baru')) + '</h3>' +
+      '<input type="hidden" name="id" id="pj-form-id">' +
       '<label>' + esc(t('Name', 'Nama')) + '<input name="name" required></label>' +
       '<label>' + esc(t('Type', 'Jenis')) + '<select name="kind"><option value="internal">' + esc(t('Internal', 'Dalaman')) + '</option><option value="client">' + esc(t('Client', 'Klien')) + '</option></select></label>' +
       '<label>' + esc(t('Customer', 'Pelanggan')) + '<select name="customer_id"><option value="">—</option>' + state.customers.map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
@@ -344,7 +345,7 @@
       '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto}' +
       '.pj-side-h,.pj-top,.pj-tools,.pj-row{display:flex;align-items:center;gap:8px}' +
       '.pj-side-h{justify-content:space-between;margin-bottom:8px}' +
-      '.pj-proj{display:flex;gap:8px;align-items:center;width:100%;text-align:left;padding:8px;border-radius:8px;color:var(--text)}' +
+      '.pj-proj{display:flex;gap:6px;align-items:center;width:100%;text-align:left;padding:8px;border-radius:8px;color:var(--text)} .pj-proj>button[data-proj]{display:flex;gap:8px;align-items:center;flex:1;min-width:0;background:none;border:0;color:var(--text);text-align:left} .pj-proj>button[data-proj] span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pj-proj>button[data-proj-edit],.pj-proj>button[data-proj-del]{min-height:32px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 6px;font-size:11px} .pj-proj>button[data-proj-del]{color:#b91c1c}' +
       '.pj-proj.on{background:var(--primary-light)} .pj-proj i{width:8px;height:8px;border-radius:50%;flex:none}' +
       '.pj-proj small{margin-left:auto;color:var(--text-3);font-size:11px}' +
       '.pj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}' +
@@ -378,6 +379,12 @@
     main.querySelectorAll('[data-proj]').forEach(function (btn) {
       btn.onclick = function () { state.projectId = btn.getAttribute('data-proj'); state.tab = 'board'; refresh(); };
     });
+    main.querySelectorAll('[data-proj-edit]').forEach(function (btn) {
+      btn.onclick = function (ev) { ev.stopPropagation(); openProjectForm(btn.getAttribute('data-proj-edit')); };
+    });
+    main.querySelectorAll('[data-proj-del]').forEach(function (btn) {
+      btn.onclick = function (ev) { ev.stopPropagation(); deleteProject(btn.getAttribute('data-proj-del')); };
+    });
     main.querySelectorAll('[data-tab]').forEach(function (btn) {
       btn.onclick = function () { state.tab = btn.getAttribute('data-tab'); paint(); };
     });
@@ -406,7 +413,7 @@
       btn.onclick = function () { deleteTag(btn.getAttribute('data-tag-del')); };
     });
     var np = document.getElementById('pj-new');
-    if (np) np.onclick = function () { document.getElementById('pj-modal').hidden = false; };
+    if (np) np.onclick = function () { openProjectForm(''); };
     var cancel = document.getElementById('pj-cancel');
     if (cancel) cancel.onclick = function () { document.getElementById('pj-modal').hidden = true; };
     var form = document.getElementById('pj-form');
@@ -486,17 +493,51 @@
       if (typeof showToast === 'function') showToast(msg, 'error');
     }
   }
+  function openProjectForm(id) {
+    var form = document.getElementById('pj-form');
+    var modal = document.getElementById('pj-modal');
+    if (!form || !modal) return;
+    var proj = id ? state.projects.find(function (p) { return String(p.id) === String(id); }) : null;
+    form.reset();
+    document.getElementById('pj-form-id').value = proj ? proj.id : '';
+    document.getElementById('pj-form-title').textContent = proj ? t('Edit project', 'Ubah projek') : t('New project', 'Projek baru');
+    if (proj) {
+      form.elements.name.value = proj.name || '';
+      form.elements.kind.value = proj.kind || 'internal';
+      form.elements.customer_id.value = proj.customer_id || '';
+    }
+    modal.hidden = false;
+  }
   async function saveProject(ev) {
     ev.preventDefault();
     var fd = new FormData(ev.target);
     var kind = fd.get('kind');
     var customer = fd.get('customer_id') || null;
     if (kind === 'client' && !customer) { showToast(t('Pick a customer', 'Pilih pelanggan'), 'error'); return; }
-    var row = { tenant_id: tid(), name: String(fd.get('name') || '').trim(), kind: kind, customer_id: kind === 'client' ? customer : null, color: COLORS[state.projects.length % COLORS.length] };
-    var ins = await sb.from('projects').insert(row).select('id').single();
-    if (ins.error) { showToast(ins.error.message, 'error'); return; }
-    state.projectId = ins.data.id;
+    var row = { name: String(fd.get('name') || '').trim(), kind: kind, customer_id: kind === 'client' ? customer : null };
+    var id = fd.get('id');
+    if (id) {
+      var up = await sb.from('projects').update(row).eq('id', id).eq('tenant_id', tid());
+      if (up.error) { showToast(up.error.message, 'error'); return; }
+      state.projectId = id;
+    } else {
+      row.tenant_id = tid();
+      row.color = COLORS[state.projects.length % COLORS.length];
+      var ins = await sb.from('projects').insert(row).select('id').single();
+      if (ins.error) { showToast(ins.error.message, 'error'); return; }
+      state.projectId = ins.data.id;
+    }
     state.tab = 'board';
+    refresh();
+  }
+  async function deleteProject(id) {
+    var proj = state.projects.find(function (p) { return String(p.id) === String(id); });
+    if (!proj) return;
+    if (!window.confirm(t('Delete this project?', 'Padam projek ini?'))) return;
+    var gone = await sb.from('projects').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', tid());
+    if (gone.error) { showToast(gone.error.message, 'error'); return; }
+    if (String(state.projectId) === String(id)) state.projectId = '';
+    showToast(t('Deleted', 'Dipadam'), 'success');
     refresh();
   }
   async function addTask(col) {
