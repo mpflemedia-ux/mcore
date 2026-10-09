@@ -1981,6 +1981,7 @@ const NAV_ITEMS = [
   { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },
   { id:'pos',        icon:'ti-device-desktop',    label_en:'POS',         label_bm:'POS',          module:'pos' },
   { id:'sales_commission', icon:'ti-award',       label_en:'Sales Commission', label_bm:'Komisyen Jualan', module:'sales_commission' },
+  { id:'sales_academy', icon:'ti-school', label_en:'Sales Academy', label_bm:'Akademi Jualan', module:'sales_academy' },
   { id:'inventory',  icon:'ti-box',               label_en:'Inventory',   label_bm:'Inventori',    module:'inventory' },
   { id:'logistics',  icon:'ti-truck-delivery',    label_en:'Logistics',   label_bm:'Logistik',     module:'logistics' },
   { id:'purchasing', icon:'ti-shopping-cart',     label_en:'Purchasing',  label_bm:'Perolehan',    module:'purchasing' },
@@ -2034,10 +2035,10 @@ function _rpModulesForCurrentUser() {
 
 // Default module map when tenant has not configured custom role permissions yet
 const _DEFAULT_ROLE_MODULES = {
-  manager: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
-  accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
+  manager: ['crm','sales','pos','sales_commission','sales_academy','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
+  accountant: ['accounting','vouchers','reports','purchasing','sales','crm','sales_academy'],
   cashier: ['pos','sales'],
-  staff: ['hr_attendance'],
+  staff: ['hr_attendance','sales_academy'],
   admin: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports','admin'],
 }
 
@@ -2116,7 +2117,7 @@ function assertNotPeriodLocked(dateStr) {
  *  paid plans differ by usage (txn / AI / branches), not by hiding modules.
  *  platform home (MP Workspace) always full (see _planAllowsModule). */
 const _PLAN_MODULES = {
-  free: ['core', 'crm', 'sales', 'pos', 'inventory'],
+  free: ['core', 'crm', 'sales', 'pos', 'inventory', 'sales_academy'],
   starter: null,
   business: null,
   pro: null,
@@ -3398,6 +3399,7 @@ function openPage(page, params={}) {
       case 'sales':      _safeRender(() => renderSales(params)); break
       case 'pos':        _safeRender(() => renderPOS(params)); break
       case 'sales_commission': _safeRender(() => renderSalesCommission(params)); break
+      case 'sales_academy': _safeRender(() => renderSalesAcademy(params)); break
       case 'inventory':  _safeRender(() => renderInventory(params)); break
       case 'logistics':  _safeRender(() => renderLogistics(params)); break
       case 'purchasing': _safeRender(() => renderPurchasing(params)); break
@@ -9676,6 +9678,7 @@ const RP_SECTIONS = [
     { id:'sales',      en:'Sales / Invoices', bm:'Jualan / Invois' },
     { id:'pos',        en:'POS', bm:'POS' },
     { id:'sales_commission', en:'Sales Commission', bm:'Komisyen Jualan' },
+    { id:'sales_academy', en:'Sales Academy', bm:'Akademi Jualan' },
     { id:'inventory',  en:'Inventory', bm:'Inventori' },
     { id:'logistics',  en:'Logistics', bm:'Logistik' },
     { id:'purchasing', en:'Purchasing', bm:'Perolehan' },
@@ -9704,8 +9707,8 @@ const RP_ROLE_DEFAULTS = {
   staff: ['hr_attendance'],
   cashier: ['pos','sales'],
   accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
-  manager: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
-  admin: ['crm','sales','pos','sales_commission','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','hr','accounting','vouchers','reports','admin'],
+  manager: ['crm','sales','pos','sales_commission','sales_academy','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
+  admin: ['crm','sales','pos','sales_commission','sales_academy','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','hr','accounting','vouchers','reports','admin'],
 }
 
 let _rolePermsState = {}
@@ -37493,6 +37496,7 @@ if('serviceWorker' in navigator){
 <script src="./print-hide-fabs.js?v=1"></script>
 <script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=1"></script>
+<script src="./sales-academy.js?v=1"></script>
 <script src="./booking-shortcut.js?v=1"></script>
 <script src="./shifts.js?v=4"></script>
 <script src="./booking-token-fix.js?v=1"></script>
