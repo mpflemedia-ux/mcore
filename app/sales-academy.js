@@ -248,21 +248,25 @@
     data.people.forEach(function (p) { people[p.id] = p; });
     var month = klToday().slice(0, 7);
     var ids = {};
+    (data.employees || []).forEach(function (e) { ids[e.id] = 1; });
     data.activities.forEach(function (a) { if (realActivity(a) && a.user_id) ids[a.user_id] = 1; });
     data.history.forEach(function (h) { if (h.changed_by) ids[h.changed_by] = 1; });
+    var scoped = {
+      activities: data.activities.filter(function (a) { return state.board === 'all' || String(a.occurred_at || '').slice(0, 7) === month; }),
+      history: data.history.filter(function (h) { return state.board === 'all' || String(h.changed_at || '').slice(0, 7) === month; }),
+      customers: data.customers
+    };
     var rows = Object.keys(ids).map(function (id) {
-      var scoped = {
-        activities: data.activities.filter(function (a) { return state.board === 'all' || String(a.occurred_at || '').slice(0, 7) === month; }),
-        history: data.history.filter(function (h) { return state.board === 'all' || String(h.changed_at || '').slice(0, 7) === month; }),
-        customers: data.customers
-      };
       var ev = evidence(scoped, id);
       var person = people[id] || {};
       var emp = (data.employees || []).filter(function (e) { return String(e.id) === String(id); })[0];
       var name = emp ? (emp.nickname || emp.name) : (person.full_name || id);
       var role = emp ? (emp.position || t('Staff', 'Staf')) : roleLabel(person.role);
       return { id: id, name: name, fromHr: !!emp, rawRole: String(person.role || '').toLowerCase(), role: role, talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
-    }).filter(function (r) { return (r.fromHr || r.rawRole === 'staff') && (r.talks || r.moves || r.signed || r.overdue); });
+    }).filter(function (r) {
+      if (r.rawRole.indexOf('platform') >= 0 || r.rawRole === 'owner' || r.rawRole === 'admin') return false;
+      return r.fromHr || (r.rawRole === 'staff' && (r.talks || r.moves || r.signed || r.overdue));
+    });
     rows.sort(function (a, b) { return (b.signed * 100 + b.talks) - (a.signed * 100 + a.talks); });
     var cell = function (label, value, late) {
       return '<div class="sa-cell"><span>' + esc(label) + '</span><b' + (late ? ' class="sa-late"' : '') + '>' + value + '</b></div>';
