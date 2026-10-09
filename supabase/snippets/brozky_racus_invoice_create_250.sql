@@ -1,4 +1,4 @@
--- Create Racus Studio token-staff invoice at RM 250 if it is missing, then set the line.
+-- Create Racus Studio token-staff invoice at RM 250. customers has no type column.
 WITH tn AS (
   SELECT id
   FROM public.tenants
@@ -7,8 +7,8 @@ WITH tn AS (
   ORDER BY CASE WHEN code = 'BROZKY99' THEN 0 ELSE 1 END
   LIMIT 1
 ), ins_cust AS (
-  INSERT INTO public.customers (tenant_id, code, name, type, country)
-  SELECT tn.id, 'RACUS-STUDIO', 'Racus Studio', 'company', 'MY'
+  INSERT INTO public.customers (tenant_id, code, name, notes)
+  SELECT tn.id, 'RACUS-STUDIO', 'Racus Studio', 'Maybank 564397158599'
   FROM tn
   WHERE NOT EXISTS (
     SELECT 1 FROM public.customers c
