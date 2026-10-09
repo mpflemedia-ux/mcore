@@ -2028,9 +2028,13 @@ function _rpModulesForCurrentUser() {
   if(Array.isArray(ov)) return ov.map(String)
   const rolesMap = (APP.tenantConfig && APP.tenantConfig.roles) || {}
   const configured = rolesMap[role]
-  if(Array.isArray(configured)) return configured.map(String)
-  const fb = (_DEFAULT_ROLE_MODULES[role] || RP_ROLE_DEFAULTS[role] || [])
-  return Array.isArray(fb) ? fb.map(String) : []
+  var mods = Array.isArray(configured) ? configured.map(String) : []
+  if(!mods.length){
+    const fb = (_DEFAULT_ROLE_MODULES[role] || RP_ROLE_DEFAULTS[role] || [])
+    mods = Array.isArray(fb) ? fb.map(String) : []
+  }
+  if(role === 'staff' && mods.indexOf('sales_academy') < 0) mods.push('sales_academy')
+  return mods
 }
 
 // Default module map when tenant has not configured custom role permissions yet
@@ -9704,7 +9708,7 @@ const RP_SECTIONS = [
 const RP_MODULES = RP_SECTIONS.reduce((a,s)=>a.concat(s.modules), [])
 
 const RP_ROLE_DEFAULTS = {
-  staff: ['hr_attendance'],
+  staff: ['hr_attendance','sales_academy'],
   cashier: ['pos','sales'],
   accountant: ['accounting','vouchers','reports','purchasing','sales','crm'],
   manager: ['crm','sales','pos','sales_commission','sales_academy','inventory','logistics','purchasing','production','hr_attendance','hr_employees','hr_payroll','hr_recruit','accounting','vouchers','reports'],
@@ -37496,7 +37500,7 @@ if('serviceWorker' in navigator){
 <script src="./print-hide-fabs.js?v=1"></script>
 <script src="./role-permissions-sync.js?v=9"></script>
 <script src="./booking.js?v=1"></script>
-<script src="./sales-academy.js?v=2"></script>
+<script src="./sales-academy.js?v=3"></script>
 <script src="./booking-shortcut.js?v=1"></script>
 <script src="./shifts.js?v=4"></script>
 <script src="./booking-token-fix.js?v=1"></script>
