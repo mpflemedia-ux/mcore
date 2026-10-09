@@ -82,7 +82,8 @@
       sb.from('academy_missions').select('*').eq('tenant_id', tid()).is('deleted_at', null).order('day').order('sort'),
       sb.from('academy_modules').select('*').eq('tenant_id', tid()).is('deleted_at', null).order('sort'),
       sb.from('academy_progress').select('id,user_id,item_type,item_id,xp_awarded,completed_at').eq('tenant_id', tid()).is('deleted_at', null),
-      sb.from('user_profiles').select('id,full_name,role').eq('tenant_id', tid()).limit(200)
+      sb.from('user_profiles').select('id,full_name,role').eq('tenant_id', tid()).limit(200),
+      sb.from('employees').select('id,name,nickname,position').eq('tenant_id', tid()).is('deleted_at', null).order('name').limit(200)
     ]);
     return {
       customers: results[0].data || [],
@@ -92,6 +93,7 @@
       modules: results[4].data || [],
       progress: results[5].data || [],
       people: results[6].data || [],
+      employees: results[7].data || [],
       errors: results.map(function (r) { return r.error && r.error.message; }).filter(Boolean)
     };
   }
@@ -214,8 +216,8 @@
       if (state.sort === 'follow') return String(a.next_follow_up_at || '9999').localeCompare(String(b.next_follow_up_at || '9999'));
       return String(a.name || '').localeCompare(String(b.name || ''));
     });
-    var staff = (data.people || []).filter(function (p) { return String(p.role || '').toLowerCase() === 'staff'; });
-    var staffOpts = '<option value="">' + esc(t('Select staff', 'Pilih staff')) + '</option>' + staff.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.full_name || p.id) + '</option>'; }).join('');
+    var staff = (data.employees || []).slice().sort(function (a, b) { return String(a.nickname || a.name || '').localeCompare(String(b.nickname || b.name || '')); });
+    var staffOpts = '<option value="">' + esc(t('Select staff', 'Pilih staff')) + '</option>' + staff.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.nickname || p.name || p.id) + '</option>'; }).join('');
     var rows = list.map(function (c) {
       var late = c.next_follow_up_at && c.next_follow_up_at < today && c.pipeline_stage !== 'signed';
       var actor = admin() ? '<select data-sa="actor" data-id="' + esc(c.id) + '" style="margin-top:6px;width:100%;min-height:40px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">' + staffOpts + '</select>' : '';
@@ -256,8 +258,11 @@
       };
       var ev = evidence(scoped, id);
       var person = people[id] || {};
-      return { id: id, name: person.full_name || id, rawRole: String(person.role || '').toLowerCase(), role: roleLabel(person.role), talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
-    }).filter(function (r) { return r.rawRole === 'staff' && (r.talks || r.moves || r.signed || r.overdue); });
+      var emp = (data.employees || []).filter(function (e) { return String(e.id) === String(id); })[0];
+      var name = emp ? (emp.nickname || emp.name) : (person.full_name || id);
+      var role = emp ? (emp.position || t('Staff', 'Staf')) : roleLabel(person.role);
+      return { id: id, name: name, fromHr: !!emp, rawRole: String(person.role || '').toLowerCase(), role: role, talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
+    }).filter(function (r) { return (r.fromHr || r.rawRole === 'staff') && (r.talks || r.moves || r.signed || r.overdue); });
     rows.sort(function (a, b) { return (b.signed * 100 + b.talks) - (a.signed * 100 + a.talks); });
     var cell = function (label, value, late) {
       return '<div class="sa-cell"><span>' + esc(label) + '</span><b' + (late ? ' class="sa-late"' : '') + '>' + value + '</b></div>';
