@@ -579,8 +579,22 @@
   }
   async function uploadFile(file) {
     if (!file || !state.projectId) return;
+    var body = file;
+    try {
+      var buf = await file.arrayBuffer();
+      body = new Blob([buf], { type: file.type || 'application/octet-stream' });
+    } catch (err) {
+      showToast(t('Drive file is not on this phone. Download it in Drive first, then upload.', 'Fail Drive belum ada dalam telefon. Muat turun dalam Drive dulu, kemudian muat naik.'), 'error');
+      return;
+    }
     var path = fileFolder() + '/' + safeName(file.name);
-    var up = await sb.storage.from('company-assets').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+    var up;
+    try {
+      up = await sb.storage.from('company-assets').upload(path, body, { contentType: file.type || 'application/octet-stream', upsert: false });
+    } catch (err) {
+      showToast(t('Upload failed. Save the Drive file to this phone, then try again.', 'Muat naik gagal. Simpan fail Drive ke telefon, kemudian cuba lagi.'), 'error');
+      return;
+    }
     if (up.error) { showToast(up.error.message, 'error'); return; }
     showToast(t('Uploaded', 'Dimuat naik'), 'success');
     state.tab = 'files';
