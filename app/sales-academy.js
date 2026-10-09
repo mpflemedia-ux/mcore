@@ -142,7 +142,7 @@
       { en: 'First Conversation', bm: 'Perbualan Pertama', ok: talks > 0 },
       { en: 'Proposal Ready', bm: 'Cadangan Sedia', ok: proposals > 0 },
       { en: 'Challenge Done', bm: 'Cabaran Selesai', ok: data.missions.filter(function (m) { return missionDone(m, ev); }).length >= 9 },
-      { en: 'Academy Done', bm: 'Akademi Selesai', ok: mine.filter(function (p) { return p.item_type === 'module'; }).length >= 5 }
+      { en: 'Academy Done', bm: 'Akademi Selesai', ok: myProgress(data).filter(function (p) { return p.item_type === 'module'; }).length >= 5 }
     ];
   }
 
