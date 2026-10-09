@@ -374,6 +374,8 @@
       if (el.getAttribute('data-sa') === 'sort') { state.sort = el.value; renderSalesAcademy({ tab: 'activity' }); }
     };
     paintChip(data);
+    var box = document.getElementById('sa-q');
+    if (box && state.tab === 'activity' && state.q) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   };
 
   function paintChip(data) {
