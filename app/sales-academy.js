@@ -336,12 +336,6 @@
       if (typeof renderAccessDenied === 'function') renderAccessDenied();
       return;
     }
-    if (!(params && params.tab)) {
-      try {
-        var saved = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}');
-        if (saved && saved.tab) params = Object.assign({}, params || {}, { tab: saved.tab, board: saved.board });
-      } catch (e) {}
-    }
     if (params && params.tab) state.tab = params.tab;
     if (params && params.board) state.board = params.board;
     var main = document.getElementById('main');
