@@ -214,10 +214,13 @@
       if (state.sort === 'follow') return String(a.next_follow_up_at || '9999').localeCompare(String(b.next_follow_up_at || '9999'));
       return String(a.name || '').localeCompare(String(b.name || ''));
     });
+    var staff = (data.people || []).filter(function (p) { return String(p.role || '').toLowerCase() === 'staff'; });
+    var staffOpts = '<option value="">' + esc(t('Select staff', 'Pilih staff')) + '</option>' + staff.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.full_name || p.id) + '</option>'; }).join('');
     var rows = list.map(function (c) {
       var late = c.next_follow_up_at && c.next_follow_up_at < today && c.pipeline_stage !== 'signed';
+      var actor = admin() ? '<select data-sa="actor" data-id="' + esc(c.id) + '" style="margin-top:6px;width:100%;min-height:40px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">' + staffOpts + '</select>' : '';
       return '<article class="card" style="padding:10px;margin-bottom:8px"><b>' + esc(c.name) + '</b> ' + (late ? '<span style="color:#b91c1c">' + esc(t('Overdue', 'Tertunggak')) + '</span>' : '') +
-        '<p>' + esc(stageLabel(c.pipeline_stage)) + ' · ' + esc(c.next_follow_up_at || '—') + '</p>' +
+        '<p>' + esc(stageLabel(c.pipeline_stage)) + ' · ' + esc(c.next_follow_up_at || '—') + '</p>' + actor +
         '<select data-sa="stage" data-id="' + esc(c.id) + '" data-from="' + esc(c.pipeline_stage || '') + '"><option value="">' + esc(t('Set stage', 'Tetapkan peringkat')) + '</option>' + opts + '</select>' +
         '<input data-sa="follow" data-id="' + esc(c.id) + '" type="date" value="' + esc(c.next_follow_up_at || '') + '" style="margin-top:6px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px">' +
         '<button class="btn btn-sm btn-outline" data-sa="log" data-id="' + esc(c.id) + '" style="margin-top:6px">' + esc(t('Log activity', 'Log aktiviti')) + '</button></article>';
@@ -254,7 +257,7 @@
       var ev = evidence(scoped, id);
       var person = people[id] || {};
       return { id: id, name: person.full_name || id, rawRole: String(person.role || '').toLowerCase(), role: roleLabel(person.role), talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
-    }).filter(function (r) { return r.rawRole.indexOf('platform') < 0 && (r.talks || r.moves || r.signed || r.overdue); });
+    }).filter(function (r) { return r.rawRole === 'staff' && (r.talks || r.moves || r.signed || r.overdue); });
     rows.sort(function (a, b) { return (b.signed * 100 + b.talks) - (a.signed * 100 + a.talks); });
     var cell = function (label, value, late) {
       return '<div class="sa-cell"><span>' + esc(label) + '</span><b' + (late ? ' class="sa-late"' : '') + '>' + value + '</b></div>';
@@ -295,12 +298,21 @@
     }).join('') + '</div>';
   }
 
+  function actorFor(customerId) {
+    if (!admin()) return uid();
+    var el = document.querySelector('[data-sa="actor"][data-id="' + customerId + '"]');
+    var id = el && el.value;
+    if (!id) { showToast(t('Select staff', 'Pilih staff'), 'error'); return null; }
+    return id;
+  }
   async function setStage(id, from, to) {
     if (!to || to === from) return;
+    var actor = actorFor(id);
+    if (!actor) return;
     var up = await sb.from('customers').update({ pipeline_stage: to, updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
-    await sb.from('crm_stage_history').insert({ tenant_id: tid(), record_id: id, from_stage: from || null, to_stage: to, changed_by: uid(), changed_at: new Date().toISOString(), created_by: uid() });
-    await sb.from('crm_activities').insert({ tenant_id: tid(), record_id: id, type: 'stage_change', notes: (from || '—') + ' → ' + to, occurred_at: new Date().toISOString(), user_id: uid(), created_by: uid() });
+    await sb.from('crm_stage_history').insert({ tenant_id: tid(), record_id: id, from_stage: from || null, to_stage: to, changed_by: actor, changed_at: new Date().toISOString(), created_by: uid() });
+    await sb.from('crm_activities').insert({ tenant_id: tid(), record_id: id, type: 'stage_change', notes: (from || '—') + ' → ' + to, occurred_at: new Date().toISOString(), user_id: actor, created_by: uid() });
     if (to === 'signed') showToast(t('Signed on the existing customer. No second customer created.', 'Ditandatangani pada pelanggan sedia ada. Tiada pelanggan kedua.'), 'success');
     renderSalesAcademy({ tab: 'activity' });
   }
@@ -357,7 +369,9 @@
       if (act === 'log') {
         var notes = window.prompt(t('Activity note', 'Nota aktiviti'));
         if (!notes) return;
-        await sb.from('crm_activities').insert({ tenant_id: tid(), record_id: btn.getAttribute('data-id'), type: 'note', notes: notes, occurred_at: new Date().toISOString(), user_id: uid(), created_by: uid() });
+        var actor = actorFor(btn.getAttribute('data-id'));
+        if (!actor) return;
+        await sb.from('crm_activities').insert({ tenant_id: tid(), record_id: btn.getAttribute('data-id'), type: 'note', notes: notes, occurred_at: new Date().toISOString(), user_id: actor, created_by: uid() });
         renderSalesAcademy({ tab: 'activity' });
       }
       if (act === 'save-target') {
