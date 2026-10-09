@@ -27399,8 +27399,8 @@ function renderPaymentVouchers(params={}) {
 async function renderPVList() {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal', all:'Semua', del:'Padam', from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis' }
-    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void', all:'All', del:'Delete', from:'From', to:'To', apply:'Filter', clear:'Clear' }
+    ? { title:'Baucar Bayaran', add:'Baucar Baru', ref:'No. PV', date:'Tarikh', payee:'Penerima', amount:'Jumlah', status:'Status', method:'Kaedah', noData:'Tiada baucar lagi', draft:'Draf', approved:'Diluluskan', paid:'Dibayar', void:'Batal', edit:'Ubah', all:'Semua', del:'Padam', from:'Dari', to:'Hingga', apply:'Tapis', clear:'Padam Tapis' }
+    : { title:'Payment Vouchers', add:'New Voucher', ref:'PV No.', date:'Date', payee:'Payee', amount:'Amount', status:'Status', method:'Method', noData:'No payment vouchers yet', draft:'Draft', approved:'Approved', paid:'Paid', void:'Void', edit:'Edit', all:'All', del:'Delete', from:'From', to:'To', apply:'Filter', clear:'Clear' }
   if(!window._pvDateFilter) window._pvDateFilter = { from:'', to:'' }
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div><div class="page-title">${t.title}</div>
@@ -27512,7 +27512,14 @@ function _pvRenderListTable() {
     <td>${_aiEscapeHtml(v.payment_method||'-')}</td>
     <td style="text-align:right">${formatRM(v.amount)}</td>
     <td><span style="color:${stColor(v.status)};font-weight:600">${stLabel(v.status)}</span></td>
-    <td style="text-align:center" onclick="event.stopPropagation()">
+    <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">
+      ${(function(){
+        const st = String(v.status||'draft').toLowerCase()
+        const canEdit = st==='draft' || st==='approved'
+        const canDel = st==='draft' || st==='approved'
+        return (canEdit?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('vouchers',{view:'pv-form',id:'${v.id}'})" title="${t.edit||'Edit'}"><i class="ti ti-edit"></i></button>`:'')
+          + (canDel?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px;color:var(--danger);border-color:var(--danger)" onclick="_pvSoftDelete('${v.id}')" title="${t.del||'Delete'}"><i class="ti ti-trash"></i></button>`:'')
+      })()}
       <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="_pvVoidFromList('${v.id}','${(v.ref_no||'').replace(/'/g,"\\'")}','${String(v.status||'draft').replace(/'/g,"\\'")}')" title="${t.void||'Void'}">
         <i class="ti ti-ban"></i>
@@ -27538,6 +27545,17 @@ async function _pvClearJournals(pvId) {
     console.warn('_pvClearJournals', e)
     return 0
   }
+}
+
+
+async function _pvSoftDelete(id) {
+  const isBm = APP.language==='bm'
+  if(!id) return
+  if(!confirm(isBm ? 'Padam baucar ini? Ia akan disembunyikan, bukan dipadam kekal.' : 'Delete this voucher? It will be hidden, not removed permanently.')) return
+  const {error} = await sb.from('payment_vouchers').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  showToast(isBm?'Baucar dipadam.':'Voucher deleted.', 'success')
+  openPage('vouchers', {})
 }
 
 async function _pvVoidFromList(id, refNo, status) {
@@ -27691,7 +27709,8 @@ async function renderPVDetail(id) {
       ${_pdocColorPickerHtml('pv', accent)}
       <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
       <button class="btn btn-outline" onclick="_pvShareEmail('${id}')"><i class="ti ti-mail"></i> Email</button>
-      ${v.status==='draft'?`<button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>`:''}
+      ${(v.status==='draft'||v.status==='approved')?`<button class="btn btn-outline btn-sm" onclick="openPage('vouchers',{view:'pv-form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>`:''}
+      ${(v.status==='draft'||v.status==='approved')?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_pvSoftDelete('${id}')"><i class="ti ti-trash"></i> ${isBm?'Padam':'Delete'}</button>`:''}
       ${v.status==='draft'?`<button class="btn btn-primary btn-sm" onclick="_pvSetStatus('${id}','approved')"><i class="ti ti-check"></i> ${t.approve}</button>`:''}
       ${v.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="_pvMarkPaid('${id}')"><i class="ti ti-cash"></i> ${t.markPaid}</button>`:''}
       ${v.status!=='void'&&v.status!=='paid'?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_pvSetStatus('${id}','void')">${t.void}</button>`:''}
