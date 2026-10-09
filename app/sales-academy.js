@@ -237,8 +237,8 @@
       };
       var ev = evidence(scoped, id);
       var person = people[id] || {};
-      return { id: id, name: person.full_name || id, role: roleLabel(person.role), talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
-    }).filter(function (r) { return r.talks || r.moves || r.signed || r.overdue; });
+      return { id: id, name: person.full_name || id, rawRole: String(person.role || '').toLowerCase(), role: roleLabel(person.role), talks: ev.talks, moves: ev.moves, signed: ev.signed, overdue: ev.overdue };
+    }).filter(function (r) { return r.rawRole !== 'platform_admin' && (r.talks || r.moves || r.signed || r.overdue); });
     rows.sort(function (a, b) { return (b.signed * 100 + b.talks) - (a.signed * 100 + a.talks); });
     var cell = function (label, value, late) {
       return '<div class="sa-cell"><span>' + esc(label) + '</span><b' + (late ? ' class="sa-late"' : '') + '>' + value + '</b></div>';
