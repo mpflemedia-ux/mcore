@@ -96,9 +96,13 @@
   async function loadAll() {
     var tenant = tid();
     if (!tenant) throw new Error(t('No tenant', 'Tiada tenant'));
-    var proj = await sb.from('projects').select('id,name,kind,customer_id,color,created_at').eq('tenant_id', tenant).is('deleted_at', null).order('created_at');
+    var proj = await sb.from('projects').select('id,name,kind,customer_id,color,created_at,archived_at').eq('tenant_id', tenant).is('deleted_at', null).order('created_at');
+    if (proj.error && /archived_at/.test(proj.error.message || '')) {
+      proj = await sb.from('projects').select('id,name,kind,customer_id,color,created_at').eq('tenant_id', tenant).is('deleted_at', null).order('created_at');
+    }
     if (proj.error) throw proj.error;
-    state.projects = proj.data || [];
+    state.allProjects = proj.data || [];
+    state.projects = state.allProjects.filter(function (p) { return state.showArchived ? p.archived_at : !p.archived_at; });
     if (!state.projectId && state.projects[0]) state.projectId = state.projects[0].id;
     if (state.projectId && !state.projects.some(function (p) { return String(p.id) === String(state.projectId); })) state.projectId = state.projects[0] ? state.projects[0].id : null;
     var tasks = state.projectId
@@ -297,10 +301,13 @@
     var tab = state.tab;
     var body = tab === 'list' ? listHtml(list) : tab === 'timeline' ? timelineHtml(list) : tab === 'files' ? filesHtml() : tab === 'overview' ? overviewHtml(proj, st) : tab === 'matrix' ? matrixHtml(list) : boardHtml(list);
     return '<style>' + css() + '</style><div class="pj-wrap">' +
-      '<aside class="pj-side"><div class="pj-side-h">' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
+      '<aside class="pj-side"><div class="pj-side-h">' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-arch-view">' + esc(state.showArchived ? t('Active', 'Aktif') : t('Archive', 'Arkib')) + '</button><button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
       state.projects.map(function (p, i) {
         var on = String(p.id) === String(state.projectId) ? ' on' : '';
-        return '<div class="pj-proj' + on + '"><button type="button" data-proj="' + esc(p.id) + '"><i style="background:' + esc(p.color || COLORS[i % COLORS.length]) + '"></i><span>' + esc(p.name) + '</span></button><small>' + esc(p.kind === 'client' ? t('Client', 'Klien') : t('Internal', 'Dalaman')) + '</small><button type="button" data-proj-edit="' + esc(p.id) + '">' + esc(t('Edit', 'Ubah')) + '</button><button type="button" data-proj-del="' + esc(p.id) + '">' + esc(t('Delete', 'Padam')) + '</button></div>';
+        var arch = state.showArchived
+          ? '<button type="button" data-proj-restore="' + esc(p.id) + '">' + esc(t('Restore', 'Pulih')) + '</button>'
+          : '<button type="button" data-proj-arch="' + esc(p.id) + '">' + esc(t('Archive', 'Arkib')) + '</button>';
+        return '<div class="pj-proj' + on + '"><button type="button" data-proj="' + esc(p.id) + '"><i style="background:' + esc(p.color || COLORS[i % COLORS.length]) + '"></i><span>' + esc(p.name) + '</span></button><small>' + esc(p.kind === 'client' ? t('Client', 'Klien') : t('Internal', 'Dalaman')) + '</small>' + arch + '<button type="button" data-proj-edit="' + esc(p.id) + '">' + esc(t('Edit', 'Ubah')) + '</button><button type="button" data-proj-del="' + esc(p.id) + '">' + esc(t('Delete', 'Padam')) + '</button></div>';
       }).join('') +
       (state.projects.length ? '' : '<p class="pj-muted">' + esc(t('No project yet', 'Belum ada projek')) + '</p>') +
       '</aside><section class="pj-main">' +
@@ -345,7 +352,7 @@
       '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto}' +
       '.pj-side-h,.pj-top,.pj-tools,.pj-row{display:flex;align-items:center;gap:8px}' +
       '.pj-side-h{justify-content:space-between;margin-bottom:8px}' +
-      '.pj-proj{display:flex;gap:6px;align-items:center;width:100%;text-align:left;padding:8px;border-radius:8px;color:var(--text)} .pj-proj>button[data-proj]{display:flex;gap:8px;align-items:center;flex:1;min-width:0;background:none;border:0;color:var(--text);text-align:left} .pj-proj>button[data-proj] span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pj-proj>button[data-proj-edit],.pj-proj>button[data-proj-del]{min-height:32px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 6px;font-size:11px} .pj-proj>button[data-proj-del]{color:#b91c1c}' +
+      '.pj-proj{display:flex;gap:6px;align-items:center;width:100%;text-align:left;padding:8px;border-radius:8px;color:var(--text)} .pj-proj>button[data-proj]{display:flex;gap:8px;align-items:center;flex:1;min-width:0;background:none;border:0;color:var(--text);text-align:left} .pj-proj>button[data-proj] span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pj-proj>button[data-proj-edit],.pj-proj>button[data-proj-del],.pj-proj>button[data-proj-arch],.pj-proj>button[data-proj-restore],#pj-arch-view{min-height:32px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 6px;font-size:11px} .pj-proj>button[data-proj-del]{color:#b91c1c}' +
       '.pj-proj.on{background:var(--primary-light)} .pj-proj i{width:8px;height:8px;border-radius:50%;flex:none}' +
       '.pj-proj small{margin-left:auto;color:var(--text-3);font-size:11px}' +
       '.pj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}' +
@@ -381,6 +388,14 @@
     });
     main.querySelectorAll('[data-proj-edit]').forEach(function (btn) {
       btn.onclick = function (ev) { ev.stopPropagation(); openProjectForm(btn.getAttribute('data-proj-edit')); };
+    });
+    var archView = document.getElementById('pj-arch-view');
+    if (archView) archView.onclick = function () { state.showArchived = !state.showArchived; state.projectId = ''; refresh(); };
+    main.querySelectorAll('[data-proj-arch]').forEach(function (btn) {
+      btn.onclick = function (ev) { ev.stopPropagation(); archiveProject(btn.getAttribute('data-proj-arch'), true); };
+    });
+    main.querySelectorAll('[data-proj-restore]').forEach(function (btn) {
+      btn.onclick = function (ev) { ev.stopPropagation(); archiveProject(btn.getAttribute('data-proj-restore'), false); };
     });
     main.querySelectorAll('[data-proj-del]').forEach(function (btn) {
       btn.onclick = function (ev) { ev.stopPropagation(); deleteProject(btn.getAttribute('data-proj-del')); };
@@ -528,6 +543,13 @@
       state.projectId = ins.data.id;
     }
     state.tab = 'board';
+    refresh();
+  }
+  async function archiveProject(id, on) {
+    var up = await sb.from('projects').update({ archived_at: on ? new Date().toISOString() : null }).eq('id', id).eq('tenant_id', tid());
+    if (up.error) { showToast(up.error.message, 'error'); return; }
+    if (on && String(state.projectId) === String(id)) state.projectId = '';
+    showToast(on ? t('Archived', 'Diarkib') : t('Restored', 'Dipulihkan'), 'success');
     refresh();
   }
   async function deleteProject(id) {

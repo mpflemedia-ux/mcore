@@ -6809,11 +6809,11 @@ async function _dbLoadProjectsCard() {
   const isBm = APP.language === 'bm'
   const today = new Date().toISOString().slice(0, 10)
   const { data: projects, error } = await sb.from('projects')
-    .select('id,name,kind,customer_id,color')
+    .select('id,name,kind,customer_id,color,archived_at')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
     .order('created_at', { ascending: false })
   if (error) { el.textContent = error.message; return }
-  const list = projects || []
+  const list = (projects || []).filter(p => !p.archived_at)
   if (!list.length) {
     el.innerHTML = '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Belum ada projek' : 'No project yet') +
       ' <button type="button" class="db-btn" onclick="openPage(\'projects\')">+ ' + (isBm ? 'Projek' : 'Project') + '</button></div>'
@@ -37505,7 +37505,7 @@ if('serviceWorker' in navigator){
 <script src="./pv-preview-scroll.js?v=3"></script>
 <script src="./pdoc-preview-light.js?v=1"></script>
 <script src="./pv-sig-boxes.js?v=1"></script>
-<script src="./projects.js?v=42"></script>
+<script src="./projects.js?v=43"></script>
 <script src="./booking-state.js?v=2"></script>
 <script src="./booking-settings-ui.js?v=1"></script>
 <script src="./booking-realtime.js?v=1"></script>
