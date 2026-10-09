@@ -8,7 +8,7 @@
     { key: 'signed', en: 'Signed Client', bm: 'Pelanggan Ditandatangani' }
   ];
   var STAGE_RANK = { contacted: 1, discovery: 2, proposal: 3, verbal: 4, signed: 5 };
-  var state = { tab: 'overview', period: 'month', board: 'month' };
+  var state = { tab: 'overview', period: 'month', board: 'month', q: '', stageFilter: '', sort: 'name' };
 
   function t(en, bm) { return APP.language === 'bm' ? bm : en; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&', '<': '<', '>': '>', '"': '"', "'": '&#39;' })[c]; }); }
@@ -201,7 +201,20 @@
   function activityHtml(data) {
     var today = klToday();
     var opts = STAGES.map(function (s) { return '<option value="' + s.key + '">' + esc(t(s.en, s.bm)) + '</option>'; }).join('');
-    var rows = data.customers.map(function (c) {
+    var q = String(state.q || '').toLowerCase();
+    var list = data.customers.filter(function (c) {
+      if (q && String(c.name || '').toLowerCase().indexOf(q) < 0) return false;
+      if (state.stageFilter === 'none') return !c.pipeline_stage;
+      if (state.stageFilter === 'overdue') return c.next_follow_up_at && c.next_follow_up_at < today && c.pipeline_stage !== 'signed';
+      if (state.stageFilter) return c.pipeline_stage === state.stageFilter;
+      return true;
+    });
+    list.sort(function (a, b) {
+      if (state.sort === 'stage') return rank(b.pipeline_stage) - rank(a.pipeline_stage) || String(a.name).localeCompare(String(b.name));
+      if (state.sort === 'follow') return String(a.next_follow_up_at || '9999').localeCompare(String(b.next_follow_up_at || '9999'));
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+    var rows = list.map(function (c) {
       var late = c.next_follow_up_at && c.next_follow_up_at < today && c.pipeline_stage !== 'signed';
       return '<article class="card" style="padding:10px;margin-bottom:8px"><b>' + esc(c.name) + '</b> ' + (late ? '<span style="color:#b91c1c">' + esc(t('Overdue', 'Tertunggak')) + '</span>' : '') +
         '<p>' + esc(stageLabel(c.pipeline_stage)) + ' · ' + esc(c.next_follow_up_at || '—') + '</p>' +
@@ -210,7 +223,10 @@
         '<button class="btn btn-sm btn-outline" data-sa="log" data-id="' + esc(c.id) + '" style="margin-top:6px">' + esc(t('Log activity', 'Log aktiviti')) + '</button></article>';
     }).join('');
     var log = data.activities.slice(0, 20).map(function (a) { return '<p>' + esc(a.occurred_at || '').slice(0, 10) + ' · ' + esc(a.type) + ' · ' + esc(a.notes || '') + '</p>'; }).join('');
-    return rows + '<div class="card" style="padding:10px"><b>' + esc(t('Activity log', 'Log aktiviti')) + '</b>' + (log || '<p>' + esc(t('No activity yet', 'Belum ada aktiviti')) + '</p>') + '</div>';
+    var stageOpts = '<option value="">' + esc(t('All stages', 'Semua peringkat')) + '</option><option value="none">' + esc(t('No stage', 'Tiada peringkat')) + '</option><option value="overdue">' + esc(t('Overdue', 'Tertunggak')) + '</option>' + opts;
+    var tools = '<div class="sa-tools"><input id="sa-q" data-sa="q" value="' + esc(state.q || '') + '" placeholder="' + esc(t('Search customer', 'Cari pelanggan')) + '"><select data-sa="filter">' + stageOpts + '</select><select data-sa="sort"><option value="name">' + esc(t('Name', 'Nama')) + '</option><option value="stage">' + esc(t('Stage', 'Peringkat')) + '</option><option value="follow">' + esc(t('Follow-up', 'Susulan')) + '</option></select></div>';
+    return '<style>.sa-tools{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px}.sa-tools input,.sa-tools select{width:100%;min-height:40px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px}@media(min-width:900px){.sa-tools{grid-template-columns:1.4fr .8fr .8fr}}</style>' + tools + (rows || '<p>' + esc(t('No matching customers', 'Tiada pelanggan sepadan')) + '</p>') + '<div class="card" style="padding:10px"><b>' + esc(t('Activity log', 'Log aktiviti')) + '</b>' + (log || '<p>' + esc(t('No activity yet', 'Belum ada aktiviti')) + '</p>') + '</div>';
+
   }
 
   function initials(name) {
@@ -341,10 +357,21 @@
         showToast(t('Target saved', 'Sasaran disimpan'), 'success');
       }
     };
+    var filter = main.querySelector('[data-sa="filter"]');
+    var sort = main.querySelector('[data-sa="sort"]');
+    if (filter) filter.value = state.stageFilter || '';
+    if (sort) sort.value = state.sort || 'name';
+    main.oninput = function (ev) {
+      if (ev.target.getAttribute('data-sa') !== 'q') return;
+      state.q = ev.target.value;
+      renderSalesAcademy({ tab: 'activity' });
+    };
     main.onchange = function (ev) {
       var el = ev.target;
       if (el.getAttribute('data-sa') === 'stage') setStage(el.getAttribute('data-id'), el.getAttribute('data-from'), el.value);
       if (el.getAttribute('data-sa') === 'follow') sb.from('customers').update({ next_follow_up_at: el.value || null }).eq('id', el.getAttribute('data-id')).eq('tenant_id', tid());
+      if (el.getAttribute('data-sa') === 'filter') { state.stageFilter = el.value; renderSalesAcademy({ tab: 'activity' }); }
+      if (el.getAttribute('data-sa') === 'sort') { state.sort = el.value; renderSalesAcademy({ tab: 'activity' }); }
     };
     paintChip(data);
   };
