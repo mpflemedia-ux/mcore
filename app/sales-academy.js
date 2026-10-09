@@ -109,9 +109,10 @@
   }
 
   function realActivity(a) { return String(a.notes || '').indexOf('SA-SAMPLE') !== 0; }
-  function evidence(data, userId) {
-    var acts = data.activities.filter(function (a) { return String(a.user_id) === String(userId) && realActivity(a); });
-    var hist = data.history.filter(function (h) { return String(h.changed_by) === String(userId); });
+  function evidence(data, userId, extraIds) {
+    var ids = [String(userId)].concat(extraIds || []).map(String);
+    var acts = data.activities.filter(function (a) { return ids.indexOf(String(a.user_id)) >= 0 && realActivity(a); });
+    var hist = data.history.filter(function (h) { return ids.indexOf(String(h.changed_by)) >= 0; });
     var touched = {};
     acts.forEach(function (a) { if (a.record_id) touched[a.record_id] = 1; });
     var overdue = data.customers.filter(function (c) {
@@ -249,17 +250,30 @@
     var people = {};
     data.people.forEach(function (p) { people[p.id] = p; });
     var month = klToday().slice(0, 7);
+    function sameStaff(emp, person) {
+      var nick = String(emp.nickname || '').trim().toLowerCase();
+      var ename = String(emp.name || '').trim().toLowerCase();
+      var pname = String(person.full_name || '').trim().toLowerCase();
+      if (!pname) return false;
+      if (pname === ename || (nick && pname === nick)) return true;
+      return !!(nick && pname.split(/\s+/)[0] === nick);
+    }
+    var alias = {};
+    (data.employees || []).forEach(function (e) {
+      data.people.forEach(function (person) { if (sameStaff(e, person)) alias[person.id] = e.id; });
+    });
     var ids = {};
     (data.employees || []).forEach(function (e) { ids[e.id] = 1; });
-    data.activities.forEach(function (a) { if (realActivity(a) && a.user_id) ids[a.user_id] = 1; });
-    data.history.forEach(function (h) { if (h.changed_by) ids[h.changed_by] = 1; });
+    data.activities.forEach(function (a) { if (realActivity(a) && a.user_id && !alias[a.user_id]) ids[a.user_id] = 1; });
+    data.history.forEach(function (h) { if (h.changed_by && !alias[h.changed_by]) ids[h.changed_by] = 1; });
     var scoped = {
       activities: data.activities.filter(function (a) { return state.board === 'all' || String(a.occurred_at || '').slice(0, 7) === month; }),
       history: data.history.filter(function (h) { return state.board === 'all' || String(h.changed_at || '').slice(0, 7) === month; }),
       customers: data.customers
     };
     var rows = Object.keys(ids).map(function (id) {
-      var ev = evidence(scoped, id);
+      var linked = Object.keys(alias).filter(function (pid) { return alias[pid] === id; });
+      var ev = evidence(scoped, id, linked);
       var person = people[id] || {};
       var emp = (data.employees || []).filter(function (e) { return String(e.id) === String(id); })[0];
       var name = emp ? (emp.nickname || emp.name) : (person.full_name || id);
