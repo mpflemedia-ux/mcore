@@ -30098,9 +30098,8 @@ function _scTabsHtml(active) {
     { key:'leaderboard', en:'Leaderboard', bm:'Papan Pendahulu' },
     { key:'achievements', en:'Achievements', bm:'Pencapaian' },
   ]
-  return `<div class="no-print" style="display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;width:fit-content;flex-wrap:wrap">
-    ${tabs.map(t=>`<button class="btn btn-sm ${active===t.key?'btn-primary':'btn-outline'}" onclick="openPage('sales_commission',{view:'${t.key}'})">${isBm?t.bm:t.en}</button>`).join('')}
-  </div>`
+  return `<div class="sc-tabs no-print">${tabs.map(t=>`<button type="button" class="sc-tab${active===t.key?' is-active':''}" onclick="openPage('sales_commission',{view:'${t.key}'})">${isBm?t.bm:t.en}</button>`).join('')}</div>
+  <style>.sc-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto}.sc-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-2);min-height:40px;padding:8px 14px;font-weight:600;white-space:nowrap}.sc-tab.is-active{color:var(--primary);border-bottom-color:var(--primary)}</style>`
 }
 
 function _scToggleSort(tab, field) {
@@ -30139,70 +30138,135 @@ function _scPrintTab(tab) {
 async function _scRenderRules() {
   const isBm = APP.language==='bm'
   const t = isBm ? {
-    title:'Komisyen Jualan', addRule:'Tambah Peraturan', salesPerson:'Sales Person', channel:'Saluran', product:'Produk',
-    rate:'Kadar %', all:'— Semua —', save:'Simpan', cancel:'Batal', edit:'Edit', del:'Padam', noData:'Tiada peraturan komisyen lagi.',
-    retail:'Retail', event:'Event', platform:'Platform', filter:'Tapis', apply:'Tapis', print:'Cetak'
+    title:'Komisyen Jualan', newRule:'Peraturan Komisyen Baru', salesPerson:'Sales Person', channel:'Saluran', product:'Produk',
+    ruleType:'Jenis Peraturan', tiers:'Tahap', from:'Dari', to:'Hingga', rate:'Kadar Komisyen', payWhen:'Bayar bila',
+    newOnly:'Pelanggan baru sahaja', validFrom:'Sah dari', validTo:'Sah hingga', save:'Simpan', cancel:'Batal',
+    existing:'Peraturan Sedia Ada', viewAll:'Lihat semua', all:'Semua', allPeople:'Semua Sales Person', allProducts:'Semua Produk',
+    retail:'Retail', event:'Event', platform:'Platform', flat:'Flat', tiered:'Bertingkat', target:'Sasaran', bonus:'Bonus', unit:'Unit', split:'Kongsi',
+    onIssue:'Bila invois dikeluarkan', onPaid:'Bila invois dibayar', noData:'Tiada peraturan komisyen lagi.', edit:'Edit', del:'Padam'
   } : {
-    title:'Sales Commission', addRule:'Add Rule', salesPerson:'Sales Person', channel:'Channel', product:'Product',
-    rate:'Rate %', all:'— All —', save:'Save', cancel:'Cancel', edit:'Edit', del:'Delete', noData:'No commission rules yet.',
-    retail:'Retail', event:'Event', platform:'Platform', filter:'Filter', apply:'Apply', print:'Print'
+    title:'Sales Commission', newRule:'New Commission Rule', salesPerson:'Sales Person', channel:'Channel', product:'Product',
+    ruleType:'Rule Type', tiers:'Tiers', from:'From', to:'To', rate:'Commission Rate', payWhen:'Pay when',
+    newOnly:'New customer only', validFrom:'Valid from', validTo:'Valid to', save:'Save', cancel:'Cancel',
+    existing:'Existing Rules', viewAll:'View all', all:'All', allPeople:'All Sales Persons', allProducts:'All Products',
+    retail:'Retail', event:'Event', platform:'Platform', flat:'Flat', tiered:'Tiered', target:'Target', bonus:'Bonus', unit:'Unit', split:'Split',
+    onIssue:'On invoice issued', onPaid:'On invoice paid', noData:'No commission rules yet.', edit:'Edit', del:'Delete'
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
   ${_scTabsHtml('rules')}
-  <div class="card no-print" style="max-width:640px;padding:20px;margin-bottom:16px">
+  <div class="card no-print" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:12px"><i class="ti ti-pencil"></i> ${t.newRule}</div>
     <div id="sc-rule-form-err" class="auth-error" style="display:none;margin-bottom:12px"></div>
     <input type="hidden" id="sc-rule-id" value="">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+    <div class="sc-rule-grid">
       <div class="form-group" style="margin:0"><label class="form-label">${t.salesPerson}</label>
-        <select id="sc-rule-sp" class="form-select"><option value="">${t.all}</option></select></div>
+        <select id="sc-rule-sp" class="form-select"><option value="">${t.allPeople}</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">${t.channel}</label>
         <select id="sc-rule-channel" class="form-select">
           <option value="retail">${t.retail}</option><option value="event">${t.event}</option><option value="platform">${t.platform}</option>
         </select></div>
       <div class="form-group" style="margin:0"><label class="form-label">${t.product}</label>
-        <select id="sc-rule-product" class="form-select"><option value="">${t.all}</option></select></div>
-      <div class="form-group" style="margin:0"><label class="form-label">${t.rate}</label>
-        <input id="sc-rule-rate" type="number" step="0.01" min="0" max="100" class="form-input" value=""></div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn btn-primary btn-sm" onclick="_scSaveRule()"><i class="ti ti-check"></i> ${t.save}</button>
-      <button class="btn btn-outline btn-sm" onclick="_scResetRuleForm()">${t.cancel}</button>
-    </div>
-  </div>
-  <div class="card no-print" style="padding:16px;margin-bottom:16px">
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.salesPerson}</label>
-        <select id="sc-rules-filter-sp" class="form-select"><option value="">${t.all}</option></select></div>
-      <div class="form-group" style="margin:0"><label class="form-label">${t.channel}</label>
-        <select id="sc-rules-filter-channel" class="form-select">
-          <option value="">${t.all}</option><option value="retail">${t.retail}</option><option value="event">${t.event}</option><option value="platform">${t.platform}</option>
+        <select id="sc-rule-product" class="form-select"><option value="">${t.allProducts}</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.ruleType}</label>
+        <select id="sc-rule-type" class="form-select" onchange="_scToggleRuleFields()">
+          <option value="flat">${t.flat}</option><option value="tiered">${t.tiered}</option><option value="target">${t.target}</option>
+          <option value="bonus">${t.bonus}</option><option value="unit">${t.unit}</option><option value="split">${t.split}</option>
         </select></div>
-      <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">${t.product}</label>
-        <select id="sc-rules-filter-product" class="form-select"><option value="">${t.all}</option></select></div>
-      <button class="btn btn-primary btn-sm" onclick="_scLoadRulesList()">${t.apply}</button>
-      <button class="btn btn-outline btn-sm" onclick="_scPrintTab('rules')"><i class="ti ti-printer"></i> ${t.print}</button>
+    </div>
+    <div id="sc-rate-wrap" class="form-group" style="margin:12px 0 0"><label class="form-label">${t.rate}</label>
+      <input id="sc-rule-rate" type="number" step="0.01" min="0" max="100" class="form-input" value=""></div>
+    <div id="sc-target-wrap" class="form-group" style="margin:12px 0 0;display:none"><label class="form-label">${t.target} (RM)</label>
+      <input id="sc-rule-target" type="number" step="0.01" min="0" class="form-input" value=""></div>
+    <div id="sc-bonus-wrap" class="form-group" style="margin:12px 0 0;display:none"><label class="form-label">${t.bonus} (RM)</label>
+      <input id="sc-rule-bonus" type="number" step="0.01" min="0" class="form-input" value=""></div>
+    <div id="sc-unit-wrap" class="form-group" style="margin:12px 0 0;display:none"><label class="form-label">${t.unit} (RM)</label>
+      <input id="sc-rule-unit" type="number" step="0.01" min="0" class="form-input" value=""></div>
+    <div id="sc-tiers-wrap" style="margin-top:12px;display:none">
+      <label class="form-label">${t.tiers}</label>
+      <div style="overflow-x:auto"><table><thead><tr><th>${t.from}</th><th>${t.to}</th><th style="text-align:right">${t.rate}</th></tr></thead>
+      <tbody id="sc-tier-body"></tbody></table></div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="_scAddTierRow()">${isBm?'Tambah tahap':'Add tier'}</button>
+    </div>
+    <div class="sc-rule-grid" style="margin-top:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">${t.payWhen}</label>
+        <select id="sc-rule-paywhen" class="form-select"><option value="on_paid">${t.onPaid}</option><option value="on_issue">${t.onIssue}</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.newOnly}</label>
+        <label style="display:flex;align-items:center;gap:8px;min-height:40px"><input id="sc-rule-new" type="checkbox"> <span>${isBm?'Mati':'Off'}</span></label></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.validFrom}</label>
+        <input id="sc-rule-from" type="date" class="form-input"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${t.validTo}</label>
+        <input id="sc-rule-to" type="date" class="form-input"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="_scSaveRule()"><i class="ti ti-check"></i> ${t.save}</button>
+      <button class="btn btn-outline" onclick="_scResetRuleForm()">${t.cancel}</button>
     </div>
   </div>
-  <div class="card"><div id="sc-rules-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <style>.sc-rule-grid{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:900px){.sc-rule-grid{grid-template-columns:1fr 1fr}}.sc-rule-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}.sc-rule-row:last-child{border-bottom:0}</style>
+  <div class="card" style="padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>${t.existing}</b></div>
+    <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <select id="sc-rules-filter-sp" class="form-select" style="max-width:220px" onchange="_scLoadRulesList()"><option value="">${t.all}</option></select>
+      <select id="sc-rules-filter-channel" class="form-select" style="max-width:160px" onchange="_scLoadRulesList()"><option value="">${t.all}</option><option value="retail">${t.retail}</option><option value="event">${t.event}</option><option value="platform">${t.platform}</option></select>
+      <select id="sc-rules-filter-product" class="form-select" style="max-width:220px" onchange="_scLoadRulesList()"><option value="">${t.all}</option></select>
+    </div>
+    <div id="sc-rules-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>`
+  window._scRuleLabels = t
+  await _scLoadRuleFormOptions()
+  _scToggleRuleFields()
+  _scResetTiers()
+}
 
-  const [emps, prods] = await Promise.all([
-    _scLoadEmployees(),
-    sb.from('products').select('id,name_en,name_bm').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name_en').then(r=>r.data||[])
+function _scToggleRuleFields() {
+  const type = document.getElementById('sc-rule-type')?.value || 'flat'
+  const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on ? '' : 'none' }
+  show('sc-rate-wrap', type === 'flat' || type === 'target' || type === 'split')
+  show('sc-target-wrap', type === 'target' || type === 'bonus')
+  show('sc-bonus-wrap', type === 'bonus')
+  show('sc-unit-wrap', type === 'unit')
+  show('sc-tiers-wrap', type === 'tiered')
+  if(type === 'tiered' && !document.querySelector('#sc-tier-body tr')) _scResetTiers()
+}
+function _scResetTiers() {
+  const body = document.getElementById('sc-tier-body')
+  if(!body) return
+  body.innerHTML = ''
+  ;[[0,5000,5],[5001,10000,8],[10001,'',12]].forEach(r => _scAddTierRow(r[0], r[1], r[2]))
+}
+function _scAddTierRow(from, to, rate) {
+  const body = document.getElementById('sc-tier-body')
+  if(!body) return
+  const tr = document.createElement('tr')
+  tr.innerHTML = `<td><input class="form-input sc-tier-from" type="number" min="0" value="${from??''}"></td><td><input class="form-input sc-tier-to" type="number" min="0" value="${to??''}"></td><td><input class="form-input sc-tier-rate" type="number" min="0" max="100" step="0.01" value="${rate??''}"></td>`
+  body.appendChild(tr)
+}
+function _scReadTiers() {
+  return Array.from(document.querySelectorAll('#sc-tier-body tr')).map(tr => ({
+    from: Number(tr.querySelector('.sc-tier-from')?.value || 0),
+    to: tr.querySelector('.sc-tier-to')?.value === '' ? null : Number(tr.querySelector('.sc-tier-to').value),
+    rate: Number(tr.querySelector('.sc-tier-rate')?.value || 0)
+  })).filter(r => r.rate >= 0)
+}
+
+async function _scLoadRuleFormOptions() {
+  const [empRes, prodRes] = await Promise.all([
+    sb.from('employees').select('id,name,nickname').eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name'),
+    sb.from('products').select('id,name_en,name_bm').eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name')
   ])
-  window._scEmployees = emps
-  window._scProducts = prods
-  const spOpts = emps.map(e=>`<option value="${e.id}">${_aiEscapeHtml(e.name)}</option>`).join('')
-  const prodOpts = prods.map(p=>`<option value="${p.id}">${_aiEscapeHtml(prodName(p))}</option>`).join('')
+  window._scEmployees = empRes.data || []
+  window._scProducts = prodRes.data || []
+  const spOpts = window._scEmployees.map(e => `<option value="${e.id}">${_aiEscapeHtml(e.nickname || e.name)}</option>`).join('')
+  const prodOpts = window._scProducts.map(p => `<option value="${p.id}">${_aiEscapeHtml(p.name_en || p.name_bm || '')}</option>`).join('')
   const spSel = document.getElementById('sc-rule-sp')
-  if(spSel) spSel.innerHTML += spOpts
+  if(spSel) spSel.insertAdjacentHTML('beforeend', spOpts)
   const prodSel = document.getElementById('sc-rule-product')
-  if(prodSel) prodSel.innerHTML += prodOpts
+  if(prodSel) prodSel.insertAdjacentHTML('beforeend', prodOpts)
   const spFilterSel = document.getElementById('sc-rules-filter-sp')
-  if(spFilterSel) spFilterSel.innerHTML += spOpts
+  if(spFilterSel) spFilterSel.insertAdjacentHTML('beforeend', spOpts)
   const prodFilterSel = document.getElementById('sc-rules-filter-product')
-  if(prodFilterSel) prodFilterSel.innerHTML += prodOpts
-
+  if(prodFilterSel) prodFilterSel.insertAdjacentHTML('beforeend', prodOpts)
   await _scLoadRulesList()
 }
 
@@ -30214,12 +30278,16 @@ async function _scLoadRulesList() {
   const channel = document.getElementById('sc-rules-filter-channel')?.value || ''
   const productId = document.getElementById('sc-rules-filter-product')?.value || ''
   let q = sb.from('sales_commission_rules')
-    .select('id,sales_person_id,channel,product_id,rate_percent,employees(name)')
+    .select('id,sales_person_id,channel,product_id,rate_percent,rule_type,tiers,pay_when,new_customer_only,valid_from,valid_to,employees(name,nickname)')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
   if(spId) q = q.eq('sales_person_id', spId)
   if(channel) q = q.eq('channel', channel)
   if(productId) q = q.eq('product_id', productId)
   const { data, error } = await q.order('channel')
+  if(error && /rule_type|column/i.test(error.message||'')) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">${isBm?'Jalankan SQL medan rule_type dahulu.':'Run the rule_type SQL first.'}</p></div>`
+    return
+  }
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${_aiEscapeHtml(error.message)}</p></div>`; return }
   window._scRulesRaw = data || []
   _scRenderRulesTable()
@@ -30229,46 +30297,36 @@ function _scRenderRulesTable() {
   const wrap = document.getElementById('sc-rules-wrap')
   if(!wrap) return
   const isBm = APP.language==='bm'
-  const t = isBm ? { sp:'Sales Person', channel:'Saluran', product:'Produk', rate:'Kadar', all:'Semua', noData:'Tiada peraturan komisyen lagi.' }
-                 : { sp:'Sales Person', channel:'Channel', product:'Product', rate:'Rate', all:'All', noData:'No commission rules yet.' }
+  const t = window._scRuleLabels || {}
   const data = (window._scRulesRaw || []).slice()
-  if(!data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
-  const prodName2 = (id) => { const p = (window._scProducts||[]).find(x=>String(x.id)===String(id)); return p ? prodName(p) : '' }
-  const sortState = (window._scSortState && window._scSortState.rules) || {}
-  const sortKeyFn = { sp: r => r.sales_person_id ? (r.employees?.name||'') : '', channel: r => r.channel||'', rate: r => Number(r.rate_percent||0) }[sortState.field]
-  if(sortKeyFn) {
-    data.sort((a,b) => {
-      const av = sortKeyFn(a), bv = sortKeyFn(b)
-      const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv))
-      return sortState.dir === 'desc' ? -cmp : cmp
-    })
-  }
-  wrap.innerHTML = `<table><thead><tr>
-    <th style="cursor:pointer" onclick="_scToggleSort('rules','sp')">${t.sp}${_scSortArrow('rules','sp')}</th>
-    <th style="cursor:pointer" onclick="_scToggleSort('rules','channel')">${t.channel}${_scSortArrow('rules','channel')}</th>
-    <th>${t.product}</th>
-    <th style="text-align:right;cursor:pointer" onclick="_scToggleSort('rules','rate')">${t.rate}${_scSortArrow('rules','rate')}</th>
-    <th class="no-print"></th></tr></thead>
-  <tbody>${data.map(r=>`<tr>
-    <td>${r.sales_person_id ? _aiEscapeHtml(r.employees?.name||'') : `<span style="color:var(--text-3)">${t.all}</span>`}</td>
-    <td style="text-transform:capitalize">${_aiEscapeHtml(r.channel)}</td>
-    <td>${r.product_id ? _aiEscapeHtml(prodName2(r.product_id)) : `<span style="color:var(--text-3)">${t.all}</span>`}</td>
-    <td style="text-align:right;font-weight:600">${Number(r.rate_percent).toFixed(2)}%</td>
-    <td class="no-print" style="white-space:nowrap">
-      <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_scEditRule('${r.id}')"><i class="ti ti-edit"></i></button>
-      <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_scDeleteRule('${r.id}')"><i class="ti ti-trash"></i></button>
-    </td>
-  </tr>`).join('')}</tbody></table>`
+  if(!data.length) { wrap.innerHTML = `<div class="empty-state" style="padding:24px"><p>${t.noData||''}</p></div>`; return }
+  const prodName2 = (id) => { const p = (window._scProducts||[]).find(x=>String(x.id)===String(id)); return p ? (p.name_en || p.name_bm || '') : '' }
+  const typeLabel = { flat:t.flat, tiered:t.tiered, target:t.target, bonus:t.bonus, unit:t.unit, split:t.split }
+  const icon = { retail:'ti-shopping-bag', event:'ti-calendar-event', platform:'ti-device-desktop', service:'ti-headset' }
+  wrap.innerHTML = data.map(r => {
+    const who = r.sales_person_id ? (r.employees?.nickname || r.employees?.name || '') : (t.all||'All')
+    const prod = r.product_id ? prodName2(r.product_id) : (t.allProducts||'All products')
+    const kind = typeLabel[r.rule_type||'flat'] || r.rule_type || 'Flat'
+    const value = (r.rule_type||'flat') === 'tiered' ? kind : (Number(r.rate_percent||0).toFixed(0) + '%')
+    return `<div class="sc-rule-row">
+      <i class="ti ${icon[r.channel]||'ti-award'}" style="color:var(--primary)"></i>
+      <div style="flex:1;min-width:0"><div style="font-weight:600">${_aiEscapeHtml(who)} · ${_aiEscapeHtml(r.channel||'')}</div><div style="color:var(--text-3);font-size:12px">${_aiEscapeHtml(prod)} · ${_aiEscapeHtml(kind)}</div></div>
+      <b style="color:var(--primary)">${_aiEscapeHtml(value)}</b>
+      <button class="btn btn-outline btn-sm no-print" onclick="_scEditRule('${r.id}')"><i class="ti ti-edit"></i></button>
+      <button class="btn btn-outline btn-sm no-print" style="color:var(--danger);border-color:var(--danger)" onclick="_scDeleteRule('${r.id}')"><i class="ti ti-trash"></i></button>
+    </div>`
+  }).join('')
 }
 
 function _scResetRuleForm() {
-  document.getElementById('sc-rule-id').value = ''
-  document.getElementById('sc-rule-sp').value = ''
-  document.getElementById('sc-rule-channel').value = 'retail'
-  document.getElementById('sc-rule-product').value = ''
-  document.getElementById('sc-rule-rate').value = ''
-  const errEl = document.getElementById('sc-rule-form-err')
-  if(errEl) errEl.style.display = 'none'
+  const id = document.getElementById('sc-rule-id'); if(id) id.value = ''
+  const set = (k,v) => { const el = document.getElementById(k); if(el) el.value = v }
+  set('sc-rule-sp',''); set('sc-rule-channel','retail'); set('sc-rule-product',''); set('sc-rule-rate','')
+  set('sc-rule-type','flat'); set('sc-rule-paywhen','on_paid'); set('sc-rule-from',''); set('sc-rule-to','')
+  set('sc-rule-target',''); set('sc-rule-bonus',''); set('sc-rule-unit','')
+  const chk = document.getElementById('sc-rule-new'); if(chk) chk.checked = false
+  _scResetTiers(); _scToggleRuleFields()
+  const errEl = document.getElementById('sc-rule-form-err'); if(errEl) errEl.style.display = 'none'
 }
 
 async function _scEditRule(id) {
@@ -30276,32 +30334,51 @@ async function _scEditRule(id) {
   if(!data) return
   document.getElementById('sc-rule-id').value = data.id
   document.getElementById('sc-rule-sp').value = data.sales_person_id || ''
-  document.getElementById('sc-rule-channel').value = data.channel
+  document.getElementById('sc-rule-channel').value = data.channel || 'retail'
   document.getElementById('sc-rule-product').value = data.product_id || ''
-  document.getElementById('sc-rule-rate').value = data.rate_percent
+  document.getElementById('sc-rule-type').value = data.rule_type || 'flat'
+  document.getElementById('sc-rule-rate').value = data.rate_percent ?? ''
+  document.getElementById('sc-rule-paywhen').value = data.pay_when || 'on_paid'
+  document.getElementById('sc-rule-new').checked = !!data.new_customer_only
+  document.getElementById('sc-rule-from').value = data.valid_from || ''
+  document.getElementById('sc-rule-to').value = data.valid_to || ''
+  document.getElementById('sc-rule-target').value = data.target_amount ?? ''
+  document.getElementById('sc-rule-bonus').value = data.bonus_amount ?? ''
+  document.getElementById('sc-rule-unit').value = data.unit_amount ?? ''
+  const body = document.getElementById('sc-tier-body')
+  if(body) { body.innerHTML = ''; (Array.isArray(data.tiers)?data.tiers:[]).forEach(r => _scAddTierRow(r.from, r.to, r.rate)); if(!body.children.length) _scResetTiers() }
+  _scToggleRuleFields()
   window.scrollTo({top:0, behavior:'smooth'})
 }
 
 async function _scSaveRule() {
   const isBm = APP.language==='bm'
   const errEl = document.getElementById('sc-rule-form-err')
-  errEl.style.display = 'none'
-  const id = document.getElementById('sc-rule-id').value || null
-  const salesPersonId = document.getElementById('sc-rule-sp').value || null
-  const channel = document.getElementById('sc-rule-channel').value
-  const productId = document.getElementById('sc-rule-product').value || null
-  const rate = Number(document.getElementById('sc-rule-rate').value)
-  if(!(rate >= 0 && rate <= 100)) {
-    errEl.textContent = isBm ? 'Kadar mesti antara 0-100%.' : 'Rate must be between 0-100%.'
-    errEl.style.display = 'block'
-    return
+  const id = document.getElementById('sc-rule-id').value
+  const type = document.getElementById('sc-rule-type').value || 'flat'
+  const rate = Number(document.getElementById('sc-rule-rate').value || 0)
+  const payload = {
+    tenant_id: APP.tenant.id,
+    sales_person_id: document.getElementById('sc-rule-sp').value || null,
+    channel: document.getElementById('sc-rule-channel').value,
+    product_id: document.getElementById('sc-rule-product').value || null,
+    rate_percent: type === 'tiered' ? Number((_scReadTiers()[0]||{}).rate || 0) : rate,
+    rule_type: type,
+    tiers: type === 'tiered' ? _scReadTiers() : null,
+    pay_when: document.getElementById('sc-rule-paywhen').value || 'on_paid',
+    new_customer_only: !!document.getElementById('sc-rule-new').checked,
+    valid_from: document.getElementById('sc-rule-from').value || null,
+    valid_to: document.getElementById('sc-rule-to').value || null,
+    target_amount: document.getElementById('sc-rule-target').value === '' ? null : Number(document.getElementById('sc-rule-target').value),
+    bonus_amount: document.getElementById('sc-rule-bonus').value === '' ? null : Number(document.getElementById('sc-rule-bonus').value),
+    unit_amount: document.getElementById('sc-rule-unit').value === '' ? null : Number(document.getElementById('sc-rule-unit').value),
+    updated_at: new Date().toISOString()
   }
-  const payload = { tenant_id: APP.tenant.id, sales_person_id: salesPersonId, channel, product_id: productId, rate_percent: rate, updated_at: new Date().toISOString() }
   let error
-  if(id) { ({error} = await sb.from('sales_commission_rules').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id)) }
-  else { ({error} = await sb.from('sales_commission_rules').insert(payload)) }
+  if(id) ({error} = await sb.from('sales_commission_rules').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+  else ({error} = await sb.from('sales_commission_rules').insert(payload))
   if(error) {
-    errEl.textContent = 'Error: ' + error.message + (/duplicate|unique/i.test(error.message||'') ? (isBm?' — peraturan untuk kombinasi ni dah wujud.':' — a rule for this exact combination already exists.') : '')
+    errEl.textContent = 'Error: ' + error.message
     errEl.style.display = 'block'
     return
   }
