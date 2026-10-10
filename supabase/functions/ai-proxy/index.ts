@@ -85,7 +85,7 @@ async function handleChat(body: Record<string, unknown>) {
   if (!message || typeof message !== 'string') throw new Error('message is required')
 
   const systemPrompt =
-    'You are the NexERP business assistant for a Malaysian SME. Answer questions about ' +
+    'You are the M-Core business assistant for a Malaysian SME. Answer questions about ' +
     'the business using ONLY the data given in the context below. Be concise, format money ' +
     'as RM X,XXX.XX, and reply in the same language the user asked in (English or Bahasa ' +
     "Melayu). If the context doesn't contain enough information to answer, say so honestly " +
