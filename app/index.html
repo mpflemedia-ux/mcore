@@ -529,8 +529,11 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .ai-chat-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px;flex-shrink:0}
 .ai-chat-chip{min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:6px}
 .ai-chat-foot{padding:6px 12px 10px;font-size:11px;color:var(--text-3);text-align:center;flex-shrink:0}
-#ai-chat-panel{height:min(640px, calc(100vh - 140px));width:min(380px, calc(100vw - 24px))}
-@media (max-width:480px){#ai-chat-panel{right:12px;width:calc(100vw - 24px)}}
+#ai-chat-panel{right:12px;bottom:76px;width:min(380px, calc(100vw - 24px));height:min(560px, calc(100dvh - 100px));max-height:calc(100dvh - 100px)}
+.ai-chat-modes{scrollbar-width:none}
+.ai-chat-mode,.ai-chat-chip{flex:0 0 auto}
+.ai-chat-input-row input{min-width:0}
+@media (max-width:480px){#ai-chat-panel{left:12px;right:12px;width:auto;bottom:72px;height:calc(100dvh - 96px);max-height:calc(100dvh - 96px)}}
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:2000;display:none;align-items:center;justify-content:center}
 .modal-overlay.active{display:flex}
 .modal-box{background:var(--bg-card);border-radius:var(--radius);box-shadow:var(--shadow-lg);width:100%;max-width:400px;margin:16px;max-height:calc(100vh - 32px);display:flex;flex-direction:column}
