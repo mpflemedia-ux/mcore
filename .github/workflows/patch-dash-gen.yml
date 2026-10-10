@@ -1,0 +1,62 @@
+name: patch-dash-gen
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact-string patch to app/index.html loadDashboardData
+        run: |
+          cat > /tmp/apply.py <<'PYEOF'
+          p='app/index.html'
+          s=open(p,encoding='utf-8').read()
+          A1="  const _gen = (loadDashboardData._gen = (loadDashboardData._gen||0) + 1)\n"
+          B1="  const _gen = (window._dbLoadGen = (window._dbLoadGen||0) + 1)\n"
+          A2="  const _still = () => _gen === loadDashboardData._gen && APP.currentPage === 'dashboard'\n"
+          B2="  const _still = () => _gen === window._dbLoadGen && APP.currentPage === 'dashboard'\n"
+          assert s.count('_dbLoadGen')==0
+          for a,b in ((A1,B1),(A2,B2)):
+              n=s.count(a); assert n==1,('anchor count',n,a); s=s.replace(a,b)
+          assert s.count('loadDashboardData._gen')==0 and s.count('window._dbLoadGen')==3
+          open(p,'w',encoding='utf-8').write(s); print('patched')
+          PYEOF
+          python3 /tmp/apply.py
+      - name: Syntax check inline script blocks
+        run: |
+          cat > /tmp/chk.py <<'PYEOF'
+          import re,subprocess,sys
+          s=open('app/index.html',encoding='utf-8').read()
+          blocks=[(m.group(1),m.group(2)) for m in re.finditer(r'<script(\b[^>]*)>(.*?)</script>',s,re.S)]
+          inline=[b for a,b in blocks if 'src=' not in a and 'application/ld+json' not in a and 'type="module"' not in a]
+          hit=[b for b in inline if 'async function loadDashboardData' in b or 'function loadDashboardData' in b]
+          print('inline blocks',len(inline),'dash blocks',len(hit))
+          assert len(hit)==1
+          fails=0
+          for i,b in enumerate(inline):
+              open('/tmp/blk.js','w').write(b)
+              r=subprocess.run(['node','--check','/tmp/blk.js'],capture_output=True,text=True)
+              tag='DASH' if b is hit[0] else ''
+              if r.returncode: fails+=1; print('block',i,tag,'FAIL',r.stderr[:300])
+              elif tag: print('block',i,'DASH parses OK')
+          open('/tmp/blk.js','w').write(hit[0])
+          subprocess.run(['node','--check','/tmp/blk.js'],check=True)
+          print('fails',fails)
+          PYEOF
+          python3 /tmp/chk.py
+          git diff --stat
+          git diff
+      - name: Commit, remove workflow, push
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "fix(dashboard): keep load run counter off the wrapped function"
+          git rm -q .github/workflows/patch-dash-gen.yml
+          git commit -m "chore: remove one-shot patch-dash-gen workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
