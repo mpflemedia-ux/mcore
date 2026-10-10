@@ -17,7 +17,7 @@ jobs:
           p='supabase/functions/ai-proxy/index.ts'
           a="'You are the NexERP business assistant for a Malaysian SME. Answer questions about ' +"
           b="'You are the M-Core business assistant for a Malaysian SME. Answer questions about ' +"
-          r=subprocess.run(['git','grep','-c','-F',a],capture_output=True,text=True)
+          r=subprocess.run(['git','grep','-c','-F',a,'--','.',':(exclude).github/workflows/patch-ai-proxy-brand.yml'],capture_output=True,text=True)
           print(r.stdout)
           total=sum(int(l.rsplit(':',1)[1]) for l in r.stdout.strip().splitlines() if l)
           assert total==1,('repo count',total)
