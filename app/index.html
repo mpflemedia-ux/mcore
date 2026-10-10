@@ -6446,8 +6446,8 @@ async function loadDashboardData() {
     }
     return
   }
-  const _gen = (loadDashboardData._gen = (loadDashboardData._gen||0) + 1)
-  const _still = () => _gen === loadDashboardData._gen && APP.currentPage === 'dashboard'
+  const _gen = (window._dbLoadGen = (window._dbLoadGen||0) + 1)
+  const _still = () => _gen === window._dbLoadGen && APP.currentPage === 'dashboard'
   try {
   _warnIfDefaultAccountsMissing()
   const isBm = APP.language==='bm'
