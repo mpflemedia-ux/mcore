@@ -526,7 +526,14 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .ai-chat-modes{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;flex-shrink:0}
 .ai-chat-mode{min-height:36px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:999px;padding:6px 12px;white-space:nowrap;display:flex;align-items:center;gap:6px}
 .ai-chat-mode.is-active{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
-.ai-chat-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px;flex-shrink:0}
+.ai-chat-chips{padding:0 12px 8px;flex-shrink:0;overflow:auto;max-height:52%}
+.ai-mod-card,.ai-sug-card{border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:8px;background:var(--bg-card)}
+.ai-mod-title{display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px}
+.ai-mod-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.ai-mod-btn,.ai-sug-btn{min-height:40px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;padding:6px;display:flex;align-items:center;gap:4px;font-size:11px;width:100%;text-align:left}
+.ai-mod-btn i,.ai-sug-btn i{color:var(--primary);flex:0 0 auto}
+.ai-mod-btn span,.ai-sug-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-sug-btn{margin-bottom:6px}
 .ai-chat-chip{min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:6px}
 .ai-chat-foot{padding:6px 12px 10px;font-size:11px;color:var(--text-3);text-align:center;flex-shrink:0}
 #ai-chat-panel{right:12px;bottom:76px;width:min(380px, calc(100vw - 24px));height:min(560px, calc(100dvh - 100px));max-height:calc(100dvh - 100px)}
@@ -3967,7 +3974,17 @@ function _aiPlaybook(bm) {
     'HR staff: HR & Payroll > tambah staff, nickname, bank, probation atau permanent.',
     'Accounting: Accounting > COA, journal, bank recon.',
     'Reports: Reports > pilih jenis laporan dan tempoh.',
-    'Settings: Settings > syarikat, bank, invoice term, bahasa, logo.'
+    'Settings: Settings > syarikat, bank, invoice term, bahasa, logo.',
+    'Dashboard: kad ringkasan jualan, overdue, stok rendah, shift, booking.',
+    'Academy: Sales Academy > misi dan progress staff.',
+    'Logistics: Logistics > penghantaran.',
+    'Purchasing: Purchasing > PO dan pembekal.',
+    'Production: Production > pengeluaran.',
+    'Applicants: Job Applicants > permohonan kerja.',
+    'Admin: Admin > tenant, plan, permission.',
+    'Learning: Learning Center > pusat pembelajaran.',
+    'Doc Router: Docs > klasifikasi dokumen Drive.',
+    'Knowledge base, FAQ soalan gagal, guided tour: belum ada page. Jawab cadangan sahaja, jangan reka page.'
   ].join('\n')
   return [
     'Invoice: Sales > New Invoice > pick customer > add items > Save. Public link is on the invoice.',
@@ -3986,7 +4003,17 @@ function _aiPlaybook(bm) {
     'HR staff: HR & Payroll > add staff, nickname, bank, probation or permanent.',
     'Accounting: Accounting > chart of accounts, journal, bank recon.',
     'Reports: Reports > pick report type and period.',
-    'Settings: Settings > company, bank, invoice terms, language, logo.'
+    'Settings: Settings > company, bank, invoice terms, language, logo.',
+    'Dashboard: summary cards for sales, overdue, low stock, shift, booking.',
+    'Academy: Sales Academy > staff missions and progress.',
+    'Logistics: Logistics > deliveries.',
+    'Purchasing: Purchasing > purchase orders and suppliers.',
+    'Production: Production > production runs.',
+    'Applicants: Job Applicants > job applications.',
+    'Admin: Admin > tenants, plans, permissions.',
+    'Learning: Learning Center.',
+    'Doc Router: Docs > Drive document classification.',
+    'Knowledge base, failed FAQ, guided tour: no page yet. Answer as a suggestion only, do not invent a page.'
   ].join('\n')
 }
 
@@ -4006,19 +4033,57 @@ function _aiRenderChrome() {
     modes.innerHTML = items.map(m => `<button type="button" class="ai-chat-mode${AI_CHAT.mode===m.id?' is-active':''}" onclick="_aiSetMode('${m.id}')"><i class="ti ${m.icon}"></i> ${m.label}</button>`).join('')
   }
   const chips = document.getElementById('ai-chat-chips')
-  if(chips) {
-    const list = [
-      {icon:'ti-file-invoice', label:t.invoice, q:t.qInvoice},
-      {icon:'ti-users', label:t.payroll, q:t.qPayroll},
-      {icon:'ti-percentage', label:t.commission, q:t.qCommission},
-      {icon:'ti-calendar', label:t.booking, q:t.qBooking},
-      {icon:'ti-box', label:t.stock, q:t.qStock}
-    ]
-    chips.innerHTML = `<div style="width:100%;font-size:12px;color:var(--text-3);margin-bottom:4px"><i class="ti ti-bolt"></i> ${t.quick}</div>` +
-      list.map(c => `<button type="button" class="ai-chat-chip" onclick="_aiAskChip(this)" data-q="${_aiEscapeHtml(c.q)}"><i class="ti ${c.icon}"></i> ${c.label}</button>`).join('')
-  }
+  if(chips) chips.innerHTML = _aiHomeHtml(t)
   const foot = document.getElementById('ai-chat-foot')
   if(foot) foot.innerHTML = `<i class="ti ti-sparkles"></i> ${t.foot}`
+}
+
+function _aiHomeHtml(t) {
+  const mods = [
+    {icon:'ti-layout-dashboard', page:'dashboard', en:'Dashboard', bm:'Dashboard'},
+    {icon:'ti-calendar-event', page:'planner', en:'Planner', bm:'Planner'},
+    {icon:'ti-layout-kanban', page:'projects', en:'Projects', bm:'Projek'},
+    {icon:'ti-users', page:'crm', en:'Customers', bm:'Pelanggan'},
+    {icon:'ti-file-invoice', page:'sales', en:'Sales', bm:'Jualan'},
+    {icon:'ti-device-desktop', page:'pos', en:'POS', bm:'POS'},
+    {icon:'ti-award', page:'sales_commission', en:'Commission', bm:'Komisen'},
+    {icon:'ti-school', page:'sales_academy', en:'Academy', bm:'Akademi'},
+    {icon:'ti-box', page:'inventory', en:'Inventory', bm:'Stok'},
+    {icon:'ti-truck-delivery', page:'logistics', en:'Logistics', bm:'Logistik'},
+    {icon:'ti-shopping-cart', page:'purchasing', en:'Purchasing', bm:'Perolehan'},
+    {icon:'ti-tools', page:'production', en:'Production', bm:'Pengeluaran'},
+    {icon:'ti-id-badge-2', page:'hr', en:'HR', bm:'SDM'},
+    {icon:'ti-calendar-time', page:'shifts', en:'Shifts', bm:'Syif'},
+    {icon:'ti-user-search', page:'applicants', en:'Applicants', bm:'Pemohon'},
+    {icon:'ti-calculator', page:'accounting', en:'Accounting', bm:'Akaun'},
+    {icon:'ti-receipt', page:'vouchers', en:'Vouchers', bm:'Baucar'},
+    {icon:'ti-chart-bar', page:'reports', en:'Reports', bm:'Laporan'},
+    {icon:'ti-shield-cog', page:'admin', en:'Admin', bm:'Admin'},
+    {icon:'ti-book-2', page:'learning', en:'Learning', bm:'Belajar'},
+    {icon:'ti-settings', page:'settings', en:'Settings', bm:'Tetapan'},
+    {icon:'ti-calendar-plus', page:'planner', en:'Bookings', bm:'Tempahan'},
+    {icon:'ti-receipt-2', page:'expense_claims', en:'Claims', bm:'Tuntutan'},
+    {icon:'ti-file-search', page:'docs', en:'Doc Router', bm:'Doc Router'}
+  ]
+  const bm = APP.language === 'bm'
+  const grid = mods.map(m => `<button type="button" class="ai-mod-btn" onclick="_aiOpenMod('${m.page}')"><i class="ti ${m.icon}"></i><span>${bm?m.bm:m.en}</span></button>`).join('')
+  const sugs = [
+    {icon:'ti-sparkles', q: bm?'Macam mana nak urus knowledge base AI?':'How do I manage the AI knowledge base?', en:'Knowledge base admin', bm:'Knowledge base admin'},
+    {icon:'ti-sparkles', q: bm?'Soalan AI yang gagal dijawab?':'What failed AI questions do we have?', en:'FAQ soalan gagal', bm:'FAQ soalan gagal'},
+    {icon:'ti-sparkles', q: bm?'Macam mana nak guna guided tour?':'How do I use the guided tour?', en:'Guided tour', bm:'Guided tour'},
+    {icon:'ti-sparkles', q: bm?'Ada alert overdue atau stok rendah?':'Any overdue or low stock alerts?', en:'Alert overdue/stok', bm:'Alert overdue/stok'}
+  ]
+  const sugHtml = sugs.map(s => `<button type="button" class="ai-sug-btn" onclick="_aiAskText('${_aiEscapeHtml(s.q).replace(/'/g, '&#39;')}')"><i class="ti ${s.icon}"></i><span>${bm?s.bm:s.en}</span></button>`).join('')
+  return `<div class="ai-mod-card"><div class="ai-mod-title"><span><i class="ti ti-stack-2"></i> ${bm?'Modul Sistem':'System Modules'}</span><i class="ti ti-chevron-up"></i></div><div class="ai-mod-grid">${grid}</div></div><div class="ai-sug-card"><div class="ai-mod-title"><span><i class="ti ti-bulb"></i> ${bm?'Cadangan':'Suggestions'}</span></div>${sugHtml}</div>`
+}
+function _aiOpenMod(page) {
+  try { toggleAIChat() } catch (e) {}
+  try { openPage(page) } catch (e) {}
+}
+function _aiAskText(q) {
+  const input = document.getElementById('ai-chat-input')
+  if(input) input.value = q
+  sendAIChatMessage()
 }
 
 function _aiSetMode(mode) {
