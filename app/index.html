@@ -530,7 +530,7 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .ai-chat-chip{min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:6px}
 .ai-chat-foot{padding:6px 12px 10px;font-size:11px;color:var(--text-3);text-align:center;flex-shrink:0}
 #ai-chat-panel{right:12px;bottom:76px;width:min(380px, calc(100vw - 24px));height:min(560px, calc(100dvh - 100px));max-height:calc(100dvh - 100px)}
-.ai-chat-modes{scrollbar-width:none}
+.ai-chat-modes{scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .ai-chat-mode,.ai-chat-chip{flex:0 0 auto}
 .ai-chat-input-row input{min-width:0}
 @media (max-width:480px){#ai-chat-panel{left:12px;right:12px;width:auto;bottom:72px;height:calc(100dvh - 96px);max-height:calc(100dvh - 96px)}}
@@ -3954,21 +3954,39 @@ function _aiPlaybook(bm) {
     'Invoice: Sales > New Invoice > pilih pelanggan > tambah item > Save. Public link ada pada invoice.',
     'Bank invoice: Settings > Banking. Isi bank name, account name, account number. Invoice papar detail ini.',
     'Gaji: HR & Payroll > pilih bulan > semak staff > simpan disbursement > print payslip.',
+    'Shift / Syif: Shifts > pilih minggu > set opening, tengahari, malam untuk setiap staff > Save. Dashboard tunjuk 5 staff, selebih scroll. Off pun dipaparkan.',
     'Komisen: Sales Commission > Rules. Pilih jenis flat/tiered/target. Save. Ledger tunjuk rekod.',
     'Booking: Bookings > set servis dan slot > salin public link > pelanggan tempah. Yang free terus confirmed.',
     'Stok: Inventory > semak stock qty dan reorder. Low stock juga ada di Dashboard.',
     'Claim: Expense Claims > staff apply > owner approve. Staff apply sahaja.',
-    'PV: Payment Vouchers > New > payee, amount, bank > Save draft > print.'
+    'PV: Payment Vouchers > New > payee, amount, bank > Save draft > print.',
+    'CRM: Customers > tambah pelanggan, pipeline, follow-up.',
+    'POS: POS > pilih produk > bayar > stok keluar.',
+    'Planner: Planner > tambah appointment atau todo.',
+    'Projects: Projects > board backlog, in progress, done. Progress 0 backlog, 1-99 in progress, 100 done.',
+    'HR staff: HR & Payroll > tambah staff, nickname, bank, probation atau permanent.',
+    'Accounting: Accounting > COA, journal, bank recon.',
+    'Reports: Reports > pilih jenis laporan dan tempoh.',
+    'Settings: Settings > syarikat, bank, invoice term, bahasa, logo.'
   ].join('\n')
   return [
     'Invoice: Sales > New Invoice > pick customer > add items > Save. Public link is on the invoice.',
     'Invoice bank: Settings > Banking. Fill bank name, account name, account number. Invoice shows these details.',
     'Payroll: HR & Payroll > pick month > review staff > save disbursement > print payslip.',
+    'Shift: Shifts > pick the week > set opening, midday, night for each staff > Save. Dashboard shows 5 staff, the rest scroll. Off is shown too.',
     'Commission: Sales Commission > Rules. Pick flat/tiered/target. Save. Ledger shows records.',
     'Booking: Bookings > set service and slots > copy public link > customer books. Free slots confirm immediately.',
     'Stock: Inventory > check stock qty and reorder. Low stock also appears on Dashboard.',
     'Claims: Expense Claims > staff applies > owner approves. Staff can apply only.',
-    'PV: Payment Vouchers > New > payee, amount, bank > Save draft > print.'
+    'PV: Payment Vouchers > New > payee, amount, bank > Save draft > print.',
+    'CRM: Customers > add customer, pipeline, follow-up.',
+    'POS: POS > pick products > pay > stock is reduced.',
+    'Planner: Planner > add an appointment or todo.',
+    'Projects: Projects > board backlog, in progress, done. Progress 0 is backlog, 1-99 in progress, 100 done.',
+    'HR staff: HR & Payroll > add staff, nickname, bank, probation or permanent.',
+    'Accounting: Accounting > chart of accounts, journal, bank recon.',
+    'Reports: Reports > pick report type and period.',
+    'Settings: Settings > company, bank, invoice terms, language, logo.'
   ].join('\n')
 }
 
