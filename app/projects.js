@@ -413,7 +413,7 @@
     if (sort) sort.onchange = function () { state.sort = sort.value; paint(); };
 
     var q = document.getElementById('pj-q');
-    if (q) q.oninput = function () { state.filter = q.value; paint(); q.focus(); };
+    if (q) q.oninput = function () { var had = document.activeElement === q; var pos = q.selectionStart; state.filter = q.value; paint(); var nq = document.getElementById('pj-q'); if (had && nq) { nq.focus(); nq.setSelectionRange(pos, pos); } };
     var g = document.getElementById('pj-g');
     if (g) g.onchange = function () { state.group = g.value; paint(); };
 
@@ -704,6 +704,7 @@
     if (params && params.id) state.projectId = params.id;
     state.focus = window._pjOpenTask || '';
     window._pjOpenTask = '';
+    state.filter = ''; state.group = ''; state.assignee = '';
     refresh();
   };
 })();
