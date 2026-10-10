@@ -1,0 +1,61 @@
+name: patch-ai-mods-closed
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact-string patch to app/index.html _aiSetMode
+        run: |
+          cat > /tmp/apply.py <<'PYEOF'
+          p='app/index.html'
+          s=open(p,encoding='utf-8').read()
+          A="function _aiSetMode(mode) {\n  if(AI_CHAT.mode === mode) return\n  AI_CHAT.mode = mode\n  AI_CHAT.modsOpen = true\n  _aiRenderChrome()\n}\n"
+          B="function _aiSetMode(mode) {\n  if(AI_CHAT.mode === mode) return\n  AI_CHAT.mode = mode\n  _aiRenderChrome()\n}\n"
+          n=s.count(A); assert n==1,('anchor count',n)
+          assert s.count('AI_CHAT.modsOpen = true')==1
+          s=s.replace(A,B)
+          assert s.count('AI_CHAT.modsOpen = true')==0
+          assert s.count('modsOpen')==3
+          open(p,'w',encoding='utf-8').write(s); print('patched')
+          PYEOF
+          python3 /tmp/apply.py
+      - name: Syntax check inline script blocks
+        run: |
+          cat > /tmp/chk.py <<'PYEOF'
+          import re,subprocess,sys
+          s=open('app/index.html',encoding='utf-8').read()
+          blocks=[(m.group(1),m.group(2)) for m in re.finditer(r'<script(\b[^>]*)>(.*?)</script>',s,re.S)]
+          inline=[b for a,b in blocks if 'src=' not in a and 'application/ld+json' not in a and 'type="module"' not in a]
+          hit=[b for b in inline if 'function _aiSetMode' in b]
+          print('inline blocks',len(inline),'ai blocks',len(hit))
+          assert len(hit)==1
+          fails=0
+          for i,b in enumerate(inline):
+              open('/tmp/blk.js','w').write(b)
+              r=subprocess.run(['node','--check','/tmp/blk.js'],capture_output=True,text=True)
+              tag='AI' if b is hit[0] else ''
+              if r.returncode: fails+=1; print('block',i,tag,'FAIL',r.stderr[:300])
+              elif tag: print('block',i,'AI parses OK')
+          open('/tmp/blk.js','w').write(hit[0])
+          subprocess.run(['node','--check','/tmp/blk.js'],check=True)
+          print('fails',fails)
+          PYEOF
+          python3 /tmp/chk.py
+          git diff --stat
+          git diff
+      - name: Commit, remove workflow, push
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "fix(ai): keep module grid closed on tab switch"
+          git rm -q .github/workflows/patch-ai-mods-closed.yml
+          git commit -m "chore: remove one-shot patch-ai-mods-closed workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
