@@ -3930,7 +3930,7 @@ async function _genFallbackRefNo(table, column, prefix) {
 }
 
 // AI ASSISTANT CHAT
-const AI_CHAT = { open:false, messages:[], loading:false, mode:'guru' }
+const AI_CHAT = { open:false, messages:[], loading:false, mode:'guru', modsOpen:false }
 
 function _aiLabels() {
   const bm = APP.language === 'bm'
@@ -4075,7 +4075,8 @@ function _aiHomeHtml(t) {
     {icon:'ti-sparkles', q: bm?'Ada alert overdue atau stok rendah?':'Any overdue or low stock alerts?', en:'Alert overdue/stok', bm:'Alert overdue/stok'}
   ]
   const sugHtml = sugs.map(s => `<button type="button" class="ai-sug-btn" onclick="_aiAskText('${_aiEscapeHtml(s.q).replace(/'/g, '&#39;')}')"><i class="ti ${s.icon}"></i><span>${bm?s.bm:s.en}</span></button>`).join('')
-  return `<div class="ai-mod-card"><div class="ai-mod-title"><span><i class="ti ti-stack-2"></i> ${bm?'Modul Sistem':'System Modules'}</span><button type="button" class="ai-mod-toggle" onclick="_aiToggleMods(this)" aria-label="toggle"><i class="ti ti-chevron-up"></i></button></div><div class="ai-mod-grid">${grid}</div></div><div class="ai-sug-card"><div class="ai-mod-title"><span><i class="ti ti-bulb"></i> ${bm?'Cadangan':'Suggestions'}</span></div>${sugHtml}</div>`
+  const open = !!AI_CHAT.modsOpen
+  return `<div class="ai-mod-card"><div class="ai-mod-title"><span><i class="ti ti-stack-2"></i> ${bm?'Modul Sistem':'System Modules'}</span><button type="button" class="ai-mod-toggle" onclick="_aiToggleMods(this)" aria-label="toggle"><i class="ti ${open?'ti-chevron-up':'ti-chevron-down'}"></i></button></div><div class="ai-mod-grid" style="${open?'':'display:none'}">${grid}</div></div><div class="ai-sug-card"><div class="ai-mod-title"><span><i class="ti ti-bulb"></i> ${bm?'Cadangan':'Suggestions'}</span></div>${sugHtml}</div>`
 }
 function _aiToggleMods(btn) {
   const card = btn.closest('.ai-mod-card')
@@ -4083,6 +4084,7 @@ function _aiToggleMods(btn) {
   if(!grid) return
   const closed = grid.style.display === 'none'
   grid.style.display = closed ? 'grid' : 'none'
+  AI_CHAT.modsOpen = closed
   const icon = btn.querySelector('i')
   if(icon) icon.className = closed ? 'ti ti-chevron-up' : 'ti ti-chevron-down'
 }
@@ -4098,7 +4100,9 @@ function _aiAskText(q) {
 }
 
 function _aiSetMode(mode) {
+  if(AI_CHAT.mode === mode) return
   AI_CHAT.mode = mode
+  AI_CHAT.modsOpen = true
   _aiRenderChrome()
 }
 function _aiAskChip(btn) {
