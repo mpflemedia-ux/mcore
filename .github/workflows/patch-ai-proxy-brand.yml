@@ -1,0 +1,44 @@
+name: patch-ai-proxy-brand
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact-string patch to ai-proxy systemPrompt
+        run: |
+          cat > /tmp/apply.py <<'PYEOF'
+          import subprocess
+          p='supabase/functions/ai-proxy/index.ts'
+          a="'You are the NexERP business assistant for a Malaysian SME. Answer questions about ' +"
+          b="'You are the M-Core business assistant for a Malaysian SME. Answer questions about ' +"
+          r=subprocess.run(['git','grep','-c','-F',a],capture_output=True,text=True)
+          print(r.stdout)
+          total=sum(int(l.rsplit(':',1)[1]) for l in r.stdout.strip().splitlines() if l)
+          assert total==1,('repo count',total)
+          s=open(p,encoding='utf-8',newline='').read()
+          c=s.count(a); assert c==1,('file count',c)
+          s=s.replace(a,b)
+          open(p,'w',encoding='utf-8',newline='').write(s)
+          print('ok')
+          PYEOF
+          python3 /tmp/apply.py
+          git diff --stat
+          git diff
+          test "$(git diff --numstat | wc -l)" = "1"
+          test "$(git diff --numstat | awk '{print $1" "$2" "$3}')" = "1 1 supabase/functions/ai-proxy/index.ts"
+      - name: Commit, remove workflow, push
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/ai-proxy/index.ts
+          git commit -m "fix(ai): assistant calls itself M-Core not NexERP"
+          git rm -q .github/workflows/patch-ai-proxy-brand.yml
+          git commit -m "chore: remove one-shot patch-ai-proxy-brand workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
