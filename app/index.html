@@ -520,6 +520,17 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .ai-chat-input-row input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .ai-chat-send{width:36px;height:36px;border-radius:var(--radius-sm);background:var(--primary);color:var(--on-primary);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
 .ai-chat-send:disabled{opacity:.5;cursor:default}
+.ai-chat-header{background:var(--bg-card);color:var(--text)}
+.ai-chat-header-title{color:var(--primary)}
+.ai-chat-header-actions{display:flex;align-items:center;gap:10px}
+.ai-chat-modes{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;flex-shrink:0}
+.ai-chat-mode{min-height:36px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:999px;padding:6px 12px;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.ai-chat-mode.is-active{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.ai-chat-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px;flex-shrink:0}
+.ai-chat-chip{min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:6px}
+.ai-chat-foot{padding:6px 12px 10px;font-size:11px;color:var(--text-3);text-align:center;flex-shrink:0}
+#ai-chat-panel{height:min(640px, calc(100vh - 140px));width:min(380px, calc(100vw - 24px))}
+@media (max-width:480px){#ai-chat-panel{right:12px;width:calc(100vw - 24px)}}
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:2000;display:none;align-items:center;justify-content:center}
 .modal-overlay.active{display:flex}
 .modal-box{background:var(--bg-card);border-radius:var(--radius);box-shadow:var(--shadow-lg);width:100%;max-width:400px;margin:16px;max-height:calc(100vh - 32px);display:flex;flex-direction:column}
@@ -1835,13 +1846,19 @@ html[data-skip-intro="1"] #intro-skip {
   <div id="ai-chat-panel">
     <div class="ai-chat-header">
       <div class="ai-chat-header-title"><i class="ti ti-sparkles"></i> <span id="ai-chat-title">AI Assistant</span></div>
-      <i class="ti ti-x ai-chat-close" onclick="toggleAIChat()"></i>
+      <div class="ai-chat-header-actions">
+        <i class="ti ti-help-circle ai-chat-close" onclick="_aiHelpTip()" title="Help"></i>
+        <i class="ti ti-x ai-chat-close" onclick="toggleAIChat()"></i>
+      </div>
     </div>
+    <div class="ai-chat-modes" id="ai-chat-modes"></div>
     <div class="ai-chat-messages" id="ai-chat-messages"></div>
+    <div class="ai-chat-chips" id="ai-chat-chips"></div>
     <div class="ai-chat-input-row">
       <input type="text" id="ai-chat-input" placeholder="..." onkeydown="if(event.key==='Enter')sendAIChatMessage()">
       <button class="ai-chat-send" id="ai-chat-send-btn" onclick="sendAIChatMessage()"><i class="ti ti-send"></i></button>
     </div>
+    <div class="ai-chat-foot" id="ai-chat-foot"></div>
   </div>
   <button id="scroll-top-btn" onclick="scrollMainToTop()" title="Scroll to top"><i class="ti ti-chevron-up"></i></button>
 </div>
@@ -3902,20 +3919,108 @@ async function _genFallbackRefNo(table, column, prefix) {
 }
 
 // AI ASSISTANT CHAT
-const AI_CHAT = { open:false, messages:[], loading:false }
+const AI_CHAT = { open:false, messages:[], loading:false, mode:'guru' }
+
+function _aiLabels() {
+  const bm = APP.language === 'bm'
+  return bm ? {
+    title:'Pembantu AI', placeholder:'Tanya apa-apa tentang sistem atau perniagaan...',
+    guru:'Guru Sistem', data:'Data Perniagaan', advisor:'Advisor',
+    quick:'Cuba tanya cepat', foot:'AI boleh tersilap. Semak maklumat penting.',
+    help:'Pilih mod: Guru Sistem untuk langkah, Data untuk nombor, Advisor untuk cadangan.',
+    welcome:'Saya boleh bantu langkah demi langkah. Beritahu apa yang anda perlukan.',
+    invoice:'Cara invoice', payroll:'Cara gaji', commission:'Komisen', booking:'Booking', stock:'Stok rendah',
+    qInvoice:'Macam mana nak buat invoice?', qPayroll:'Macam mana nak proses gaji?',
+    qCommission:'Macam mana komisen jualan berfungsi?', qBooking:'Macam mana nak guna booking?',
+    qStock:'Ada stok rendah tak bulan ni?'
+  } : {
+    title:'AI Assistant', placeholder:'Ask anything about the system or your business...',
+    guru:'System Guide', data:'Business Data', advisor:'Advisor',
+    quick:'Quick ask', foot:'AI can make mistakes. Check important details.',
+    help:'Pick a mode: System Guide for steps, Business Data for numbers, Advisor for suggestions.',
+    welcome:'I can guide you step by step. Tell me what you need.',
+    invoice:'How to invoice', payroll:'How to pay', commission:'Commission', booking:'Booking', stock:'Low stock',
+    qInvoice:'How do I create an invoice?', qPayroll:'How do I run payroll?',
+    qCommission:'How does sales commission work?', qBooking:'How do I use booking?',
+    qStock:'Do we have low stock this month?'
+  }
+}
+
+function _aiPlaybook(bm) {
+  if(bm) return [
+    'Invoice: Sales > New Invoice > pilih pelanggan > tambah item > Save. Public link ada pada invoice.',
+    'Bank invoice: Settings > Banking. Isi bank name, account name, account number. Invoice papar detail ini.',
+    'Gaji: HR & Payroll > pilih bulan > semak staff > simpan disbursement > print payslip.',
+    'Komisen: Sales Commission > Rules. Pilih jenis flat/tiered/target. Save. Ledger tunjuk rekod.',
+    'Booking: Bookings > set servis dan slot > salin public link > pelanggan tempah. Yang free terus confirmed.',
+    'Stok: Inventory > semak stock qty dan reorder. Low stock juga ada di Dashboard.',
+    'Claim: Expense Claims > staff apply > owner approve. Staff apply sahaja.',
+    'PV: Payment Vouchers > New > payee, amount, bank > Save draft > print.'
+  ].join('\n')
+  return [
+    'Invoice: Sales > New Invoice > pick customer > add items > Save. Public link is on the invoice.',
+    'Invoice bank: Settings > Banking. Fill bank name, account name, account number. Invoice shows these details.',
+    'Payroll: HR & Payroll > pick month > review staff > save disbursement > print payslip.',
+    'Commission: Sales Commission > Rules. Pick flat/tiered/target. Save. Ledger shows records.',
+    'Booking: Bookings > set service and slots > copy public link > customer books. Free slots confirm immediately.',
+    'Stock: Inventory > check stock qty and reorder. Low stock also appears on Dashboard.',
+    'Claims: Expense Claims > staff applies > owner approves. Staff can apply only.',
+    'PV: Payment Vouchers > New > payee, amount, bank > Save draft > print.'
+  ].join('\n')
+}
+
+function _aiRenderChrome() {
+  const t = _aiLabels()
+  const title = document.getElementById('ai-chat-title')
+  if(title) title.textContent = t.title
+  const input = document.getElementById('ai-chat-input')
+  if(input) input.placeholder = t.placeholder
+  const modes = document.getElementById('ai-chat-modes')
+  if(modes) {
+    const items = [
+      {id:'guru', icon:'ti-brain', label:t.guru},
+      {id:'data', icon:'ti-chart-bar', label:t.data},
+      {id:'advisor', icon:'ti-user', label:t.advisor}
+    ]
+    modes.innerHTML = items.map(m => `<button type="button" class="ai-chat-mode${AI_CHAT.mode===m.id?' is-active':''}" onclick="_aiSetMode('${m.id}')"><i class="ti ${m.icon}"></i> ${m.label}</button>`).join('')
+  }
+  const chips = document.getElementById('ai-chat-chips')
+  if(chips) {
+    const list = [
+      {icon:'ti-file-invoice', label:t.invoice, q:t.qInvoice},
+      {icon:'ti-users', label:t.payroll, q:t.qPayroll},
+      {icon:'ti-percentage', label:t.commission, q:t.qCommission},
+      {icon:'ti-calendar', label:t.booking, q:t.qBooking},
+      {icon:'ti-box', label:t.stock, q:t.qStock}
+    ]
+    chips.innerHTML = `<div style="width:100%;font-size:12px;color:var(--text-3);margin-bottom:4px"><i class="ti ti-bolt"></i> ${t.quick}</div>` +
+      list.map(c => `<button type="button" class="ai-chat-chip" onclick="_aiAskChip(this)" data-q="${_aiEscapeHtml(c.q)}"><i class="ti ${c.icon}"></i> ${c.label}</button>`).join('')
+  }
+  const foot = document.getElementById('ai-chat-foot')
+  if(foot) foot.innerHTML = `<i class="ti ti-sparkles"></i> ${t.foot}`
+}
+
+function _aiSetMode(mode) {
+  AI_CHAT.mode = mode
+  _aiRenderChrome()
+}
+function _aiAskChip(btn) {
+  const q = btn.getAttribute('data-q') || ''
+  const input = document.getElementById('ai-chat-input')
+  if(input) input.value = q
+  sendAIChatMessage()
+}
+function _aiHelpTip() {
+  AI_CHAT.messages.push({role:'assistant', text:_aiLabels().help})
+  renderAIChatMessages()
+}
 
 function toggleAIChat() {
   AI_CHAT.open = !AI_CHAT.open
   document.getElementById('ai-chat-panel').classList.toggle('active', AI_CHAT.open)
-  document.getElementById('ai-chat-title').textContent = APP.language==='bm' ? 'Pembantu AI' : 'AI Assistant'
-  document.getElementById('ai-chat-input').placeholder = APP.language==='bm' ? 'Tanya sesuatu...' : 'Ask something...'
+  _aiRenderChrome()
   if(AI_CHAT.open && AI_CHAT.messages.length===0) {
-    AI_CHAT.messages.push({
-      role: 'assistant',
-      text: APP.language==='bm'
-        ? 'Hai! Tanya apa-apa pasal data perniagaan anda — cth: "berapa total sales bulan ni?"'
-        : 'Hi! Ask me anything about your business data — e.g. "what\'s total sales this month?"'
-    })
+    AI_CHAT.messages.push({role:'assistant', text:_aiLabels().welcome})
     renderAIChatMessages()
   }
   if(AI_CHAT.open) document.getElementById('ai-chat-input').focus()
@@ -3935,11 +4040,22 @@ function renderAIChatMessages() {
 }
 
 async function aiChatGetContext() {
+  const bm = APP.language === 'bm'
+  const mode = AI_CHAT.mode || 'guru'
+  if(mode === 'guru') {
+    return (bm
+      ? 'Mod: Guru Sistem. Jawab langkah guna M-CORE dari playbook sahaja. Jangan reka page. Jika tak ada, kata tak pasti dan cadang hubungi admin.\n'
+      : 'Mode: System Guide. Answer how to use M-CORE from the playbook only. Do not invent pages. If missing, say unsure and suggest contacting admin.\n')
+      + _aiPlaybook(bm)
+  }
   const tenantId = APP.tenant.id
   const now = new Date()
   const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10)
   const to = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10)
   const parts = []
+  parts.push(mode === 'advisor'
+    ? (bm ? 'Mod: Advisor. Beri cadangan hanya dari nombor di bawah. Jangan reka data.' : 'Mode: Advisor. Suggest only from the numbers below. Do not invent data.')
+    : (bm ? 'Mod: Data perniagaan. Jawab nombor dari context sahaja.' : 'Mode: Business data. Answer numbers from context only.'))
   try {
     const {data: inv} = await sb.from('invoices').select('total,paid_amt,status')
       .eq('tenant_id', tenantId).is('deleted_at', null).gte('issue_date', from).lte('issue_date', to)
@@ -3952,6 +4068,11 @@ async function aiChatGetContext() {
     const {count: custCount} = await sb.from('customers').select('id',{count:'exact',head:true})
       .eq('tenant_id', tenantId).is('deleted_at', null)
     if(custCount!=null) parts.push(`Total active customers: ${custCount}.`)
+    const {data: prods} = await sb.from('products').select('name_en,stock_qty,reorder_point').eq('tenant_id', tenantId).is('deleted_at', null).limit(200)
+    if(prods) {
+      const low = prods.filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
+      parts.push(`Low stock items: ${low.length}. ${low.slice(0,5).map(p=>`${p.name_en} (${p.stock_qty})`).join(', ')}`)
+    }
   } catch(e) {
     console.error('aiChatGetContext error:', e)
   }
