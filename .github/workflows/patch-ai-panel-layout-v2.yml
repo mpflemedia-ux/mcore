@@ -1,0 +1,67 @@
+name: patch-ai-panel-layout-v2
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact-string patch to AI panel (CSS + _aiHomeHtml + _aiToggleMods)
+        run: |
+          cat > /tmp/apply.py <<'PYEOF'
+          import sys
+          p='app/index.html'; s=open(p,encoding='utf-8').read()
+          R=[
+          (".ai-chat-chips{padding:0 12px 8px;flex-shrink:0;overflow:auto;max-height:52%}",
+           ".ai-chat-chips{padding:0 12px 6px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;max-height:50%}"),
+          (".ai-mod-grid{display:grid;grid-template-columns:repeat(4,max-content);gap:6px;overflow-x:auto}",
+           ".ai-mod-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow-x:hidden;overflow-y:auto;min-height:0;padding:8px 0;border-bottom:1px solid var(--border)}"),
+          (".ai-sug-btn{margin-bottom:6px}",
+           ".ai-sug-btn{flex:0 0 auto;min-height:36px;border-radius:999px;padding:6px 10px}\n.ai-mod-btn span{white-space:normal;overflow-wrap:anywhere;line-height:1.2}\n.ai-mod-card{display:flex;flex-direction:column-reverse;min-height:0;padding:2px 4px 2px 10px;margin-bottom:6px}\n.ai-mod-card>.ai-mod-title{margin-bottom:0;font-size:13px;flex-shrink:0}\n.ai-sug-card{display:flex;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;flex-shrink:0;padding:0 0 2px;margin-bottom:0;border:0;border-radius:0;-webkit-overflow-scrolling:touch;scrollbar-width:thin}\n.ai-sug-card>.ai-mod-title{margin-bottom:0;font-size:12px;flex:0 0 auto;white-space:nowrap}"),
+          ("en:'Knowledge base admin', bm:'Knowledge base admin'}","en:'Knowledge base admin', bm:'Urus pangkalan pengetahuan'}"),
+          ("en:'FAQ soalan gagal', bm:'FAQ soalan gagal'}","en:'Failed FAQ', bm:'FAQ soalan gagal'}"),
+          ("en:'Guided tour', bm:'Guided tour'}","en:'Guided tour', bm:'Lawatan berpandu'}"),
+          ("en:'Alert overdue/stok', bm:'Alert overdue/stok'}","en:'Overdue/stock alerts', bm:'Alert overdue/stok'}"),
+          ("<i class=\"ti ${open?'ti-chevron-up':'ti-chevron-down'}\"></i>","<i class=\"ti ${open?'ti-chevron-down':'ti-chevron-up'}\"></i>"),
+          ("  if(icon) icon.className = closed ? 'ti ti-chevron-up' : 'ti ti-chevron-down'\n}",
+           "  if(icon) icon.className = closed ? 'ti ti-chevron-down' : 'ti ti-chevron-up'\n  const msgs = document.getElementById('ai-chat-messages')\n  if(msgs) msgs.scrollTop = msgs.scrollHeight\n}"),
+          ]
+          for a,b in R:
+            c=s.count(a); assert c==1,(c,a[:60]); s=s.replace(a,b)
+          open(p,'w',encoding='utf-8').write(s); print('ok',len(R))
+          PYEOF
+          python3 /tmp/apply.py
+      - name: Syntax check inline script blocks
+        run: |
+          cat > /tmp/chk.py <<'PYEOF'
+          import re,subprocess
+          s=open('app/index.html',encoding='utf-8').read()
+          blocks=[(m.group(1),m.group(2)) for m in re.finditer(r'<script(\b[^>]*)>(.*?)</script>',s,re.S)]
+          inline=[b for a,b in blocks if 'src=' not in a and 'application/ld+json' not in a and 'type="module"' not in a]
+          hit=[b for b in inline if 'function _aiHomeHtml' in b]
+          assert len(hit)==1
+          fails=0
+          for i,b in enumerate(inline):
+              open('/tmp/blk.js','w').write(b)
+              r=subprocess.run(['node','--check','/tmp/blk.js'],capture_output=True,text=True)
+              if r.returncode: fails+=1; print('block',i,'FAIL',r.stderr[:300])
+          print('inline blocks',len(inline),'fails',fails)
+          assert fails==0
+          PYEOF
+          python3 /tmp/chk.py
+          git diff --stat
+          git diff
+      - name: Commit, remove workflow, push
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "fix(ai): bigger chat, single-row suggestions, modules open upward"
+          git rm -q .github/workflows/patch-ai-panel-layout-v2.yml
+          git commit -m "chore: remove one-shot patch-ai-panel-layout-v2 workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
