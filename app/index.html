@@ -529,10 +529,11 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .ai-chat-chips{padding:0 12px 8px;flex-shrink:0;overflow:auto;max-height:52%}
 .ai-mod-card,.ai-sug-card{border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:8px;background:var(--bg-card)}
 .ai-mod-title{display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px}
-.ai-mod-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-.ai-mod-btn,.ai-sug-btn{min-height:40px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;padding:6px;display:flex;align-items:center;gap:4px;font-size:11px;width:100%;text-align:left}
+.ai-mod-grid{display:grid;grid-template-columns:repeat(4,max-content);gap:6px;overflow-x:auto}
+.ai-mod-btn,.ai-sug-btn{min-height:40px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;padding:6px 8px;display:flex;align-items:center;gap:4px;font-size:11px;width:auto;text-align:left}
+.ai-mod-toggle{border:0;background:transparent;color:var(--text);min-height:32px;min-width:32px}
 .ai-mod-btn i,.ai-sug-btn i{color:var(--primary);flex:0 0 auto}
-.ai-mod-btn span,.ai-sug-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-mod-btn span,.ai-sug-btn span{white-space:nowrap}
 .ai-sug-btn{margin-bottom:6px}
 .ai-chat-chip{min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:6px}
 .ai-chat-foot{padding:6px 12px 10px;font-size:11px;color:var(--text-3);text-align:center;flex-shrink:0}
@@ -4074,8 +4075,18 @@ function _aiHomeHtml(t) {
     {icon:'ti-sparkles', q: bm?'Ada alert overdue atau stok rendah?':'Any overdue or low stock alerts?', en:'Alert overdue/stok', bm:'Alert overdue/stok'}
   ]
   const sugHtml = sugs.map(s => `<button type="button" class="ai-sug-btn" onclick="_aiAskText('${_aiEscapeHtml(s.q).replace(/'/g, '&#39;')}')"><i class="ti ${s.icon}"></i><span>${bm?s.bm:s.en}</span></button>`).join('')
-  return `<div class="ai-mod-card"><div class="ai-mod-title"><span><i class="ti ti-stack-2"></i> ${bm?'Modul Sistem':'System Modules'}</span><i class="ti ti-chevron-up"></i></div><div class="ai-mod-grid">${grid}</div></div><div class="ai-sug-card"><div class="ai-mod-title"><span><i class="ti ti-bulb"></i> ${bm?'Cadangan':'Suggestions'}</span></div>${sugHtml}</div>`
+  return `<div class="ai-mod-card"><div class="ai-mod-title"><span><i class="ti ti-stack-2"></i> ${bm?'Modul Sistem':'System Modules'}</span><button type="button" class="ai-mod-toggle" onclick="_aiToggleMods(this)" aria-label="toggle"><i class="ti ti-chevron-up"></i></button></div><div class="ai-mod-grid">${grid}</div></div><div class="ai-sug-card"><div class="ai-mod-title"><span><i class="ti ti-bulb"></i> ${bm?'Cadangan':'Suggestions'}</span></div>${sugHtml}</div>`
 }
+function _aiToggleMods(btn) {
+  const card = btn.closest('.ai-mod-card')
+  const grid = card && card.querySelector('.ai-mod-grid')
+  if(!grid) return
+  const closed = grid.style.display === 'none'
+  grid.style.display = closed ? 'grid' : 'none'
+  const icon = btn.querySelector('i')
+  if(icon) icon.className = closed ? 'ti ti-chevron-up' : 'ti ti-chevron-down'
+}
+
 function _aiOpenMod(page) {
   try { toggleAIChat() } catch (e) {}
   try { openPage(page) } catch (e) {}
