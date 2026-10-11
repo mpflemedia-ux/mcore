@@ -56,7 +56,7 @@
       '<div class="page-subtitle">' + esc(t('Campaign targets, weekly KPI, stock financing & milestones', 'Sasaran kempen, KPI mingguan, pembiayaan stok & pencapaian')) + '</div></div>' +
       (admin ? '<div class="sp-head-actions">' +
         '<button type="button" class="btn btn-outline" data-act="from-template"><i class="ti ti-template"></i>' + esc(t('From template', 'Daripada templat')) + '</button>' +
-        '<button type="button" class="btn btn-outline" data-act="import" title="' + esc(t('Coming in next update', 'Akan datang dalam kemas kini seterusnya')) + '"><i class="ti ti-file-spreadsheet"></i>' + esc(t('Import Excel', 'Import Excel')) + '</button>' +
+        '<button type="button" class="btn btn-outline" data-act="import"><i class="ti ti-file-spreadsheet"></i>' + esc(t('Import Excel', 'Import Excel')) + '</button>' +
         '<button type="button" class="btn btn-primary" data-act="new"><i class="ti ti-plus"></i>' + esc(t('New plan', 'Pelan baharu')) + '</button></div>' : '') +
       '</div>';
     var body;
