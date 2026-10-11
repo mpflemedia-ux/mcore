@@ -2012,6 +2012,7 @@ const NAV_ITEMS = [
   { section:'Operations' },
   { id:'crm',        icon:'ti-users',             label_en:'Customers',   label_bm:'Pelanggan',    module:'crm' },
   { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },
+  { id:'sales_plan', icon:'ti-target-arrow', label_en:'Sales Plan', label_bm:'Pelan Jualan', module:'sales_plan' },
   { id:'pos',        icon:'ti-device-desktop',    label_en:'POS',         label_bm:'POS',          module:'pos' },
   { id:'sales_commission', icon:'ti-award',       label_en:'Sales Commission', label_bm:'Komisyen Jualan', module:'sales_commission' },
   { id:'sales_academy', icon:'ti-school', label_en:'Sales Academy', label_bm:'Akademi Jualan', module:'sales_academy' },
@@ -3432,6 +3433,7 @@ function openPage(page, params={}) {
         break
       case 'planner':    _safeRender(() => renderPlanner(params)); break
       case 'projects':   _safeRender(() => renderProjects(params)); break
+      case 'sales_plan': _safeRender(() => (typeof renderSalesPlan==='function' ? renderSalesPlan(params) : null)); break
       case 'crm':        _safeRender(() => renderCRM(params)); break
       case 'sales':      _safeRender(() => renderSales(params)); break
       case 'pos':        _safeRender(() => renderPOS(params)); break
@@ -9908,6 +9910,7 @@ const RP_SECTIONS = [
   { key:'operations', en:'Operations', bm:'Operasi', modules:[
     { id:'crm',        en:'Customers', bm:'Pelanggan' },
     { id:'sales',      en:'Sales / Invoices', bm:'Jualan / Invois' },
+    { id:'sales_plan', en:'Sales Plan', bm:'Pelan Jualan' },
     { id:'pos',        en:'POS', bm:'POS' },
     { id:'sales_commission', en:'Sales Commission', bm:'Komisyen Jualan' },
     { id:'sales_academy', en:'Sales Academy', bm:'Akademi Jualan' },
@@ -37815,6 +37818,18 @@ if('serviceWorker' in navigator){
 <script src="./pdoc-preview-light.js?v=1"></script>
 <script src="./pv-sig-boxes.js?v=1"></script>
 <script src="./projects.js?v=43"></script>
+<script src="./sales-plan.js?v=1"></script>
+<script src="./sales-plan-core.js?v=1"></script>
+<script src="./sales-plan-list.js?v=1"></script>
+<script src="./sales-plan-list-ui.js?v=1"></script>
+<script src="./sales-plan-setup.js?v=1"></script>
+<script src="./sales-plan-setup-save.js?v=1"></script>
+<script src="./sales-plan-targets.js?v=1"></script>
+<script src="./sales-plan-targets-save.js?v=1"></script>
+<script src="./sales-plan-detail.js?v=1"></script>
+<script src="./sales-plan-tpl.js?v=1"></script>
+<script src="./sales-plan-css.js?v=1"></script>
+<script src="./sales-plan-css2.js?v=1"></script>
 <script src="./booking-state.js?v=2"></script>
 <script src="./booking-settings-ui.js?v=1"></script>
 <script src="./booking-realtime.js?v=1"></script>
