@@ -1,4 +1,5 @@
-/* Sales Plan — File 9/12: plan detail shell (header, tabs, Targets + Settings tabs, status). */
+/* Sales Plan — plan detail shell (header, tabs, status). v2 (phase 2b): tab bodies come from SP.tabs[id]
+   (overview, weekly, milestones, stock), extras loaded via SP.loadExtras, weekly report via params.report. */
 (function () {
   'use strict';
   var SP = window.SP, st = SP.state, t = SP.t, esc = SP.esc, d10 = SP.d10;
@@ -11,27 +12,34 @@
     { id: 'settings', icon: 'ti-settings', en: 'Settings', bm: 'Tetapan', admin: true }
   ];
   function tabsFor(p) { var admin = SP.isAdmin(); return TABS.filter(function (x) { return (!x.fin || p.financing_enabled) && (!x.admin || admin); }); }
-  function isPic(p) { var u = window.APP && APP.user && APP.user.id; return !!(u && p.pic_user_id && SP.same(u, p.pic_user_id)); }
+  SP.tabs = SP.tabs || {}; SP.afterTab = SP.afterTab || {};
 
   SP.showDetail = async function (params, seq) {
     await SP.loadPlan(params.id);
     if (!SP.alive(seq)) return;
     if (!st.plan) { SP.paint(SP.notFoundHtml()); return; }
+    if (SP.loadExtras) { await SP.loadExtras(st.plan.id); if (!SP.alive(seq)) return; }
+    if (params.report && SP.showReport) { await SP.showReport(params, seq); return; }
     var tabs = tabsFor(st.plan), tab = params.tab || 'overview';
     if (!tabs.some(function (x) { return x.id === tab; })) tab = 'overview';
     st.tab = tab;
     if (tab === 'settings') { await SP.loadRefs(); if (!SP.alive(seq)) return; SP.initForm('edit:' + st.plan.id); }
     if (tab === 'targets') SP.initEdit();
+    if ((tab === 'overview' || tab === 'weekly') && SP.loadAuto) { await SP.loadAuto(); if (!SP.alive(seq)) return; }
+    if (tab === 'weekly' && SP.loadUsers) { await SP.loadUsers(); if (!SP.alive(seq)) return; }
     SP.paint(detailHtml(tabs, tab));
     if (tab === 'settings') SP.afterFormPaint();
+    var tb = document.querySelector('#main .sp-tabs'), on = tb && tb.querySelector('.sp-tab.on');
+    if (on && tb.scrollWidth > tb.clientWidth) tb.scrollLeft += on.getBoundingClientRect().left - tb.getBoundingClientRect().left - (tb.clientWidth - on.offsetWidth) / 2;
+    if (SP.afterTab[tab]) SP.afterTab[tab](seq);
   };
   function headHtml(p) {
     var admin = SP.isAdmin(), n = st.weeks.length, cw = SP.weekOf(st.weeks, SP.todayISO());
     var wk = n ? (cw ? t(n + ' weeks · ' + cw.code + ' of ' + n, n + ' minggu · ' + cw.code + ' daripada ' + n) : t(n + ' weeks', n + ' minggu')) : t('No weeks yet', 'Belum ada minggu');
     var meta = [['ti-calendar', SP.fmtRange(p.start_date, p.end_date)], ['ti-clock', wk], ['ti-coin', p.currency || 'MYR'], ['ti-user', SP.picLabel(p)]];
-    var btns = '<button type="button" class="btn btn-outline btn-sm" data-act="soon"><i class="ti ti-file-text"></i>' + esc(t('Weekly report', 'Laporan mingguan')) + '</button>' +
+    var btns = '<button type="button" class="btn btn-outline btn-sm" data-act="report"><i class="ti ti-file-text"></i>' + esc(t('Weekly report', 'Laporan mingguan')) + '</button>' +
       (admin ? '<button type="button" class="btn btn-outline btn-sm" data-act="save-tpl"><i class="ti ti-template"></i>' + esc(t('Save as template', 'Simpan sebagai templat')) + '</button>' : '') +
-      ((admin || isPic(p)) && p.status !== 'archived' ? '<button type="button" class="btn btn-primary btn-sm" data-act="tab" data-tab="weekly"><i class="ti ti-pencil"></i>' + esc(t('Update this week', 'Kemas kini minggu ini')) + '</button>' : '');
+      ((admin || st.canEdit) && p.status !== 'archived' ? '<button type="button" class="btn btn-primary btn-sm" data-act="tab" data-tab="weekly"><i class="ti ti-pencil"></i>' + esc(t('Update this week', 'Kemas kini minggu ini')) + '</button>' : '');
     return '<div class="sp-dhead"><div class="sp-dhead-l"><button type="button" class="sp-iconbtn" data-act="list" aria-label="' + esc(t('Back to plans', 'Kembali ke senarai pelan')) + '"><i class="ti ti-arrow-left"></i></button>' +
       '<div class="sp-dhead-txt"><div class="sp-dtitle"><h1 class="page-title sp-dname">' + esc(p.name) + '</h1>' + SP.statusBadge(p.status) +
       '<button type="button" class="sp-src" data-act="tab" data-tab="weekly"><i class="ti ' + SP.srcIcon(p.sales_source) + '" aria-hidden="true"></i>' + esc(SP.srcLabel(p.sales_source)) + '</button></div>' +
@@ -69,7 +77,7 @@
     var p = st.plan, body;
     if (tab === 'settings') body = settingsHtml(p);
     else if (tab === 'targets') body = '<div class="sp-has-foot" id="sp-teditor">' + SP.targetsEditorHtml(false) + '</div>';
-    else body = SP.comingSoonHtml();
+    else body = SP.tabs[tab] ? SP.tabs[tab]() : SP.comingSoonHtml();
     return '<div class="sp-detail">' + headHtml(p) + tabsHtml(tabs, tab) + '<div class="sp-tabbody">' + body + '</div></div>';
   }
 
@@ -96,4 +104,5 @@
     } catch (err) { SP.setBusy(false); SP.toast(SP.errMsg(err), 'error'); }
   };
   A['save-tpl'] = function () { SP.saveAsTemplate(st.plan); };
+  A.report = function () { if (!SP.showReport) { SP.actions.soon(); return; } if (!SP.leaveOk()) return; SP.discard(); SP.go({ view: 'detail', id: st.plan.id, tab: st.tab || 'overview', report: 1 }); };
 })();
