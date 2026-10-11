@@ -1,0 +1,91 @@
+name: patch-sales-plan-nav
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Sales Plan module files exist and parse
+        run: |
+          for f in sales-plan sales-plan-core sales-plan-list sales-plan-list-ui sales-plan-setup sales-plan-setup-save sales-plan-targets sales-plan-targets-save sales-plan-detail sales-plan-tpl sales-plan-css sales-plan-css2; do
+            test -s "app/$f.js" || { echo "missing app/$f.js"; exit 1; }
+            node --check "app/$f.js"
+            grep -q "window.SP\|var SP = window.SP" "app/$f.js" || { echo "unexpected content app/$f.js"; exit 1; }
+          done
+          cp app/index.html /tmp/index.orig.html
+      - name: Apply 4 additive exact-string edits to app/index.html
+        run: |
+          cat > /tmp/apply.py <<'PYEOF'
+          import sys
+          p = sys.argv[1]
+          s = open(p, encoding='utf-8').read()
+          FILES = ['sales-plan', 'sales-plan-core', 'sales-plan-list', 'sales-plan-list-ui', 'sales-plan-setup', 'sales-plan-setup-save', 'sales-plan-targets', 'sales-plan-targets-save', 'sales-plan-detail', 'sales-plan-tpl', 'sales-plan-css', 'sales-plan-css2']
+          NAV_A = "  { id:'sales',      icon:'ti-file-invoice',      label_en:'Sales',       label_bm:'Jualan',       module:'sales' },\n"
+          NAV_B = NAV_A + "  { id:'sales_plan', icon:'ti-target-arrow', label_en:'Sales Plan', label_bm:'Pelan Jualan', module:'sales_plan' },\n"
+          CASE_A = "      case 'projects':   _safeRender(() => renderProjects(params)); break\n"
+          CASE_B = CASE_A + "      case 'sales_plan': _safeRender(() => (typeof renderSalesPlan==='function' ? renderSalesPlan(params) : null)); break\n"
+          TAG_A = '<script src="./projects.js?v=43"></script>\n'
+          TAG_B = TAG_A + ''.join('<script src="./%s.js?v=1"></script>\n' % f for f in FILES)
+          RP_A = "    { id:'sales',      en:'Sales / Invoices', bm:'Jualan / Invois' },\n"
+          RP_B = RP_A + "    { id:'sales_plan', en:'Sales Plan', bm:'Pelan Jualan' },\n"
+          if "id:'sales_plan'" in s or 'sales-plan.js' in s:
+              sys.exit('already patched')
+          for a, b in ((NAV_A, NAV_B), (CASE_A, CASE_B), (TAG_A, TAG_B), (RP_A, RP_B)):
+              n = s.count(a)
+              assert n == 1, (a, n)
+              s = s.replace(a, b)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('patched OK')
+          PYEOF
+          python3 /tmp/apply.py app/index.html
+      - name: Syntax check inline script blocks
+        run: |
+          cat > /tmp/chk.py <<'PYEOF'
+          import re,subprocess,sys
+          def blocks(s):
+              out=[]
+              for m in re.finditer(r'<script(\b[^>]*)>(.*?)</script>',s,re.S):
+                  a,b=m.group(1),m.group(2)
+                  if 'src=' in a or 'application/ld+json' in a or 'type="module"' in a: continue
+                  out.append(b)
+              return out
+          def fails(bl):
+              bad=[]
+              for i,b in enumerate(bl):
+                  open('/tmp/blk.js','w',encoding='utf-8').write(b)
+                  r=subprocess.run(['node','--check','/tmp/blk.js'],capture_output=True,text=True)
+                  if r.returncode: bad.append(i); print('block',i,'FAIL',r.stderr[:300])
+              return bad
+          old=blocks(open('/tmp/index.orig.html',encoding='utf-8').read())
+          new=blocks(open('app/index.html',encoding='utf-8').read())
+          print('inline blocks before',len(old),'after',len(new))
+          assert len(old)==len(new)
+          fo=fails(old); fn=fails(new)
+          print('fails before',len(fo),'after',len(fn))
+          assert len(fn)<=len(fo)
+          hit=[b for b in new if "id:'sales_plan'" in b or "case 'sales_plan'" in b]
+          assert len(hit)>=1
+          for b in hit:
+              open('/tmp/blk.js','w',encoding='utf-8').write(b)
+              subprocess.run(['node','--check','/tmp/blk.js'],check=True)
+          print('patched blocks parse OK:',len(hit))
+          PYEOF
+          python3 /tmp/chk.py
+          git diff --stat
+          git diff
+          test "$(git diff --numstat app/index.html | awk '{print $1" "$2}')" = "15 0"
+      - name: Commit, remove workflow, push
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "feat(sales-plan): add Sales Plan nav, route, scripts and role-permission row (phase 2a)"
+          git rm -q .github/workflows/patch-sales-plan-nav.yml
+          git commit -m "chore: remove one-shot patch-sales-plan-nav workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
