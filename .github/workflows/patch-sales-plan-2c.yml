@@ -1,0 +1,51 @@
+name: patch-sales-plan-2c
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify phase 2c module files (exact blob SHAs) and parse
+        run: |
+          check() { test -s "app/$1.js" || { echo "missing app/$1.js"; exit 1; }; node --check "app/$1.js"; h=$(git hash-object "app/$1.js"); test "$h" = "$2" || { echo "sha mismatch app/$1.js $h != $2"; exit 1; }; }
+          check sales-plan-stock 718704ea5555655a0ec8ace5bcc6ecbc7f6277cf
+          check sales-plan-batch-form 02a5351016331212c3b81a1f118ddcbe57a17f81
+          check sales-plan-fin 2a0b9318cc3b95c7e44ad52c729d2c58ff485f39
+          check sales-plan-repay 925527876310fa3ded954e7939a9fff6d70b73fd
+          check sales-plan-css4 e8d9bf672745c6b7a53df952ba72c066d4bfa74f
+          cp app/index.html /tmp/index.orig.html
+      - name: Add 5 script tags after the sales-plan css3 tag
+        run: |
+          cat > /tmp/apply.py <<'PYEOF'
+          import sys
+          p = sys.argv[1]
+          s = open(p, encoding='utf-8').read()
+          NEW = ['sales-plan-stock', 'sales-plan-batch-form', 'sales-plan-fin', 'sales-plan-repay', 'sales-plan-css4']
+          ANCHOR = '<script src="./sales-plan-css3.js?v=1"></script>\n'
+          if 'sales-plan-stock.js' in s:
+              sys.exit('already patched')
+          assert s.count(ANCHOR) == 1, ('anchor', s.count(ANCHOR))
+          s = s.replace(ANCHOR, ANCHOR + ''.join('<script src="./%s.js?v=1"></script>\n' % f for f in NEW))
+          open(p, 'w', encoding='utf-8').write(s)
+          print('patched OK')
+          PYEOF
+          python3 /tmp/apply.py app/index.html
+          git diff --stat
+          git diff
+          test "$(git diff --numstat app/index.html | awk '{print $1" "$2}')" = "5 0"
+          test "$(git diff -U0 app/index.html | grep '^[-+]<' | grep -vc 'sales-plan')" = "0"
+      - name: Commit, remove workflow, push
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "feat(sales-plan): load phase 2c modules (stock & financing)"
+          git rm -q .github/workflows/patch-sales-plan-2c.yml
+          git commit -m "chore: remove one-shot patch-sales-plan-2c workflow"
+          git pull --rebase origin main
+          git push origin HEAD:main
