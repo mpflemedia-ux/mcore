@@ -1,0 +1,18 @@
+-- M-Core Onboarding Checklist - PROPOSED columns. DO NOT RUN until Mike approves.
+-- These checklist answers have no verified column on public.tenants today. They are stored only in cob_items.answers
+-- and are NOT applied to tenant info. Approving this file + adding the keys to cob_allowed_cols() would let them apply.
+-- alter table public.tenants add column if not exists industry text;            -- A5 industry / business type
+-- alter table public.tenants add column if not exists entity_type text;         -- A5 Sdn Bhd / Enterprise / PLT
+-- alter table public.tenants add column if not exists fiscal_year_end text;     -- A6 financial year end
+-- alter table public.tenants add column if not exists contact_name text;        -- A8 contact person
+-- alter table public.tenants add column if not exists kwsp_no text;             -- B1 employer KWSP number
+-- alter table public.tenants add column if not exists perkeso_no text;          -- B2 employer PERKESO code
+-- alter table public.tenants add column if not exists lhdn_e_no text;           -- B3 employer LHDN E number
+-- alter table public.tenants add column if not exists hrdf_no text;             -- B4 HRD Corp number
+-- alter table public.tenants add column if not exists zakat_no text;            -- B6 zakat details
+-- alter table public.tenants add column if not exists signatory_name text;      -- I3 authorised signatory
+-- alter table public.tenants add column if not exists document_footer text;     -- I4 tagline / footer text
+-- Payment gateway keys and opening balances are NOT proposed as tenant columns: gateway keys must live in a
+-- secrets store (edge function env / vault), opening balances go through Accounting > Opening Balance.
+-- Also proposed (separate review): update_tenant_company_profile and merge_tenant_config still allow callers
+-- whose email contains 'mpflemedia'/'phion'; replace with public.is_platform_admin().
