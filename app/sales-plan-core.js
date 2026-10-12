@@ -153,15 +153,4 @@
     var first = ov.querySelector('input,select,button.btn'); if (first) { try { first.focus(); } catch (e) {} }
     return ov;
   };
-
-  /* ---------- sidebar NEW pill: CSS only, targets the new nav row ---------- */
-  try {
-    if (SP.todayISO() <= SP.NEW_PILL_UNTIL && !document.getElementById('sp-nav-pill-style')) {
-      var s = document.createElement('style');
-      s.id = 'sp-nav-pill-style';
-      s.textContent = '.nav-item[data-page="sales_plan"] .nav-label::after{content:"NEW";margin-left:8px;font-size:9px;font-weight:700;letter-spacing:.5px;padding:1px 5px;border-radius:4px;background:rgba(10,14,18,.25);vertical-align:1px}' +
-        '.nav-item[data-page="sales_plan"][data-label="Pelan Jualan"] .nav-label::after{content:"BARU"}';
-      (document.head || document.documentElement).appendChild(s);
-    }
-  } catch (e) {}
 })();
