@@ -1,0 +1,14 @@
+-- M-Core Onboarding Checklist - roadmap (documentation only, nothing to run).
+-- Done in v1: versioned platform master (cob_master_*), per-tenant copy (cob_start), immediate apply with old-value
+--   history (cob_submit), PA review Lulus/Tolak+restore with conflict flag/Tak berkenaan (cob_review, cob_set_status),
+--   private per-tenant docs bucket onboarding-docs with versions + view log, urgent bell for B/C/E + Telegram targets,
+--   reminders (cob_remind), completion badge, master draft/publish.
+-- Next:
+--   1. Server cron for reminders + expiry warnings (pg_cron or scheduled edge function) instead of client-side on open.
+--   2. Bell click routing for category 'onboarding' (currently falls back to Dashboard).
+--   3. Real master-data import paths (customers, suppliers, products, employees, opening balance) with preview;
+--      then enable the reject rule "soft-delete imported rows unless already used".
+--   4. Proposed tenant columns (onboarding_proposed_columns.sql) after owner approval.
+--   5. scan_ssm_certificate to also return the registered address.
+--   6. Replace email-substring admin checks in update_tenant_company_profile / merge_tenant_config with is_platform_admin().
+--   7. Redaction of sensitive values inside stored documents (today only extracted values are masked).
