@@ -1,17 +1,15 @@
 -- Phion: Hp Ahmad work progress report 13 Oct 2026 -> Projects board (projects + project_tasks). WRITE-ONLY, rerun-safe.
 -- Run phion_hp_ahmad_check_20261013.sql first (expect exactly 1 tenant + 1 employee). Plain SQL, no functions.
--- Guard: tenant (name/code ILIKE %phion%) and employee (name/nickname ILIKE %ahmad%) used only if EXACTLY one match, else 0 rows.
+-- Guard (pinned after check found 4 Ahmads): tenant c40847f5-63c1-49d5-8e28-8eae95f12ed5 + employee ffb24a05-e6f2-437a-a089-03a83f90a49c (Ahmad Hafizh Putera Bin Ahmad, 'H.P Ahmad');
+-- both used only if that employee row exists in that tenant with deleted_at is null, else 0 rows.
 -- Mapping: completed=done(100) | in progress=progress | not started=backlog | next plan=backlog+due (next week = 23 Oct 2026)
 --          blockers=progress + tag Halangan + urgent/important | proposals=review + tag Cadangan (awaiting approval).
-with t as (select id from public.tenants where (name ilike '%phion%' or code ilike '%phion%') and deleted_at is null),
-t1 as (select id from t where (select count(*) from t) = 1)
+with t1 as (select x.tenant_id as id from public.employees x where x.id = 'ffb24a05-e6f2-437a-a089-03a83f90a49c' and x.tenant_id = 'c40847f5-63c1-49d5-8e28-8eae95f12ed5' and x.deleted_at is null)
 insert into public.projects (tenant_id, name, kind)
 select t1.id, 'Phion Visibility & Sales – Hp Ahmad', 'internal' from t1
 where not exists (select 1 from public.projects p where p.tenant_id = t1.id and p.name = 'Phion Visibility & Sales – Hp Ahmad' and p.deleted_at is null);
-with t as (select id from public.tenants where (name ilike '%phion%' or code ilike '%phion%') and deleted_at is null),
-t1 as (select id from t where (select count(*) from t) = 1),
-e as (select x.id from public.employees x join t1 on x.tenant_id = t1.id where x.deleted_at is null and (x.name ilike '%ahmad%' or x.nickname ilike '%ahmad%')),
-e1 as (select id from e where (select count(*) from e) = 1),
+with t1 as (select x.tenant_id as id from public.employees x where x.id = 'ffb24a05-e6f2-437a-a089-03a83f90a49c' and x.tenant_id = 'c40847f5-63c1-49d5-8e28-8eae95f12ed5' and x.deleted_at is null),
+e1 as (select x.id from public.employees x join t1 on x.tenant_id = t1.id where x.id = 'ffb24a05-e6f2-437a-a089-03a83f90a49c' and x.deleted_at is null),
 p as (select pr.id, pr.tenant_id from public.projects pr join t1 on pr.tenant_id = t1.id where pr.name = 'Phion Visibility & Sales – Hp Ahmad' and pr.deleted_at is null limit 1)
 insert into public.project_tasks (tenant_id, project_id, title, column_key, tag, assignee_employee_id, start_date, due_date, progress, notes, sort_order, is_important, is_urgent)
 select p.tenant_id, p.id, v.title, v.col, v.tag, e1.id, v.sd::date, v.dd::date, v.pg, v.notes, v.so, v.imp, v.urg
