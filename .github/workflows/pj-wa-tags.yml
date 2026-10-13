@@ -1,0 +1,32 @@
+name: pj-wa-index-tags-oneshot
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pj-wa-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add 7 pj-wa-*.js tags + bump projects.js ?v=44 in app/index.html (additive, blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./pj-wa-core.js' "$F"; then echo "already present - no-op"; exit 0; fi
+          test "$(git hash-object "$F")" = "eb827915bf151ede2dc7afe0289ab49ca96ac8c1"
+          for n in css core pick sheet activity daily board; do test -f "app/pj-wa-$n.js"; test "$(git hash-object app/pj-wa-$n.js)" = "$(git hash-object build/app/pj-wa-$n.js)"; done
+          grep -q '_pjAfterPaint' app/projects.js
+          test "$(grep -cxF '<script src="./projects.js?v=43"></script>' "$F")" = "1"
+          T=$(mktemp)
+          for n in css core pick sheet activity daily board; do echo "<script src=\"./pj-wa-$n.js?v=1\"></script>" >> "$T"; done
+          awk -v t="$T" '{ if ($0=="<script src=\"./projects.js?v=43\"></script>") { print "<script src=\"./projects.js?v=44\"></script>"; while((getline l < t)>0) print l } else print }' "$F" > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "386b18fafe139372875942daef5b47bd2234df82"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "projects WA share: 7 pj-wa-*.js tags + projects.js ?v=44 in app/index.html"
+          git push
