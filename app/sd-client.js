@@ -39,6 +39,7 @@
     m.querySelectorAll('[data-f]').forEach(function (b) { b.onclick = function () { S.f = b.dataset.f; paint(); }; });
     m.querySelectorAll('.sd-li').forEach(function (b) { b.onclick = function () { SD.go('servis_saya', { id: b.dataset.id }); }; });
     var f = m.querySelector('#sd-fab'); if (f) f.onclick = function () { SD.go('servis_saya', { new: 1 }); };
+    if (SD.pubInject) SD.pubInject(m, S);
   }
   function load() {
     var tid = SD.tid();
@@ -55,7 +56,7 @@
     return SD.catalog().then(function (c) { SD.catalogList = c; return load(); }).then(function () {
       if (p.id && SD.detail) return SD.detail(p.id, false);
       if (p.new && SD.usable(S.c) && SD.newReq) return SD.newReq();
-      paint();
+      if (!p._noPaint) paint();
     });
   };
   SD.onChange = function () { if (APP.currentPage === 'servis_saya' && document.querySelector('.sd-cnt')) SD.view.servis_saya({}); else if (typeof SD.onChangeAdmin === 'function') SD.onChangeAdmin(); };
