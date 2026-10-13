@@ -381,6 +381,7 @@
     if (!main) return;
     main.innerHTML = pageHtml();
     bind();
+    if (typeof window._pjAfterPaint === 'function') { try { window._pjAfterPaint(state); } catch (e) { console.error(e); } }
   }
   function bind() {
     var main = document.getElementById('main');
