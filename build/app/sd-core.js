@@ -70,7 +70,7 @@
       if (!ok) return orig.call(window, 'dashboard', {});
       prep(page, params, page === 'sd_access' ? 'settings' : page);
       SD.title(page === 'servis_saya' ? SD.L('My Services', 'Servis Saya') : page === 'laporan_bulanan' ? SD.L('Monthly Reports', 'Laporan Bulanan') : SD.L('Support Access', 'Akses Sokongan'));
-      return SD.run(SD.view[page], params);
+      return SD.need(SD.view, page).then(function () { if (APP.currentPage !== page) return; return SD.run(SD.view[page], params); });
     });
   };
   SD.openAdmin = function (params, orig) {
@@ -79,8 +79,12 @@
       if (!SD.isPA() || !(v === 'sd_contracts' ? SD.has.contracts : SD.has.desk)) return orig.call(window, 'admin', {});
       prep('admin', params, 'admin');
       SD.title('Admin');
-      return SD.run(SD.admin[v], params);
+      return SD.need(SD.admin, v).then(function () { if (APP.currentPage !== 'admin') return; return SD.run(SD.admin[v], params); });
     });
+  };
+  /* boot race: init() can restore the last page before later sd-*.js tags finish loading -> wait (max 15s) */
+  SD.need = function (o, k) {
+    return new Promise(function (res) { var n = 0; (function t() { if (typeof o[k] === 'function' || ++n > 75) return res(); setTimeout(t, 200); })(); });
   };
   SD.go = function (page, params) { window.openPage(page, params || {}); };
   SD.tabs = function (active) { try { return _adminTabs(active); } catch (e) { return ''; } };
