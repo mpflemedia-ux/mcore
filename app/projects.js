@@ -593,8 +593,10 @@
       is_important: val('matrix') === 'do' || val('matrix') === 'schedule',
       is_urgent: val('matrix') === 'do' || val('matrix') === 'delegate'
     };
+    var ntOld = (state.tasks.filter(function (x) { return String(x.id) === String(id); })[0] || {}).assignee_employee_id;
     var up = await sb.from('project_tasks').update(patch).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
+    if (window.NT && NT.taskSaved) NT.taskSaved(id, ntOld, patch, state.projectId);
     showToast(t('Saved', 'Disimpan'), 'success');
     state.focus = '';
     refresh();

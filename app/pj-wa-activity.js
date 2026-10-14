@@ -40,7 +40,7 @@
           var btn = this; btn.disabled = true;
           var up = file ? sb.storage.from('project-comments').upload(W.tid() + '/' + k.id + '/' + Date.now() + '-' + String(file.name || 'img.png').replace(/[^\w.\-]+/g, '_').slice(-80), file, { upsert: false, contentType: file.type }).then(function (u) { if (u.error) throw u.error; return u.data.path; }) : Promise.resolve(null);
           up.then(function (p) { return sb.from('project_task_comments').insert({ tenant_id: W.tid(), task_id: k.id, body: body || null, file_path: p, file_name: file ? String(file.name).slice(-200) : null, file_size: file ? file.size : null, created_by: W.uid(), created_by_name: W.me() }); })
-            .then(function (x) { if (x.error) throw x.error; W.activity(det, k, can); }).catch(function (e) { btn.disabled = false; W.toast((e && e.message) || 'Error', 'error'); });
+            .then(function (x) { if (x.error) throw x.error; if (window.NT && NT.taskComment) NT.taskComment(k, body); W.activity(det, k, can); }).catch(function (e) { btn.disabled = false; W.toast((e && e.message) || 'Error', 'error'); });
         };
       });
     }).catch(function (e) { box.innerHTML = '<div class="cob-xs" style="color:var(--danger)">' + W.esc((e && e.message) || 'Error') + '</div>'; }).then(function () { delete box.dataset.busy; });
