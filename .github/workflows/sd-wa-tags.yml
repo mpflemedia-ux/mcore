@@ -1,0 +1,32 @@
+name: sd-wa-index-tags-oneshot
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd-wa-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add 6 sd-wa-*.js tags + bump sd-detail/sd-board ?v=2 (blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./sd-wa-core.js' "$F"; then echo "already present - no-op"; exit 0; fi
+          test "$(git hash-object "$F")" = "fc2f6ca7d2ee6f05d8f73609271d423bad672a97"
+          for n in sd-wa-core sd-wa-msg sd-wa-sheet sd-wa-detail sd-wa-board sd-wa-result sd-detail sd-board; do test "$(git hash-object app/$n.js)" = "$(git hash-object build/app/$n.js)"; done
+          grep -q 'SD.waInject' app/sd-detail.js
+          grep -q 'SD.waBoard' app/sd-board.js
+          T=$(mktemp)
+          for n in core msg sheet detail board result; do echo "<script src=\"./sd-wa-$n.js?v=1\"></script>" >> "$T"; done
+          awk -v t="$T" '{ if ($0=="<script src=\"./sd-detail.js?v=1\"></script>") print "<script src=\"./sd-detail.js?v=2\"></script>"; else if ($0=="<script src=\"./sd-board.js?v=1\"></script>") print "<script src=\"./sd-board.js?v=2\"></script>"; else if ($0=="<script src=\"./sd-pub-approve.js?v=1\"></script>") { print; while((getline l < t)>0) print l } else print }' "$F" > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "ffcfa800a09e13e0622a64e55b3a822ffe62877e"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "service desk WA share: 6 sd-wa-*.js tags + sd-detail/sd-board ?v=2 in app/index.html"
+          git push
