@@ -21,7 +21,7 @@
     wrapFn('_notifPushBell', function (o) { return function (title, meta) {
       if (!NT.on) return o.apply(this, arguments);
       if (sup > 0) return;
-      sb.from('notifications').insert({ tenant_id: NT.tid(), user_id: NT.uid(), title: String(title || '').slice(0, 200), body: String(meta || '').slice(0, 500), category: 'self', kind: 'for_you', type: 'assigned.reminder' }).then(function () { if (NT.refresh) NT.refresh(); }, function () {});
+      sb.from('notifications').insert({ tenant_id: NT.tid(), user_id: NT.uid(), actor_id: null, title: String(title || '').slice(0, 200), body: String(meta || '').slice(0, 500), category: 'self', kind: 'for_you', type: 'assigned.reminder' }).then(function () { if (NT.refresh) NT.refresh(); }, function () {});
       try { if (NT.ch('assigned', 'p') && !NT.quiet()) _notifOsNotify(title, meta); } catch (e) {}
     }; });
     /* dashboard "insights refreshed" notices are dropped from the bell */

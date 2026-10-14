@@ -63,7 +63,7 @@
   NT.classify = function (n) {
     var k = n.kind, c = String(n.category || '');
     if (!k) {
-      if (/^(sales|finance|inventory|purchasing)$/.test(c) || NT.ACT_RE.test(n.title || '')) k = 'activity';
+      if (/^(sales|finance|inventory|purchasing)$/.test(c) || (c === 'hr' && n.ref_table && !n.type) || NT.ACT_RE.test(n.title || '')) k = 'activity';
       else if (c === 'service_desk' && /pindaan|revision/i.test(n.title || '')) { k = 'action'; n.priority = 1; }
       else k = 'for_you';
     }
