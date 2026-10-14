@@ -1,13 +1,14 @@
 /* M-Core Service Desk - request detail (client + admin): header, deliverables, timeline, comments, internal notes, actions. */
 (function () {
   var SD = window.SD; if (!SD || SD._detail) return; SD._detail = 1;
-  var EVI = { status: 'ti-arrows-exchange', comment: 'ti-message', attachment: 'ti-paperclip', support_access: 'ti-shield-lock', internal_note: 'ti-lock' };
+  var EVI = { status: 'ti-arrows-exchange', comment: 'ti-message', attachment: 'ti-paperclip', support_access: 'ti-shield-lock', internal_note: 'ti-lock', wa_notified: 'ti-brand-whatsapp' };
   var PRI = { low: ['Low', 'Rendah'], normal: ['Normal', 'biasa'], high: ['High', 'tinggi'], urgent: ['Urgent', 'segera'] };
   function load(id) {
     return Promise.all([sb.from('service_requests').select('*').eq('id', id).maybeSingle(), sb.from('service_request_events').select('*').eq('request_id', id).order('created_at', { ascending: false })])
       .then(function (r) { if (r[0].error) throw r[0].error; if (!r[0].data) throw new Error(SD.L('Request not found', 'Permohonan tidak dijumpai')); return { r: r[0].data, ev: r[1].data || [] }; });
   }
   function evText(e) {
+    var x = SD.evTextX ? SD.evTextX(e) : ''; if (x) return x;
     if (e.type === 'status') return '<b>' + SD.esc(SD.stLabel(e.to_status)) + '</b>';
     if (e.type === 'attachment') return '<b>' + SD.L((e.meta || {}).deliverable ? 'Deliverable uploaded' : 'File attached', (e.meta || {}).deliverable ? 'Hasil kerja dimuat naik' : 'Fail dilampirkan') + '</b>';
     if (e.type === 'support_access') return '<b>' + SD.L('Support access ', 'Akses sokongan ') + ((e.meta || {}).action === 'end' ? SD.L('ended', 'tamat') : SD.L('started', 'bermula')) + '</b>';
@@ -58,6 +59,7 @@
       }).join('') + '</div></div>' +
       (r.status === 'delivered' && !admin ? '<div class="cob-xs" style="text-align:center;margin-bottom:10px">' + SD.L('Closed automatically 7 days after delivery if there is no feedback.', 'Ditutup automatik 7 hari selepas dihantar jika tiada maklum balas.') + '</div>' : '') +
       (acts ? '<div class="sd-acts" style="margin-bottom:24px">' + acts + '</div>' : '') + '</div>';
+    if (SD.waInject) SD.waInject(m, r, ev, admin);
     var reload = function () { return SD.detail(r.id, admin); };
     m.querySelectorAll('[data-dl]').forEach(function (b) { b.onclick = function () { SD.download(b.dataset.dl); }; });
     m.querySelectorAll('[data-to]').forEach(function (b) {
