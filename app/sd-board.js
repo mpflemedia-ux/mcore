@@ -45,6 +45,7 @@
         }).join('') + '</div>';
       }).join('') + '</div><div class="cob-xs" style="margin-top:8px">' + SD.L('SLA counts Mon–Fri hours; public holidays are not excluded yet.', 'SLA dikira jam Isnin–Jumaat; cuti umum belum dikecualikan.') + '</div></div>';
     m.querySelectorAll('[data-f]').forEach(function (b) { b.onclick = function () { S.f = b.dataset.f; paint(); }; });
+    if (SD.waBoard) SD.waBoard(m, S, paint);
     m.querySelector('#sd-svc').onchange = function () { S.svc = this.value; paint(); };
     m.querySelector('#sd-sort').onchange = function () { S.sort = this.value; paint(); };
     var q = m.querySelector('#sd-q'); q.oninput = function () { S.q = q.value; var p = q.selectionStart; paint(); var n = document.getElementById('sd-q'); n.focus(); try { n.setSelectionRange(p, p); } catch (e) {} };
