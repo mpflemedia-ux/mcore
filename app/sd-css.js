@@ -29,7 +29,7 @@
     '@media(max-width:768px){.sd-board{grid-template-columns:minmax(0,1fr);overflow-x:visible}.sd-colm{min-width:0;width:100%;min-height:0}.sd-colm:not(:has(.sd-tk)){padding:8px 10px}.sd-colm:not(:has(.sd-tk))>h4{margin:0;color:var(--text-2)}.sd-colm:not(:has(.sd-tk))>:not(h4){display:none}}',
     '@media(max-width:640px){.sd-flt>.cob-chips{flex-basis:100%}.sd-flt>input{width:100%!important}.sd-cbx,.sd-mods{grid-template-columns:1fr}.sd-acts .btn{flex:1;min-height:44px}.sd-kpis{grid-template-columns:1fr 1fr}.sd-fab{bottom:18px}}',
     /* Monthly pack borrows .pdoc for print; pdoc-preview-light forces #fff/#0F172A on screen -> follow app theme on screen only */
-    '@media screen{.sd-pack.pdoc,.sd-pack.pdoc table,.sd-pack.pdoc td,.sd-pack.pdoc th{background:transparent!important;color:var(--text)!important}.sd-pack .empty-state p{color:var(--text-2)}}',
+    '@media screen{#main .sd-pack.pdoc,#main .sd-pack.pdoc table,#main .sd-pack.pdoc tr,#main .sd-pack.pdoc td,#main .sd-pack.pdoc th,#main .sd-pack.pdoc td:first-child{background:transparent!important;color:var(--text)!important}.sd-pack .empty-state p{color:var(--text-2)}#main .sd-pack .cob-tbl{min-width:0}}',
     '@media print{body.sd-printing *{visibility:hidden!important}body.sd-printing .sd-pack,body.sd-printing .sd-pack *{visibility:visible!important}',
     'body.sd-printing .sd-pack{position:absolute;left:0;top:0;width:100%}body.sd-printing .no-print,body.sd-printing .sd-noprint{display:none!important}.sd-pack .cob-card{break-inside:avoid}}'
   ].join('\n');

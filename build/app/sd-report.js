@@ -47,7 +47,9 @@
         var avg = dl.length ? Math.round(dl.reduce(function (s, x) { return s + SD.bhBetween(x.created_at, x.delivered_at); }, 0) / dl.length) + SD.L(' h', ' j') : '—';
         put('sd-r-sla', stat([[SD.L('Requests', 'Permohonan'), rows.length], [SD.L('Delivered', 'Dihantar'), dl.length], [SD.L('On time', 'Tepat masa'), dl.length ? Math.round(ontime / dl.length * 100) + '%' : '—'], [SD.L('Avg completion', 'Purata siap'), avg]]) + '<div class="cob-xs" style="margin-top:8px">' + SD.L('Business hours Mon–Fri; public holidays not excluded.', 'Jam bekerja Isnin–Jumaat; cuti umum tidak dikecualikan.') + '</div>');
         var by = {}; rows.forEach(function (x) { by[x.service_code] = (by[x.service_code] || 0) + 1; });
-        put('sd-r-ops', Object.keys(by).length ? '<table class="cob-tbl"><tr><th>' + SD.L('Service', 'Servis') + '</th><th class="num">' + SD.L('Requests', 'Permohonan') + '</th></tr>' + Object.keys(by).map(function (k) { return '<tr><td>' + SD.esc(SD.svcName(k)) + '</td><td class="num">' + by[k] + '</td></tr>'; }).join('') + '</table>' : '');
+        (SD.catalog ? SD.catalog().catch(function () {}) : Promise.resolve()).then(function () {
+          put('sd-r-ops', Object.keys(by).length ? '<table class="cob-tbl"><tr><th>' + SD.L('Service', 'Servis') + '</th><th class="num">' + SD.L('Requests', 'Permohonan') + '</th></tr>' + Object.keys(by).map(function (k) { return '<tr><td>' + SD.esc(SD.svcName(k)) + '</td><td class="num">' + by[k] + '</td></tr>'; }).join('') + '</table>' : '');
+        });
       });
       Promise.all([cnt(sb.from('employees').select('id', { count: 'exact', head: true })), cnt(sb.from('leave_requests').select('id', { count: 'exact', head: true }).gte('created_at', a).lte('created_at', b)), cnt(sb.from('payroll_records').select('id', { count: 'exact', head: true }).gte('created_at', a).lte('created_at', b))])
         .then(function (h) { put('sd-r-hr', stat([[SD.L('Employees', 'Pekerja'), h[0]], [SD.L('Leave requests', 'Permohonan cuti'), h[1]], [SD.L('Payslips', 'Slip gaji'), h[2]]])); });
