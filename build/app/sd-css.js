@@ -30,6 +30,8 @@
     '@media(max-width:640px){.sd-flt>.cob-chips{flex-basis:100%}.sd-flt>input{width:100%!important}.sd-cbx,.sd-mods{grid-template-columns:1fr}.sd-acts .btn{flex:1;min-height:44px}.sd-kpis{grid-template-columns:1fr 1fr}.sd-fab{bottom:18px}}',
     /* Monthly pack borrows .pdoc for print; pdoc-preview-light forces #fff/#0F172A on screen -> follow app theme on screen only */
     '@media screen{#main .sd-pack.pdoc,#main .sd-pack.pdoc table,#main .sd-pack.pdoc tr,#main .sd-pack.pdoc td,#main .sd-pack.pdoc th,#main .sd-pack.pdoc td:first-child{background:transparent!important;color:var(--text)!important}.sd-pack .empty-state p{color:var(--text-2)}#main .sd-pack .cob-tbl{min-width:0}}',
+    /* phone: keep pack content clear of the right FAB stack (scroll-up/home/chat, right:24px, 48px) */
+    '@media screen and (max-width:768px){#main .sd-pack.pdoc .cob-card{padding-right:56px!important}}',
     '@media print{body.sd-printing *{visibility:hidden!important}body.sd-printing .sd-pack,body.sd-printing .sd-pack *{visibility:visible!important}',
     'body.sd-printing .sd-pack{position:absolute;left:0;top:0;width:100%}body.sd-printing .no-print,body.sd-printing .sd-noprint{display:none!important}.sd-pack .cob-card{break-inside:avoid}}'
   ].join('\n');
