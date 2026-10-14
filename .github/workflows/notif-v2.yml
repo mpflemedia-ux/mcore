@@ -1,0 +1,31 @@
+name: notif-v2-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/notif-v2.yml']
+permissions:
+  contents: write
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'notif-core.js?v=2' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "3079b5c4584df8adf11ffd43a7fa58290e6ecc93"
+          grep -q "c === 'hr' && n.ref_table && !n.type" app/notif-core.js
+          grep -q 'actor_id: null' app/notif-hooks.js
+          python3 - <<'PY'
+          src=open('app/index.html').read()
+          src=src.replace('notif-core.js?v=1','notif-core.js?v=2',1)
+          src=src.replace('notif-hooks.js?v=1','notif-hooks.js?v=2',1)
+          open('/tmp/n.html','w').write(src)
+          PY
+          test "$(git hash-object /tmp/n.html)" = "f2e9c93c3c642662289a3a3c954f3ddbafd42c38"
+          cp /tmp/n.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "notif: notif-core/hooks ?v=2 (fn_emit Aktiviti classify)"
+          git push
