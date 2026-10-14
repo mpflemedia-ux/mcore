@@ -1,0 +1,48 @@
+name: notif-tags-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/notif-tags.yml']
+permissions:
+  contents: write
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'notif-css.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "f9aabe2e6153ee3b1672a83bf60159819470ebc4"
+          test "$(git hash-object app/notif-core.js)" = "$(git hash-object build/app/notif-core.js)"
+          test "$(git hash-object app/notif-bell.js)" = "$(git hash-object build/app/notif-bell.js)"
+          grep -q 'NT\.notify' app/notif-core.js
+          grep -q 'projects.js?v=44' "$F"
+          grep -q 'pj-wa-activity.js?v=1' "$F"
+          grep -q 'sd-wa-result.js?v=1' "$F"
+          python3 - <<'PY'
+          src=open('app/index.html').read()
+          src=src.replace('<script src="./projects.js?v=44"></script>','<script src="./projects.js?v=45"></script>',1)
+          src=src.replace('<script src="./pj-wa-activity.js?v=1"></script>','<script src="./pj-wa-activity.js?v=2"></script>',1)
+          tags='\n'.join([
+          '<script src="./notif-css.js?v=1"></script>',
+          '<script src="./notif-core.js?v=1"></script>',
+          '<script src="./notif-live.js?v=1"></script>',
+          '<script src="./notif-items.js?v=1"></script>',
+          '<script src="./notif-bell.js?v=1"></script>',
+          '<script src="./notif-page.js?v=1"></script>',
+          '<script src="./notif-settings.js?v=1"></script>',
+          '<script src="./notif-hooks.js?v=1"></script>',
+          ])
+          needle='<script src="./sd-wa-result.js?v=1"></script>'
+          assert src.count(needle)==1
+          src=src.replace(needle, needle+'\n'+tags, 1)
+          open('/tmp/n.html','w').write(src)
+          PY
+          test "$(git hash-object /tmp/n.html)" = "3079b5c4584df8adf11ffd43a7fa58290e6ecc93"
+          cp /tmp/n.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "notif: 8 notif-*.js tags + projects.js ?v=45 + pj-wa-activity ?v=2"
+          git push
