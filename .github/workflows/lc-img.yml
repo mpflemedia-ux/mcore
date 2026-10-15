@@ -1,0 +1,38 @@
+name: lc-img-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/lc-img.yml']
+permissions:
+  contents: write
+jobs:
+  lc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'lc-core.js' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "01f9826a26e63051048ed1d2f2dfd07c3c0b7484"
+          for n in lc-core lc-lesson lc-help; do test -f app/$n.js; test "$(git hash-object app/$n.js)" = "$(git hash-object build/app/$n.js)"; done
+          cat lc-tmp/lcimg.b64.* | base64 -d > /tmp/lcimg.tgz
+          echo "d29a06baa4e6f1aa7bedd4dab756cfc2054ffb134cedd340322a3f19f55d8b1e  /tmp/lcimg.tgz" | sha256sum -c -
+          tar xzf /tmp/lcimg.tgz -C app
+          mkdir -p build/app && tar xzf /tmp/lcimg.tgz -C build/app
+          test "$(find app/lc-img -name '*.webp' | wc -l)" = "96"
+          python3 - <<'PY'
+          s=open('app/index.html').read()
+          a='<script src="./nav-admin.js?v=1"></script>\n'
+          assert s.count(a)==1
+          s=s.replace(a,a+''.join('<script src="./%s.js?v=1"></script>\n'%n for n in ['lc-core','lc-lesson','lc-help']))
+          open('/tmp/n.html','w').write(s)
+          PY
+          test "$(git hash-object /tmp/n.html)" = "8bd79e97d55857da2de935fa662c9569421645e9"
+          cp /tmp/n.html "$F"
+          git rm -q -r lc-tmp
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/lc-img build/app/lc-img app/index.html
+          git commit -m "lc: Learning Center v2 images (96 webp, mock data) + load lc-core/lc-lesson/lc-help"
+          git push
