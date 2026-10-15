@@ -1,0 +1,890 @@
+[
+ {
+  "file": "lc-img/sd_client/my-services-1.webp",
+  "page": "servis_saya",
+  "params": {},
+  "sel": ".cob-card",
+  "text": "SERVICE CONTRACT",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_client/my-services-2.webp",
+  "page": "servis_saya",
+  "params": {},
+  "sel": ".cob-chip",
+  "text": "Needs action",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sd_client/my-services-3.webp",
+  "page": "servis_saya",
+  "params": {},
+  "sel": ".sd-li",
+  "text": "SR-",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sd_client/my-services-4.webp",
+  "page": "servis_saya",
+  "params": {},
+  "sel": "#sd-fab",
+  "text": "New request",
+  "role": "owner",
+  "n": 4
+ },
+ {
+  "file": "lc-img/sd_client/multi-request-1.webp",
+  "page": "servis_saya",
+  "params": {
+   "new": 1
+  },
+  "sel": ".sd-pick",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_client/multi-request-2.webp",
+  "page": "servis_saya",
+  "params": {
+   "new": 1,
+   "_step": 2
+  },
+  "sel": ".form-group",
+  "text": "Title",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sd_client/multi-request-3.webp",
+  "page": "servis_saya",
+  "params": {
+   "new": 1,
+   "_step": 3
+  },
+  "sel": "#mg-next",
+  "text": "",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sd_client/multi-request-4.webp",
+  "page": "servis_saya",
+  "params": {},
+  "sel": ".sd-li",
+  "text": "Waiting on you",
+  "role": "owner",
+  "n": 4
+ },
+ {
+  "file": "lc-img/sd_client/public-link-1.webp",
+  "page": "servis_saya",
+  "params": {
+   "tab": "link"
+  },
+  "sel": ".cob-card",
+  "text": "Services allowed",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_client/public-link-2.webp",
+  "page": "servis_saya",
+  "params": {
+   "tab": "link"
+  },
+  "sel": ".cob-card",
+  "text": "Used this month",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sd_client/public-link-3.webp",
+  "page": "servis_saya",
+  "params": {},
+  "sel": ".cob-chip",
+  "text": "Needs action",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sd_client/monthly-reports-1.webp",
+  "page": "laporan_bulanan",
+  "params": {},
+  "sel": "#sd-m",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_client/monthly-reports-2.webp",
+  "page": "laporan_bulanan",
+  "params": {},
+  "sel": "#sd-r-sla",
+  "text": "",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sd_client/monthly-reports-3.webp",
+  "page": "laporan_bulanan",
+  "params": {},
+  "sel": "#sd-pdf",
+  "text": "",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sd_client/support-access-1.webp",
+  "page": "sd_access",
+  "params": {},
+  "sel": ".cob-card",
+  "text": "Scope",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_client/support-access-2.webp",
+  "page": "sd_access",
+  "params": {},
+  "sel": ".cob-card",
+  "text": "Modules staff may open",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sd_client/support-access-3.webp",
+  "page": "sd_access",
+  "params": {},
+  "sel": ".cob-card",
+  "text": "Access log",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sd_admin/desk-1.webp",
+  "page": "admin",
+  "params": {
+   "view": "sd_desk"
+  },
+  "sel": ".sd-kpis",
+  "text": "",
+  "role": "pa",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_admin/desk-2.webp",
+  "page": "admin",
+  "params": {
+   "view": "sd_desk"
+  },
+  "sel": ".mg-seg",
+  "text": "",
+  "role": "pa",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sd_admin/desk-3.webp",
+  "page": "admin",
+  "params": {
+   "view": "sd_desk"
+  },
+  "sel": ".sd-li",
+  "text": "SR-",
+  "role": "pa",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sd_admin/desk-4.webp",
+  "page": "admin",
+  "params": {
+   "view": "sd_desk"
+  },
+  "sel": "#sd-csv",
+  "text": "",
+  "role": "pa",
+  "n": 4
+ },
+ {
+  "file": "lc-img/sd_admin/contracts-1.webp",
+  "page": "admin",
+  "params": {
+   "view": "sd_contracts"
+  },
+  "sel": ".cob-chips",
+  "text": "",
+  "role": "pa",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sd_admin/contracts-2.webp",
+  "page": "admin",
+  "params": {
+   "view": "sd_contracts"
+  },
+  "sel": ".cob-card",
+  "text": "Contract details",
+  "role": "pa",
+  "n": 2
+ },
+ {
+  "file": "lc-img/onboarding/checklist-1.webp",
+  "page": "client_onboarding",
+  "params": {},
+  "sel": ".cob-banner",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/onboarding/checklist-2.webp",
+  "page": "client_onboarding",
+  "params": {},
+  "sel": ".cob-chips",
+  "text": "",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/onboarding/checklist-3.webp",
+  "page": "client_onboarding",
+  "params": {},
+  "sel": "button",
+  "text": "Export PDF",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/planner/planner-1.webp",
+  "page": "planner",
+  "params": {},
+  "sel": "button",
+  "text": "Add Activity",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/planner/planner-2.webp",
+  "page": "planner",
+  "params": {},
+  "sel": "select",
+  "text": "",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/planner/planner-3.webp",
+  "page": "planner",
+  "params": {},
+  "sel": "button",
+  "text": "Today",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/planner/bookings-1.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Public booking",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/planner/bookings-2.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "#db-sec-booking",
+  "text": "",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/projects/board-1.webp",
+  "page": "projects",
+  "params": {},
+  "sel": "button",
+  "text": "+",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/projects/board-2.webp",
+  "page": "projects",
+  "params": {},
+  "sel": "button",
+  "text": "New Task",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/projects/board-3.webp",
+  "page": "projects",
+  "params": {},
+  "sel": "*",
+  "text": "Timeline",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sales_plan/plans-1.webp",
+  "page": "sales_plan",
+  "params": {},
+  "sel": "button",
+  "text": "New plan",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales_plan/plans-2.webp",
+  "page": "sales_plan",
+  "params": {},
+  "sel": "table",
+  "text": "",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sales_plan/plans-3.webp",
+  "page": "sales_plan",
+  "params": {},
+  "sel": "*",
+  "text": "Active 1",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sales_commission/rules-1.webp",
+  "page": "sales_commission",
+  "params": {},
+  "sel": "select",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales_commission/rules-2.webp",
+  "page": "sales_commission",
+  "params": {},
+  "sel": "*",
+  "text": "Pay when",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sales_commission/rules-3.webp",
+  "page": "sales_commission",
+  "params": {},
+  "sel": "*",
+  "text": "Leaderboard",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/sales_commission/achievements-1.webp",
+  "page": "achievements",
+  "params": {},
+  "sel": "button",
+  "text": "Apply",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales_commission/achievements-2.webp",
+  "page": "achievements",
+  "params": {},
+  "sel": "button",
+  "text": "Print",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sales_academy/pointer-1.webp",
+  "page": "sales_academy",
+  "params": {},
+  "sel": "*",
+  "text": "Total prospects",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales_academy/pointer-2.webp",
+  "page": "sales_academy",
+  "params": {},
+  "sel": "*",
+  "text": "3-Day Challenge",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/shifts/schedule-1.webp",
+  "page": "shifts",
+  "params": {},
+  "sel": "table",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/shifts/schedule-2.webp",
+  "page": "shifts",
+  "params": {},
+  "sel": "*",
+  "text": "Shift hours",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/shifts/schedule-3.webp",
+  "page": "shifts",
+  "params": {},
+  "sel": "*",
+  "text": "Swap requests",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/expense_claims/claims-1.webp",
+  "page": "expense_claims",
+  "params": {},
+  "sel": "button",
+  "text": "New Claim",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/expense_claims/claims-2.webp",
+  "page": "expense_claims",
+  "params": {},
+  "sel": "button",
+  "text": "Filter",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/core_nav/sidebar-1.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": ".nv-top",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/core_nav/sidebar-2.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "*",
+  "text": "RECENT",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/core_nav/sidebar-3.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": ".nv-top",
+  "text": "",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/core_nav/sidebar-4.webp",
+  "page": "planner",
+  "params": {},
+  "sel": "*",
+  "text": "Arrange menu",
+  "role": "owner",
+  "n": 4
+ },
+ {
+  "file": "lc-img/core_nav/notifications-1.webp",
+  "page": "notifikasi",
+  "params": {},
+  "sel": "*",
+  "text": "Unread",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/core_nav/notifications-2.webp",
+  "page": "notifikasi",
+  "params": {},
+  "sel": "*",
+  "text": "Module:",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/core_nav/notifications-3.webp",
+  "page": "notifikasi",
+  "params": {},
+  "sel": "button",
+  "text": "Settings",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/core_nav/activity-1.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "#db-sec-activity",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/core_nav/activity-2.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Audit Log",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/settings/company-1.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Upload Logo",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/settings/company-2.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Company Information",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/settings/roles-1.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Role Permissions",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/settings/documents-1.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Doc Generator",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/settings/documents-2.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Security PIN",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/register/getting-started-1.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "*",
+  "text": "Getting Started",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/register/getting-started-2.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "Security PIN",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/register/getting-started-3.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "#stg-replay-tour",
+  "text": "",
+  "role": "owner",
+  "n": 3
+ },
+ {
+  "file": "lc-img/dashboard/period-1.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "*",
+  "text": "Week",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/dashboard/period-2.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "#db-sec-activity",
+  "text": "",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/sales/tabs-1.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "button",
+  "text": "New Invoice",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales/tabs-2.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "*",
+  "text": "Quotations",
+  "role": "owner",
+  "n": 2
+ },
+ {
+  "file": "lc-img/register/old-4bd85981.webp",
+  "page": "settings",
+  "params": {},
+  "sel": "*",
+  "text": "My Plan",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/dashboard/old-fe61436e.webp",
+  "page": "dashboard",
+  "params": {},
+  "sel": "*",
+  "text": "Revenue",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/crm/old-adb1d67f.webp",
+  "page": "crm",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales/old-4a61893a.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "*",
+  "text": "Quotations",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales/old-cc8d3411.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "*",
+  "text": "Quotations",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales/old-acfb18e1.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "button",
+  "text": "New Invoice",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales/old-2c5cbb0a.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "*",
+  "text": "Invoices",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/sales/old-6bb9b7ac.webp",
+  "page": "sales",
+  "params": {},
+  "sel": "*",
+  "text": "Credit Notes",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/pos/old-7f887d1b.webp",
+  "page": "pos",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/inventory/old-f722fd53.webp",
+  "page": "inventory",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/purchasing/old-6d5cd36a.webp",
+  "page": "purchasing",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/production/old-6da56a89.webp",
+  "page": "production",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/logistics/old-2d7e263e.webp",
+  "page": "logistics",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/hr/old-dc922c5b.webp",
+  "page": "hr",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/hr/old-95dc6ad7.webp",
+  "page": "hr",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/hr/old-3a3402f4.webp",
+  "page": "hr",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/hr/old-f1eb4e45.webp",
+  "page": "hr",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/applicants/old-0dbe7d33.webp",
+  "page": "applicants",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/accounting/old-2c2f22e1.webp",
+  "page": "accounting",
+  "params": {},
+  "sel": "*",
+  "text": "Chart of Accounts",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/accounting/old-fb8c85c0.webp",
+  "page": "accounting",
+  "params": {},
+  "sel": "*",
+  "text": "Journal Entries",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/accounting/old-affa6c55.webp",
+  "page": "accounting",
+  "params": {},
+  "sel": "*",
+  "text": "Fiscal Years",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/accounting/old-0c660df7.webp",
+  "page": "expense_claims",
+  "params": {},
+  "sel": "button",
+  "text": "New Claim",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/accounting/old-3a3edc5f.webp",
+  "page": "accounting",
+  "params": {},
+  "sel": "*",
+  "text": "Petty Cash",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/accounting/old-a52f4c27.webp",
+  "page": "accounting",
+  "params": {},
+  "sel": "*",
+  "text": "Bank Reconciliation",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/vouchers/old-0ce7df18.webp",
+  "page": "vouchers",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ },
+ {
+  "file": "lc-img/reports/old-9639df7e.webp",
+  "page": "reports",
+  "params": {},
+  "sel": "",
+  "text": "",
+  "role": "owner",
+  "n": 1
+ }
+]
