@@ -29,13 +29,20 @@
   function dlg(b, done) {
     var s = P().sess() || {}, d = document.createElement('div');
     d.id = 'pa-big'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
-    d.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
-    d.innerHTML = '<div style="background:var(--surface,#fff);color:var(--text,#111);max-width:420px;width:100%;border-radius:12px;padding:16px;border-top:6px solid var(--pa-banner-bg,#c2410c)">' +
-      '<b style="font-size:15px"><i class="ti ti-alert-triangle"></i> ' + L('Big action in a client workspace', 'Tindakan besar dalam ruang kerja klien') + '</b>' +
-      '<div style="font-size:13px;margin:8px 0">' + L('You are inside', 'Anda berada dalam') + ' <b>' + P().esc(s.name) + '</b>. ' +
+    if (!document.getElementById('pa-big-css')) { var st = document.createElement('style'); st.id = 'pa-big-css'; st.textContent =
+      '#pa-big{position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px}' +
+      '#pa-big .pa-big-card{background:var(--bg-card);color:var(--text);border:1px solid var(--border-2);box-shadow:var(--shadow-lg);max-width:420px;width:100%;max-height:calc(100% - 32px);overflow:auto;border-radius:12px;padding:16px;border-top:6px solid var(--pa-banner-bg,#c2410c)}' +
+      '#pa-big .pa-big-t{display:block;font-size:15px;color:var(--text)}#pa-big .pa-big-m{font-size:13px;margin:8px 0;color:var(--text)}' +
+      '#pa-big .pa-big-a{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-2);background:var(--bg);border:1px solid var(--border-2);border-radius:999px;padding:2px 10px;margin-bottom:12px}' +
+      '#pa-big .pa-big-f{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}#pa-big .pa-big-f .btn{min-height:40px}';
+      document.head.appendChild(st); }
+    var act = (b.textContent || '').trim().slice(0, 60);
+    d.innerHTML = '<div class="pa-big-card">' +
+      '<b class="pa-big-t"><i class="ti ti-alert-triangle"></i> ' + L('Big action in a client workspace', 'Tindakan besar dalam ruang kerja klien') + '</b>' +
+      '<div class="pa-big-m">' + L('You are inside', 'Anda berada dalam') + ' <b>' + P().esc(s.name) + '</b>. ' +
       L('This change affects the client\'s real data. Continue?', 'Perubahan ini menjejaskan data sebenar klien. Teruskan?') + '</div>' +
-      '<div style="font-size:12px;color:var(--text-3,#555);margin-bottom:12px">' + P().esc((b.textContent || '').trim().slice(0, 60)) + '</div>' +
-      '<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-secondary" data-a="0">' + L('Cancel', 'Batal') + '</button>' +
+      (act ? '<span class="pa-big-a">' + L('Action', 'Tindakan') + ': ' + P().esc(act) + '</span>' : '') +
+      '<div class="pa-big-f"><button type="button" class="btn btn-outline" data-a="0">' + L('Cancel', 'Batal') + '</button>' +
       '<button type="button" class="btn btn-danger" data-a="1" style="background:var(--pa-banner-bg,#c2410c);color:var(--pa-banner-fg,#fff);border:0">' + L('Yes, continue', 'Ya, teruskan') + '</button></div></div>';
     document.body.appendChild(d);
     d.querySelector('[data-a="1"]').focus();
