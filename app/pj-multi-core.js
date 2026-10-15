@@ -61,8 +61,8 @@
     var prev = window._pjAfterPaint; if (prev && prev._pjm) return;
     var fn = function (st) {
       var go = function () { if (typeof prev === 'function') { try { prev(st); } catch (e) { console.error(e); } } };
-      if (!window.sb || !M.tid()) return go();
-      M.probe().then(function (ok) { return ok ? M.load(st).then(function () { M.decorate(st); }) : null; }).catch(function (e) { console.warn('pjm', e); }).then(go);
+      if (!window.sb || !M.tid()) return Promise.resolve(go());
+      return M.probe().then(function (ok) { return ok ? M.load(st).then(function () { M.decorate(st); }) : null; }).catch(function (e) { console.warn('pjm', e); }).then(go);
     };
     fn._pjm = 1; window._pjAfterPaint = fn;
   }

@@ -43,10 +43,12 @@
     var rem = Number(v('remind')) || null;
     var patch = { start_time: v('start_time') || null, due_time: v('due_time') || null, remind_before_min: rem };
     if (due !== String(k.due_date || '').slice(0, 10) || M.hm(patch.due_time) !== M.hm(k.due_time) || rem !== (k.remind_before_min || null)) patch.remind_sent_for = null;
+    (M.patchX || []).forEach(function (f) { try { Object.assign(patch, f(det, k) || {}); } catch (e) {} });
     var cur = (M.as[k.id] || []), now = new Date().toISOString(), ops = [];
     var gone = cur.filter(function (a) { return pick.indexOf(String(a.employee_id)) < 0; }).map(function (a) { return a.id; });
     var add = pick.filter(function (id) { return !cur.some(function (a) { return M.same(a.employee_id, id); }); });
-    return sb.from('project_tasks').update(patch).eq('id', k.id).eq('tenant_id', tid).then(function (r) {
+    var pre = (M.pre || []).reduce(function (p, f) { return p.then(function (go) { return go && f(st, det, k, pick, own, patch); }); }, Promise.resolve(true));
+    return pre.then(function (go) { if (!go) throw { quiet: 1 }; return sb.from('project_tasks').update(patch).eq('id', k.id).eq('tenant_id', tid); }).then(function (r) {
       if (r.error) throw r.error;
       if (gone.length) ops.push(sb.from('project_task_assignees').update({ deleted_at: now, is_owner: false }).eq('tenant_id', tid).in('id', gone));
       return Promise.all(ops);
@@ -64,8 +66,8 @@
     }).then(function (x) {
       if (x.error) throw x.error;
       notifyAdded(k, add.filter(function (id) { return !M.same(id, own); }), det);
-      return true;
-    }).catch(function (e) { M.toast((e && e.message) || 'Error', 'error'); return false; });
+      return (M.post || []).reduce(function (p, f) { return p.then(function () { return f(st, det, k, pick, own); }); }, Promise.resolve());
+    }).then(function () { return true; }).catch(function (e) { if (!(e && e.quiet)) M.toast((e && e.message) || 'Error', 'error'); return false; });
   }
   /* owner change is already notified by NT.taskSaved (projects.js); this covers added helpers */
   function notifyAdded(k, ids, det) {
