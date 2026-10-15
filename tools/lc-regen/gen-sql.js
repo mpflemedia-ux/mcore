@@ -58,6 +58,11 @@ insert into public.learning_steps (id, lesson_id, step_no, order_index, text_en,
 s2.push('-- images for existing lessons (step 1)');
 OLD.forEach(o=>{const img=`lc-img/${o[1]}/old-${o[0].slice(0,8)}.webp`;shots.push({file:img,page:o[2],params:{},sel:o[3],text:o[4],role:'owner',n:1});
  s2.push(`update public.learning_steps set image_path=${q(img)}, image_alt_en='Example screen (sample data)', image_alt_bm='Contoh skrin (data contoh)' where lesson_id=${q(o[0])} and step_no=1 and image_path is null;`);});
+s2.push(`-- System Development progress
+update public.dev_roadmap_items set stage = 'completed', module = 'learning' where title = 'Learning Center v2: all features, illustrated';
+insert into public.dev_roadmap_items (title, description, module, stage)
+select 'Learning Center v2: all features, illustrated', '12 new chapters (Service Desk client/admin, Onboarding, Planner & Bookings, Projects, Sales Plan, Commission & Achievements, Sales Academy, Shifts, Expense Claims, Menu/Notifications/Activity, Settings/Roles/Company), refreshed Register/Dashboard/Sales, EN+BM, 96 step images (mock data), order_index/sort_order fallback, search, Start here path, help (?) button per page, Not clear? Ask -> Service Desk.', 'learning', 'completed'
+where not exists (select 1 from public.dev_roadmap_items where title = 'Learning Center v2: all features, illustrated');`);
 s2.push('commit;');
 fs.writeFileSync('../lc_01_schema.sql',s1.join('\n'));fs.writeFileSync('../lc_02_content.sql',s2.join('\n')+'\n');
 fs.writeFileSync('shots.json',JSON.stringify(shots,null,1));

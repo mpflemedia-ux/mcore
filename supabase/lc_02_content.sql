@@ -387,4 +387,9 @@ update public.learning_steps set image_path='lc-img/accounting/old-3a3edc5f.webp
 update public.learning_steps set image_path='lc-img/accounting/old-a52f4c27.webp', image_alt_en='Example screen (sample data)', image_alt_bm='Contoh skrin (data contoh)' where lesson_id='a52f4c27-2e42-4e5c-924c-5d32b201aebd' and step_no=1 and image_path is null;
 update public.learning_steps set image_path='lc-img/vouchers/old-0ce7df18.webp', image_alt_en='Example screen (sample data)', image_alt_bm='Contoh skrin (data contoh)' where lesson_id='0ce7df18-11da-429c-99e6-846bd4321704' and step_no=1 and image_path is null;
 update public.learning_steps set image_path='lc-img/reports/old-9639df7e.webp', image_alt_en='Example screen (sample data)', image_alt_bm='Contoh skrin (data contoh)' where lesson_id='9639df7e-aaa6-4fd5-90a4-5784e684329f' and step_no=1 and image_path is null;
+-- System Development progress
+update public.dev_roadmap_items set stage = 'completed', module = 'learning' where title = 'Learning Center v2: all features, illustrated';
+insert into public.dev_roadmap_items (title, description, module, stage)
+select 'Learning Center v2: all features, illustrated', '12 new chapters (Service Desk client/admin, Onboarding, Planner & Bookings, Projects, Sales Plan, Commission & Achievements, Sales Academy, Shifts, Expense Claims, Menu/Notifications/Activity, Settings/Roles/Company), refreshed Register/Dashboard/Sales, EN+BM, 96 step images (mock data), order_index/sort_order fallback, search, Start here path, help (?) button per page, Not clear? Ask -> Service Desk.', 'learning', 'completed'
+where not exists (select 1 from public.dev_roadmap_items where title = 'Learning Center v2: all features, illustrated');
 commit;
