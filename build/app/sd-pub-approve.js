@@ -54,14 +54,15 @@
       return sb.from('service_public_requests').update({ status: ok ? 'approved' : 'rejected', decided_by: SD.uid(), decided_at: now, decision_note: note ? note.slice(0, 1000) : null, request_id: rid || null }).eq('id', r.id).eq('status', 'pending')
         .then(function (x) { if (x.error) throw x.error; });
     };
-    var p = !ok ? done(null) : SD.createRequest({ tenant_id: SD.tid(), contract_id: c.id, service_code: r.service_code, title: r.title, priority: 'normal', status: 'submitted', created_by: SD.uid(), due_at: SD.addBH(new Date(), c.sla_hours).toISOString(),
-      description: (r.description ? r.description + '\n\n' : '') + SD.L('Via public link ', 'Melalui link awam ') + r.ref_no + ' · ' + r.sender_name + ' · ' + r.sender_contact })
+    var mg = null; /* multi-service public submission -> group (sd-multi-extra.js), null when off */
+    var p = !ok ? done(null) : (SD.mgPub ? SD.mgPub(r) : Promise.resolve(null)).then(function (g) { mg = g; return SD.createRequest(Object.assign(g ? { group_id: g.gid } : {}, { tenant_id: SD.tid(), contract_id: c.id, service_code: r.service_code, title: r.title, priority: 'normal', status: 'submitted', created_by: SD.uid(), due_at: SD.addBH(new Date(), c.sla_hours).toISOString(),
+      description: (r.description ? r.description + '\n\n' : '') + SD.L('Via public link ', 'Melalui link awam ') + r.ref_no + ' · ' + r.sender_name + ' · ' + r.sender_contact })); })
       .then(function (nr) {
         return SD.event(nr, 'status', { to_status: 'submitted', body: SD.L('Approved from public link ', 'Diluluskan dari link awam ') + r.ref_no }).catch(function () {})
           .then(function () {
             if (!r.file_path) return;
             return sb.storage.from('service-public').download(r.file_path).then(function (d) { if (d.error || !d.data) return; return SD.upload(nr, new File([d.data], r.file_name || 'lampiran', { type: d.data.type }), false); }).catch(function () {});
-          }).then(function () { (SD.bellNew || SD.bellFor)(nr, SD.L('New service request ', 'Permohonan servis baharu ') + nr.ref_no, nr.title); return done(nr.id); });
+          }).then(function () { if (!mg || mg.first) (SD.bellNew || SD.bellFor)(nr, mg ? SD.L('New service request group ', 'Kumpulan permohonan servis baharu ') + mg.ref : SD.L('New service request ', 'Permohonan servis baharu ') + nr.ref_no, nr.title); return done(nr.id); });
       });
     p.then(function () { SD.toast(ok ? SD.L('Approved and sent to M-Core', 'Diluluskan dan dihantar kepada M-Core') : SD.L('Rejected', 'Ditolak'), 'success'); SD.go('servis_saya', {}); })
       .catch(function (e) { btn.disabled = false; SD.toast(SD.err(e), 'error'); });
