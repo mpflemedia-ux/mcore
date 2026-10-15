@@ -4,8 +4,10 @@
 //   view    -> request summary + 10-min signed URLs for deliverables (only if the client's contract is paid) + log view
 //   confirm -> delivered -> closed   (+ status event + response row + bell to platform admins)
 //   revise  -> delivered -> revision (comment 3..2000 chars required)
+//   reopen  -> closed -> in_progress (reason 3..2000 required; needs sd_reopen_01.sql: reopen_count/reopened_at). SLA restarts:
+//              due_at = now + same business-hour window (created_at -> old due_at); paused/delivered/closed cleared. Bells admins + owner.
 export type Link = { id: string; tenant_id: string; request_id: string; expires_at: string; revoked_at: string | null; deleted_at: string | null; viewed_at: string | null; view_count: number };
-export type Req = { id: string; tenant_id: string; contract_id: string | null; ref_no: string; title: string; service_code: string; status: string; created_at: string; due_at: string | null; delivered_at: string | null; closed_at: string | null; sla_paused_seconds: number | null; deleted_at: string | null };
+export type Req = { id: string; tenant_id: string; contract_id: string | null; ref_no: string; title: string; service_code: string; status: string; created_at: string; due_at: string | null; delivered_at: string | null; closed_at: string | null; sla_paused_seconds: number | null; deleted_at: string | null; reopen_count?: number | null; reopened_at?: string | null };
 export interface Db {
   linkByHash(hash: string): Promise<Link | null>;
   request(id: string): Promise<Req | null>;
@@ -21,6 +23,8 @@ export interface Db {
   insertResponse(row: Record<string, unknown>): Promise<void>;
   insertEvent(row: Record<string, unknown>): Promise<void>;
   bellAdmins(title: string, body: string): Promise<void>;
+  reopen?(req: Req, patch: Record<string, unknown>): Promise<boolean>;
+  bellOwners?(tenantId: string, title: string, body: string): Promise<void>;
 }
 export const ORIGINS = ['https://mpflemedia.my', 'https://www.mpflemedia.my'];
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
@@ -45,6 +49,11 @@ export function bhBetween(a: string | number, b: string | number): number {
   for (let m = x; m < y && guard++ < 40000; m += step) if (wk(m)) h += Math.min(step, y - m);
   return sign * h / 3600000;
 }
+export function addBH(from: number, hours: number): number {
+  let ms = from, left = Math.max(0, hours) * 3600000, guard = 0; const step = 900000;
+  while (left > 0 && guard++ < 20000) { if (wk(ms)) left -= step; ms += step; }
+  return ms;
+}
 export function cors(origin: string | null): Record<string, string> {
   const h: Record<string, string> = { 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Vary': 'Origin' };
   if (origin && ORIGINS.includes(origin)) h['Access-Control-Allow-Origin'] = origin;
@@ -61,7 +70,7 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
   let p: { token?: unknown; action?: unknown; comment?: unknown };
   try { p = await req.json(); } catch { return json({ error: 'bad' }, 400); }
   const token = typeof p.token === 'string' ? p.token : '', action = typeof p.action === 'string' ? p.action : 'view';
-  if (!TOKEN_RE.test(token) || !['view', 'confirm', 'revise'].includes(action)) return json({ error: 'inactive' }, 404);
+  if (!TOKEN_RE.test(token) || !['view', 'confirm', 'revise', 'reopen'].includes(action)) return json({ error: 'inactive' }, 404);
   const link = await db.linkByHash(await sha256hex(token));
   if (!link || link.deleted_at || link.revoked_at || new Date(link.expires_at).getTime() <= now) return json({ error: 'inactive' }, 404);
   const r = await db.request(link.request_id);
@@ -80,10 +89,25 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
       hours_taken: end ? Math.max(0, Math.round(bhBetween(r.created_at, end) - (r.sla_paused_seconds || 0) / 3600)) : null, sla_hours: sla,
       paid, files: files.map((f) => ({ name: String(f.body || (f.meta && (f.meta as { name?: string }).name) || f.file_path.split('/').pop()), size: Number((f.meta && (f.meta as { size?: number }).size) || 0), url: urls[f.file_path] || null })),
       response: last, can_respond: r.status === 'delivered',
+      can_reopen: r.status === 'closed' && 'reopen_count' in r && !!db.reopen, reopened_at: r.reopened_at || null,
     });
   }
   const comment = typeof p.comment === 'string' ? p.comment.trim().slice(0, 2000) : '';
-  if (action === 'revise' && comment.length < 3) return json({ error: 'comment' }, 400);
+  if ((action === 'revise' || action === 'reopen') && comment.length < 3) return json({ error: 'comment' }, 400);
+  if (action === 'reopen') {
+    if (r.status !== 'closed' || !('reopen_count' in r) || !db.reopen) return json({ error: 'state', status: r.status }, 409);
+    if ((await db.responseCount(link.id)) >= MAX_RESPONSES) return json({ error: 'rate' }, 429);
+    const win = r.due_at ? Math.max(1, Math.round(bhBetween(r.created_at, r.due_at))) : 0;
+    const patch: Record<string, unknown> = { status: 'in_progress', updated_at: nowIso, closed_at: null, delivered_at: null, paused_at: null, sla_paused_seconds: 0, reopened_at: nowIso, reopen_count: (Number(r.reopen_count) || 0) + 1 };
+    if (win) patch.due_at = new Date(addBH(now, win)).toISOString();
+    if (!(await db.reopen(r, patch))) return json({ error: 'state' }, 409);
+    await db.insertResponse({ tenant_id: r.tenant_id, request_id: r.id, link_id: link.id, action, comment });
+    await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'status', from_status: 'closed', to_status: 'in_progress', body: comment, actor_id: null, meta: { via: 'result_link', link_id: link.id, reopen: true } });
+    const t = r.ref_no + ': reopened by client (Dibuka semula)';
+    await db.bellAdmins(t, comment).catch(() => {});
+    if (db.bellOwners) await db.bellOwners(r.tenant_id, t, comment).catch(() => {});
+    return json({ ok: true, status: 'in_progress' });
+  }
   if (r.status !== 'delivered') return json({ error: 'state', status: r.status }, 409);
   if ((await db.responseCount(link.id)) >= MAX_RESPONSES) return json({ error: 'rate' }, 429);
   const to = action === 'confirm' ? 'closed' : 'revision';

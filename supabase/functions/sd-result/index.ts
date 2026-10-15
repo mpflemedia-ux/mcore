@@ -11,7 +11,7 @@ function db(): Db {
   const one = async <T>(q: PromiseLike<{ data: T | null; error: unknown }>) => { const r = await q; if (r.error) throw r.error; return r.data; };
   return {
     linkByHash: (h) => one<Link>(sb.from('service_result_links').select('id,tenant_id,request_id,expires_at,revoked_at,deleted_at,viewed_at,view_count').eq('token_hash', h).maybeSingle()),
-    request: (id) => one<Req>(sb.from('service_requests').select('id,tenant_id,contract_id,ref_no,title,service_code,status,created_at,due_at,delivered_at,closed_at,sla_paused_seconds,deleted_at').eq('id', id).maybeSingle()),
+    request: (id) => one<Req>(sb.from('service_requests').select('*').eq('id', id).maybeSingle()),
     tenantName: async (id) => ((await one<{ name: string }>(sb.from('tenants').select('name').eq('id', id).maybeSingle())) || { name: '' }).name,
     service: (code) => one(sb.from('service_catalog').select('name_en,name_bm,default_sla_hours').eq('code', code).is('deleted_at', null).maybeSingle()),
     contractPaid: async (tid, cid) => {
@@ -36,6 +36,15 @@ function db(): Db {
     },
     insertResponse: async (row) => { const x = await sb.from('service_result_responses').insert(row); if (x.error) throw x.error; },
     insertEvent: async (row) => { const x = await sb.from('service_request_events').insert(row); if (x.error) throw x.error; },
+    reopen: async (r, patch) => {
+      const x = await sb.from('service_requests').update(patch).eq('id', r.id).eq('status', 'closed').select('id');
+      return !x.error && (x.data || []).length === 1;
+    },
+    bellOwners: async (tid, title, body) => {
+      const a = await sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', tid).eq('role', 'owner');
+      const rows = (a.data || []).map((u) => ({ tenant_id: u.tenant_id, user_id: u.id, title, body, category: 'service_desk' }));
+      if (rows.length) await sb.from('notifications').insert(rows);
+    },
     bellAdmins: async (title, body) => {
       const a = await sb.from('user_profiles').select('id,tenant_id').eq('role', 'platform_admin');
       const rows = (a.data || []).filter((u) => u.tenant_id).map((u) => ({ tenant_id: u.tenant_id, user_id: u.id, title, body, category: 'service_desk' }));

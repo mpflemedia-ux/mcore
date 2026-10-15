@@ -47,3 +47,14 @@ Deno.test('confirm when not delivered -> 409, no writes', async () => { const { 
 Deno.test('max 5 responses per link -> 429', async () => { const { db } = await mk({ rc: 5 }); eq((await handle(post({ token: TOK, action: 'confirm' }, undefined, '5.5.5.5'), db, NOW)).status, 429, 'st'); });
 Deno.test('rate limit 30/min per IP', async () => { const { db } = await mk(); let last = 0; for (let i = 0; i < 31; i++) last = (await handle(post({ token: TOK }, undefined, '9.9.9.9'), db, NOW)).status; eq(last, 429, 'rl'); });
 Deno.test('bhBetween matches sd-data (Fri 15:00 -> Mon 15:00 MYT = 24h)', () => { eq(bhBetween('2026-10-16T07:00:00Z', '2026-10-19T07:00:00Z'), 24, 'wkend'); });
+Deno.test('reopen: closed -> in_progress, SLA window restarts, event + response + bells; hidden until SQL', async () => {
+  const { db, log } = await mk({ req: { status: 'closed', closed_at: '2026-10-13T20:00:00Z', reopen_count: 0, reopened_at: null } }); let patch: Record<string, unknown> = {}, own = 0;
+  db.reopen = async (r, p) => { if (r.status !== 'closed') return false; patch = p; r.status = 'in_progress'; return true; }; db.bellOwners = async () => { own++; };
+  const v = await (await handle(post({ token: TOK }), db, NOW)).json(); eq(v.can_reopen, true, 'can');
+  eq((await handle(post({ token: TOK, action: 'reopen', comment: 'x' }), db, NOW)).status, 400, 'reason req');
+  const j = await (await handle(post({ token: TOK, action: 'reopen', comment: 'Angka Mac salah' }), db, NOW)).json();
+  eq(j, { ok: true, status: 'in_progress' }, 'ok'); eq([patch.status, patch.closed_at, patch.delivered_at, patch.reopen_count, patch.sla_paused_seconds], ['in_progress', null, null, 1, 0], 'patch');
+  eq(patch.due_at, '2026-10-16T07:30:00.000Z', 'due = now + 48 bh'); eq((log.ev[0] as { meta: { reopen: boolean } }).meta.reopen, true, 'ev'); eq((log.resp[0] as { action: string }).action, 'reopen', 'resp'); eq([log.bell.length, own], [1, 1], 'bells');
+  eq((await handle(post({ token: TOK, action: 'reopen', comment: 'again ok' }), db, NOW)).status, 409, 'not closed now');
+  const m = await mk({ req: { status: 'closed' } }); eq((await (await handle(post({ token: TOK }), m.db, NOW)).json()).can_reopen, false, 'no column -> hidden');
+});
