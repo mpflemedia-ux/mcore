@@ -1,122 +1,134 @@
--- atasangin_reset_01_audit.sql  (READ ONLY - safe to run, changes nothing)
--- Tenant: (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
--- Tables (transactional, all rows for this tenant):
---   bookings, bank_statement_lines, payment_allocations, payments, credit_notes, invoice_items, delivery_orders, invoices, quotation_items, quotations, pos_transaction_items, pos_transactions, pos_sessions, petty_cash_expenses, petty_cash_floats, expense_claims, cash_advances, payment_voucher_batch_lines, payment_voucher_batches, payment_vouchers, supplier_payments, supplier_bill_items, supplier_bills, goods_received_items, goods_received_notes, purchase_order_items, purchase_orders, stock_movements, depreciation_runs, journal_lines, journal_entries, doc_counters
--- KEPT (never touched): tenants, user_profiles, employees, customers, suppliers,
---   products (incl. stock_qty), chart_of_accounts, default_account_mappings,
---   booking_services, booking_service_staff, fixed_assets, branches, settings,
---   payroll_records, service_requests, projects, crm, notifications, audit_logs.
+-- atasangin_reset_01_audit.sql  (READ ONLY. Plain SQL, cannot fail on missing tables)
+-- Run each query separately (highlight + Run) in Supabase SQL Editor.
 
--- 0) Tenant check: must return exactly ONE row (Atas Angin My Sdn. Bhd.)
+-- Q0) Tenant check: must be exactly ONE row
 select id, name, created_at from public.tenants where name ilike 'Atas Angin%';
 
--- 1) Row counts per table
-select 'bookings' as tbl, count(*) as n from public.bookings where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'bank_statement_lines' as tbl, count(*) as n from public.bank_statement_lines where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'payment_allocations' as tbl, count(*) as n from public.payment_allocations where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'payments' as tbl, count(*) as n from public.payments where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'credit_notes' as tbl, count(*) as n from public.credit_notes where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'invoice_items' as tbl, count(*) as n from public.invoice_items where invoice_id in (select id from public.invoices where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'delivery_orders' as tbl, count(*) as n from public.delivery_orders where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'invoices' as tbl, count(*) as n from public.invoices where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'quotation_items' as tbl, count(*) as n from public.quotation_items where quotation_id in (select id from public.quotations where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'quotations' as tbl, count(*) as n from public.quotations where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'pos_transaction_items' as tbl, count(*) as n from public.pos_transaction_items where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'pos_transactions' as tbl, count(*) as n from public.pos_transactions where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'pos_sessions' as tbl, count(*) as n from public.pos_sessions where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'petty_cash_expenses' as tbl, count(*) as n from public.petty_cash_expenses where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'petty_cash_floats' as tbl, count(*) as n from public.petty_cash_floats where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'expense_claims' as tbl, count(*) as n from public.expense_claims where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'cash_advances' as tbl, count(*) as n from public.cash_advances where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'payment_voucher_batch_lines' as tbl, count(*) as n from public.payment_voucher_batch_lines where batch_id in (select id from public.payment_voucher_batches where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'payment_voucher_batches' as tbl, count(*) as n from public.payment_voucher_batches where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'payment_vouchers' as tbl, count(*) as n from public.payment_vouchers where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'supplier_payments' as tbl, count(*) as n from public.supplier_payments where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'supplier_bill_items' as tbl, count(*) as n from public.supplier_bill_items where bill_id in (select id from public.supplier_bills where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'supplier_bills' as tbl, count(*) as n from public.supplier_bills where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'goods_received_items' as tbl, count(*) as n from public.goods_received_items where grn_id in (select id from public.goods_received_notes where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'goods_received_notes' as tbl, count(*) as n from public.goods_received_notes where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'purchase_order_items' as tbl, count(*) as n from public.purchase_order_items where po_id in (select id from public.purchase_orders where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'purchase_orders' as tbl, count(*) as n from public.purchase_orders where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'stock_movements' as tbl, count(*) as n from public.stock_movements where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'depreciation_runs' as tbl, count(*) as n from public.depreciation_runs where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'journal_lines' as tbl, count(*) as n from public.journal_lines where entry_id in (select id from public.journal_entries where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1))
-union all
-select 'journal_entries' as tbl, count(*) as n from public.journal_entries where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-union all
-select 'doc_counters' as tbl, count(*) as n from public.doc_counters where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1);
+-- Q1) AUTOMATIC row counts for EVERY public table that has tenant_id (Atas Angin only, non-zero only)
+with t as (select id from public.tenants where name ilike 'Atas Angin%' order by created_at limit 1)
+select x.table_name,
+  (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from public.%I where tenant_id = %L', x.table_name, (select id from t)), false, true, '')))[1]::text::int as n
+from (select distinct k.table_name from information_schema.columns k
+      join information_schema.tables it on it.table_schema=k.table_schema and it.table_name=k.table_name and it.table_type='BASE TABLE'
+      where k.table_schema='public' and k.column_name='tenant_id') x
+order by n desc, x.table_name;
 
--- 2) Journal detail (what dashboard Revenue reads)
-select je.ref_no, je.entry_date, je.description, je.source_table, je.created_at, je.created_by,
-  sum(jl.debit_amt) as debit, sum(jl.credit_amt) as credit
-from public.journal_entries je left join public.journal_lines jl on jl.entry_id = je.id
-where je.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)
-group by je.id order by je.ref_no;
+-- Q2) Reset candidate list: which exist, filter column used, and row count
+with t as (select id from public.tenants where name ilike 'Atas Angin%' order by created_at limit 1),
+c as (select * from (values
+ (1,'bookings','tenant_id',null,null),
+ (2,'bank_statement_lines','tenant_id',null,null),
+ (3,'payment_allocations','tenant_id',null,null),
+ (4,'payments','tenant_id',null,null),
+ (5,'credit_notes','tenant_id',null,null),
+ (6,'invoice_items','invoice_id','invoices',null),
+ (7,'delivery_order_items','delivery_order_id','delivery_orders',null),
+ (8,'delivery_orders','tenant_id',null,null),
+ (9,'invoices','tenant_id',null,null),
+ (10,'quotation_items','quotation_id','quotations',null),
+ (11,'quotations','tenant_id',null,null),
+ (12,'pos_transaction_items','transaction_id','pos_transactions',null),
+ (13,'pos_transactions','tenant_id',null,null),
+ (14,'pos_sessions','tenant_id',null,null),
+ (15,'petty_cash_expenses','float_id','petty_cash_floats',null),
+ (16,'petty_cash_floats','tenant_id',null,null),
+ (17,'expense_claims','tenant_id',null,null),
+ (18,'cash_advances','tenant_id',null,null),
+ (19,'payment_voucher_batch_lines','batch_id','payment_voucher_batches',null),
+ (20,'payment_voucher_batches','tenant_id',null,null),
+ (21,'payment_vouchers','tenant_id',null,null),
+ (22,'supplier_payments','tenant_id',null,null),
+ (23,'supplier_bill_items','bill_id','supplier_bills',null),
+ (24,'supplier_bills','tenant_id',null,null),
+ (25,'goods_received_items','grn_id','goods_received_notes',null),
+ (26,'goods_received_notes','tenant_id',null,null),
+ (27,'purchase_order_items','po_id','purchase_orders',null),
+ (28,'purchase_orders','tenant_id',null,null),
+ (29,'stock_movements','tenant_id',null,null),
+ (30,'depreciation_runs','tenant_id',null,null),
+ (31,'journal_lines','entry_id','journal_entries',null),
+ (32,'journal_entries','tenant_id',null,null),
+ (33,'doc_counters','tenant_id',null,null)
+) as c(ord, tbl, parent_fk, parent_tbl, x)),
+ex as (
+  select c.ord, c.tbl, c.parent_tbl,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.tbl and k.column_name='tenant_id') as has_tenant,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.tbl and k.column_name=c.parent_fk) as has_parent_fk,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.parent_tbl and k.column_name='tenant_id') as parent_ok,
+    c.parent_fk
+  from c join information_schema.tables it on it.table_schema='public' and it.table_name=c.tbl and it.table_type='BASE TABLE'
+),
+f as (
+  select ord, tbl, case
+    when has_tenant then format('tenant_id = %L', (select id from t))
+    when has_parent_fk and parent_ok then format('%I in (select id from public.%I where tenant_id = %L)', parent_fk, parent_tbl, (select id from t))
+  end as filt,
+  case when has_tenant then 'tenant_id' when has_parent_fk and parent_ok then parent_fk||' -> '||parent_tbl else 'NO FILTER (skipped)' end as filter_col
+  from ex
+)
+select ord, tbl, filter_col,
+  case when filt is null then null else (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from public.%I where %s', tbl, filt), false, true, '')))[1]::text::int end as n
+from f order by ord;
 
-select je.ref_no, coa.code, coa.name_en, jl.debit_amt, jl.credit_amt
-from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id
-left join public.chart_of_accounts coa on coa.id = jl.account_id
-where je.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by je.ref_no, jl.line_no;
+-- Q3) Journal detail (what dashboard Revenue reads)
+with t as (select id from public.tenants where name ilike 'Atas Angin%' order by created_at limit 1)
+select je.ref_no, je.description, je.created_at, to_jsonb(je)->>'entry_date' as entry_date, to_jsonb(je)->>'source_table' as source_table, to_jsonb(je)->>'created_by' as created_by,
+  (select sum(jl.debit_amt) from public.journal_lines jl where jl.entry_id = je.id) as debit,
+  (select sum(jl.credit_amt) from public.journal_lines jl where jl.entry_id = je.id) as credit
+from public.journal_entries je where je.tenant_id = (select id from t) order by je.ref_no;
 
--- 3) Every row per table (full row as json, newest first)
-select 'bookings' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.bookings x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'bank_statement_lines' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.bank_statement_lines x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'payment_allocations' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.payment_allocations x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'payments' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.payments x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'credit_notes' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.credit_notes x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'invoice_items' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.invoice_items x where invoice_id in (select id from public.invoices where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'delivery_orders' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.delivery_orders x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'invoices' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.invoices x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'quotation_items' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.quotation_items x where quotation_id in (select id from public.quotations where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'quotations' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.quotations x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'pos_transaction_items' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.pos_transaction_items x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'pos_transactions' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.pos_transactions x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'pos_sessions' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.pos_sessions x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'petty_cash_expenses' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.petty_cash_expenses x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'petty_cash_floats' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.petty_cash_floats x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'expense_claims' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.expense_claims x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'cash_advances' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.cash_advances x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'payment_voucher_batch_lines' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.payment_voucher_batch_lines x where batch_id in (select id from public.payment_voucher_batches where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'payment_voucher_batches' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.payment_voucher_batches x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'payment_vouchers' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.payment_vouchers x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'supplier_payments' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.supplier_payments x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'supplier_bill_items' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.supplier_bill_items x where bill_id in (select id from public.supplier_bills where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'supplier_bills' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.supplier_bills x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'goods_received_items' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.goods_received_items x where grn_id in (select id from public.goods_received_notes where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'goods_received_notes' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.goods_received_notes x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'purchase_order_items' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.purchase_order_items x where po_id in (select id from public.purchase_orders where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'purchase_orders' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.purchase_orders x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'stock_movements' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.stock_movements x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'depreciation_runs' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.depreciation_runs x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'journal_lines' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.journal_lines x where entry_id in (select id from public.journal_entries where tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1)) order by x.created_at desc;
-select 'journal_entries' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.journal_entries x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
-select 'doc_counters' as tbl, x.created_at, to_jsonb(x)->>'created_by' as created_by, coalesce(to_jsonb(x)->>'total', to_jsonb(x)->>'amount', to_jsonb(x)->>'total_amount') as amount, to_jsonb(x) as row from public.doc_counters x where x.tenant_id = (select id from public.tenants where name ilike 'Atas Angin%' limit 1) order by x.created_at desc;
+-- Q4) GENERATOR: copy the output cell and run it to see every row (json) per existing candidate table
+with t as (select id from public.tenants where name ilike 'Atas Angin%' order by created_at limit 1),
+c as (select * from (values
+ (1,'bookings','tenant_id',null,null),
+ (2,'bank_statement_lines','tenant_id',null,null),
+ (3,'payment_allocations','tenant_id',null,null),
+ (4,'payments','tenant_id',null,null),
+ (5,'credit_notes','tenant_id',null,null),
+ (6,'invoice_items','invoice_id','invoices',null),
+ (7,'delivery_order_items','delivery_order_id','delivery_orders',null),
+ (8,'delivery_orders','tenant_id',null,null),
+ (9,'invoices','tenant_id',null,null),
+ (10,'quotation_items','quotation_id','quotations',null),
+ (11,'quotations','tenant_id',null,null),
+ (12,'pos_transaction_items','transaction_id','pos_transactions',null),
+ (13,'pos_transactions','tenant_id',null,null),
+ (14,'pos_sessions','tenant_id',null,null),
+ (15,'petty_cash_expenses','float_id','petty_cash_floats',null),
+ (16,'petty_cash_floats','tenant_id',null,null),
+ (17,'expense_claims','tenant_id',null,null),
+ (18,'cash_advances','tenant_id',null,null),
+ (19,'payment_voucher_batch_lines','batch_id','payment_voucher_batches',null),
+ (20,'payment_voucher_batches','tenant_id',null,null),
+ (21,'payment_vouchers','tenant_id',null,null),
+ (22,'supplier_payments','tenant_id',null,null),
+ (23,'supplier_bill_items','bill_id','supplier_bills',null),
+ (24,'supplier_bills','tenant_id',null,null),
+ (25,'goods_received_items','grn_id','goods_received_notes',null),
+ (26,'goods_received_notes','tenant_id',null,null),
+ (27,'purchase_order_items','po_id','purchase_orders',null),
+ (28,'purchase_orders','tenant_id',null,null),
+ (29,'stock_movements','tenant_id',null,null),
+ (30,'depreciation_runs','tenant_id',null,null),
+ (31,'journal_lines','entry_id','journal_entries',null),
+ (32,'journal_entries','tenant_id',null,null),
+ (33,'doc_counters','tenant_id',null,null)
+) as c(ord, tbl, parent_fk, parent_tbl, x)),
+ex as (
+  select c.ord, c.tbl, c.parent_tbl,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.tbl and k.column_name='tenant_id') as has_tenant,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.tbl and k.column_name=c.parent_fk) as has_parent_fk,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.parent_tbl and k.column_name='tenant_id') as parent_ok,
+    c.parent_fk
+  from c join information_schema.tables it on it.table_schema='public' and it.table_name=c.tbl and it.table_type='BASE TABLE'
+),
+f as (
+  select ord, tbl, case
+    when has_tenant then format('tenant_id = %L', (select id from t))
+    when has_parent_fk and parent_ok then format('%I in (select id from public.%I where tenant_id = %L)', parent_fk, parent_tbl, (select id from t))
+  end as filt,
+  case when has_tenant then 'tenant_id' when has_parent_fk and parent_ok then parent_fk||' -> '||parent_tbl else 'NO FILTER (skipped)' end as filter_col
+  from ex
+)
+select string_agg(format('select %L as tbl, to_jsonb(x) as row from public.%I x where %s', tbl, tbl, filt), E'\nunion all\n' order by ord) || ';'
+from f where filt is not null;
