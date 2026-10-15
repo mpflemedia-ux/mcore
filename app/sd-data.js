@@ -152,7 +152,7 @@
     var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk' }; };
     var q = SD.isPA()
       ? sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', r.tenant_id)
-      : sb.from('user_profiles').select('id,tenant_id,role').eq('role', 'platform_admin');
+      : SD.paList ? SD.paList() : sb.from('user_profiles').select('id,tenant_id,role').eq('role', 'platform_admin');
     return Promise.resolve(q).then(function (x) {
       var us = (x && x.data || []).filter(function (u) { var ro = String(u.role || '').toLowerCase(); return SD.isPA() ? (ro === 'owner' || ro === 'admin') : ro === 'platform_admin'; });
       return SD.bell(us.map(mk));
