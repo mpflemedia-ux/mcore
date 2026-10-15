@@ -1,0 +1,32 @@
+name: pj-multi2-index-tags-oneshot
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pj-multi2-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 2 tags in app/index.html (blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./pj-multi2-core.js' "$F"; then echo "already present - no-op"; exit 0; fi
+          test "$(git hash-object "$F")" = "b492964456c1c84982ef7b8d7fb9410bb6bcf931"
+          for n in multi-core multi-ui multi2-css multi2-core multi2-detail multi2-work multi2-wa; do test -f "app/pj-$n.js"; test "$(git hash-object app/pj-$n.js)" = "$(git hash-object build/app/pj-$n.js)"; done
+          A='<script src="./pj-multi-remind.js?v=1"></script>'
+          test "$(grep -cxF "$A" "$F")" = "1"
+          T=$(mktemp)
+          for n in css core detail work wa; do echo "<script src=\"./pj-multi2-$n.js?v=1\"></script>" >> "$T"; done
+          sed -e 's#^<script src="./pj-multi-core.js?v=1"></script>$#<script src="./pj-multi-core.js?v=2"></script>#' -e 's#^<script src="./pj-multi-ui.js?v=1"></script>$#<script src="./pj-multi-ui.js?v=2"></script>#' "$F" | awk -v a="$A" -v t="$T" '{print} $0==a{while((getline l < t)>0) print l}' > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "96163f312896cbed73cdec3b7477b01d9e19c4fa"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "projects phase 2: pj-multi2-*.js tags + v=2 core/ui in app/index.html (blob 96163f3)"
+          git push
