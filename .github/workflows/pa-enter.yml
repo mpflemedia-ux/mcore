@@ -1,0 +1,32 @@
+name: pa-enter-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pa-enter.yml']
+permissions:
+  contents: write
+jobs:
+  pa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'pa-core.js' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "8bd79e97d55857da2de935fa662c9569421645e9"
+          for n in pa-core pa-guard pa-misc; do test -f app/$n.js; test "$(git hash-object app/$n.js)" = "$(git hash-object build/app/$n.js)"; done
+          python3 - <<'PY'
+          s=open('app/index.html').read()
+          a='<script src="./lc-help.js?v=1"></script>\n'
+          assert s.count(a)==1
+          s=s.replace(a,a+''.join('<script src="./%s.js?v=1"></script>\n'%n for n in ['pa-core','pa-guard','pa-misc']))
+          open('/tmp/n.html','w').write(s)
+          PY
+          test "$(git hash-object /tmp/n.html)" = "fa46ab6ccdcc806a56f797e2f7d7129fbff745b4"
+          cp /tmp/n.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "pa-enter: load pa-core/pa-guard/pa-misc (PA direct Enter, silent support session)"
+          git push
