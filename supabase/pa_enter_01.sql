@@ -128,7 +128,7 @@ alter table public.platform_admin_audit drop constraint if exists platform_admin
 alter table public.platform_admin_audit add constraint platform_admin_audit_action_check check (action in (
   'suspend_tenant', 'reactivate_tenant', 'set_tenant_plan', 'create_announcement', 'soft_delete_tenant', 'record_payment',
   'delete_tenant_plan_payment', 'enter_support_tenant', 'exit_support_tenant',
-  'support_view_only_on', 'support_view_only_off', 'support_idle_exit', 'support_switch_tenant', 'support_big_action'));
+  'support_view_only_on', 'support_view_only_off', 'support_idle_exit', 'support_switch_tenant', 'support_big_action')) not valid;
 drop policy if exists pa_audit_self_ins on public.platform_admin_audit;
 create policy pa_audit_self_ins on public.platform_admin_audit for insert to authenticated with check (actor_user_id = auth.uid() and exists (select 1 from public.user_profiles up where up.id = auth.uid() and up.role = 'platform_admin'));
 
