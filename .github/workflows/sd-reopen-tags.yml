@@ -1,0 +1,31 @@
+name: sd-reopen-index-tags-oneshot
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd-reopen-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add sd-reopen.js tag + bump sd-wa-result ?v=2 in app/index.html (additive, blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./sd-reopen.js' "$F"; then echo "already present - no-op"; exit 0; fi
+          test "$(git hash-object "$F")" = "fa46ab6ccdcc806a56f797e2f7d7129fbff745b4"
+          test -f app/sd-reopen.js
+          test "$(git hash-object app/sd-reopen.js)" = "$(git hash-object build/app/sd-reopen.js)"
+          A='<script src="./sd-wa-result.js?v=1"></script>'
+          test "$(grep -cxF "$A" "$F")" = "1"
+          awk -v a="$A" '{ if ($0==a) { print "<script src=\"./sd-wa-result.js?v=2\"></script>"; print "<script src=\"./sd-reopen.js?v=1\"></script>" } else print }' "$F" > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "e7020cb1158e11bb09c21fc5e02c035d84beb801"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "service desk reopen: sd-reopen.js tag + sd-wa-result ?v=2 in app/index.html"
+          git push
