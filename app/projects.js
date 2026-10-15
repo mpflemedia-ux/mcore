@@ -44,6 +44,7 @@
     return state.customers.find(function (c) { return String(c.id) === String(id); }) || null;
   }
   function currentProject() {
+    if (state.projectId === '__all__') return { id: '__all__', name: t('All projects', 'Semua projek'), kind: 'internal', color: 'var(--primary)' };
     return state.projects.find(function (p) { return String(p.id) === String(state.projectId); }) || null;
   }
   function visibleTasks() {
@@ -104,14 +105,23 @@
     state.allProjects = proj.data || [];
     state.projects = state.allProjects.filter(function (p) { return state.showArchived ? p.archived_at : !p.archived_at; });
     if (!state.projectId && state.projects[0]) state.projectId = state.projects[0].id;
-    if (state.projectId && !state.projects.some(function (p) { return String(p.id) === String(state.projectId); })) state.projectId = state.projects[0] ? state.projects[0].id : null;
-    var tasks = state.projectId
-      ? await sb.from('project_tasks').select('id,project_id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,sort_order,created_at,is_important,is_urgent').eq('tenant_id', tenant).eq('project_id', state.projectId).is('deleted_at', null).order('sort_order')
-      : { data: [] };
+    if (state.projectId && state.projectId !== '__all__' && !state.projects.some(function (p) { return String(p.id) === String(state.projectId); })) state.projectId = state.projects[0] ? state.projects[0].id : null;
+    var taskSel = 'id,project_id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,sort_order,created_at,is_important,is_urgent';
+    var tasks;
+    if (state.projectId === '__all__') {
+      var pids = state.projects.map(function (p) { return p.id; });
+      tasks = pids.length
+        ? await sb.from('project_tasks').select(taskSel).eq('tenant_id', tenant).in('project_id', pids).is('deleted_at', null).order('sort_order').limit(2000)
+        : { data: [] };
+    } else if (state.projectId) {
+      tasks = await sb.from('project_tasks').select(taskSel).eq('tenant_id', tenant).eq('project_id', state.projectId).is('deleted_at', null).order('sort_order');
+    } else {
+      tasks = { data: [] };
+    }
     if (tasks.error) throw tasks.error;
     state.tasks = tasks.data || [];
     try { await loadTags(); } catch (e) {}
-    try { await syncPlanner(state.tasks); } catch (e) {}
+    if (state.projectId !== '__all__') { try { await syncPlanner(state.tasks); } catch (e) {} }
     var em = await sb.from('employees').select('id,name,nickname').eq('tenant_id', tenant).is('deleted_at', null).order('name');
     state.employees = em.error ? [] : (em.data || []);
     var cu = await sb.from('customers').select('id,name').eq('tenant_id', tenant).is('deleted_at', null).order('name').limit(500);
@@ -302,6 +312,7 @@
     var body = tab === 'list' ? listHtml(list) : tab === 'timeline' ? timelineHtml(list) : tab === 'files' ? filesHtml() : tab === 'overview' ? overviewHtml(proj, st) : tab === 'matrix' ? matrixHtml(list) : boardHtml(list);
     return '<style>' + css() + '</style><div class="pj-wrap">' +
       '<aside class="pj-side"><div class="pj-side-h">' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-arch-view">' + esc(state.showArchived ? t('Active', 'Aktif') : t('Archive', 'Arkib')) + '</button><button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
+      (state.showArchived ? '' : '<div class="pj-proj pja-all' + (state.projectId === '__all__' ? ' on' : '') + '"><button type="button" data-proj="__all__"><i style="background:var(--primary)"></i><span>' + esc(t('All projects', 'Semua projek')) + '</span></button><small>' + esc(t('Board', 'Papan')) + '</small></div>') +
       state.projects.map(function (p, i) {
         var on = String(p.id) === String(state.projectId) ? ' on' : '';
         var arch = state.showArchived
@@ -471,7 +482,7 @@
 
   async function loadFiles() {
     state.files = [];
-    if (!state.projectId) return;
+    if (!state.projectId || state.projectId === '__all__') return;
     var listed = await sb.storage.from('company-assets').list(fileFolder(), { limit: 100, sortBy: { column: 'name', order: 'asc' } });
     if (listed.error) throw listed.error;
     state.files = (listed.data || []).filter(function (f) { return f && f.name && f.name !== '.emptyFolderPlaceholder'; }).map(function (f) {
@@ -565,10 +576,23 @@
     refresh();
   }
   async function addTask(col) {
-    if (!state.projectId) return;
+    var pid = state.projectId;
+    if (!pid) return;
+    if (pid === '__all__') {
+      pid = window._pjaAddPid || '';
+      window._pjaAddPid = '';
+      if (!pid) {
+        if (!state.projects.length) { showToast(t('Create a project first', 'Buat projek dulu'), 'error'); return; }
+        var pick = window.prompt(t('Project name (exact)', 'Nama projek (tepat)'));
+        if (!pick) return;
+        var hit = state.projects.find(function (p) { return String(p.name).toLowerCase() === String(pick).trim().toLowerCase(); });
+        if (!hit) { showToast(t('Project not found', 'Projek tidak dijumpai'), 'error'); return; }
+        pid = hit.id;
+      }
+    }
     var title = window.prompt(t('Task title', 'Tajuk task'));
     if (!title) return;
-    var ins = await sb.from('project_tasks').insert({ tenant_id: tid(), project_id: state.projectId, title: title.trim(), column_key: col || 'backlog', tag: 'Planning', progress: 0, sort_order: state.tasks.length + 1 }).select('id');
+    var ins = await sb.from('project_tasks').insert({ tenant_id: tid(), project_id: pid, title: title.trim(), column_key: col || 'backlog', tag: 'Planning', progress: 0, sort_order: state.tasks.length + 1 }).select('id');
     if (ins.error) { showToast(ins.error.message, 'error'); return; }
     refresh();
   }
@@ -596,7 +620,7 @@
     var ntOld = (state.tasks.filter(function (x) { return String(x.id) === String(id); })[0] || {}).assignee_employee_id;
     var up = await sb.from('project_tasks').update(patch).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
-    if (window.NT && NT.taskSaved) NT.taskSaved(id, ntOld, patch, state.projectId);
+    if (window.NT && NT.taskSaved) NT.taskSaved(id, ntOld, patch, (task && task.project_id) || state.projectId);
     showToast(t('Saved', 'Disimpan'), 'success');
     state.focus = '';
     refresh();
