@@ -59,6 +59,7 @@
     };
     if (ok) ok.onclick = function () { send('confirm', ok); };
     if (rv) rv.onclick = function () { send('revise', rv); };
+    if (window.SDR_X) window.SDR_X({ root: root, d: d, lang: lang, msg: msg, call: call, show: show });
   }
   function boot() {
     mount();
