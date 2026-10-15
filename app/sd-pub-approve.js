@@ -61,7 +61,7 @@
           .then(function () {
             if (!r.file_path) return;
             return sb.storage.from('service-public').download(r.file_path).then(function (d) { if (d.error || !d.data) return; return SD.upload(nr, new File([d.data], r.file_name || 'lampiran', { type: d.data.type }), false); }).catch(function () {});
-          }).then(function () { SD.bellFor(nr, SD.L('New service request ', 'Permohonan servis baharu ') + nr.ref_no, nr.title); return done(nr.id); });
+          }).then(function () { (SD.bellNew || SD.bellFor)(nr, SD.L('New service request ', 'Permohonan servis baharu ') + nr.ref_no, nr.title); return done(nr.id); });
       });
     p.then(function () { SD.toast(ok ? SD.L('Approved and sent to M-Core', 'Diluluskan dan dihantar kepada M-Core') : SD.L('Rejected', 'Ditolak'), 'success'); SD.go('servis_saya', {}); })
       .catch(function (e) { btn.disabled = false; SD.toast(SD.err(e), 'error'); });

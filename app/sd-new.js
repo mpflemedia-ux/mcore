@@ -37,7 +37,7 @@
       .then(function (r) {
         return SD.event(r, 'status', { to_status: 'submitted', body: SD.L('Request submitted', 'Permohonan dihantar') }).catch(function () {})
           .then(function () { return N.file ? SD.upload(r, N.file, false).catch(function (e) { SD.toast(SD.err(e), 'error'); }) : null; })
-          .then(function () { SD.bellFor(r, SD.L('New service request ', 'Permohonan servis baharu ') + r.ref_no, r.title); SD.toast(SD.L('Submitted ', 'Dihantar ') + r.ref_no, 'success'); SD.go('servis_saya', { id: r.id }); });
+          .then(function () { (SD.bellNew || SD.bellFor)(r, SD.L('New service request ', 'Permohonan servis baharu ') + r.ref_no, r.title); SD.toast(SD.L('Submitted ', 'Dihantar ') + r.ref_no, 'success'); SD.go('servis_saya', { id: r.id }); });
       }).catch(function (e) { btn.disabled = false; SD.toast(SD.err(e), 'error'); });
   }
   SD.newReq = function () { S = SD.CL; N = { step: 1, svc: null, title: '', desc: '', pri: 'normal', file: null }; paintNew(); };
