@@ -14,7 +14,7 @@
   W.uid = function () { return (window.APP && APP.user && APP.user.id) || (window.NT && NT.uid && NT.uid()) || null; };
   W.inSupport = function () { try { return !!(window.PAE && PAE.inSupport && PAE.inSupport()); } catch (e) { return false; } };
   W.allowed = function (mod) {
-    if (W.inSupport() || !W.tid() || !window.sb) return false;
+    if (!W.tid() || !window.sb) return false; /* PA has full access inside tenants (Mike, 16 Oct) */
     try { return typeof canAccess !== 'function' || !!canAccess(mod); } catch (e) { return false; }
   };
   W.ready = function () {

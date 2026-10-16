@@ -61,5 +61,5 @@
       return Promise.resolve(sb.rpc('has_active_toyyibpay_config_for_invoice', { p_token: L.token })).then(function (r) { if (r && r.data === true) PAY[L.url] = 1; return L; }, function () { return L; });
     });
   };
-  X.allowedOwner = function () { var r = String((window.APP && APP.user && APP.user.role) || '').toLowerCase(); return W.allowed('sales') && (r === 'owner' || r === 'admin'); };
+  X.allowedOwner = function () { var r = String((window.APP && APP.user && APP.user.role) || '').toLowerCase(); return W.allowed('sales') && (r === 'owner' || r === 'admin' || r === 'platform_admin'); };
 })();
