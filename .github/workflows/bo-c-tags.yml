@@ -1,0 +1,33 @@
+name: bo-c-tags-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bo-c-tags.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'bo-qr.js?v=' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "42b6569b63f9fd52a99c21ec27f26214031c6305"
+          for f in app/bo-cust.js build/app/bo-cust.js; do test "$(git hash-object $f)" = "c938065fa12f8a02852a91c1ed8c95715d4af14a"; done
+          for f in app/bo-weekly.js build/app/bo-weekly.js; do test "$(git hash-object $f)" = "5454428f6922c4a59ea7f605897b43d15bc6b0d4"; done
+          for f in app/bo-qr.js build/app/bo-qr.js; do test "$(git hash-object $f)" = "e045b3153fcc55b51bc2370d850a1c5645364164"; done
+          python3 - <<'PY'
+          s=open('app/index.html').read()
+          a='<script src="./bo-follow.js?v=1"></script>\n'
+          assert s.count(a)==1
+          s=s.replace(a,a+'<script src="./bo-cust.js?v=1"></script>\n<script src="./bo-weekly.js?v=1"></script>\n<script src="./bo-qr.js?v=1"></script>\n')
+          open('app/index.html','w').write(s)
+          PY
+          test "$(git hash-object "$F")" = "a25ac3827f6253523538ac123149ec34c42d4a87"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "feat(bo): Phase C script tags (bo-cust, bo-weekly, bo-qr v1)"
+          git push
