@@ -85,7 +85,10 @@
     try { if (typeof buildSidebar === 'function') buildSidebar(); } catch (e) {}
     try { if (typeof updateUserUI === 'function') updateUserUI(); } catch (e) {}
   }
-  async function enter(tid, quiet) {
+  function cur() { var q = {}; try { q = JSON.parse(localStorage.getItem('nexerp_last_params') || '{}') || {}; } catch (e) {} if (q.id) q = {};
+    return { p: APP.currentPage || 'dashboard', q: q, od: !!document.getElementById('wad-od'), op: !!document.getElementById('bo-opl') }; }
+  function back(k) { openPage(k.p, k.q); setTimeout(function () { try { if (k.od && WAD.openOverdue) WAD.openOverdue(); if (k.op && BO.openedList) BO.openedList(); } catch (e) {} }, 900); }
+  async function enter(tid, quiet, keep) {
     if (!isPa() || !tid || busy) return; busy = true;
     try {
       var rpc = await sb.rpc('enter_support_tenant', { p_tenant_id: tid });
@@ -96,10 +99,10 @@
       await closeWin('switch'); await openWin(row.id);
       recent(row); apply(row); draw();
       if (!quiet) toast(L('Entered: ', 'Masuk: ') + (row.name || ''));
-      if (typeof openPage === 'function') openPage('dashboard');
+      if (typeof openPage === 'function') { if (keep && keep.p && keep.p !== 'admin') back(keep); else openPage('dashboard'); }
     } finally { busy = false; }
   }
-  async function exit(reason) {
+  async function exit(reason, stay) {
     if (!isPa()) return;
     var s = sess() || {};
     await closeWin(reason || 'exit');
@@ -111,14 +114,14 @@
     draw();
     if (row && row.id) apply(row); else try { if (typeof buildSidebar === 'function') buildSidebar(); } catch (e) {}
     toast(reason === 'idle' ? L('Support session ended (60 min idle)', 'Sesi sokongan tamat (60 min tiada aktiviti)') : L('Left support mode', 'Keluar mod sokongan'));
-    if (typeof openPage === 'function') openPage('admin', { view: 'clients' });
+    if (typeof openPage === 'function' && !stay) openPage('admin', { view: 'clients' });
   }
   async function sw(tid) {
     var s = sess() || {};
     audit('support_switch_tenant', tid, null);
-    await exit('switch'); await enter(tid);
+    var k = cur(); await exit('switch', 1); await enter(tid, false, k);
   }
-  var en = function (tid) { return enter(tid); }; en._sd = 1; en._pa = 1;
+  var en = function (tid) { return enter(tid, false, inS() ? cur() : null); }; en._sd = 1; en._pa = 1;
   var ex = function () { return exit('exit'); }; ex._sd = 1; ex._pa = 1;
   function install() { if (!window._enterSupportTenant || !window._enterSupportTenant._pa) window._enterSupportTenant = en;
     if (!window._exitSupportTenant || !window._exitSupportTenant._pa) window._exitSupportTenant = ex; }
