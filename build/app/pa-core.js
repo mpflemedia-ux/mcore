@@ -34,7 +34,8 @@
       '#pa-banner .pa-t{font-variant-numeric:tabular-nums;font-weight:600}#pa-banner .pa-t.warn{text-decoration:underline;font-weight:800}' +
       '#pa-banner .pa-x{margin-left:auto;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg);border:0;border-radius:6px;padding:4px 10px;font-weight:700;font-size:12px;cursor:pointer;min-height:28px}' +
       '#pa-banner .pa-vo{padding:1px 6px;border-radius:4px;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg);font-weight:700}' +
-      '@media(max-width:480px){#pa-banner .pa-n{max-width:60vw}#pa-banner select{max-width:120px}}';
+      '@media(max-width:480px){#pa-banner .pa-n{max-width:60vw}#pa-banner select{max-width:120px}}' +
+      '@media print{#pa-banner,#support-tenant-banner{display:none!important}}';
     document.head.appendChild(s);
   }
   function fmt(ms) { ms = Math.max(0, ms); var m = Math.floor(ms / 60000), s = Math.floor(ms % 60000 / 1000); return m + ':' + (s < 10 ? '0' : '') + s; }

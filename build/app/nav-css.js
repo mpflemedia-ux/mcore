@@ -64,7 +64,7 @@
     '.nv-lr .nv-mv{background:none;border:1px solid var(--border);border-radius:6px;width:30px;height:30px;color:var(--text-2);cursor:pointer}',
     '.nv-lr input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary)}',
     /* print / Save as PDF: window.print() prints the live app page, so fixed screen chrome must not print */
-    '@media print{#nv-bb,body.nv-bb #nv-bb,#ai-chat-fab,#dash-home-fab,#scroll-top-btn,#ai-chat-panel,#toast-container,.nv-sheet-bg,#pa-banner{display:none!important}' +
+    '@media print{#nv-bb,body.nv-bb #nv-bb,#ai-chat-fab,#dash-home-fab,#scroll-top-btn,#ai-chat-panel,#toast-container,.nv-sheet-bg,#pa-banner,#support-tenant-banner,.support-banner{display:none!important}' +
       'body.nv-bb #main{padding-bottom:0!important}.cob-root,.cob-root:has(.cob-aud),body.nv-bb .cob-root:has(.cob-aud),.nt-setp,body.nv-bb .nt-setp{padding-bottom:0!important}}'
   ].join('\n');
   var s = document.createElement('style'); s.id = 'nv-css'; s.textContent = c; document.head.appendChild(s);
