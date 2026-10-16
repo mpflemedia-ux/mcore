@@ -1,6 +1,8 @@
 /* M-Core Service Desk - request detail (client + admin): header, deliverables, timeline, comments, internal notes, actions. */
 (function () {
   var SD = window.SD; if (!SD || SD._detail) return; SD._detail = 1;
+  /* escape, then link http(s) URLs (new tab, noopener); trailing punctuation stays text */
+  SD.lnk = function (v) { return SD.esc(v).replace(/https?:\/\/[^\s<]+/g, function (u) { var t = (u.match(/[.,!?)\]]+$/) || [''])[0]; u = u.slice(0, u.length - t.length); return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline">' + u + '</a>' + t; }); };
   var EVI = { status: 'ti-arrows-exchange', comment: 'ti-message', attachment: 'ti-paperclip', support_access: 'ti-shield-lock', internal_note: 'ti-lock', wa_notified: 'ti-brand-whatsapp' };
   var PRI = { low: ['Low', 'Rendah'], normal: ['Normal', 'biasa'], high: ['High', 'tinggi'], urgent: ['Urgent', 'segera'] };
   function load(id) {
@@ -43,9 +45,9 @@
     var open = SD.OPEN.indexOf(r.status) >= 0;
     m.innerHTML = '<div class="cob-root" style="max-width:860px">' +
       '<button class="btn btn-sm btn-outline" onclick="' + back + '" style="margin-bottom:12px"><i class="ti ti-arrow-left"></i> ' + SD.L('Back', 'Kembali') + '</button>' +
-      '<div class="cob-card" style="padding:16px;margin-bottom:12px"><div class="row" style="gap:6px;flex-wrap:wrap">' + SD.st(r.status) + SD.slaChip(r) + '<span class="sd-ref" style="margin-left:auto">' + SD.esc(r.ref_no) + '</span></div>' +
-      '<div style="font-weight:700;font-size:18px;margin-top:8px">' + SD.esc(r.title) + '</div><div class="cob-sm">' + SD.esc(SD.svcName(r.service_code)) + ' · ' + SD.L('Priority ', 'Keutamaan ') + SD.L.apply(null, PRI[r.priority] || PRI.normal) + (tname ? ' · ' + SD.esc(tname) : '') + '</div>' +
-      (r.description ? '<p class="cob-sm" style="white-space:pre-wrap;margin:10px 0 0">' + SD.esc(r.description) + '</p>' : '') +
+      '<div class="cob-card" style="padding:16px;margin-bottom:12px;min-width:0"><div class="row" style="gap:6px;flex-wrap:wrap">' + SD.st(r.status) + SD.slaChip(r) + '<span class="sd-ref" style="margin-left:auto">' + SD.esc(r.ref_no) + '</span></div>' +
+      '<div style="font-weight:700;font-size:18px;margin-top:8px;overflow-wrap:anywhere">' + SD.esc(r.title) + '</div><div class="cob-sm">' + SD.esc(SD.svcName(r.service_code)) + ' · ' + SD.L('Priority ', 'Keutamaan ') + SD.L.apply(null, PRI[r.priority] || PRI.normal) + (tname ? ' · ' + SD.esc(tname) : '') + '</div>' +
+      (r.description ? '<p class="cob-sm" style="white-space:pre-wrap;margin:10px 0 0;overflow-wrap:anywhere;word-break:break-word;min-width:0">' + SD.lnk(r.description) + '</p>' : '') +
       '<div class="row" style="justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:13px"><span class="cob-sm">' + SD.L('SLA due', 'Tarikh akhir SLA') + '</span><b>' + (due ? SD.dt(due) : '—') + '</b></div>' +
       (admin ? '<div class="row cob-xs" style="margin-top:6px"><span class="grow">' + SD.L('Assigned to', 'Ditugaskan kepada') + '</span><b>' + SD.esc(r.assigned_to ? (names[r.assigned_to] || '—') : SD.L('Unassigned', 'Belum ditugaskan')) + '</b></div>' : '') + '</div>' +
       '<div class="cob-card" style="padding:16px;margin-bottom:12px"><b style="font-size:15px">' + SD.L('Deliverables', 'Hasil kerja') + '</b>' + (paid ? '' : '<div class="cob-banner warn" style="margin-top:8px"><i class="ti ti-lock"></i><div>' + SD.L('Downloads are released after full payment.', 'Muat turun dibuka selepas bayaran penuh.') + '</div></div>') +
@@ -55,7 +57,7 @@
         '<input type="file" id="sd-cf" class="form-input" style="flex:1;min-width:180px">' + (admin ? '<label class="cob-xs row" style="gap:6px"><input type="checkbox" id="sd-int"> ' + SD.L('Internal note (staff only)', 'Nota dalaman (staf sahaja)') + '</label><label class="cob-xs row" style="gap:6px"><input type="checkbox" id="sd-dv" checked> ' + SD.L('File is a deliverable', 'Fail ialah hasil kerja') + '</label>' : '') +
         '<button class="btn btn-primary" id="sd-send"><i class="ti ti-send"></i> ' + SD.L('Send', 'Hantar') + '</button></div></div>' : '') +
       '<div class="cob-card" style="padding:16px;margin-bottom:12px"><b style="font-size:15px">' + SD.L('Timeline', 'Garis masa') + '</b><div class="sd-tl" style="margin-top:8px">' + ev.map(function (e) {
-        return '<div class="sd-ev' + (e.type === 'internal_note' ? ' int' : '') + '"><i class="ti ' + (e.type === 'status' ? (SD.ST[e.to_status] || [0, 'ti-point'])[1] : EVI[e.type] || 'ti-point') + '"></i><div class="grow" style="min-width:0">' + evText(e) + (e.body ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word">' + SD.esc(e.body) + '</div>' : '') + '<div class="cob-xs">' + SD.dt(e.created_at) + (who(e.actor_id) ? ' · ' + SD.esc(who(e.actor_id)) : '') + '</div></div></div>';
+        return '<div class="sd-ev' + (e.type === 'internal_note' ? ' int' : '') + '"><i class="ti ' + (e.type === 'status' ? (SD.ST[e.to_status] || [0, 'ti-point'])[1] : EVI[e.type] || 'ti-point') + '"></i><div class="grow" style="min-width:0">' + evText(e) + (e.body ? '<div style="font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;min-width:0">' + SD.lnk(e.body) + '</div>' : '') + '<div class="cob-xs">' + SD.dt(e.created_at) + (who(e.actor_id) ? ' · ' + SD.esc(who(e.actor_id)) : '') + '</div></div></div>';
       }).join('') + '</div></div>' +
       (r.status === 'delivered' && !admin ? '<div class="cob-xs" style="text-align:center;margin-bottom:10px">' + SD.L('Closed automatically 7 days after delivery if there is no feedback.', 'Ditutup automatik 7 hari selepas dihantar jika tiada maklum balas.') + '</div>' : '') +
       (acts ? '<div class="sd-acts" style="margin-bottom:24px">' + acts + '</div>' : '') + '</div>';
