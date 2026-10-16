@@ -47,7 +47,8 @@
     return tenants;
   }
   function draw() {
-    var s = sess(), el = document.getElementById('pa-banner');
+    var s = sess(), el = document.getElementById('pa-banner'), lg = document.getElementById('support-tenant-banner');
+    if (lg) lg.remove();
     if (!inS()) { if (el) el.remove(); document.body.classList.remove('pa-in'); return; }
     css(); document.body.classList.add('pa-in');
     if (!el) { el = document.createElement('div'); el.id = 'pa-banner'; el.setAttribute('role', 'status');

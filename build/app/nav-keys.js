@@ -43,7 +43,7 @@
   /* PA tenant chip — reuses the existing support-tenant Enter/Exit (RPC enter_support_tenant logs the switch) */
   NV.chipHtml = function () {
     if (!NV.isPA() || typeof window._enterSupportTenant !== 'function') return '';
-    var on = !!document.getElementById('support-tenant-banner'), nm = (typeof APP !== 'undefined' && APP.tenant && APP.tenant.name) || '-';
+    var on = !!((window.PAE && PAE.inSupport()) || document.getElementById('support-tenant-banner')), nm = (typeof APP !== 'undefined' && APP.tenant && APP.tenant.name) || '-';
     return '<div class="nv-chipw"><button type="button" class="nv-chip' + (on ? ' on' : '') + '" aria-haspopup="listbox" aria-expanded="false"><i class="ti ti-switch-horizontal"></i><span><small>' +
       esc(on ? L('Support mode', 'Mod sokongan') : L('Tenant', 'Tenant')) + '</small>' + esc(nm) + '</span><i class="ti ti-chevron-down"></i></button></div>';
   };
@@ -54,7 +54,7 @@
       e.stopPropagation(); var w = b.parentNode, p = w.querySelector('.nv-pop');
       if (p) { p.remove(); b.setAttribute('aria-expanded', 'false'); return; }
       p = document.createElement('div'); p.className = 'nv-pop';
-      var on = !!document.getElementById('support-tenant-banner');
+      var on = !!((window.PAE && PAE.inSupport()) || document.getElementById('support-tenant-banner'));
       p.innerHTML = '<input type="search" placeholder="' + esc(L('Find tenant', 'Cari tenant')) + '" aria-label="' + esc(L('Find tenant', 'Cari tenant')) + '">' +
         (on ? '<button type="button" data-exit="1"><i class="ti ti-logout"></i> ' + esc(L('Exit support mode', 'Keluar mod sokongan')) + '</button>' : '') +
         '<div class="nv-tl" role="listbox"><div style="padding:10px;font-size:12px;color:var(--text-2)">' + esc(L('Loading…', 'Memuat…')) + '</div></div>';
