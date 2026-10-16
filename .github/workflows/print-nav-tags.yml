@@ -1,0 +1,26 @@
+name: print-nav-tags-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/print-nav-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump nav-css.js to v=3 (blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./nav-css.js?v=3"' "$F"; then echo already; exit 0; fi
+          test "$(git hash-object "$F")" = "487fc937309a66b5fd476114eaaed6a719e255e2"
+          for d in app build/app; do test "$(git hash-object $d/nav-css.js)" = "e753801163dd95e6a4c15795bf4fc7cef8e74789"; done
+          sed -e 's#src="./nav-css.js?v=2"#src="./nav-css.js?v=3"#' "$F" > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "8e6762a8714db9037c436d5e43b34cd0957c3564"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "fix: bump nav-css.js to v=3 (print hides bottom nav)"
+          git push
