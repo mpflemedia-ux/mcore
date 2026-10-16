@@ -186,7 +186,8 @@
   hook(); document.addEventListener('DOMContentLoaded', hook);
   var rp = window.renderProjects;
   if (typeof rp === 'function' && !rp._pja) {
-    var w = function () { A.load(); return rp.apply(this, arguments); };
+    /* opening the module without a target project/task lands on All projects (Mike, 17 Oct); deep links pass params.id */
+    var w = function (pr) { A.load(); var a = [].slice.call(arguments); if (!(pr && pr.id) && !window._pjOpenTask) a[0] = Object.assign({}, pr || {}, { id: A.ALL }); return rp.apply(this, a); };
     w._pja = 1; w._pjm2 = rp._pjm2; window.renderProjects = w;
   }
 })();
