@@ -70,7 +70,7 @@
   }
 
   function openSheet(st) {
-    var old = document.getElementById('pja-sheet'); if (old) old.remove();
+    A.closeSheet(document.getElementById('pja-sheet'));
     A.load();
     var f = A.f, tags = [];
     (st.tasks || []).forEach(function (k) { if (k.tag && tags.indexOf(k.tag) < 0) tags.push(k.tag); });
@@ -79,7 +79,7 @@
       return '<label class="' + on.trim() + '"><input type="checkbox" data-k="' + A.esc(key) + '"' + (on ? ' checked' : '') + '> ' + A.esc(label) + '</label>';
     }
     var el = document.createElement('div'); el.id = 'pja-sheet'; el.className = 'pja-sheet';
-    el.innerHTML = '<div class="pja-panel" role="dialog" aria-modal="true"><h3>' + A.esc(A.L('Filter & Sort', 'Tapis & Susun')) + '</h3>' +
+    el.innerHTML = '<div class="pja-panel" role="dialog" aria-modal="true"><div class="pja-panel-body"><h3>' + A.esc(A.L('Filter & Sort', 'Tapis & Susun')) + '</h3>' +
       '<div class="pja-sec"><b>' + A.esc(A.L('Assignee', 'Assignee')) + '</b><div class="pja-opts" data-g="assignees">' +
       (st.employees || []).map(function (e) { return opt(f.assignees, e.id, e.nickname || e.name); }).join('') + '</div></div>' +
       (A.isAll(st) ? '<div class="pja-sec"><b>' + A.esc(A.L('Project', 'Projek')) + '</b><div class="pja-opts" data-g="projects">' +
@@ -91,11 +91,15 @@
       '<div class="pja-sec"><b>' + A.esc(A.L('Due', 'Due')) + '</b><select data-due>' + DUES.map(function (d) { return '<option value="' + d[0] + '"' + (f.due === d[0] ? ' selected' : '') + '>' + A.esc(A.L(d[1], d[2])) + '</option>'; }).join('') + '</select></div>' +
       '<div class="pja-sec"><b>' + A.esc(A.L('Sort', 'Susun')) + '</b><select data-sort>' + SORTS.map(function (d) { return '<option value="' + d[0] + '"' + (f.sort === d[0] ? ' selected' : '') + '>' + A.esc(A.L(d[1], d[2])) + '</option>'; }).join('') + '</select></div>' +
       '<div class="pja-sec"><b>' + A.esc(A.L('Board columns', 'Lajur papan')) + '</b><select data-grp>' + GROUPS.map(function (d) { return '<option value="' + d[0] + '"' + (A.groupBy === d[0] ? ' selected' : '') + '>' + A.esc(A.L(d[1], d[2])) + '</option>'; }).join('') + '</select></div>' +
-      '<div class="pja-sec"><b>' + A.esc(A.L('Saved filters', 'Tapisan tersimpan')) + '</b><div class="pja-saved">' +
-      (A.saved.length ? A.saved.map(function (s, i) { return '<button type="button" class="btn btn-sm btn-outline" data-load="' + i + '">' + A.esc(s.name) + '</button>'; }).join('') : '<span class="cob-xs">' + A.esc(A.L('None yet', 'Belum ada')) + '</span>') +
-      '</div><div class="pja-actions" style="margin-top:8px"><input type="text" id="pja-save-name" placeholder="' + A.esc(A.L('Name this filter', 'Nama tapisan ini')) + '"><button type="button" class="btn btn-sm btn-outline" data-save>' + A.esc(A.L('Save', 'Simpan')) + '</button></div></div>' +
-      '<div class="pja-actions"><button type="button" class="btn btn-sm btn-outline" data-export>' + A.esc(A.L('Export CSV', 'Export CSV')) + '</button><button type="button" class="btn btn-sm btn-outline" data-x>' + A.esc(A.L('Cancel', 'Batal')) + '</button><button type="button" class="btn btn-sm btn-primary" data-ok>' + A.esc(A.L('Apply', 'Guna')) + '</button></div></div>';
+      '<div class="pja-sec"><b>' + A.esc(A.L('Saved filters', 'Tapisan tersimpan')) + '</b><div class="pja-saved"></div>' +
+      '<div class="pja-save-row"><input type="text" id="pja-save-name" placeholder="' + A.esc(A.L('Name this filter', 'Nama tapisan ini')) + '" autocomplete="off">' +
+      '<button type="button" class="btn btn-sm btn-primary" data-save>' + A.esc(A.L('Save', 'Simpan')) + '</button></div></div></div>' +
+      '<div class="pja-panel-foot"><div class="pja-actions">' +
+      '<button type="button" class="btn btn-sm btn-outline" data-export>' + A.esc(A.L('Export CSV', 'Export CSV')) + '</button>' +
+      '<button type="button" class="btn btn-sm btn-outline" data-x>' + A.esc(A.L('Cancel', 'Batal')) + '</button>' +
+      '<button type="button" class="btn btn-sm btn-primary" data-ok>' + A.esc(A.L('Apply', 'Guna')) + '</button></div></div></div>';
     document.body.appendChild(el);
+    document.body.classList.add('pja-sheet-open');
     el.querySelectorAll('.pja-opts').forEach(function (box) {
       box.querySelectorAll('label').forEach(function (lab) {
         lab.onclick = function (e) {
@@ -107,30 +111,28 @@
         };
       });
     });
-    el.querySelector('[data-x]').onclick = function () { el.remove(); };
-    el.onclick = function (e) { if (e.target === el) el.remove(); };
-    el.querySelector('[data-ok]').onclick = function () {
-      f.due = el.querySelector('[data-due]').value;
-      f.sort = el.querySelector('[data-sort]').value;
-      A.groupBy = el.querySelector('[data-grp]').value;
-      A.f = f; A.persist(); el.remove(); A.rerun(st);
-    };
+    el.querySelector('[data-x]').onclick = function () { A.closeSheet(el); };
+    el.onclick = function (e) { if (e.target === el) A.closeSheet(el); };
+    el.querySelector('[data-ok]').onclick = function () { A.syncSheet(el, f); A.f = f; A.persist(); A.closeSheet(el); A.rerun(st); };
     el.querySelector('[data-save]').onclick = function () {
       var name = String((document.getElementById('pja-save-name') || {}).value || '').trim();
-      if (!name) return;
+      if (!name) {
+        if (typeof showToast === 'function') showToast(A.L('Enter a name for this filter', 'Isi nama untuk tapisan ini'), 'error');
+        var inp = document.getElementById('pja-save-name'); if (inp) inp.focus();
+        return;
+      }
+      A.syncSheet(el, f);
       A.saved = A.saved.filter(function (s) { return s.name !== name; });
       A.saved.unshift({ name: name, f: JSON.parse(JSON.stringify(f)), groupBy: A.groupBy });
       A.saved = A.saved.slice(0, 8); A.persist();
       if (typeof showToast === 'function') showToast(A.L('Filter saved', 'Tapisan disimpan'), 'success');
-      el.remove(); openSheet(st);
+      var inp = document.getElementById('pja-save-name'); if (inp) inp.value = '';
+      A.paintSaved(el, st);
     };
-    el.querySelectorAll('[data-load]').forEach(function (b) {
-      b.onclick = function () {
-        var s = A.saved[Number(b.getAttribute('data-load'))]; if (!s) return;
-        A.f = Object.assign(A.def(), s.f || {}); A.groupBy = s.groupBy || ''; A.persist(); el.remove(); A.rerun(st);
-      };
-    });
-    el.querySelector('[data-export]').onclick = function () { exportCsv(st); };
+    A.paintSaved(el, st);
+    el.querySelector('[data-export]').onclick = function () { A.syncSheet(el, f); A.f = f; exportCsv(st); };
+    var nameInp = document.getElementById('pja-save-name');
+    if (nameInp) nameInp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); el.querySelector('[data-save]').click(); } });
   }
 
   function exportCsv(st) {
