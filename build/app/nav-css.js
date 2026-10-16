@@ -62,7 +62,10 @@
     '.nv-lr{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--border);background:var(--bg-card);font-size:13px}',
     '.nv-lr.drag{opacity:.5}.nv-lr .ti-grip-vertical{cursor:grab;color:var(--text-3)}.nv-lr span{flex:1;min-width:0}',
     '.nv-lr .nv-mv{background:none;border:1px solid var(--border);border-radius:6px;width:30px;height:30px;color:var(--text-2);cursor:pointer}',
-    '.nv-lr input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary)}'
+    '.nv-lr input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary)}',
+    /* print / Save as PDF: window.print() prints the live app page, so fixed screen chrome must not print */
+    '@media print{#nv-bb,body.nv-bb #nv-bb,#ai-chat-fab,#dash-home-fab,#scroll-top-btn,#ai-chat-panel,#toast-container,.nv-sheet-bg,#pa-banner{display:none!important}' +
+      'body.nv-bb #main{padding-bottom:0!important}.cob-root,.cob-root:has(.cob-aud),body.nv-bb .cob-root:has(.cob-aud),.nt-setp,body.nv-bb .nt-setp{padding-bottom:0!important}}'
   ].join('\n');
   var s = document.createElement('style'); s.id = 'nv-css'; s.textContent = c; document.head.appendChild(s);
 })();
