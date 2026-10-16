@@ -127,6 +127,44 @@
     var b = document.querySelector('#main [data-tab="' + ((st && st.tab) || 'board') + '"]');
     if (b) b.click();
   };
+
+  A.closeSheet = function (el) {
+    document.body.classList.remove('pja-sheet-open');
+    if (el && el.parentNode) el.remove();
+    var x = document.getElementById('pja-sheet'); if (x) x.remove();
+  };
+  A.syncSheet = function (el, f) {
+    if (!el || !f) return;
+    var d = el.querySelector('[data-due]'), s = el.querySelector('[data-sort]'), g = el.querySelector('[data-grp]');
+    if (d) f.due = d.value; if (s) f.sort = s.value; if (g) A.groupBy = g.value;
+  };
+  A.savedHtml = function () {
+    if (!A.saved.length) return '<span class="cob-xs">' + A.esc(A.L('None yet', 'Belum ada')) + '</span>';
+    return A.saved.map(function (s, i) {
+      return '<span class="pja-saved-chip"><button type="button" data-load="' + i + '">' + A.esc(s.name) + '</button>' +
+        '<button type="button" data-del="' + i + '" aria-label="' + A.esc(A.L('Delete', 'Padam')) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>';
+    }).join('');
+  };
+  A.paintSaved = function (el, st) {
+    var box = el && el.querySelector('.pja-saved'); if (!box) return;
+    box.innerHTML = A.savedHtml();
+    box.querySelectorAll('[data-load]').forEach(function (b) {
+      b.onclick = function () {
+        var s = A.saved[Number(b.getAttribute('data-load'))]; if (!s) return;
+        A.f = Object.assign(A.def(), s.f || {}); A.groupBy = s.groupBy || ''; A.persist();
+        A.closeSheet(el); A.rerun(st);
+      };
+    });
+    box.querySelectorAll('[data-del]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        A.saved.splice(Number(b.getAttribute('data-del')), 1); A.persist();
+        if (typeof showToast === 'function') showToast(A.L('Filter deleted', 'Tapisan dipadam'), 'success');
+        A.paintSaved(el, st);
+      };
+    });
+  };
+
   A.decorate = function (st) {
     if (!A.f) A.load();
     if (A.ui) A.ui(st);
