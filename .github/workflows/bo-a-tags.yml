@@ -1,0 +1,38 @@
+name: bo-a-tags-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bo-a-tags.yml']
+permissions:
+  contents: write
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'bo-core.js?v=' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "f132fb3ed2a9204a9395eb14555f6fa6cd6512d5"
+          test "$(git hash-object app/bo-core.js)" = "f2bab803d26ba426e1e42e1ee9703cdb8943b3d6"
+          test "$(git hash-object build/app/bo-core.js)" = "f2bab803d26ba426e1e42e1ee9703cdb8943b3d6"
+          test "$(git hash-object app/bo-dash.js)" = "3bfd81588c1a0189abef04c5ef87af388acf0a7b"
+          test "$(git hash-object build/app/bo-dash.js)" = "3bfd81588c1a0189abef04c5ef87af388acf0a7b"
+          test "$(git hash-object app/bo-sum.js)" = "21570c46d5cfb5aace9c94734f3f750dfdcc8348"
+          test "$(git hash-object build/app/bo-sum.js)" = "21570c46d5cfb5aace9c94734f3f750dfdcc8348"
+          test "$(git hash-object app/bo-tenant.js)" = "0b06799c70824d166e6e0b9029168528c00ac4a6"
+          test "$(git hash-object build/app/bo-tenant.js)" = "0b06799c70824d166e6e0b9029168528c00ac4a6"
+          python3 - <<'PY'
+          s=open('app/index.html').read()
+          a='<script src="./wa-doc2-public.js?v=1"></script>\n'
+          assert s.count(a)==1
+          s=s.replace(a,a+''.join('<script src="./%s.js?v=1"></script>\n'%n for n in ['bo-core','bo-dash','bo-sum','bo-tenant']))
+          open('app/index.html','w').write(s)
+          PY
+          test "$(git hash-object "$F")" = "6089f15aad026b6fadb25871712853bd72cb0255"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git commit -m "feat(bo): Phase A script tags (bo-core/dash/sum/tenant v1)"
+          git push
