@@ -176,7 +176,8 @@
   function hook() {
     var prev = window._pjAfterPaint; if (prev && prev._pja) return;
     var fn = function (st) {
-      var r = typeof prev === 'function' ? prev(st) : null;
+      try { if (A.ui) A.ui(st); } catch (e) { console.warn('pja', e); } /* compact picker at once; do not wait for the multi/WA chain (slow or failed loads left the old project list on mobile) */
+      var r; try { r = typeof prev === 'function' ? prev(st) : null; } catch (e) { console.warn('pja', e); }
       return Promise.resolve(r).then(function () { A.decorate(st); }).catch(function (e) { console.warn('pja', e); });
     };
     fn._pjm = prev && prev._pjm; fn._pjm2 = prev && prev._pjm2; fn._pja = 1;
