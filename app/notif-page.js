@@ -68,7 +68,7 @@
   }
   NT.page = function (params) {
     params = params || {}; prep(params);
-    title(params.view === 'settings' ? L('Notification settings', 'Settings') : params.view === 'digest' ? L('Morning summary', 'Ringkasan pagi') : L('Notifications', 'Pemberitahuan'));
+    title(params.view === 'settings' ? L('Notification settings', 'Tetapan') : params.view === 'digest' ? L('Morning summary', 'Ringkasan pagi') : L('Notifications', 'Pemberitahuan'));
     main().innerHTML = '<div style="padding:40px;text-align:center"><div class="spinner"></div></div>';
     return NT.probe().then(function (on) {
       if (!on) { main().innerHTML = '<div class="nt-page"><div class="nt-empty">' + esc(L('New notifications are not set up yet.', 'Pemberitahuan baharu belum disediakan.')) + '</div></div>'; return; }

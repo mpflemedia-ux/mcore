@@ -32,9 +32,12 @@
   };
   /* "+ Baru" button in the sidebar logo row */
   NV.after = function () {
-    var lg = document.querySelector('#sidebar .sidebar-logo'); if (!lg || lg.querySelector('.nv-new')) return;
-    var b = document.createElement('button'); b.type = 'button'; b.className = 'nv-new';
+    var lg = document.querySelector('#sidebar .sidebar-logo'); if (!lg) return;
+    var b = lg.querySelector('.nv-new'), fresh = !b;
+    if (fresh) { b = document.createElement('button'); b.type = 'button'; b.className = 'nv-new'; }
+    /* label re-resolved on every sidebar render so a language switch (or late profile language) is reflected */
     b.innerHTML = '<i class="ti ti-plus"></i><span>' + esc(L('New', 'Baru')) + '</span>'; b.setAttribute('aria-label', L('Create new', 'Buat baharu'));
+    if (!fresh) return;
     b.onclick = function (e) { e.stopPropagation(); NV.sheet(); };
     lg.style.alignItems = 'center'; lg.appendChild(b);
   };
