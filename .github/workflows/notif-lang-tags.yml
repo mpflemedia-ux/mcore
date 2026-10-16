@@ -1,0 +1,27 @@
+name: notif-lang-tags-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/notif-lang-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump notif-settings.js to v=2 (blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./notif-settings.js?v=2"' "$F"; then echo already; exit 0; fi
+          test "$(git hash-object "$F")" = "0de9982683cbc011830d4dc06f2d60dd2adf82e2"
+          test "$(git hash-object app/notif-settings.js)" = "2b7ce5617abf05f4ff678eaf17f279aed5037786"
+          test "$(git hash-object build/app/notif-settings.js)" = "2b7ce5617abf05f4ff678eaf17f279aed5037786"
+          sed -e 's#src="./notif-settings.js?v=1"#src="./notif-settings.js?v=2"#' "$F" > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "0d4cae0bec7ce8097ec9555b95bd08098d715d40"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "fix: bump notif-settings.js to v=2 (i18n EN/BM)"
+          git push
