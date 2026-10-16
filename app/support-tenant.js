@@ -54,6 +54,7 @@
       try { if (typeof buildSidebar === 'function') buildSidebar(); } catch (e5) {}
       return;
     }
+    if (window._paCore) { if (el) el.remove(); return; } /* pa-core owns the session flag + the single PA bar */
     try { sessionStorage.setItem(KEY, JSON.stringify({ name: name, at: Date.now() })); } catch (e2) {}
     if (!el) {
       el = document.createElement('div');
