@@ -1,0 +1,34 @@
+name: pj-all-fix-tags-oneshot
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pj-all-fix-tags.yml']
+permissions:
+  contents: write
+jobs:
+  tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump pj-all css/core/filter to v=2 (blob-guarded)
+        run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'src="./pj-all-filter.js?v=2"' "$F"; then echo "already v=2 - no-op"; exit 0; fi
+          test "$(git hash-object "$F")" = "d9caf3e41a1ea460d79640769ba41cfa54732f81"
+          for n in all-css all-core all-filter; do
+            test -f "app/pj-$n.js"
+            test "$(git hash-object app/pj-$n.js)" = "$(git hash-object build/app/pj-$n.js)"
+          done
+          sed -e 's#src="./pj-all-css.js?v=1"#src="./pj-all-css.js?v=2"#' \
+              -e 's#src="./pj-all-core.js?v=1"#src="./pj-all-core.js?v=2"#' \
+              -e 's#src="./pj-all-filter.js?v=1"#src="./pj-all-filter.js?v=2"#' \
+              "$F" > /tmp/new.html
+          test "$(git hash-object /tmp/new.html)" = "fb52997d09cd3a403d59cac6489e38c73f84bdd4"
+          cp /tmp/new.html "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "projects all-view fix: bump pj-all css/core/filter to v=2"
+          git push
