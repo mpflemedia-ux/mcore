@@ -1,0 +1,27 @@
+name: sd-url-tags-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd-url-tags.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'sd-detail.js?v=3' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "a25ac3827f6253523538ac123149ec34c42d4a87"
+          test "$(git hash-object app/sd-detail.js)" = "c220c8e919a5c59cb00d2924cd856480ea6927c7"
+          test "$(git hash-object app/sd-new.js)" = "95e53f1635ac445b1e9c06cc772a5b5417f98855"
+          test "$(git hash-object app/sd-wa-result.js)" = "b2a87baf628a332945f5f173eb561c1931f99579"
+          sed -i 's|./sd-new.js?v=2"|./sd-new.js?v=3"|; s|./sd-detail.js?v=2"|./sd-detail.js?v=3"|; s|./sd-wa-result.js?v=2"|./sd-wa-result.js?v=3"|' "$F"
+          test "$(git hash-object "$F")" = "07577fa785bc03a3d1605c1c706d3791f10883f2"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(sd): bump sd-new/sd-detail/sd-wa-result to v3"
+          git push
