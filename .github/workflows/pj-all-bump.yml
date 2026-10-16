@@ -1,0 +1,26 @@
+name: pj-all-bump-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pj-all-bump.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'pj-all-core.js?v=3' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "07577fa785bc03a3d1605c1c706d3791f10883f2"
+          test "$(git hash-object app/pj-all-core.js)" = "c29729db7c6f3c96055dd2b3a17306383b4a3aff"
+          test "$(git hash-object build/app/pj-all-core.js)" = "c29729db7c6f3c96055dd2b3a17306383b4a3aff"
+          sed -i 's|./pj-all-core.js?v=2"|./pj-all-core.js?v=3"|' "$F"
+          test "$(git hash-object "$F")" = "359246dc4e79ceb6799bf44b502896d90872d862"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(projects): bump pj-all-core to v3"
+          git push
