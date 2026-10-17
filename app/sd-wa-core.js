@@ -37,7 +37,7 @@
   W.rnd = function (n) { var a = new Uint8Array(n), c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; crypto.getRandomValues(a); return Array.prototype.map.call(a, function (x) { return c[x % c.length]; }).join(''); };
   W.hex = function (s) { return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (b) { return Array.prototype.map.call(new Uint8Array(b), function (x) { return x.toString(16).padStart(2, '0'); }).join(''); }); };
   W.resultUrl = function (tok, lang) { return location.origin + location.pathname.replace(/[^/]*$/, '') + '?sr_result=' + tok + '&lang=' + lang; };
-  W.withLink = function (tpl, r) { return tpl === 'done' || (tpl === 'reminder' && r.status === 'delivered'); };
+  W.withLink = function (tpl, r) { return true; };
   /* recipients: requester (public sender contact or user profile), tenant owner/admin, company phone */
   W.recips = function (r) {
     var pick = function (p) { return p ? (p.phone || p.mobile || p.phone_number || p.whatsapp || '') : ''; };

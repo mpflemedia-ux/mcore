@@ -2,6 +2,13 @@
    2 recipient (requester / owner-PIC / other-group), 3 preview (Edit / Copy / Open WhatsApp). >=900px = 2-column modal. */
 (function () {
   var SD = window.SD, W = window.SDW; if (!SD || !W || W.share) return;
+
+  function drawQr(url) {
+    var LIB = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+    var load = window.qrcode ? Promise.resolve() : new Promise(function (ok, no) { var s = document.createElement('script'); s.src = LIB; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+    return load.then(function () { var q = window.qrcode(0, 'M'); q.addData(url); q.make(); var c = document.createElement('canvas'); var n = q.getModuleCount(), z = 3; c.width = c.height = n * z; var x = c.getContext('2d'); for (var r = 0; r < n; r++) for (var col = 0; col < n; col++) { x.fillStyle = q.isDark(r, col) ? '#000' : '#fff'; x.fillRect(col * z, r * z, z, z); } return c; });
+  }
+
   var S = null;
   var wide = function () { return window.matchMedia && matchMedia('(min-width:900px)').matches; };
   function close() { ['pjw-ov', 'pjw-sh'].forEach(function (i) { var e = document.getElementById(i); if (e) e.remove(); }); S = null; }
@@ -18,6 +25,7 @@
     if (W.withLink(S.tpl, S.r) && !S.token) S.token = W.rnd(40);
     var c = cur();
     return W.build({ r: S.r, tpl: S.tpl, lang: S.lang, name: c && c.kind === 'requester' ? String(c.n || '').split(' ')[0] : '', url: W.withLink(S.tpl, S.r) ? W.resultUrl(S.token, S.lang) : '' });
+    var qrUrl = W.withLink(S.tpl, S.r) ? W.resultUrl(S.token, S.lang) : ''; if (qrUrl) drawQr(qrUrl).then(function (cv) { var h = document.getElementById('sdw-qr'); if (h) { h.innerHTML = ''; h.appendChild(cv); } }, function () {});
   }
   var seg = function () { return '<div class="cob-seg" role="group" aria-label="Language"><button type="button" data-lang="en" class="' + (S.lang === 'en' ? 'on' : '') + '">EN</button><button type="button" data-lang="bm" class="' + (S.lang === 'bm' ? 'on' : '') + '">BM</button></div>'; };
   var IC = { received: 'ti-inbox', need_info: 'ti-help-circle', in_progress: 'ti-loader-2', done: 'ti-circle-check', reminder: 'ti-bell-ringing' };
@@ -45,6 +53,7 @@
       (S.edit ? '<textarea class="pjw-ta" id="pjw-ta" data-no-titlecase="1">' + W.esc(text()) + '</textarea>' : W.bubble(text())) +
       '<div class="pjw-lock"><i class="ti ti-lock"></i><span>' + W.L('Internal notes & internal files are not included. The client only sees files marked as deliverables.', 'Nota dalaman & fail dalaman tidak dimasukkan. Client cuma nampak fail yang ditanda hasil kerja.') + '</span></div>' +
       '<div class="pjw-row"><button type="button" class="btn btn-outline" id="pjw-ed" style="flex:0 0 auto"><i class="ti ti-' + (S.edit ? 'check' : 'pencil') + '"></i> ' + (S.edit ? W.L('Done', 'Siap') : 'Edit') + '</button><button type="button" class="btn btn-outline" id="pjw-cp" style="flex:0 0 auto"><i class="ti ti-copy"></i> ' + W.L('Copy', 'Salin') + '</button><button type="button" class="btn pjw-go" id="pjw-go"><i class="ti ti-brand-whatsapp"></i> ' + W.L('Open WhatsApp', 'Buka WhatsApp') + '</button></div>' +
+      '<div id="sdw-qr" style="width:120px;height:120px;margin:8px auto;background:#fff;border-radius:8px"></div>' +
       '<div class="cob-xs" style="text-align:center;margin-top:8px">' + W.L('Opens wa.me with the message filled in · M-Core records “Notified” in the timeline', 'Buka wa.me dengan mesej siap diisi · M-Core rekod “Dimaklumkan” dalam timeline') + '</div>';
   }
   function paint() {
