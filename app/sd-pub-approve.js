@@ -45,7 +45,7 @@
   function decide(btn, r, ok) {
     if (!r) return;
     var c = SD.CL && SD.CL.c;
-    if (ok && !SD.usable(c)) return SD.toast(SD.L('Your contract is not active or not paid yet.', 'Kontrak anda belum aktif atau belum dibayar.'), 'error');
+    if (ok && !SD.usable(c)) return SD.toast(((APP.tenant && APP.tenant.name) ? APP.tenant.name + ': ' : '') + SD.L('Your contract is not active or not paid yet.', 'Kontrak anda belum aktif atau belum dibayar.'), 'error');
     if (ok && c.monthly_quota != null && SD.CL.used >= c.monthly_quota) return SD.toast(SD.L('Monthly contract quota is full.', 'Kuota kontrak bulanan sudah penuh.'), 'error');
     var note = null;
     if (!ok) { note = prompt(SD.L('Reject this request? Reason (optional, internal):', 'Tolak permohonan ini? Sebab (pilihan, dalaman):'), ''); if (note === null) return; }

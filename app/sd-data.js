@@ -52,7 +52,7 @@
         return rows.find(function (c) { return SD.cStatus(c) === 'active'; }) || rows.find(function (c) { return c.status !== 'cancelled'; }) || null;
       });
   };
-  SD.usable = function (c) { return !!c && c.payment_status === 'paid' && SD.cStatus(c) === 'active'; };
+  SD.usable = function (c) { return !!c && (c.payment_status === 'paid' || /^FREE/i.test(c.invoice_ref || '')) && SD.cStatus(c) === 'active'; };
   SD.exportDays = function (c) { if (!c || SD.cStatus(c) !== 'expired') return null; var d = 14 + SD.daysTo(c.end_date); return d >= 0 ? d : null; };
   SD.monthStart = function () { return SD.today().slice(0, 8) + '01'; };
   SD.monthIso = function () { return new Date(Date.parse(SD.monthStart() + 'T00:00:00+08:00')).toISOString(); };
