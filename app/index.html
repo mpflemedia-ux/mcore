@@ -2636,7 +2636,7 @@ async function _tgMaybeShowGate() {
   })
 }
 function _tgBotUsername() {
-  return (window.NEXERP_TELEGRAM_BOT || localStorage.getItem('nexerp_tg_bot') || '').replace(/^@/, '')
+  return (window.NEXERP_TELEGRAM_BOT || localStorage.getItem('nexerp_tg_bot') || (APP.tenant && APP.tenant.telegram_bot_username) || '').replace(/^@/, '')
 }
 async function _tgIsLinked(subjectType, subjectId) {
   if (!APP.tenant?.id || !subjectId) return false
@@ -2761,24 +2761,28 @@ function _notifPushBell(title, meta) {
 }
 
 /** OS / phone notification (requires Android Allow notification + browser permission) */
-async function _notifOsNotify(title, body) {
+async function _notifOsNotify(title, body, force, link) {
   try {
     if (typeof Notification === 'undefined') return
     if (Notification.permission !== 'granted') return
-    var myt = new Date(Date.now() + 8*3600000)
-    var h = myt.getUTCHours()
-    if (h < 8 || h >= 18) return
-    let prefs = {}
-    try { prefs = (typeof _notifGetPrefs === 'function') ? await _notifGetPrefs() : {} } catch (e) {}
-    if (prefs && prefs.muted) return
-    if (prefs && prefs.os_phone === false) return
+    if (!force) {
+      try { if (window.NT && NT.quiet && NT.quiet(null, 0)) return } catch (e) {}
+      let prefs = {}
+      try { prefs = (typeof _notifGetPrefs === 'function') ? await _notifGetPrefs() : {} } catch (e) {}
+      if (prefs && prefs.muted) return
+      if (prefs && prefs.os_phone === false) return
+      var cap = 'mcore_os_cap_' + String(title||'').slice(0,40)
+      try { if (localStorage.getItem(cap) === new Date().toISOString().slice(0,10)) return; localStorage.setItem(cap, new Date().toISOString().slice(0,10)) } catch (e) {}
+    }
+    var url = '/app/'
+    if (link && link.page) url = '/app/?page=' + encodeURIComponent(link.page) + (link.params && link.params.id ? '&id=' + encodeURIComponent(link.params.id) : '')
     const opts = {
       body: String(body || '').slice(0, 180),
       icon: '/app/icons/icon-192.png',
       badge: '/app/icons/icon-192.png',
       tag: 'mcore-bell',
       renotify: true,
-      data: { url: '/app/' }
+      data: { url: url }
     }
     if (navigator.serviceWorker && navigator.serviceWorker.ready) {
       const reg = await navigator.serviceWorker.ready
@@ -2809,7 +2813,7 @@ async function _notifRequestOsPermission() {
         prefs.os_phone = true
         await _notifSavePrefs(prefs)
       } catch (e) {}
-      showToast(isBm ? 'Notifikasi telefon diaktifkan.' : 'Phone notifications enabled.', 'success')
+      showToast(isBm ? 'Kebenaran aktif. Amaran keluar bila ada event baru.' : 'Permission active. Alerts appear on new events.', 'success')
       try { await _notifOsNotify(isBm ? 'M-Core sedia' : 'M-Core ready', isBm ? 'Anda akan terima amaran di bar notifikasi.' : 'You will get alerts in the notification bar.') } catch (e) {}
       return true
     }
@@ -2913,6 +2917,7 @@ function _tgSaveBotName() {
   const name = v.replace(/^@/, '').trim()
   _lsSet('nexerp_tg_bot', name)
   window.NEXERP_TELEGRAM_BOT = name
+  if (APP.tenant && APP.tenant.id) sb.from('tenants').update({ telegram_bot_username: name }).eq('id', APP.tenant.id).then(function(){}, function(){})
   showToast(APP.language === 'bm' ? 'Nama bot disimpan' : 'Bot name saved', 'success')
   try { _tgRefreshMyLinkStatus() } catch (e) {}
 }
@@ -38267,11 +38272,11 @@ if('serviceWorker' in navigator){
 <script src="./sd-multi-extra.js?v=1"></script>
 <script src="./notif-css.js?v=1"></script>
 <script src="./notif-core.js?v=2"></script>
-<script src="./notif-live.js?v=2"></script>
-<script src="./notif-items.js?v=2"></script>
-<script src="./notif-bell.js?v=2"></script>
+<script src="./notif-live.js?v=3"></script>
+<script src="./notif-items.js?v=3"></script>
+<script src="./notif-bell.js?v=3"></script>
 <script src="./notif-page.js?v=2"></script>
-<script src="./notif-settings.js?v=2"></script>
+<script src="./notif-settings.js?v=3"></script>
 <script src="./notif-hooks.js?v=2"></script>
 <script src="./nav-css.js?v=4"></script>
 <script src="./nav-core.js?v=1"></script>

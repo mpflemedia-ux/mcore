@@ -11,7 +11,7 @@
       quiet: 'Quiet hours', quietD: 'Phone & Telegram held · Bell still collects', from: 'From', until: 'Until',
       d1: 'Mon', d2: 'Tue', d3: 'Wed', d4: 'Thu', d5: 'Fri', d6: 'Sat', d7: 'Sun', hi: 'High priority still delivered',
       digest: 'Morning summary', digestD: 'First open each morning · Bell', tg: 'Telegram', optional: 'Optional', tgLink: 'Link Telegram',
-      os: 'Phone alerts need permission on this device', allow: 'Allow', save: 'Save settings', saved: 'Notification settings saved', local: 'Saved on this device only' },
+      os: 'Phone alerts need permission on this device', allow: 'Allow', save: 'Save settings', saved: 'Notification settings saved', local: 'Saved on this device only', botPh: '@YourBot', botSave: 'Save bot name', botSaved: 'Bot name saved', testPh: 'Send test', testOk: 'Test sent', permOk: 'Permission active. Alerts appear on new events.' },
     bm: { back: 'Pemberitahuan', title: 'Tetapan pemberitahuan', scope: 'Untuk akaun anda sahaja', type: 'Jenis', chB: 'Loceng', chP: 'Telefon', chT: 'Telegram',
       rApproval: 'Kelulusan', dApproval: 'Cuti, kerja luar, tuntutan, pendahuluan', rSd: 'Service Desk', dSd: 'Pindaan, permintaan baharu, mesej',
       rAssigned: 'Ditugaskan & sebutan (@)', dAssigned: 'Projek, tugasan, komen', rOverdue: 'Invois tertunggak', dOverdue: 'Dikumpul ×N',
@@ -19,7 +19,7 @@
       quiet: 'Waktu senyap', quietD: 'Telefon & Telegram ditahan · Loceng tetap mengumpul', from: 'Dari', until: 'Hingga',
       d1: 'Isn', d2: 'Sel', d3: 'Rab', d4: 'Kha', d5: 'Jum', d6: 'Sab', d7: 'Ahd', hi: 'Keutamaan tinggi tetap dihantar',
       digest: 'Ringkasan pagi', digestD: 'Buka pertama setiap pagi · Loceng', tg: 'Telegram', optional: 'Pilihan', tgLink: 'Pautkan Telegram',
-      os: 'Amaran telefon memerlukan kebenaran pada peranti ini', allow: 'Benarkan', save: 'Simpan tetapan', saved: 'Tetapan pemberitahuan disimpan', local: 'Disimpan pada peranti ini sahaja' }
+      os: 'Amaran telefon memerlukan kebenaran pada peranti ini', allow: 'Benarkan', save: 'Simpan tetapan', saved: 'Tetapan pemberitahuan disimpan', local: 'Disimpan pada peranti ini sahaja', botPh: '@NamaBot', botSave: 'Simpan nama bot', botSaved: 'Nama bot disimpan', testPh: 'Hantar ujian', testOk: 'Ujian dihantar', permOk: 'Kebenaran aktif. Amaran keluar bila ada event baru.' }
   };
   try { ['en', 'bm'].forEach(function (lg) { if (!LANG[lg]) return; var o = LANG[lg].notifSet = LANG[lg].notifSet || {}; Object.keys(K[lg]).forEach(function (k) { if (!(k in o)) o[k] = K[lg][k]; }); }); } catch (e) {}
   function T(k) { var lg = (window.APP && APP.language === 'bm') ? 'bm' : 'en', d = null; try { d = LANG[lg].notifSet; } catch (e) {} return (d && d[k]) || K[lg][k] || K.en[k] || k; }
@@ -41,13 +41,16 @@
       '<div class="nt-row" style="margin-top:10px"><i class="ti ti-alert-triangle" style="color:var(--danger)"></i><span class="nt-bd nt-m">' + esc(T('hi')) + '</span>' + sw('nt-q-hi', S.q.hi, T('hi')) + '</div></div>' +
       '<div class="nt-card nt-pad"><div class="nt-row"><i class="ti ti-sun nt-big" style="color:var(--warning)"></i><div class="nt-bd"><b>' + esc(T('digest')) + '</b><div class="nt-m">' + esc(T('digestD')) + '</div></div>' + sw('nt-dg', S.digest.on, T('digest')) + '</div></div>' +
       '<div class="nt-card nt-pad"><div class="nt-row"><i class="ti ti-brand-telegram nt-big"></i><div class="nt-bd"><b>' + esc(T('tg')) + '</b><div class="nt-m" id="tg-link-status">' + esc(T('optional')) + '</div></div><button type="button" class="btn btn-sm btn-outline" data-tg="1">' + esc(T('tgLink')) + '</button></div>' +
-      '<div class="nt-row" style="margin-top:8px"><i class="ti ti-device-mobile nt-big"></i><div class="nt-bd nt-m">' + esc(T('os')) + '</div><button type="button" class="btn btn-sm btn-outline" data-os="1">' + esc(T('allow')) + '</button></div></div>' +
+      '<div class="nt-row" style="margin-top:8px;gap:6px"><input id="nt-bot" class="form-input" style="flex:1;font-size:13px" placeholder="' + esc(T('botPh')) + '" value="' + esc(typeof _tgBotUsername === 'function' ? (_tgBotUsername() || '') : '') + '"><button type="button" class="btn btn-sm btn-outline" data-bot="1">' + esc(T('botSave')) + '</button></div>' +
+      '<div class="nt-row" style="margin-top:8px"><i class="ti ti-device-mobile nt-big"></i><div class="nt-bd nt-m">' + esc(T('os')) + '</div><button type="button" class="btn btn-sm btn-outline" data-os="1">' + esc(T('allow')) + '</button><button type="button" class="btn btn-sm btn-outline" data-test="1">' + esc(T('testPh')) + '</button></div></div>' +
       '<button type="button" class="btn btn-primary nt-save" data-save="1">' + esc(T('save')) + '</button></div>';
     var q = function (s) { return m.querySelector(s); };
     m.querySelectorAll('[data-d]').forEach(function (b) { b.onclick = function () { b.classList.toggle('on'); b.setAttribute('aria-pressed', b.classList.contains('on')); }; });
     q('[data-back]').onclick = function () { window.openPage('notifikasi', {}); };
     q('[data-tg]').onclick = function () { try { _tgOpenLinkForMe(); } catch (e) {} };
     q('[data-os]').onclick = function () { try { _notifRequestOsPermission(); } catch (e) {} };
+    var bb = q('[data-bot]'); if (bb) bb.onclick = function () { var v = ((q('#nt-bot')||{}).value||'').replace(/^@/,'').trim(); try { if (typeof _lsSet==='function') _lsSet('nexerp_tg_bot', v); window.NEXERP_TELEGRAM_BOT = v; if (window.APP && APP.tenant && APP.tenant.id) sb.from('tenants').update({ telegram_bot_username: v }).eq('id', APP.tenant.id).then(function(){}, function(){}); showToast(T('botSaved'), 'success'); if (typeof _tgRefreshMyLinkStatus==='function') _tgRefreshMyLinkStatus(); } catch (e) {} };
+    var tb = q('[data-test]'); if (tb) tb.onclick = function () { try { if (typeof _notifOsNotify==='function') { _notifOsNotify(T('testOk'), '', true); showToast(T('testOk'), 'success'); } } catch (e) {} };
     try { setTimeout(_tgRefreshMyLinkStatus, 50); } catch (e) {}
     /* shared status text says 'klik Link Telegram' in BM; match this page's button label */
     try { var st = q('#tg-link-status'); if (st && window.MutationObserver) { var fx = function () { if (APP.language === 'bm' && /Link Telegram/.test(st.textContent)) st.textContent = st.textContent.replace(/Link Telegram/g, T('tgLink')); }; new MutationObserver(fx).observe(st, { childList: true, characterData: true, subtree: true }); } } catch (e) {}

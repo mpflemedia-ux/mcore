@@ -38,8 +38,8 @@
   NT.build = function (opts) {
     opts = opts || {}; var S = NT.S || NT.merge();
     var rows = NT.rows.filter(function (n) { return !(n.actor_id && NT.same(n.actor_id, NT.uid())); }).map(NT.fromRow);
-    var hid = {}; try { JSON.parse(localStorage.getItem('mcore_nt_hide_' + NT.uid() + '_' + NT.day()) || '[]').forEach(function (k) { hid[k] = 1; }); } catch (e) {}
-    var all = NT.group(rows.concat(NT.live.filter(function (x) { return !hid[x.key]; }).map(function (x) { return Object.assign({ ids: [] }, x); })));
+    var hid = {}; try { hid = JSON.parse(localStorage.getItem('mcore_nt_hide_' + NT.uid()) || '{}'); } catch (e) {}
+    var all = NT.group(rows.concat(NT.live.filter(function (x) { return !(x.live && hid[x.key] === String(x.meta || '')); }).map(function (x) { return Object.assign({ ids: [] }, x); })));
     var t = { action: [], for_you: [], activity: [], snoozed: [] };
     all.forEach(function (it) {
       if (!NT.ch(it.cat, 'b', S) && !opts.all) return;
@@ -65,6 +65,7 @@
     if (it.kind === 'action' && it.row && !it.done) acts += NT.btn(L('Open', 'Buka'), 'ti-arrow-right', it.prio ? 'btn-primary' : 'btn-outline', 'data-go="' + i + '"');
     if (it.count > 1 && it.cat === 'overdue') acts = NT.btn(L('View ', 'Lihat ') + it.count + L(' invoices', ' invois'), '', 'btn-outline', 'data-go="' + i + '"');
     if (it.kind === 'action') acts += NT.btn(NT.isSnoozed(it) ? L('Unsnooze', 'Batal snooze') : 'Snooze', 'ti-clock-pause', 'btn-outline', 'data-sn="' + i + '"');
+    if (it.tenant) acts += NT.btn(L('Mute', 'Senyap'), 'ti-bell-off', 'btn-outline', 'data-mute="' + i + '"');
     return '<div class="nt-it' + (it.prio ? ' nt-hi' : '') + (it.unread ? ' nt-un' : '') + '" data-i="' + i + '"><div class="nt-ic"><i class="ti ' + esc(it.icon) + '" style="color:' + it.color + '"></i></div><div class="nt-bd">' +
       '<div class="nt-tr"><div class="nt-t">' + (NT.isPinned(it) ? '<i class="ti ti-pin-filled nt-pin"></i> ' : '') + esc(it.title) + '</div><span class="nt-w">' + NT.when(it.ts) + '</span></div>' +
       (it.meta ? '<div class="nt-m">' + esc(it.meta) + '</div>' : '') +
@@ -84,6 +85,7 @@
     root.querySelectorAll('[data-act]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var it = items[+b.dataset.act], a = (it.acts || [])[0]; b.disabled = true; var f = function () { if (a[1] !== 'claim') after(); }; NT.doAct(b.dataset.a, a[1], a[2]).then(f, f); }; });
     root.querySelectorAll('[data-go]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); NT.close(); NT.open(items[+b.dataset.go]); }; });
     root.querySelectorAll('[data-sn]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var it = items[+b.dataset.sn]; if (NT.isSnoozed(it)) { delete NT.S.sn[it.key]; NT.saveSettings().then(after); } else NT.snoozeSheet(it, after); }; });
+    root.querySelectorAll('[data-mute]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var it = items[+b.dataset.mute]; if (!it || !it.tenant) return; try { var k = 'mcore_nt_mute_' + NT.uid(); var a = JSON.parse(localStorage.getItem(k) || '[]'); if (a.indexOf(it.tenant) < 0) a.push(it.tenant); localStorage.setItem(k, JSON.stringify(a)); } catch (e) {} after(); }; });
     root.querySelectorAll('[data-pin]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var it = items[+b.dataset.pin], p = NT.S.pin, k = p.indexOf(it.key); if (k >= 0) p.splice(k, 1); else p.push(it.key); NT.saveSettings().then(after); }; });
     root.querySelectorAll('.nt-it').forEach(function (r) { r.onclick = function () { var it = items[+r.dataset.i]; if (it.acts && it.acts.length && it.kind === 'action' && !it.row) { NT.close(); NT.open(it); return; } NT.close(); NT.open(it); }; });
   };

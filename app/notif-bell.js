@@ -41,7 +41,7 @@
         if (i.ids && i.ids.length && i.unread) ids = ids.concat(i.ids);
         if (i.live && i.key) hide.push(i.key);
       });
-      try { var k = 'mcore_nt_hide_' + NT.uid() + '_' + NT.day(); var a = JSON.parse(localStorage.getItem(k) || '[]'); hide.forEach(function (x) { if (a.indexOf(x) < 0) a.push(x); }); localStorage.setItem(k, JSON.stringify(a)); } catch (e) {}
+      try { var k = 'mcore_nt_hide_' + NT.uid(); var a = JSON.parse(localStorage.getItem(k) || '{}'); list.forEach(function (i) { if (i.live && i.key) a[i.key] = String(i.meta || ''); }); localStorage.setItem(k, JSON.stringify(a)); } catch (e) {}
       NT.markRead(ids).then(NT.refresh);
     };
     q('[data-set]').onclick = function (e) { e.stopPropagation(); NT.close(); window.openPage('notifikasi', { view: 'settings' }); };
