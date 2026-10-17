@@ -11,7 +11,7 @@
   };
   if (!document.getElementById('sdw-css')) { var c = document.createElement('style'); c.id = 'sdw-css'; c.textContent = '.sdw-n{border:1px solid var(--pjw,#25D366);color:#0F7A3F;background:transparent}body.dark .sdw-n,[data-theme=dark] .sdw-n{color:var(--pjw,#25D366)}.sdw-pr{border-color:var(--pjw,#25D366)!important}.sdw-pr .ti-brand-whatsapp.big{font-size:26px;color:var(--pjw,#25D366)}'; document.head.appendChild(c); }
   SD.waInject = function (m, r, ev, admin) {
-    if (!admin) return;
+    /* tenant also */
     W.probe().then(function (on) {
       if (!on) return;
       return W.loadShares([r.id]).then(function () {
