@@ -3099,6 +3099,22 @@ async function loadNotifications() {
       }
       items.push(it)
     })
+    // Platform admin: surface open service requests even if no notification row exists
+    try {
+      if (typeof isPlatformAdmin === 'function' && isPlatformAdmin()) {
+        const { data: srs } = await sb.from('service_requests').select('id,ref_no,title,status,created_at').is('deleted_at', null).in('status', ['submitted','triaged','in_progress','waiting_client','delivered','revision']).order('created_at', { ascending: false }).limit(15)
+        ;(srs || []).forEach(function (r) {
+          const it = {
+            kind: 'service_desk', ref: r.id, ts: r.created_at ? new Date(r.created_at).getTime() : 0,
+            icon: 'ti-headset', color: 'var(--primary)',
+            text: (r.ref_no || '') + (isBm ? ' · terbuka' : ' · open'),
+            meta: r.title || '',
+            go: function () { openPage('admin', { view: 'sd_desk', id: r.id }) }
+          }
+          if (!dismissed.has(_notifFp(it))) items.push(it)
+        })
+      }
+    } catch (e) { console.warn('sd open notifs', e) }
     items.sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0))
     // Telegram fan-out for dashboard-derived alerts (once/day via _tgActivity dedupe)
     try {
