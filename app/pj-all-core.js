@@ -206,6 +206,35 @@
     if (A.groupUi) A.groupUi(st);
     A.applyHide(st);
     if (A.sumUi) A.sumUi(st);
+    A.bindList(st);
+  };
+  A.bindList = function (st) {
+    var main = document.getElementById('main'); if (!main) return;
+    main.querySelectorAll('[data-lsort]').forEach(function (b) {
+      b.onclick = function () {
+        var key = b.getAttribute('data-lsort');
+        A.f = A.f || A.def();
+        if (A.f.sort === key) A.f.sortDir = A.f.sortDir === 'desc' ? 'asc' : 'desc';
+        else { A.f.sort = key; A.f.sortDir = 'asc'; }
+        A.persist(); A.rerun(st);
+      };
+    });
+    main.querySelectorAll('[data-qf]').forEach(function (el) {
+      el.onclick = function () {
+        A.f = A.f || A.def();
+        if (el.getAttribute('data-qf') === 'late') A.f.due = A.f.due === 'overdue' ? '' : 'overdue';
+        A.persist(); A.rerun(st);
+      };
+    });
+    main.querySelectorAll('[data-qa]').forEach(function (el) {
+      el.onclick = function () {
+        A.f = A.f || A.def();
+        var id = el.getAttribute('data-qa') || '';
+        var i = A.f.assignees.map(String).indexOf(String(id));
+        if (i >= 0) A.f.assignees.splice(i, 1); else A.f.assignees.push(id);
+        A.persist(); A.rerun(st);
+      };
+    });
   };
   function hook() {
     var prev = window._pjAfterPaint; if (prev && prev._pja) return;
