@@ -15,6 +15,7 @@ export interface Db {
   service(code: string): Promise<{ name_en: string; name_bm: string; default_sla_hours: number | null } | null>;
   contractPaid(tenantId: string, contractId: string | null): Promise<boolean>;
   deliverables(requestId: string): Promise<{ file_path: string; body: string | null; meta: Record<string, unknown> | null; created_at: string }[]>;
+  timeline(requestId: string): Promise<{ type: string; body: string | null; created_at: string; actor: string | null }[]>;
   sign(paths: string[], seconds: number): Promise<Record<string, string>>;
   markViewed(link: Link, nowIso: string): Promise<void>;
   responseCount(linkId: string): Promise<number>;
@@ -77,7 +78,7 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
   if (!r || r.deleted_at || String(r.tenant_id) !== String(link.tenant_id)) return json({ error: 'inactive' }, 404);
   const nowIso = new Date(now).toISOString();
   if (action === 'view') {
-    const [tname, svc, paid, files, last] = await Promise.all([db.tenantName(r.tenant_id), db.service(r.service_code), db.contractPaid(r.tenant_id, r.contract_id), db.deliverables(r.id), db.lastResponse(link.id)]);
+    const [tname, svc, paid, files, last, tl] = await Promise.all([db.tenantName(r.tenant_id), db.service(r.service_code), db.contractPaid(r.tenant_id, r.contract_id), db.deliverables(r.id), db.lastResponse(link.id), db.timeline(r.id)]);
     const urls = paid && files.length ? await db.sign(files.map((f) => f.file_path), 600) : {};
     await db.markViewed(link, nowIso);
     const end = r.delivered_at || r.closed_at;
@@ -88,7 +89,7 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
       delivered_at: r.delivered_at, closed_at: r.closed_at, expires_at: link.expires_at,
       hours_taken: end ? Math.max(0, Math.round(bhBetween(r.created_at, end) - (r.sla_paused_seconds || 0) / 3600)) : null, sla_hours: sla,
       paid, files: files.map((f) => ({ name: String(f.body || (f.meta && (f.meta as { name?: string }).name) || f.file_path.split('/').pop()), size: Number((f.meta && (f.meta as { size?: number }).size) || 0), url: urls[f.file_path] || null })),
-      response: last, can_respond: r.status === 'delivered',
+      response: last, timeline: tl, can_respond: r.status === 'delivered',
       can_reopen: r.status === 'closed' && 'reopen_count' in r && !!db.reopen, reopened_at: r.reopened_at || null,
     });
   }
