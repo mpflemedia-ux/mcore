@@ -1,0 +1,28 @@
+name: sd-paid-bump-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd-paid-bump.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'sd-detail.js?v=4' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "505cfa2b6654e4625ae0fbbff6098742b1c03df1"
+          test "$(git hash-object app/sd-detail.js)" = "db150c71dfbf8e6ba7c15295043d5b75085a71ec"
+          test "$(git hash-object build/app/sd-detail.js)" = "db150c71dfbf8e6ba7c15295043d5b75085a71ec"
+          test "$(git hash-object app/sd-contract.js)" = "e1bcdf3fc7d3cec6ecfa63daa921bb3e2cc30833"
+          test "$(git hash-object build/app/sd-contract.js)" = "e1bcdf3fc7d3cec6ecfa63daa921bb3e2cc30833"
+          sed -i 's|./sd-detail.js?v=3"|./sd-detail.js?v=4"|; s|./sd-contract.js?v=1"|./sd-contract.js?v=2"|' "$F"
+          test "$(git hash-object "$F")" = "655cd6aae2c7fd8aee0a433a1544289ad2b4c344"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(sd): bump sd-detail v4, sd-contract v2 (paid-unlock rule)"
+          git push
