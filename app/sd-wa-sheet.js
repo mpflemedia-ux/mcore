@@ -25,7 +25,7 @@
     if (W.withLink(S.tpl, S.r) && !S.token) S.token = W.rnd(40);
     var c = cur();
     return W.build({ r: S.r, tpl: S.tpl, lang: S.lang, name: c && c.kind === 'requester' ? String(c.n || '').split(' ')[0] : '', url: W.withLink(S.tpl, S.r) ? W.resultUrl(S.token, S.lang) : '' });
-    var qrUrl = W.withLink(S.tpl, S.r) ? W.resultUrl(S.token, S.lang) : ''; if (qrUrl) drawQr(qrUrl).then(function (cv) { var h = document.getElementById('sdw-qr'); if (h) { h.innerHTML = ''; h.appendChild(cv); } }, function () {});
+    
   }
   var seg = function () { return '<div class="cob-seg" role="group" aria-label="Language"><button type="button" data-lang="en" class="' + (S.lang === 'en' ? 'on' : '') + '">EN</button><button type="button" data-lang="bm" class="' + (S.lang === 'bm' ? 'on' : '') + '">BM</button></div>'; };
   var IC = { received: 'ti-inbox', need_info: 'ti-help-circle', in_progress: 'ti-loader-2', done: 'ti-circle-check', reminder: 'ti-bell-ringing' };
@@ -55,6 +55,7 @@
       '<div class="pjw-row"><button type="button" class="btn btn-outline" id="pjw-ed" style="flex:0 0 auto"><i class="ti ti-' + (S.edit ? 'check' : 'pencil') + '"></i> ' + (S.edit ? W.L('Done', 'Siap') : 'Edit') + '</button><button type="button" class="btn btn-outline" id="pjw-cp" style="flex:0 0 auto"><i class="ti ti-copy"></i> ' + W.L('Copy', 'Salin') + '</button><button type="button" class="btn pjw-go" id="pjw-go"><i class="ti ti-brand-whatsapp"></i> ' + W.L('Open WhatsApp', 'Buka WhatsApp') + '</button></div>' +
       '<div id="sdw-qr" style="width:120px;height:120px;margin:8px auto;background:#fff;border-radius:8px"></div>' +
       '<div class="cob-xs" style="text-align:center;margin-top:8px">' + W.L('Opens wa.me with the message filled in · M-Core records “Notified” in the timeline', 'Buka wa.me dengan mesej siap diisi · M-Core rekod “Dimaklumkan” dalam timeline') + '</div>';
+    var qrUrl = W.withLink(S.tpl, S.r) ? W.resultUrl(S.token, S.lang) : ''; if (qrUrl) drawQr(qrUrl).then(function (cv) { var h = document.getElementById('sdw-qr'); if (h) { h.innerHTML = ''; h.appendChild(cv); } }, function () {});
   }
   function paint() {
     if (!S) return;
