@@ -5544,7 +5544,9 @@ async function loadUserSession(user, opts={}) {
         const _truthyActive = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 't'
     const tenantSuspended = !!(profile.tenants && profile.tenants.is_active != null && !_truthyActive(profile.tenants.is_active))
     const userInactive = profile.is_active != null && !_truthyActive(profile.is_active)
-    if (tenantSuspended || userInactive) {
+    // platform_admin must not be locked out by a suspended home tenant.
+    const adminBypass = typeof isPlatformAdmin === 'function' && isPlatformAdmin()
+    if ((tenantSuspended && !adminBypass) || userInactive) {
       window._mcoreAuthBlocked = true
       try {
         const obEl = document.getElementById('onboarding-page')
@@ -38011,7 +38013,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     // No controllerchange→reload: that forced a second full load after SW claim
     // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
-    navigator.serviceWorker.register('./sw.js?v=13').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=14').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
