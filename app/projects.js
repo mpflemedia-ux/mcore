@@ -106,17 +106,21 @@
     state.projects = state.allProjects.filter(function (p) { return state.showArchived ? p.archived_at : !p.archived_at; });
     if (!state.projectId && state.projects[0]) state.projectId = state.projects[0].id;
     if (state.projectId && state.projectId !== '__all__' && !state.projects.some(function (p) { return String(p.id) === String(state.projectId); })) state.projectId = state.projects[0] ? state.projects[0].id : null;
-    var taskSel = 'id,project_id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,sort_order,created_at,is_important,is_urgent';
-    var tasks;
-    if (state.projectId === '__all__') {
-      var pids = state.projects.map(function (p) { return p.id; });
-      tasks = pids.length
-        ? await sb.from('project_tasks').select(taskSel).eq('tenant_id', tenant).in('project_id', pids).is('deleted_at', null).order('sort_order').limit(2000)
-        : { data: [] };
-    } else if (state.projectId) {
-      tasks = await sb.from('project_tasks').select(taskSel).eq('tenant_id', tenant).eq('project_id', state.projectId).is('deleted_at', null).order('sort_order');
-    } else {
-      tasks = { data: [] };
+    var taskSel = 'id,project_id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,sort_order,created_at,updated_at,is_important,is_urgent';
+    async function pullTasks(sel) {
+      if (state.projectId === '__all__') {
+        var pids = state.projects.map(function (p) { return p.id; });
+        return pids.length
+          ? await sb.from('project_tasks').select(sel).eq('tenant_id', tenant).in('project_id', pids).is('deleted_at', null).order('sort_order').limit(2000)
+          : { data: [] };
+      }
+      if (state.projectId) return await sb.from('project_tasks').select(sel).eq('tenant_id', tenant).eq('project_id', state.projectId).is('deleted_at', null).order('sort_order');
+      return { data: [] };
+    }
+    var tasks = await pullTasks(taskSel);
+    if (tasks.error && /updated_at/.test(tasks.error.message || '')) {
+      taskSel = taskSel.replace(',updated_at', '');
+      tasks = await pullTasks(taskSel);
     }
     if (tasks.error) throw tasks.error;
     state.tasks = tasks.data || [];

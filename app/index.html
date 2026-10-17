@@ -7055,13 +7055,19 @@ async function _dbLoadProjectsCard() {
   }
   const ids = list.map(p => p.id)
   const custIds = list.map(p => p.customer_id).filter(Boolean)
-  const [taskRes, custRes] = await Promise.all([
-    sb.from('project_tasks').select('project_id,column_key,due_date,progress').in('project_id', ids).eq('tenant_id', APP.tenant.id).is('deleted_at', null),
-    custIds.length ? sb.from('customers').select('id,name').in('id', custIds).eq('tenant_id', APP.tenant.id) : Promise.resolve({ data: [] })
+  const [taskRes, custRes, empRes] = await Promise.all([
+    sb.from('project_tasks').select('project_id,column_key,due_date,progress,assignee_employee_id,created_at,updated_at').in('project_id', ids).eq('tenant_id', APP.tenant.id).is('deleted_at', null),
+    custIds.length ? sb.from('customers').select('id,name').in('id', custIds).eq('tenant_id', APP.tenant.id) : Promise.resolve({ data: [] }),
+    sb.from('employees').select('id,name,nickname').eq('tenant_id', APP.tenant.id).is('deleted_at', null)
   ])
-  const tasks = taskRes.data || []
+  let tasks = taskRes.data || []
+  if (taskRes.error && /updated_at/.test(taskRes.error.message || '')) {
+    const retry = await sb.from('project_tasks').select('project_id,column_key,due_date,progress,assignee_employee_id,created_at').in('project_id', ids).eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    tasks = retry.data || []
+  }
   const names = {}
   ;(custRes.data || []).forEach(c => { names[c.id] = c.name })
+  const emps = empRes.error ? [] : (empRes.data || [])
   const rows = list.map(p => {
     const mine = tasks.filter(x => String(x.project_id) === String(p.id))
     const total = mine.length
@@ -7071,11 +7077,30 @@ async function _dbLoadProjectsCard() {
   }).filter(p => p.active)
   const shown = rows
   const overdueN = rows.reduce((n, p) => n + p.overdue, 0)
+  const ps = (window.PJA && PJA.projStats) ? PJA.projStats(list, tasks, emps) : null
+  const cell = (label, n, late) => '<div' + (late ? ' class="late"' : '') + '><small>' + label + '</small><b>' + n + '</b></div>'
+  let strip = ''
+  if (ps) {
+    const named = ps.load.filter(x => x.id).slice(0, 3)
+    const none = ps.load.filter(x => !x.id)[0]
+    const bits = named.map(x => (x.name || '—') + ' ' + x.n)
+    if (none) bits.push((isBm ? 'Tiada assignee' : 'Unassigned') + ' ' + none.n)
+    strip = '<div class="pja-sum" role="status">' +
+      cell(isBm ? 'Projek' : 'Projects', ps.projects) +
+      cell(isBm ? 'Aktif' : 'Active', ps.active) +
+      cell(isBm ? 'Siap' : 'Done', ps.done) +
+      cell(isBm ? 'Kosong' : 'Empty', ps.empty) +
+      cell(isBm ? 'Projek lewat' : 'Late projects', ps.late, true) +
+      cell(isBm ? 'Klien' : 'Client', ps.client) +
+      cell(isBm ? 'Dalaman' : 'Internal', ps.internal) +
+      '</div><div class="pja-sum2">' + (isBm ? 'Senyap 7 hari' : 'Quiet 7 days') + ': <b>' + ps.silent + '</b>' +
+      (bits.length ? ' · ' + (isBm ? 'Beban' : 'Load') + ': ' + bits.join(' · ') : '') + '</div>'
+  }
   if (!shown.length) {
-    el.innerHTML = '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Semua projek siap' : 'All projects done') + '</div>'
+    el.innerHTML = strip + '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Semua projek siap' : 'All projects done') + '</div>'
     return
   }
-  el.innerHTML = '<div style="max-height:390px;overflow-y:auto">' + shown.map(p => {
+  el.innerHTML = strip + '<div style="max-height:390px;overflow-y:auto">' + shown.map(p => {
     const sub = p.kind === 'client' ? (names[p.customer_id] || (isBm ? 'Klien' : 'Client')) : (isBm ? 'Dalaman' : 'Internal')
     const late = p.overdue ? '<span style="color:var(--danger);font-size:12px">' + p.overdue + ' ' + (isBm ? 'lewat' : 'overdue') + '</span>' : ''
     return '<button type="button" onclick="_dbOpenProject(\'' + p.id + '\')" style="display:block;width:100%;text-align:left;padding:8px 0;border-top:1px solid var(--border);color:inherit">' +

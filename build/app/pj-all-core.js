@@ -82,6 +82,40 @@
     });
     return { total: total, overdue: overdue, doneW: doneW, hours: Math.round(hours * 10) / 10 };
   };
+  A.todayYmd = function () { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  /* Project-level counts. Task filters do not change these. Silent = active project, newest task activity older than 7 days. */
+  A.projStats = function (projects, tasks, employees) {
+    var today = A.todayYmd();
+    var cut = new Date(Date.now() - 7 * 86400000).toISOString();
+    var by = {};
+    (tasks || []).forEach(function (k) { var id = String(k.project_id); (by[id] = by[id] || []).push(k); });
+    var s = { projects: 0, active: 0, done: 0, empty: 0, late: 0, client: 0, internal: 0, silent: 0, load: [] };
+    var openBy = {};
+    (projects || []).forEach(function (p) {
+      s.projects++;
+      if (p.kind === 'client') s.client++; else s.internal++;
+      var mine = by[String(p.id)] || [];
+      if (!mine.length) { s.empty++; return; }
+      var open = mine.filter(function (k) { return k.column_key !== 'done'; });
+      if (!open.length) s.done++; else s.active++;
+      if (open.some(function (k) { var due = k.due_date ? String(k.due_date).slice(0, 10) : ''; return due && due < today; })) s.late++;
+      if (open.length) {
+        var last = '';
+        mine.forEach(function (k) { var t = k.updated_at || k.created_at || ''; if (t > last) last = t; });
+        if (last && last < cut) s.silent++;
+      }
+    });
+    (tasks || []).forEach(function (k) {
+      if (k.column_key === 'done') return;
+      var id = k.assignee_employee_id ? String(k.assignee_employee_id) : '';
+      openBy[id] = (openBy[id] || 0) + 1;
+    });
+    var names = {};
+    (employees || []).forEach(function (e) { names[String(e.id)] = e.nickname || e.name || ''; });
+    s.load = Object.keys(openBy).map(function (id) { return { id: id, n: openBy[id], name: id ? (names[id] || '') : '' }; })
+      .sort(function (a, b) { return b.n - a.n; });
+    return s;
+  };
   A.visible = function (st) {
     var q = String(st.filter || '').trim().toLowerCase();
     return (st.tasks || []).filter(function (k) {
