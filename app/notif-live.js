@@ -58,6 +58,9 @@
       try { if (!tn.trial_ends_at) show = _shouldShowMyPlanExpiry(tn, null); } catch (e) {}
       if (show && dl >= 0 && dl <= 14) out.push({ key: 'bill:' + NT.day(ex) + ':' + (dl <= 3 ? 3 : dl <= 7 ? 7 : 14), kind: 'for_you', cat: 'contract', icon: 'ti-credit-card', color: 'var(--warning)', ts: Date.now() - 3 * 36e5, prio: dl <= 3 ? 1 : 0, title: (tn.trial_ends_at ? L('Trial ends in ', 'Percubaan tamat dalam ') : L('M-Core plan renews in ', 'Pelan M-Core tamat dalam ')) + dl + L(' days', ' hari'), meta: dd(ex), go: ['settings', {}] });
     }
+    if (NT.isPA()) jobs.push(q(sb.from('service_requests').select('id,ref_no,title,status,created_at').is('deleted_at', null).in('status', ['submitted','triaged','in_progress']).order('created_at', { ascending: false }).limit(15)).then(function (a) {
+      a.forEach(function (x) { out.push(esc24({ key: 'sd:' + x.id, kind: 'action', cat: 'sd', icon: 'ti-headset', color: 'var(--primary)', ts: x.created_at, title: (x.ref_no || '') + L(' · open', ' · terbuka'), meta: x.title || '', go: ['admin', { view: 'sd_desk', id: x.id }] }, x.created_at)); });
+    }));
     if (NT.isPA()) jobs.push(q(sb.from('content_posts').select('id').eq('status', 'planned').limit(50)).then(function (a) {
       if (a.length) out.push({ key: 'cp:' + today, kind: 'for_you', cat: 'assigned', icon: 'ti-calendar-star', color: 'var(--primary)', ts: new Date(today + 'T00:30:00').getTime(), title: L('Content Planner: ', 'Content Planner: ') + a.length + L(' planned posts', ' post dirancang'), meta: L('Today', 'Hari ini'), go: ['admin', { view: 'content-planner' }] });
     }));
