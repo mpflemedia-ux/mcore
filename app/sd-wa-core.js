@@ -10,7 +10,7 @@
     if (probed) return probed;
     probed = Promise.all(['service_request_shares', 'service_result_links'].map(function (t) { return Promise.resolve(sb.from(t).select('id', { head: true, count: 'exact' }).limit(1)).then(function (r) { return r && r.error; }, function (e) { return e || 1; }); }))
       .then(function (errs) {
-        W.on = SD.isPA() && !errs.some(Boolean);
+        W.on = SD.isPA();
         if (!logged && errs.some(function (e) { return e && SD.missing(e); })) { logged = true; console.info('[M-Core Service Desk] Share WhatsApp tables not found - hidden until servicedesk_07_wa_share.sql is run'); }
         return W.on;
       });
