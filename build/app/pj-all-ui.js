@@ -78,14 +78,17 @@
     }
     var s = A.summary(list), host = main.querySelector('.pj-tabs'); if (!host) return;
     var ps = A.projStats ? A.projStats(st.projects || [], st.tasks || [], st.employees || []) : null;
-    var cell = function (label, n, late) { return '<div' + (late ? ' class="late"' : '') + '><small>' + A.esc(label) + '</small><b>' + n + '</b></div>'; };
+    var cell = function (label, n, late, qf) {
+      var on = qf === 'late' && A.f && A.f.due === 'overdue';
+      return '<div' + (late || on ? ' class="' + (late ? 'late' : '') + (on ? ' pja-on' : '') + '"' : '') + (qf ? ' data-qf="' + qf + '" role="button" tabindex="0"' : '') + '><small>' + A.esc(label) + '</small><b>' + n + '</b></div>';
+    };
     var row = '';
     if (ps && A.isAll(st)) {
       row = cell(A.L('Projects', 'Projek'), ps.projects) +
         cell(A.L('Active', 'Aktif'), ps.active) +
         cell(A.L('Done', 'Siap'), ps.done) +
         cell(A.L('Empty', 'Kosong'), ps.empty) +
-        cell(A.L('Late projects', 'Projek lewat'), ps.late, true) +
+        cell(A.L('Late projects', 'Projek lewat'), ps.late, true, 'late') +
         cell(A.L('Client', 'Klien'), ps.client) +
         cell(A.L('Internal', 'Dalaman'), ps.internal);
     }
@@ -97,8 +100,14 @@
     if (ps && A.isAll(st)) {
       var named = ps.load.filter(function (x) { return x.id; });
       var none = ps.load.filter(function (x) { return !x.id; })[0];
-      var bits = named.map(function (x) { return '<span>' + A.esc(x.name || '—') + ' <b>' + x.n + '</b></span>'; });
-      if (none) bits.push('<span>' + A.esc(A.L('Unassigned', 'Tiada assignee')) + ' <b>' + none.n + '</b></span>');
+      var bits = named.map(function (x) {
+        var on = A.f && A.f.assignees.map(String).indexOf(String(x.id)) >= 0;
+        return '<span data-qa="' + A.esc(x.id) + '" role="button" tabindex="0"' + (on ? ' class="pja-on"' : '') + '>' + A.esc(x.name || '—') + ' <b>' + x.n + '</b></span>';
+      });
+      if (none) {
+        var on0 = A.f && A.f.assignees.map(String).indexOf('') >= 0;
+        bits.push('<span data-qa="" role="button" tabindex="0"' + (on0 ? ' class="pja-on"' : '') + '>' + A.esc(A.L('Unassigned', 'Tiada assignee')) + ' <b>' + none.n + '</b></span>');
+      }
       meta = '<div class="pja-sum2"><span>' + A.esc(A.L('Quiet 7 days', 'Senyap 7 hari')) + ': <b>' + ps.silent + '</b></span>' +
         bits.join('') + '</div>';
     }

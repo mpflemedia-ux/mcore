@@ -170,10 +170,19 @@
   }
 
   function listHtml(list) {
-    var head = '<tr><th>' + esc(t('Task', 'Task')) + '</th><th>' + esc(t('Column', 'Lajur')) + '</th><th>' + esc(t('Tag', 'Tag')) + '</th><th>' + esc(t('Assignee', 'Assignee')) + '</th><th>' + esc(t('Due', 'Due')) + '</th><th>%</th></tr>';
-    var body = list.map(function (task) {
+    var rows = list.slice();
+    if (window.PJA && PJA.match && PJA.sortList) rows = PJA.sortList(rows.filter(function (k) { return PJA.match(k); }));
+    var n = rows.length, withTag = 0, withAsg = 0, withDue = 0;
+    rows.forEach(function (k) { if (k.tag) withTag++; if (k.assignee_employee_id) withAsg++; if (k.due_date) withDue++; });
+    function th(key, label, count) {
+      var on = window.PJA && PJA.f && PJA.f.sort === key;
+      var arrow = on ? (PJA.f.sortDir === 'desc' ? ' \u2193' : ' \u2191') : '';
+      return '<th><button type="button" data-lsort="' + key + '">' + esc(label) + arrow + '</button><small>' + count + '</small></th>';
+    }
+    var head = '<tr>' + th('title', t('Task', 'Task'), n) + th('column', t('Column', 'Lajur'), n) + th('tag', t('Tag', 'Tag'), withTag) + th('assignee', t('Assignee', 'Assignee'), withAsg) + th('due', t('Due', 'Due'), withDue) + th('progress', '%', n) + '</tr>';
+    var body = rows.map(function (task) {
       var col = COLS.find(function (c) { return c.key === task.column_key; });
-      return '<tr><td>' + esc(task.title) + '</td><td>' + esc(col ? t(col.en, col.bm) : task.column_key) + '</td><td>' + esc(task.tag || '') + '</td><td>' + esc(nick(empById(task.assignee_employee_id))) + '</td><td>' + esc(fmt(task.due_date)) + '</td><td>' + esc(task.progress || 0) + '</td></tr>';
+      return '<tr data-id="' + esc(task.id) + '"><td>' + esc(task.title) + '</td><td>' + esc(col ? t(col.en, col.bm) : task.column_key) + '</td><td>' + esc(task.tag || '') + '</td><td>' + esc(nick(empById(task.assignee_employee_id))) + '</td><td>' + esc(fmt(task.due_date)) + '</td><td>' + esc(task.progress || 0) + '</td></tr>';
     }).join('');
     return '<div class="pj-scroll"><table class="pj-table"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="6">' + esc(t('No tasks', 'Tiada task')) + '</td></tr>') + '</tbody></table></div>';
   }
