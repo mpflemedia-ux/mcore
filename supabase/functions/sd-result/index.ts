@@ -14,10 +14,14 @@ function db(): Db {
     request: (id) => one<Req>(sb.from('service_requests').select('*').eq('id', id).maybeSingle()),
     tenantName: async (id) => ((await one<{ name: string }>(sb.from('tenants').select('name').eq('id', id).maybeSingle())) || { name: '' }).name,
     service: (code) => one(sb.from('service_catalog').select('name_en,name_bm,default_sla_hours').eq('code', code).is('deleted_at', null).maybeSingle()),
+    // Unlocked when the ticket's own contract is paid OR the tenant has a currently active paid contract. invoice_ref 'FREE…' counts as paid.
     contractPaid: async (tid, cid) => {
-      let q = sb.from('service_contracts').select('id').eq('tenant_id', tid).eq('payment_status', 'paid').is('deleted_at', null).limit(1);
-      if (cid) q = q.eq('id', cid);
-      return ((await one<{ id: string }[]>(q)) || []).length > 0;
+      type C = { id: string; payment_status: string; invoice_ref: string | null; status: string; start_date: string | null; end_date: string | null };
+      const rows = (await one<C[]>(sb.from('service_contracts').select('id,payment_status,invoice_ref,status,start_date,end_date').eq('tenant_id', tid).is('deleted_at', null))) || [];
+      const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); // Asia/Kuala_Lumpur
+      const paid = (c: C) => c.payment_status === 'paid' || /^FREE/i.test(c.invoice_ref || '');
+      const live = (c: C) => c.status === 'active' && (!c.start_date || c.start_date.slice(0, 10) <= today) && (!c.end_date || today <= c.end_date.slice(0, 10));
+      return rows.some((c) => paid(c) && ((!!cid && String(c.id) === String(cid)) || live(c)));
     },
     deliverables: async (rid) => ((await one<{ file_path: string; body: string | null; meta: Record<string, unknown> | null; created_at: string }[]>(
       sb.from('service_request_events').select('file_path,body,meta,created_at').eq('request_id', rid).eq('type', 'attachment').not('file_path', 'is', null).order('created_at'))) || [])

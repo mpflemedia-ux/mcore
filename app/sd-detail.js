@@ -17,17 +17,24 @@
     if (e.type === 'internal_note') return '<b>' + SD.L('Internal note (staff only)', 'Nota dalaman (staf sahaja)') + '</b>';
     return '<b>' + SD.L('Comment', 'Komen') + '</b>';
   }
+  /* same rule as sd-result: ticket's contract paid, or an active paid contract today; FREE… counts as paid */
+  function paidFor(r) {
+    return sb.from('service_contracts').select('id,payment_status,invoice_ref,status,start_date,end_date').eq('tenant_id', r.tenant_id).is('deleted_at', null).then(function (x) {
+      var t = SD.today(), ok = function (c) { return c.payment_status === 'paid' || /^FREE/i.test(c.invoice_ref || ''); };
+      return (x.data || []).some(function (c) { return ok(c) && (SD.same(c.id, r.contract_id) || (c.status === 'active' && (!c.start_date || c.start_date <= t) && (!c.end_date || t <= c.end_date))); });
+    });
+  }
   SD.detail = function (id, admin) {
     return Promise.all([load(id), SD.catalog()]).then(function (x) {
       var r = x[0].r, ev = x[0].ev;
-      return Promise.all([SD.names(ev.map(function (e) { return e.actor_id; }).concat([r.assigned_to])), admin ? Promise.resolve(null) : SD.myContract(r.tenant_id), admin ? sb.from('tenants').select('name').eq('id', r.tenant_id).maybeSingle() : null])
+      return Promise.all([SD.names(ev.map(function (e) { return e.actor_id; }).concat([r.assigned_to])), admin ? Promise.resolve(null) : paidFor(r), admin ? sb.from('tenants').select('name').eq('id', r.tenant_id).maybeSingle() : null])
         .then(function (y) { paint(r, ev, y[0], y[1], admin, y[2] && y[2].data ? y[2].data.name : ''); });
     });
   };
   function paint(r, ev, names, c, admin, tname) {
     var m = SD.main(); if (!m) return;
     SD.title(r.ref_no);
-    var paid = admin || (c && c.payment_status === 'paid');
+    var paid = admin || c === true;
     var files = ev.filter(function (e) { return e.type === 'attachment' && e.file_path; });
     var dels = files.filter(function (e) { return (e.meta || {}).deliverable; }), atts = files.filter(function (e) { return !(e.meta || {}).deliverable; });
     var due = SD.due(r), who = function (id) { return names[id] || (admin ? '' : 'M-Core'); };

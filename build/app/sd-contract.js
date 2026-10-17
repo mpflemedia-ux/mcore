@@ -36,7 +36,7 @@
     var svc = (c.services || []).length;
     var it = [[SD.L('Client', 'Klien'), tName(c.tenant_id)], [SD.L('Period', 'Tempoh'), months(c) + SD.L(' months · ', ' bulan · ') + period(c)],
       [SD.L('Services', 'Servis'), svc + SD.L(' of ', ' daripada ') + ((SD.catalogList || []).length || 12)], [SD.L('Monthly quota', 'Kuota bulanan'), c.monthly_quota == null ? SD.L('Unlimited', 'Tanpa had') : c.monthly_quota + SD.L(' requests', ' permohonan')],
-      ['SLA', c.sla_hours + SD.L(' business hours', ' jam bekerja')], [SD.L('Renewal', 'Pembaharuan'), 'RM' + Number(c.renew_monthly_fee || 750) + SD.L(' / month after end', ' / bulan selepas tamat')]];
+      ['SLA', c.sla_hours + SD.L(' business hours', ' jam bekerja')], [SD.L('Renewal', 'Pembaharuan'), 'RM' + Number(c.renew_monthly_fee == null ? 750 : c.renew_monthly_fee) + SD.L(' / month after end', ' / bulan selepas tamat')]];
     var d = SD.daysTo(c.end_date), renew = SD.cStatus(c) === 'active' && d != null && d <= 30;
     return '<div class="cob-card" style="padding:16px"><div class="row"><b class="grow" style="font-size:15px">' + SD.L('Contract summary', 'Ringkasan kontrak') + '</b>' + (SD.packModal ? '<button class="btn btn-sm btn-outline" id="sd-pack"><i class="ti ti-report-analytics"></i> ' + SD.L('Monthly report', 'Laporan bulanan') + '</button>' : '') + '</div><div class="sd-sum">' +
       it.map(function (x) { return '<div><div class="cob-xs">' + x[0] + '</div><b>' + SD.esc(x[1]) + '</b></div>'; }).join('') + '</div>' +
