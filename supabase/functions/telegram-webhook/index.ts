@@ -1,4 +1,4 @@
-// NexERP — Telegram Bot webhook for /start CODE linking
+// M-Core — Telegram Bot webhook for /start CODE linking
 // Secrets: TELEGRAM_BOT_TOKEN, SUPABASE_SERVICE_ROLE_KEY
 // Set webhook: https://api.telegram.org/bot<TOKEN>/setWebhook?url=<SUPABASE_FN_URL>/telegram-webhook
 
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: 'Open NexERP → Notifications Settings → Link Telegram to get your link.',
+            text: 'Open M-Core → Notifications Settings → Link Telegram to get your link.',
           }),
         })
         return json({ ok: true })
@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: 'Link expired or invalid. Generate a new link in NexERP.' }),
+          body: JSON.stringify({ chat_id: chatId, text: 'Link expired or invalid. Generate a new link in M-Core.' }),
         })
         return json({ ok: true })
       }
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: '✅ Linked to NexERP. You will receive notifications here.',
+          text: '✅ Linked to M-Core. You will receive notifications here.',
         }),
       })
     }
