@@ -108,15 +108,20 @@ begin
 end $$;
 grant execute on function public.tenant_health_check() to authenticated;
 
--- 5) Audit action for manual SQL notes
-alter table public.platform_admin_audit drop constraint if exists platform_admin_audit_action_check;
-alter table public.platform_admin_audit add constraint platform_admin_audit_action_check
-  check (action in (
-    'suspend_tenant', 'reactivate_tenant', 'set_tenant_plan',
-    'create_announcement', 'soft_delete_tenant', 'record_payment',
-    'delete_tenant_plan_payment', 'enter_support_tenant', 'exit_support_tenant',
-    'manual_sql'
-  ));
+-- 5) Audit action: keep every existing value, add manual_sql
+do $$
+declare vals text;
+begin
+  select string_agg(quote_literal(action), ', ' order by action) into vals
+  from (select distinct action from public.platform_admin_audit where action is not null) a;
+  if vals is null then
+    vals := '''manual_sql''';
+  elsif position('''manual_sql''' in vals) = 0 then
+    vals := vals || ', ''manual_sql''';
+  end if;
+  execute 'alter table public.platform_admin_audit drop constraint if exists platform_admin_audit_action_check';
+  execute 'alter table public.platform_admin_audit add constraint platform_admin_audit_action_check check (action in (' || vals || '))';
+end $$;
 
 -- 6) Mark roadmap item completed (insert if missing)
 insert into public.dev_roadmap_items (title, module, stage)
