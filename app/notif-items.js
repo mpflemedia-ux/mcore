@@ -38,7 +38,8 @@
   NT.build = function (opts) {
     opts = opts || {}; var S = NT.S || NT.merge();
     var rows = NT.rows.filter(function (n) { return !(n.actor_id && NT.same(n.actor_id, NT.uid())); }).map(NT.fromRow);
-    var all = NT.group(rows.concat(NT.live.map(function (x) { return Object.assign({ ids: [] }, x); })));
+    var hid = {}; try { JSON.parse(localStorage.getItem('mcore_nt_hide_' + NT.uid() + '_' + NT.day()) || '[]').forEach(function (k) { hid[k] = 1; }); } catch (e) {}
+    var all = NT.group(rows.concat(NT.live.filter(function (x) { return !hid[x.key]; }).map(function (x) { return Object.assign({ ids: [] }, x); })));
     var t = { action: [], for_you: [], activity: [], snoozed: [] };
     all.forEach(function (it) {
       if (!NT.ch(it.cat, 'b', S) && !opts.all) return;
