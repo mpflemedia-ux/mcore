@@ -5214,6 +5214,24 @@ async function doVerifyResetOtp() {
   }, 2000)
 }
 
+
+async function saveMyName() {
+  const el = document.getElementById('acct-name')
+  const name = el ? el.value.trim() : ''
+  if (!name) { showToast(APP.language==='bm'?'Nama diperlukan':'Name is required', 'error'); return }
+  const { error } = await sb.from('user_profiles').update({ full_name: name }).eq('id', APP.user.id)
+  if (error) { showToast(error.message || 'Save failed', 'error'); return }
+  APP.user.name = name
+  try {
+    const init = name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
+    const av = document.getElementById('user-avatar')
+    if (av) av.textContent = init
+    const sn = document.getElementById('user-name-sidebar')
+    if (sn) sn.textContent = name
+  } catch (e) {}
+  showToast(APP.language==='bm'?'Nama disimpan':'Name saved', 'success')
+}
+
 async function doLogout() {
   _pinClearVerified()
   await sb.auth.signOut()
@@ -14652,11 +14670,14 @@ async function renderSettings(params={}) {
   <div class="card" style="max-width:500px" id="stg-account">
     <div class="card-header"><div class="card-title">${t.account}</div></div>
     <div style="display:flex;flex-direction:column;gap:14px">
-      <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.name}</label><input type="text" class="form-select" value="${APP.user.name||''}" readonly></div>
+      <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.name}</label><input id="acct-name" type="text" class="form-input" value="${_aiEscapeHtml(APP.user.name||'')}"></div>
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.email}</label><input type="text" class="form-select" value="${APP.user.email||''}" readonly></div>
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.role}</label><input type="text" class="form-select" value="${APP.user.role||''}" readonly></div>
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.company}</label><input type="text" class="form-select" value="${APP.tenant.name||''}" readonly></div>
-      <button class="btn btn-danger" style="width:fit-content" onclick="doLogout()"><i class="ti ti-logout"></i> ${c.signOut}</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" type="button" onclick="saveMyName()">${APP.language==='bm'?'Simpan Nama':'Save Name'}</button>
+        <button class="btn btn-danger" style="width:fit-content" onclick="doLogout()"><i class="ti ti-logout"></i> ${c.signOut}</button>
+      </div>
     </div>
   </div>
   ${isAdmin ? (() => {
