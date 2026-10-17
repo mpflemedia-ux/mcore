@@ -1,0 +1,25 @@
+name: pj-file-upload-bump-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pj-file-upload-bump.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'projects.js?v=49' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "c90fc1b4c6d48d477a454fda96a9b1629e926504"
+          test "$(git hash-object app/projects.js)" = "616983e4dcb0c4df01318e1747082a843dcef261"
+          sed -i 's|./projects.js?v=48"|./projects.js?v=49"|' "$F"
+          test "$(git hash-object "$F")" = "91ee0ad9a67c3d7bd017c9dc3f160cfa3c26fa7d"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(projects): bump projects v49"
+          git push
