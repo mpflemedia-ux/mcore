@@ -77,11 +77,32 @@
       });
     }
     var s = A.summary(list), host = main.querySelector('.pj-tabs'); if (!host) return;
-    host.insertAdjacentHTML('afterend', '<div class="pja-sum" role="status">' +
-      '<div><small>' + A.esc(A.L('Total', 'Jumlah')) + '</small><b>' + s.total + '</b></div>' +
-      '<div class="late"><small>' + A.esc(A.L('Overdue', 'Lewat')) + '</small><b>' + s.overdue + '</b></div>' +
-      '<div><small>' + A.esc(A.L('Done this week', 'Siap minggu ni')) + '</small><b>' + s.doneW + '</b></div>' +
-      '<div><small>' + A.esc(A.L('Est. hours', 'Anggaran jam')) + '</small><b>' + s.hours + 'h</b></div></div>');
+    var ps = A.projStats ? A.projStats(st.projects || [], st.tasks || [], st.employees || []) : null;
+    var cell = function (label, n, late) { return '<div' + (late ? ' class="late"' : '') + '><small>' + A.esc(label) + '</small><b>' + n + '</b></div>'; };
+    var row = '';
+    if (ps && A.isAll(st)) {
+      row = cell(A.L('Projects', 'Projek'), ps.projects) +
+        cell(A.L('Active', 'Aktif'), ps.active) +
+        cell(A.L('Done', 'Siap'), ps.done) +
+        cell(A.L('Empty', 'Kosong'), ps.empty) +
+        cell(A.L('Late projects', 'Projek lewat'), ps.late, true) +
+        cell(A.L('Client', 'Klien'), ps.client) +
+        cell(A.L('Internal', 'Dalaman'), ps.internal);
+    }
+    row += cell(A.L('Total', 'Jumlah'), s.total) +
+      cell(A.L('Overdue', 'Lewat'), s.overdue, true) +
+      cell(A.L('Done this week', 'Siap minggu ni'), s.doneW) +
+      cell(A.L('Est. hours', 'Anggaran jam'), s.hours + 'h');
+    var meta = '';
+    if (ps && A.isAll(st)) {
+      var named = ps.load.filter(function (x) { return x.id; }).slice(0, 3);
+      var none = ps.load.filter(function (x) { return !x.id; })[0];
+      var bits = named.map(function (x) { return A.esc(x.name || '—') + ' ' + x.n; });
+      if (none) bits.push(A.esc(A.L('Unassigned', 'Tiada assignee')) + ' ' + none.n);
+      meta = '<div class="pja-sum2">' + A.esc(A.L('Quiet 7 days', 'Senyap 7 hari')) + ': <b>' + ps.silent + '</b>' +
+        (bits.length ? ' · ' + A.esc(A.L('Load', 'Beban')) + ': ' + bits.join(' · ') : '') + '</div>';
+    }
+    host.insertAdjacentHTML('afterend', '<div class="pja-sum" role="status">' + row + '</div>' + meta);
   };
 
   function openPick(st, cb) {
