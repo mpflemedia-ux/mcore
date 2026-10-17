@@ -12,7 +12,7 @@
   function load() {
     var ago = new Date(Date.now() - 3 * 864e5).toISOString(), x = function () { return []; };
     return Promise.all([
-      q(sb.from('tenants').select('id,name').is('deleted_at', null).order('name').limit(1000)).catch(x),
+      q(sb.from('tenants').select('id,name,is_active').is('deleted_at', null).eq('is_active', true).order('name').limit(1000)).catch(x),
       q(sb.from('invoices').select('id,tenant_id,ref_no,customer_name,total,paid_amt,due_date,status').is('deleted_at', null).lt('due_date', today()).neq('status', 'paid').order('due_date', { ascending: true }).limit(LIM)),
       q(sb.from('quotations').select('id,tenant_id,ref_no,customer_name,total,valid_until,status,customer_response').is('deleted_at', null).eq('status', 'sent').is('customer_response', null).order('created_at', { ascending: false }).limit(LIM)),
       q(sb.from('bookings').select('id,tenant_id,customer_name,starts_at,status').gte('starts_at', tomorrow(1)).lt('starts_at', tomorrow(2)).order('starts_at', { ascending: true }).limit(LIM)),
@@ -20,15 +20,16 @@
       q(sb.from('doc_views').select('doc_id,tenant_id,viewed_at').eq('doc_type', 'inv').lt('viewed_at', ago).order('viewed_at', { ascending: true }).limit(1000)).catch(x)
     ]).then(function (a) {
       ST.tens = {}; a[0].forEach(function (r) { ST.tens[r.id] = r.name; });
+      var live = function (tid) { return !!ST.tens[tid]; };
       var rows = [];
-      a[1].filter(unpaid).forEach(function (i) { rows.push({ ty: 'od', id: i.id, tid: i.tenant_id, l1: (i.ref_no || '-') + ' · ' + (i.customer_name || '-'), l2: t('late', { n: late(i.due_date) }), amt: B.money(bal(i)), k: late(i.due_date) }); });
-      a[2].forEach(function (r) { rows.push({ ty: 'aw', id: r.id, tid: r.tenant_id, l1: (r.ref_no || '-') + ' · ' + (r.customer_name || '-'), l2: r.valid_until ? t('valid', { d: B.date(r.valid_until) }) : '', amt: B.money(r.total) }); });
-      a[3].filter(function (b) { return !/cancel/i.test(b.status || ''); }).forEach(function (b) { rows.push({ ty: 'bk', id: b.id, tid: b.tenant_id, l1: b.customer_name || '-', l2: t('at', { t: B.date(b.starts_at) + ' ' + B.time(b.starts_at) }), amt: '' }); });
-      a[4].forEach(function (r) { rows.push({ ty: 'sd', id: r.id, tid: r.tenant_id, l1: (r.ref_no || '') + ' · ' + (r.title || '-'), l2: String(r.status || '').replace(/_/g, ' ') + (r.priority ? ' · ' + r.priority : ''), amt: '' }); });
+      a[1].filter(unpaid).filter(function (i) { return live(i.tenant_id); }).forEach(function (i) { rows.push({ ty: 'od', id: i.id, tid: i.tenant_id, l1: (i.ref_no || '-') + ' · ' + (i.customer_name || '-'), l2: t('late', { n: late(i.due_date) }), amt: B.money(bal(i)), k: late(i.due_date) }); });
+      a[2].filter(function (r) { return live(r.tenant_id); }).forEach(function (r) { rows.push({ ty: 'aw', id: r.id, tid: r.tenant_id, l1: (r.ref_no || '-') + ' · ' + (r.customer_name || '-'), l2: r.valid_until ? t('valid', { d: B.date(r.valid_until) }) : '', amt: B.money(r.total) }); });
+      a[3].filter(function (b) { return !/cancel/i.test(b.status || '') && live(b.tenant_id); }).forEach(function (b) { rows.push({ ty: 'bk', id: b.id, tid: b.tenant_id, l1: b.customer_name || '-', l2: t('at', { t: B.date(b.starts_at) + ' ' + B.time(b.starts_at) }), amt: '' }); });
+      a[4].filter(function (r) { return live(r.tenant_id); }).forEach(function (r) { rows.push({ ty: 'sd', id: r.id, tid: r.tenant_id, l1: (r.ref_no || '') + ' · ' + (r.title || '-'), l2: String(r.status || '').replace(/_/g, ' ') + (r.priority ? ' · ' + r.priority : ''), amt: '' }); });
       var first = {}; a[5].forEach(function (v) { if (!first[v.doc_id]) first[v.doc_id] = v.viewed_at; });
       var ids = Object.keys(first).slice(0, 200);
       return (ids.length ? q(sb.from('invoices').select('id,tenant_id,ref_no,customer_name,total,paid_amt,due_date,status').in('id', ids).is('deleted_at', null)).catch(function () { return []; }) : Promise.resolve([])).then(function (inv) {
-        inv.filter(unpaid).forEach(function (i) { rows.push({ ty: 'op', id: i.id, tid: i.tenant_id, l1: (i.ref_no || '-') + ' · ' + (i.customer_name || '-'), l2: t('opened', { d: B.date(first[i.id]) }), amt: B.money(bal(i)) }); });
+        inv.filter(unpaid).filter(function (i) { return live(i.tenant_id); }).forEach(function (i) { rows.push({ ty: 'op', id: i.id, tid: i.tenant_id, l1: (i.ref_no || '-') + ' · ' + (i.customer_name || '-'), l2: t('opened', { d: B.date(first[i.id]) }), amt: B.money(bal(i)) }); });
         ST.rows = rows; ST.err = null;
       });
     }).catch(function (e) { ST.err = (e && e.message) || String(e); ST.rows = []; });
