@@ -95,12 +95,12 @@
       cell(A.L('Est. hours', 'Anggaran jam'), s.hours + 'h');
     var meta = '';
     if (ps && A.isAll(st)) {
-      var named = ps.load.filter(function (x) { return x.id; }).slice(0, 3);
+      var named = ps.load.filter(function (x) { return x.id; });
       var none = ps.load.filter(function (x) { return !x.id; })[0];
-      var bits = named.map(function (x) { return A.esc(x.name || '—') + ' ' + x.n; });
-      if (none) bits.push(A.esc(A.L('Unassigned', 'Tiada assignee')) + ' ' + none.n);
-      meta = '<div class="pja-sum2">' + A.esc(A.L('Quiet 7 days', 'Senyap 7 hari')) + ': <b>' + ps.silent + '</b>' +
-        (bits.length ? ' · ' + A.esc(A.L('Load', 'Beban')) + ': ' + bits.join(' · ') : '') + '</div>';
+      var bits = named.map(function (x) { return '<span>' + A.esc(x.name || '—') + ' <b>' + x.n + '</b></span>'; });
+      if (none) bits.push('<span>' + A.esc(A.L('Unassigned', 'Tiada assignee')) + ' <b>' + none.n + '</b></span>');
+      meta = '<div class="pja-sum2"><span>' + A.esc(A.L('Quiet 7 days', 'Senyap 7 hari')) + ': <b>' + ps.silent + '</b></span>' +
+        bits.join('') + '</div>';
     }
     host.insertAdjacentHTML('afterend', '<div class="pja-sum" role="status">' + row + '</div>' + meta);
   };

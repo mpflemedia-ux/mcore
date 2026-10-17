@@ -7081,10 +7081,10 @@ async function _dbLoadProjectsCard() {
   const cell = (label, n, late) => '<div' + (late ? ' class="late"' : '') + '><small>' + label + '</small><b>' + n + '</b></div>'
   let strip = ''
   if (ps) {
-    const named = ps.load.filter(x => x.id).slice(0, 3)
+    const named = ps.load.filter(x => x.id)
     const none = ps.load.filter(x => !x.id)[0]
-    const bits = named.map(x => (x.name || '—') + ' ' + x.n)
-    if (none) bits.push((isBm ? 'Tiada assignee' : 'Unassigned') + ' ' + none.n)
+    const bits = named.map(x => '<span>' + (x.name || '—') + ' <b>' + x.n + '</b></span>')
+    if (none) bits.push('<span>' + (isBm ? 'Tiada assignee' : 'Unassigned') + ' <b>' + none.n + '</b></span>')
     strip = '<div class="pja-sum" role="status">' +
       cell(isBm ? 'Projek' : 'Projects', ps.projects) +
       cell(isBm ? 'Aktif' : 'Active', ps.active) +
@@ -7093,8 +7093,8 @@ async function _dbLoadProjectsCard() {
       cell(isBm ? 'Projek lewat' : 'Late projects', ps.late, true) +
       cell(isBm ? 'Klien' : 'Client', ps.client) +
       cell(isBm ? 'Dalaman' : 'Internal', ps.internal) +
-      '</div><div class="pja-sum2">' + (isBm ? 'Senyap 7 hari' : 'Quiet 7 days') + ': <b>' + ps.silent + '</b>' +
-      (bits.length ? ' · ' + (isBm ? 'Beban' : 'Load') + ': ' + bits.join(' · ') : '') + '</div>'
+      '</div><div class="pja-sum2"><span>' + (isBm ? 'Senyap 7 hari' : 'Quiet 7 days') + ': <b>' + ps.silent + '</b></span>' +
+      bits.join('') + '</div>'
   }
   if (!shown.length) {
     el.innerHTML = strip + '<div style="color:var(--db-text3);font-size:13px;padding:8px 0">' + (isBm ? 'Semua projek siap' : 'All projects done') + '</div>'
