@@ -282,7 +282,13 @@
         '<div class="pj-file-acts"><button type="button" data-act="file-rename" data-file="' + esc(f.name) + '">' + esc(t('Rename', 'Tukar nama')) + '</button>' +
         '<button type="button" class="pj-del" data-act="file-del" data-file="' + esc(f.name) + '">' + esc(t('Delete', 'Padam')) + '</button></div></article>';
     }).join('');
-    return '<div class="pj-files"><label class="btn btn-sm btn-primary">' + esc(t('Upload file', 'Muat naik fail')) +
+    var pick = '';
+    if (state.projectId === '__all__') {
+      pick = '<p class="pj-muted">' + esc(t('Choose a project before uploading.', 'Pilih projek dulu sebelum muat naik.')) + '</p>' +
+        '<select id="pj-file-proj"><option value="">' + esc(t('Choose project', 'Pilih projek')) + '</option>' +
+        state.projects.map(function (pr) { return '<option value="' + esc(pr.id) + '">' + esc(pr.name) + '</option>'; }).join('') + '</select>';
+    }
+    return '<div class="pj-files">' + pick + '<label class="btn btn-sm btn-primary pj-upload">' + esc(t('Upload file', 'Muat naik fail')) +
       '<input id="pj-file" type="file" hidden></label>' +
       (rows || '<p class="pj-muted">' + esc(t('No files yet', 'Belum ada fail')) + '</p>') + '</div>';
   }
@@ -395,7 +401,7 @@
       '.pj-stats{display:grid;grid-template-columns:repeat(5,minmax(90px,1fr));gap:8px} .pj-stats div{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px} .pj-stats small{color:var(--text-3)} .pj-stats b{display:block;font-size:20px}' +
       '.pj-scroll{overflow-x:auto} .pj-table{width:100%;border-collapse:collapse} .pj-table th,.pj-table td{border-bottom:1px solid var(--border);padding:8px;text-align:left;white-space:nowrap}' +
       '.pj-split{display:flex;align-items:flex-start;gap:8px} .pj-names{flex:0 0 148px;min-width:0} .pj-namehead,.pj-weeks{height:18px} .pj-names b,.pj-tagspace{display:block;height:22px;margin-top:8px} .pj-name,.pj-track{height:36px;margin:4px 0} .pj-name{font-size:13px;line-height:18px;overflow:hidden} .pj-scroll{flex:1;min-width:0;overflow-x:auto} .pj-tl{min-width:576px} .pj-weeks{display:grid;grid-template-columns:repeat(8,minmax(72px,1fr));color:var(--text-3);font-size:11px} .pj-weeks span{white-space:nowrap} .pj-track{position:relative;background:var(--border);border-radius:8px} .pj-track i{position:absolute;top:11px;height:14px;background:var(--primary);border-radius:6px}' +
-      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-file{display:flex;gap:10px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px} .pj-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:0 0 56px;background:var(--bg)} .pj-thumb-file{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text)} .pj-file-main{min-width:0;flex:1} .pj-file a{color:var(--primary);word-break:break-word} .pj-file-acts{display:flex;gap:6px;flex:0 0 auto} .pj-file-acts button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:6px 8px} .pj-file-main select,.pj-card-file{display:block;width:100%;margin-top:6px} .pj-card-file{display:flex;gap:6px;align-items:center} .pj-card-file img,.pj-card-file span{width:36px;height:36px;object-fit:cover;border-radius:6px;background:var(--bg-card);display:flex;align-items:center;justify-content:center;font-size:10px} .pj-card-file b{font-size:11px;font-weight:600;word-break:break-word} .pj-del{border-color:#b91c1c !important;background:#b91c1c !important;color:#fff !important} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
+      '.pj-empty,.pj-muted{color:var(--text-2);padding:16px} .pj-files{display:flex;flex-direction:column;gap:8px} .pj-upload{display:flex;align-items:center;justify-content:center;min-height:44px;width:100%;box-sizing:border-box} #pj-file{display:none!important} #pj-file-proj{width:100%;min-height:44px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px} .pj-file{display:flex;gap:10px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px} .pj-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:0 0 56px;background:var(--bg)} .pj-thumb-file{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text)} .pj-file-main{min-width:0;flex:1} .pj-file a{color:var(--primary);word-break:break-word} .pj-file-acts{display:flex;gap:6px;flex:0 0 auto} .pj-file-acts button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:6px 8px} .pj-file-main select,.pj-card-file{display:block;width:100%;margin-top:6px} .pj-card-file{display:flex;gap:6px;align-items:center} .pj-card-file img,.pj-card-file span{width:36px;height:36px;object-fit:cover;border-radius:6px;background:var(--bg-card);display:flex;align-items:center;justify-content:center;font-size:10px} .pj-card-file b{font-size:11px;font-weight:600;word-break:break-word} .pj-del{border-color:#b91c1c !important;background:#b91c1c !important;color:#fff !important} .pj-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:40} .pj-modal[hidden]{display:none} .pj-modal form{background:var(--bg-card);color:var(--text);padding:16px;border-radius:12px;width:min(420px,92vw)} .pj-modal label{display:block;margin-top:8px} .pj-modal input,.pj-modal select{width:100%}' +
       '@media(min-width:801px){.pj-proj{flex-wrap:wrap;row-gap:4px}.pj-proj>button[data-proj]{flex:1 1 100%}.pj-proj>button[data-proj] span{white-space:normal;overflow-wrap:anywhere}.pj-proj small{flex:1 1 100%;margin-left:0;padding-left:16px}.pj-proj>button[data-proj-arch],.pj-proj>button[data-proj-restore]{margin-left:auto}}' +
       '@media(max-width:800px){.pj-wrap{flex-direction:column}.pj-side{width:auto;max-height:160px}.pj-stats{grid-template-columns:repeat(2,1fr)}.pj-tools{flex-wrap:wrap}.pj-tools input,.pj-tools select{flex:1;min-width:0}#pj-task{flex:1 1 100%;justify-content:center}}';
   }
@@ -480,6 +486,8 @@
     });
     main.querySelectorAll('.pj-col').forEach(function (col) {
     });
+    var fileProj = document.getElementById('pj-file-proj');
+    if (fileProj) fileProj.onchange = function () { if (fileProj.value) { state.projectId = fileProj.value; state.tab = 'files'; refresh(); } };
     var fileInput = document.getElementById('pj-file');
     if (fileInput) fileInput.onchange = function () { uploadFile(fileInput.files && fileInput.files[0]); };
     main.querySelectorAll('[data-act="file-del"]').forEach(function (btn) {
@@ -682,7 +690,11 @@
     return (Date.now() + '-' + (clean || 'file')).slice(0, 120);
   }
   async function uploadFile(file) {
-    if (!file || !state.projectId) return;
+    if (!file) return;
+    if (!state.projectId || state.projectId === '__all__') {
+      showToast(t('Choose a project before uploading.', 'Pilih projek dulu sebelum muat naik.'), 'error');
+      return;
+    }
     var limit = 100 * 1024 * 1024;
     if (file.size > limit) {
       showToast(t('File is over 100 MB. Compress it first.', 'Fail melebihi 100 MB. Kecilkan fail dulu.'), 'error');
