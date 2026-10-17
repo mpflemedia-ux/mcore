@@ -149,7 +149,7 @@
     return Promise.resolve().then(function () { return sb.from('notifications').insert(rows); }).then(function () {}, function () {});
   };
   SD.bellFor = function (r, title, body) {
-    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk' }; };
+    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
     var q = SD.isPA()
       ? sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', r.tenant_id)
       : SD.paList ? SD.paList() : sb.from('user_profiles').select('id,tenant_id,role').eq('role', 'platform_admin');

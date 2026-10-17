@@ -2765,6 +2765,9 @@ async function _notifOsNotify(title, body) {
   try {
     if (typeof Notification === 'undefined') return
     if (Notification.permission !== 'granted') return
+    var myt = new Date(Date.now() + 8*3600000)
+    var h = myt.getUTCHours()
+    if (h < 8 || h >= 18) return
     let prefs = {}
     try { prefs = (typeof _notifGetPrefs === 'function') ? await _notifGetPrefs() : {} } catch (e) {}
     if (prefs && prefs.muted) return
@@ -3092,7 +3095,7 @@ async function loadNotifications() {
         kind: n.category, ref: n.id, ts: new Date(n.created_at).getTime(),
         icon: catIcon[n.category] || 'ti-bell', color: 'var(--primary)',
         text: _ttl(n.title), meta: n.body || '',
-        go: () => { sb.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).then(()=>{},()=>{}); openPage(catPage[n.category] || 'dashboard') }
+        go: () => { sb.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).then(()=>{},()=>{}); if(n.category==='service_desk' && n.ref_id) openPage('admin',{view:'sd_desk',id:n.ref_id}); else openPage(catPage[n.category] || 'dashboard') }
       }
       items.push(it)
     })
@@ -38216,10 +38219,10 @@ if('serviceWorker' in navigator){
 <script src="./onboarding-review.js?v=1"></script>
 <script src="./onboarding-master.js?v=1"></script>
 <script src="./onboarding-master-edit.js?v=1"></script>
-<script src="./sd-core.js?v=2"></script>
+<script src="./sd-core.js?v=3"></script>
 <script src="./sd-css.js?v=5"></script>
-<script src="./sd-data.js?v=2"></script>
-<script src="./sd-pa.js?v=2"></script>
+<script src="./sd-data.js?v=3"></script>
+<script src="./sd-pa.js?v=3"></script>
 <script src="./sd-contract.js?v=2"></script>
 <script src="./sd-contract-form.js?v=1"></script>
 <script src="./sd-client.js?v=2"></script>
