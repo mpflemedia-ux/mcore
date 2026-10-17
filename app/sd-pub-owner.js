@@ -48,11 +48,13 @@
   };
   function paint(cat, c) {
     var m = SD.main(); if (!m) return;
+    var noC = !SD.usable(c);
+    var ban = noC ? '<div class="cob-banner err" style="margin-bottom:12px"><i class="ti ti-lock"></i><div>' + SD.esc(((APP.tenant && APP.tenant.name) ? APP.tenant.name + ': ' : '') + SD.L('No active contract. Public link stays off until a contract is active.', 'Tiada kontrak aktif. Link awam kekal tutup sehingga kontrak aktif.')) + '</div></div>' : '';
     var l = SD.pub.link || { enabled: false, services: [], monthly_quota: 10, expires_on: null }, url = l.token ? SD.pubUrl(l.token) : '';
     var mine = cat.filter(function (x) { return c && (c.services || []).indexOf(x.code) >= 0; }), q = l.monthly_quota, pct = q ? Math.min(100, Math.round(SD.pub.used / q * 100)) : 0;
     var cq = SD.CL && SD.CL.c && SD.CL.c.monthly_quota != null ? SD.CL.used + ' / ' + SD.CL.c.monthly_quota : null;
     var card = function (h) { return '<div class="cob-card" style="padding:16px;margin-bottom:12px">' + h + '</div>'; };
-    m.innerHTML = '<div class="cob-root">' + SD.tabsBar('link') + '<div class="sd-pubg"><div>' +
+    m.innerHTML = '<div class="cob-root">' + SD.tabsBar('link') + ban + '<div class="sd-pubg"><div>' +
       card('<div class="row"><div class="grow"><b style="font-size:15px">' + SD.L('Public service request link', 'Link awam permohonan servis') + '</b><div class="cob-xs">' + SD.L('Your customers or staff can send requests without logging in. Every request needs your approval.', 'Pelanggan atau staf anda boleh hantar permohonan tanpa log masuk. Setiap permohonan perlu kelulusan anda.') + '</div></div><button type="button" class="cob-sw' + (l.enabled ? ' on' : '') + '" id="pl-en" aria-label="' + SD.L('Enable link', 'Hidupkan link') + '"></button></div>') +
       (l.token ? card('<b style="font-size:15px">' + SD.L('Your link', 'Link anda') + '</b><div class="row" style="gap:8px;margin-top:10px"><div class="form-input grow" style="min-height:42px;display:flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;min-width:0"><span class="cob-ell" title="' + SD.esc(url) + '">' + SD.esc(url.replace(/^https?:\/\//, '')) + '</span></div><button class="btn btn-primary" id="pl-cp"><i class="ti ti-copy"></i> ' + SD.L('Copy', 'Salin') + '</button></div>' +
         '<div class="sd-pubq" style="margin-top:14px"><div id="pl-qr" style="width:170px;height:170px;border-radius:8px;background:#fff"></div><div class="grow" style="min-width:150px"><div class="cob-xs" style="margin-bottom:8px">' + SD.L('Print the QR at your counter, on invoices or quotations.', 'Cetak QR di kaunter, invois atau sebut harga.') + '</div>' +
@@ -71,8 +73,9 @@
       m.querySelector('#pl-dl').onclick = function () { var cv = m.querySelector('#pl-qr canvas'); if (!cv) return; var a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = 'mcore-link-awam-qr.png'; document.body.appendChild(a); a.click(); a.remove(); };
       m.querySelector('#pl-rs').onclick = function () { if (confirm(SD.L('Reset the link? The old link and QR stop working immediately.', 'Tetap semula link? Link dan QR lama terus berhenti berfungsi.'))) save(true); };
     }
-    m.querySelector('#pl-sv').onclick = function () { save(false); };
+    var sv = m.querySelector('#pl-sv'); if (sv) { sv.disabled = noC; sv.onclick = function () { save(false); }; }
     function save(reset) {
+      if (!SD.usable(c)) { SD.toast(((APP.tenant && APP.tenant.name) ? APP.tenant.name + ': ' : '') + SD.L('No active contract', 'Tiada kontrak aktif'), 'error'); return; }
       var t = reset || !l.token ? tok() : l.token;
       hex(t).then(function (h) {
         var rec = { tenant_id: SD.tid(), token: t, token_hash: h, display_name: String((APP.tenant && APP.tenant.name) || '').slice(0, 200), enabled: en.classList.contains('on'),
