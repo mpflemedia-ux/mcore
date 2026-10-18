@@ -30,9 +30,11 @@ function db(): Db {
       const r = await sb.storage.from('service-files').createSignedUrls(paths, sec); const m: Record<string, string> = {};
       (r.data || []).forEach((x) => { if (x.path && x.signedUrl) m[x.path] = x.signedUrl; }); return m;
     },
-    timeline: async (rid) => ((await one<{ type: string; body: string | null; created_at: string; actor_id: string | null }[]>(
-      sb.from('service_request_events').select('type,body,created_at,actor_id').eq('request_id', rid).in('type', ['comment','status','attachment']).is('deleted_at', null).order('created_at', { ascending: false }).limit(30))) || [])
-      .map((e) => ({ type: e.type, body: e.body, created_at: e.created_at, actor: e.actor_id })),
+    timeline: async (rid) => {
+      const rows = (await one<{ type: string; body: string | null; created_at: string; actor_id: string | null }[]>(
+        sb.from('service_request_events').select('type,body,created_at,actor_id').eq('request_id', rid).order('created_at', { ascending: false }).limit(40))) || [];
+      return rows.map((e) => ({ type: e.type || 'note', body: e.body, created_at: e.created_at, actor: e.actor_id }));
+    },
 
     markViewed: async (l, now) => { await sb.from('service_result_links').update({ viewed_at: l.viewed_at || now, view_count: (l.view_count || 0) + 1 }).eq('id', l.id); },
     responseCount: async (lid) => { const r = await sb.from('service_result_responses').select('id', { count: 'exact', head: true }).eq('link_id', lid); return r.count || 0; },
