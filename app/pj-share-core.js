@@ -1,7 +1,8 @@
 /* M-Core Projects - Share public report (admin) core: toolbar button (whole project), modal to
-   generate/regenerate/revoke a no-login report link (QR + copy), view count/last viewed, messages
-   left by viewers. Optional task scope (task_id) and the per-task share icon live in
-   pj-share-tasks.js; WhatsApp share lives in pj-share-wa.js (both extend via window.PJS).
+   generate/regenerate/revoke a no-login report link (QR + download QR + copy), view count/last
+   viewed, messages left by viewers. Optional task scope (task_id) and the per-task share icon live
+   in pj-share-tasks.js; WhatsApp share lives in pj-share-wa.js (both extend via window.PJS; PJS._state
+   caches the latest paint state so pj-share-wa.js can compute project-level stats without re-fetching).
    Hook: projects.js paint() -> window._pjAfterPaint(state) (same chain as pj-wa-board.js etc). */
 (function () {
   if (window._pjShare) return; window._pjShare = 1;
@@ -51,7 +52,7 @@
         '<div class="cob-card" style="padding:12px;margin-bottom:10px">' +
         '<div class="form-group" style="margin-bottom:10px"><label class="form-label">' + esc(t('Link', 'Link')) + '</label><div class="row" style="gap:8px"><input class="form-input" id="pjs-url" readonly value="' + (link._tok ? esc(url) : esc(t('(regenerate to get a fresh link)', '(jana semula untuk dapat link baharu)'))) + '"><button type="button" class="btn btn-outline" id="pjs-copy"' + (link._tok ? '' : ' disabled') + '><i class="ti ti-copy"></i></button></div></div>' +
         (link._tok ? '<div id="pjs-wa-slot"></div>' : '') +
-        (link._tok ? '<div id="pjs-qr" style="width:150px;height:150px;border-radius:8px;background:#fff;margin-bottom:10px"></div>' : '') +
+        (link._tok ? '<div id="pjs-qr" style="width:150px;height:150px;border-radius:8px;background:#fff;margin-bottom:6px"></div><button type="button" class="btn btn-sm btn-outline" id="pjs-qrdl" style="margin-bottom:10px"><i class="ti ti-download"></i> ' + esc(t('Download QR', 'Muat turun QR')) + '</button>' : '') +
         '<div class="cob-sm" style="margin-bottom:4px">' + esc(t('Expires', 'Tamat tempoh')) + ': <b>' + esc(dmy(link.expires_on)) + '</b></div>' +
         '<div class="cob-xs" style="margin-bottom:10px">' + esc(t('Views', 'Paparan')) + ': ' + (link.view_count || 0) + (link.viewed_at ? ' · ' + esc(t('Last viewed', 'Terakhir dilihat')) + ': ' + esc(dtFull(link.viewed_at)) : ' · ' + esc(t('Not viewed yet', 'Belum dilihat'))) + '</div>' +
         '<div class="form-group" style="margin-bottom:10px"><label class="form-label">' + esc(t('New expiry (regenerate)', 'Tamat tempoh baharu (jana semula)')) + '</label><input type="date" class="form-input" id="pjs-exp" value="' + esc(defExpiry()) + '"></div>' +
@@ -71,6 +72,10 @@
     var copyBtn = m.querySelector('#pjs-copy'); if (copyBtn && link && link._tok) copyBtn.onclick = function () { try { navigator.clipboard.writeText(url); if (typeof showToast === 'function') showToast(t('Link copied', 'Link disalin'), 'success'); } catch (e) {} };
     if (window.PJS && PJS.fillWaSlot) { try { PJS.fillWaSlot(m, proj, task, url); } catch (e) {} }
     if (link && link._tok) { var qrBox = m.querySelector('#pjs-qr'); if (qrBox) drawQr(url).then(function (cv) { qrBox.innerHTML = ''; qrBox.appendChild(cv); }); }
+    var qrdl = m.querySelector('#pjs-qrdl'); if (qrdl) qrdl.onclick = function () {
+      var cv = m.querySelector('#pjs-qr canvas'); if (!cv) { if (typeof showToast === 'function') showToast(t('QR not ready yet', 'QR belum sedia'), 'error'); return; }
+      var a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = 'mcore-report-qr.png'; a.click();
+    };
     var gen = m.querySelector('#pjs-gen'); if (gen) gen.onclick = function () { gen.disabled = true; doGenerate(proj, task, null, m.querySelector('#pjs-exp').value).catch(function (e) { gen.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); }); };
     var regen = m.querySelector('#pjs-regen'); if (regen) regen.onclick = function () { regen.disabled = true; doGenerate(proj, task, link, m.querySelector('#pjs-exp').value).catch(function (e) { regen.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); }); };
     var revoke = m.querySelector('#pjs-revoke'); if (revoke) revoke.onclick = function () {
@@ -118,6 +123,7 @@
   }
 
   function decorate(st) {
+    PJS._state = st;
     var main = document.getElementById('main'); if (!main) return;
     if (!can()) return;
     var box = main.querySelector('.pj-tools');

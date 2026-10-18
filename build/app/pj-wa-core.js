@@ -34,7 +34,7 @@
     var tid = W.tid(), ids = (st.tasks || []).map(function (k) { return k.id; });
     var a = sb.from('employees').select('id,name,nickname,phone,email').eq('tenant_id', tid).is('deleted_at', null).order('name');
     var b = sb.from('customers').select('id,name,phone').eq('tenant_id', tid).is('deleted_at', null).order('name').limit(500);
-    var c = ids.length ? sb.from('project_task_shares').select('task_id,created_at').eq('tenant_id', tid).in('task_id', ids).is('deleted_at', null) : Promise.resolve({ data: [] });
+    var c = ids.length ? sb.from('project_task_shares').select('task_id,created_at').eq('tenant_id', tid).in('task_id', ids).neq('template', 'report').is('deleted_at', null) : Promise.resolve({ data: [] });
     return Promise.all([a, b, c]).then(function (r) {
       W.emps = r[0].data || []; W.custs = r[1].data || []; W.shares = {};
       (r[2].data || []).forEach(function (s) { var x = W.shares[s.task_id] || (W.shares[s.task_id] = { n: 0, last: '' }); x.n++; if (s.created_at > x.last) x.last = s.created_at; });
@@ -77,7 +77,7 @@
     rows = rows.map(function (r) { return Object.assign({ tenant_id: W.tid(), created_by: W.uid(), created_by_name: W.me() }, r); });
     return sb.from('project_task_shares').insert(rows).then(function (x) {
       if (x.error) throw x.error;
-      rows.forEach(function (r) { if (!r.task_id) return; var s = W.shares[r.task_id] || (W.shares[r.task_id] = { n: 0, last: '' }); s.n++; s.last = new Date().toISOString(); });
+      rows.forEach(function (r) { if (!r.task_id || r.template === 'report') return; var s = W.shares[r.task_id] || (W.shares[r.task_id] = { n: 0, last: '' }); s.n++; s.last = new Date().toISOString(); });
     });
   };
   W.open = function (url) { var w = window.open(url, '_blank', 'noopener'); if (!w) location.href = url; };
