@@ -95,9 +95,10 @@
 
   function openDetail(k) {
     var pct = Math.max(0, Math.min(100, Number(k.progress) || 0));
+    var atts = k.attachments || [];
     var m = document.createElement('div'); m.className = 'cob-modal';
-    m.innerHTML = '<div class="cob-card cob-mbox"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15px;word-break:break-word;flex:1">' + esc(k.title) + '</b><button type="button" class="btn btn-sm btn-outline" id="pjp-dx"><i class="ti ti-x"></i></button></div>' +
-      '<div class="cob-mbody">' +
+    m.innerHTML = '<div class="cob-card cob-mbox" style="padding:18px"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15px;word-break:break-word;flex:1">' + esc(k.title) + '</b><button type="button" class="btn btn-sm btn-outline" id="pjp-dx"><i class="ti ti-x"></i></button></div>' +
+      '<div class="cob-mbody" style="padding:4px 2px">' +
       '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">' + (k.tag ? '<span class="pjp-tag">' + esc(k.tag) + '</span>' : '') + (k.is_important ? '<span class="pjp-flag" style="background:var(--danger-light,rgba(220,38,38,.12));color:var(--danger)">' + L('Important', 'Penting') + '</span>' : '') + (k.is_urgent ? '<span class="pjp-flag" style="background:var(--warning-light,rgba(217,119,6,.12));color:var(--warning)">' + L('Urgent', 'Segera') + '</span>' : '') + '</div>' +
       '<div class="pjp-dgrid">' +
       '<div><small>' + L('Status', 'Status') + '</small><b>' + esc(colLabel(k.column_key)) + '</b></div>' +
@@ -105,10 +106,14 @@
       '<div><small>' + L('Start', 'Mula') + '</small><b>' + (k.start_date ? dmy(k.start_date) : '—') + '</b></div>' +
       '<div><small>' + L('Due', 'Tarikh akhir') + '</small><b>' + (k.due_date ? dmy(k.due_date) : '—') + '</b></div>' +
       '</div>' +
-      '<div style="margin-top:10px"><small class="cob-xs">' + L('Progress', 'Kemajuan') + '</small><div class="pjp-bar" style="margin-top:4px"><i style="width:' + pct + '%"></i></div><div class="cob-xs" style="text-align:right;margin-top:2px">' + pct + '%</div></div>' +
-      (k.notes ? '<div style="margin-top:12px"><small class="cob-xs">' + L('Notes', 'Nota') + '</small><div style="font-size:13px;white-space:pre-wrap;word-break:break-word;margin-top:4px">' + esc(k.notes) + '</div></div>' : '') +
+      '<div style="margin-top:14px"><small class="cob-xs">' + L('Progress', 'Kemajuan') + '</small><div class="pjp-bar" style="margin-top:4px"><i style="width:' + pct + '%"></i></div><div class="cob-xs" style="text-align:right;margin-top:2px">' + pct + '%</div></div>' +
+      (k.notes ? '<div style="margin-top:14px"><small class="cob-xs">' + L('Notes', 'Nota') + '</small><div style="font-size:13px;white-space:pre-wrap;word-break:break-word;margin-top:4px">' + esc(k.notes) + '</div></div>' : '') +
+      (atts.length ? '<div style="margin-top:14px"><small class="cob-xs">' + L('Attachments', 'Lampiran') + '</small><div class="pjp-atts" style="margin-top:6px">' + atts.map(function (a) {
+        return a.url ? '<a class="pjp-att" href="' + esc(a.url) + '" target="_blank" rel="noopener"><img src="' + esc(a.url) + '" alt="' + esc(a.name) + '" loading="lazy"></a>' : '';
+      }).join('') + '</div></div>' : '') +
       '</div></div>' +
-      '<style>.pjp-flag{font-size:10.5px;padding:1px 7px;border-radius:99px;font-weight:600}.pjp-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px}.pjp-dgrid small{display:block;color:var(--text-3);font-size:11px}.pjp-dgrid b{display:block;margin-top:2px;word-break:break-word}</style>';
+      '<style>.pjp-flag{font-size:10.5px;padding:1px 7px;border-radius:99px;font-weight:600}.pjp-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px}.pjp-dgrid small{display:block;color:var(--text-3);font-size:11px}.pjp-dgrid b{display:block;margin-top:2px;word-break:break-word}' +
+      '.pjp-atts{display:flex;flex-wrap:wrap;gap:8px}.pjp-att{display:block;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--border);flex-shrink:0}.pjp-att img{width:100%;height:100%;object-fit:cover;display:block}</style>';
     document.body.appendChild(m);
     var close = function () { m.remove(); };
     m.querySelector('#pjp-dx').onclick = close;
