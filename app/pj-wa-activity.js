@@ -1,6 +1,9 @@
 /* M-Core Projects - task detail activity: share log + comments (paste a WhatsApp reply or screenshot).
    Screenshots go to the private bucket project-comments/{tenant}/{task}/ and are shown with short-lived signed URLs. */
 (function () {
+  function isImg(name) { return /\.(jpg|jpeg|png|gif|webp|heic|bmp)$/i.test(name || ''); }
+  function fileIcon(name) { var n = (name || '').toLowerCase(); if (/\.pdf$/.test(n)) return 'ti-file-type-pdf'; if (/\.(xlsx?|csv)$/.test(n)) return 'ti-file-spreadsheet'; if (/\.(docx?|txt)$/.test(n)) return 'ti-file-text'; if (/\.zip$/.test(n)) return 'ti-file-zip'; return 'ti-file'; }
+
   var W = window.PJW; if (!W || W.activity) return;
   var MAXB = 26214400;
   function when(d) { var x = new Date(d); return x.toLocaleDateString(W.bm() ? 'ms-MY' : 'en-GB', { day: 'numeric', month: 'short' }) + ', ' + x.toLocaleTimeString(W.bm() ? 'ms-MY' : 'en-GB', { hour: 'numeric', minute: '2-digit' }); }
@@ -20,9 +23,9 @@
           .concat(cm.map(function (c) {
             var mine = W.same(c.created_by, W.uid()) || W.isTA();
             var x = (c.body ? '<div style="font-size:13px;margin-top:6px;padding:8px 10px;border-left:3px solid var(--pjw);background:var(--bg);border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere">' + W.esc(c.body) + '</div>' : '') +
-              (c.file_path ? '<a href="' + W.esc(url[c.file_path] || '#') + '" target="_blank" rel="noopener" style="display:block;margin-top:8px;max-width:240px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' + (url[c.file_path] ? '<img src="' + W.esc(url[c.file_path]) + '" alt="' + W.esc(c.file_name || '') + '" style="display:block;width:100%;max-height:260px;object-fit:cover">' : '') + '<span class="cob-xs" style="display:flex;gap:6px;align-items:center;padding:6px 8px;min-width:0"><i class="ti ti-photo"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + W.esc(c.file_name || 'image') + '</span></span></a>' : '') +
+              (c.file_path ? '<a href="' + W.esc(url[c.file_path] || '#') + '" target="_blank" rel="noopener" style="display:block;margin-top:8px;max-width:240px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' + (isImg(c.file_name) && url[c.file_path] ? '<img src="' + W.esc(url[c.file_path]) + '" alt="' + W.esc(c.file_name || '') + '" style="display:block;width:100%;max-height:260px;object-fit:cover">' : '<div style="padding:16px;text-align:center;background:var(--bg)"><i class="ti ' + fileIcon(c.file_name) + '" style="font-size:32px;color:var(--text-muted)"></i></div>') + '<span class="cob-xs" style="display:flex;gap:6px;align-items:center;padding:6px 8px;min-width:0"><i class="ti ' + (isImg(c.file_name) ? 'ti-photo' : fileIcon(c.file_name)) + '"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + W.esc(c.file_name || 'file') + '</span></span></a>' : '') +
               (mine ? '<button type="button" class="cob-xs" data-pjw-del="' + c.id + '" style="background:none;border:0;padding:4px 0;color:var(--text-3);cursor:pointer">' + W.L('Delete', 'Padam') + '</button>' : '');
-            return { d: c.created_at, h: ev('ti-message-2', 'var(--primary)', c.created_by_name, c.file_path && !c.body ? W.L('added a screenshot', 'tambah screenshot') : W.L('commented', 'komen'), c.created_at, x) };
+            return { d: c.created_at, h: ev('ti-message-2', 'var(--primary)', c.created_by_name, c.file_path && !c.body ? (isImg(c.file_name) ? W.L('added a screenshot', 'tambah screenshot') : W.L('added a file', 'tambah fail')) : W.L('commented', 'komen'), c.created_at, x) };
           })).sort(function (a, b) { return a.d < b.d ? 1 : -1; });
         box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:14px">' + W.L('Activity', 'Aktiviti') + '</b>' + (sh.length ? '<span class="cob-xs"><i class="ti ti-brand-whatsapp" style="color:var(--pjw)"></i> ' + W.L('Shared ', 'Dikongsi ') + sh.length + 'x</span>' : '') + '</div>' +
           (can ? '<button type="button" class="pjw-btn" data-pjw-dsh style="margin-top:8px;min-height:40px;padding:0 12px"><i class="ti ti-brand-whatsapp"></i> ' + W.L('Share WhatsApp', 'Share WhatsApp') + '</button>' : '') +
