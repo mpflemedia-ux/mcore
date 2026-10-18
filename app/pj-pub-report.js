@@ -53,7 +53,7 @@
     ];
     var taskRow = function (k) {
       var pct = Math.max(0, Math.min(100, Number(k.progress) || 0));
-      return '<div class="pjp-task">' +
+      return '<div class="pjp-task" data-tid="' + esc(k.id) + '" style="cursor:pointer">' +
         '<div class="row" style="justify-content:space-between;gap:8px"><b style="font-size:13.5px;word-break:break-word">' + esc(k.title) + '</b>' + (k.tag ? '<span class="pjp-tag">' + esc(k.tag) + '</span>' : '') + '</div>' +
         '<div class="row cob-xs" style="justify-content:space-between;margin-top:4px"><span>' + (k.assignee_name ? esc(k.assignee_name) : L('Unassigned', 'Belum ditugaskan')) + '</span><span>' + (k.due_date ? dmy(k.due_date) : '—') + '</span></div>' +
         '<div class="pjp-bar"><i style="width:' + pct + '%"></i></div></div>';
@@ -85,6 +85,34 @@
           ta.value = ''; ok.style.display = 'block';
         }).catch(function () { send.disabled = false; err.textContent = L('Could not send. Please try again.', 'Tidak dapat dihantar. Sila cuba lagi.'); err.style.display = 'block'; });
     };
+    root.querySelectorAll('[data-tid]').forEach(function (row) {
+      row.onclick = function () {
+        var k = (d.tasks || []).filter(function (x) { return String(x.id) === row.getAttribute('data-tid'); })[0];
+        if (k) openDetail(k);
+      };
+    });
+  }
+
+  function openDetail(k) {
+    var pct = Math.max(0, Math.min(100, Number(k.progress) || 0));
+    var m = document.createElement('div'); m.className = 'cob-modal';
+    m.innerHTML = '<div class="cob-card cob-mbox"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15px;word-break:break-word;flex:1">' + esc(k.title) + '</b><button type="button" class="btn btn-sm btn-outline" id="pjp-dx"><i class="ti ti-x"></i></button></div>' +
+      '<div class="cob-mbody">' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">' + (k.tag ? '<span class="pjp-tag">' + esc(k.tag) + '</span>' : '') + (k.is_important ? '<span class="pjp-flag" style="background:var(--danger-light,rgba(220,38,38,.12));color:var(--danger)">' + L('Important', 'Penting') + '</span>' : '') + (k.is_urgent ? '<span class="pjp-flag" style="background:var(--warning-light,rgba(217,119,6,.12));color:var(--warning)">' + L('Urgent', 'Segera') + '</span>' : '') + '</div>' +
+      '<div class="pjp-dgrid">' +
+      '<div><small>' + L('Status', 'Status') + '</small><b>' + esc(colLabel(k.column_key)) + '</b></div>' +
+      '<div><small>' + L('Assignee', 'Ditugaskan kepada') + '</small><b>' + (k.assignee_name ? esc(k.assignee_name) : L('Unassigned', 'Belum ditugaskan')) + '</b></div>' +
+      '<div><small>' + L('Start', 'Mula') + '</small><b>' + (k.start_date ? dmy(k.start_date) : '—') + '</b></div>' +
+      '<div><small>' + L('Due', 'Tarikh akhir') + '</small><b>' + (k.due_date ? dmy(k.due_date) : '—') + '</b></div>' +
+      '</div>' +
+      '<div style="margin-top:10px"><small class="cob-xs">' + L('Progress', 'Kemajuan') + '</small><div class="pjp-bar" style="margin-top:4px"><i style="width:' + pct + '%"></i></div><div class="cob-xs" style="text-align:right;margin-top:2px">' + pct + '%</div></div>' +
+      (k.notes ? '<div style="margin-top:12px"><small class="cob-xs">' + L('Notes', 'Nota') + '</small><div style="font-size:13px;white-space:pre-wrap;word-break:break-word;margin-top:4px">' + esc(k.notes) + '</div></div>' : '') +
+      '</div></div>' +
+      '<style>.pjp-flag{font-size:10.5px;padding:1px 7px;border-radius:99px;font-weight:600}.pjp-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px}.pjp-dgrid small{display:block;color:var(--text-3);font-size:11px}.pjp-dgrid b{display:block;margin-top:2px;word-break:break-word}</style>';
+    document.body.appendChild(m);
+    var close = function () { m.remove(); };
+    m.querySelector('#pjp-dx').onclick = close;
+    m.addEventListener('click', function (e) { if (e.target === m) close(); });
   }
 
   function load() {
