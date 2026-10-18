@@ -60,6 +60,7 @@
     renderForm();
   }
   function start() {
+    if (!TOK && !SEC) return; // sr_result-only: leave rendering to sd-pub-result.js
     P.mount(); root = P.root(); P.onLang = render; root.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
     if (SEC) return render();
     hex(TOK).then(function (h) { return sb.from('service_public_links').select('id,tenant_id,display_name,services,monthly_quota,expires_on').eq('token_hash', h).maybeSingle(); })

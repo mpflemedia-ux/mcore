@@ -14,6 +14,21 @@
     if (e.type === 'internal_note') return '<b>' + SD.L('Internal note (staff only)', 'Nota dalaman (staf sahaja)') + '</b>';
     return '<b>' + SD.L('Comment', 'Komen') + '</b>';
   }
+  function rndTok(n) { var a = new Uint8Array(n), c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; crypto.getRandomValues(a); return Array.prototype.map.call(a, function (x) { return c[x % c.length]; }).join(''); }
+  function sha256hex(s) { return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (b) { return Array.prototype.map.call(new Uint8Array(b), function (x) { return x.toString(16).padStart(2, '0'); }).join(''); }); }
+  /* generates+hashes a fresh token (same pattern as service_public_links.token_hash) so a
+     delivered/closed request can be shared with the client via a no-login result link. */
+  SD.shareResult = function (r) {
+    var t = rndTok(28), exp = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+    sha256hex(t).then(function (h) {
+      return sb.from('service_requests').update({ result_token_hash: h, result_token_expires_on: exp }).eq('id', r.id);
+    }).then(function (x) {
+      if (x.error) throw x.error;
+      var url = location.origin + location.pathname + '?sr_result=' + encodeURIComponent(t);
+      try { navigator.clipboard.writeText(url); SD.toast(SD.L('Result link copied (valid 14 days)', 'Link hasil kerja disalin (sah 14 hari)'), 'success'); }
+      catch (e) { prompt(SD.L('Copy this link:', 'Salin link ini:'), url); }
+    }).catch(function (e) { SD.toast(SD.err(e), 'error'); });
+  };
   SD.detail = function (id, admin) {
     return Promise.all([load(id), SD.catalog()]).then(function (x) {
       var r = x[0].r, ev = x[0].ev;
@@ -36,7 +51,8 @@
     var acts = '';
     if (admin) {
       acts = (SD.TR[r.status] || []).filter(function (t) { return t !== 'cancelled'; }).map(function (t) { return '<button class="btn ' + (t === 'delivered' ? 'btn-success' : t === 'out_of_scope' ? 'btn-outline' : 'btn-primary') + '" data-to="' + t + '"><i class="ti ' + SD.ST[t][1] + '"></i> ' + SD.esc(SD.stLabel(t)) + '</button>'; }).join('') +
-        (!r.assigned_to || !SD.same(r.assigned_to, SD.uid()) ? '<button class="btn btn-outline" id="sd-mine"><i class="ti ti-user-check"></i> ' + SD.L('Assign to me', 'Tugaskan kepada saya') + '</button>' : '');
+        (!r.assigned_to || !SD.same(r.assigned_to, SD.uid()) ? '<button class="btn btn-outline" id="sd-mine"><i class="ti ti-user-check"></i> ' + SD.L('Assign to me', 'Tugaskan kepada saya') + '</button>' : '') +
+        ((r.status === 'delivered' || r.status === 'closed') ? '<button class="btn btn-outline" id="sd-share-result"><i class="ti ti-link"></i> ' + SD.L('Share result link', 'Kongsi link hasil kerja') + '</button>' : '');
     } else if (r.status === 'delivered') acts = '<button class="btn btn-outline" data-to="revision"><i class="ti ti-arrow-back-up"></i> ' + SD.L('Request revision', 'Minta revisi') + '</button><button class="btn btn-success" data-to="closed"><i class="ti ti-check"></i> ' + SD.L('Looks good', 'Nampak OK') + '</button>';
     else if (r.status === 'submitted') acts = '<button class="btn btn-outline" data-to="cancelled" style="color:var(--danger)"><i class="ti ti-x"></i> ' + SD.L('Cancel request', 'Batal permohonan') + '</button>';
     var open = SD.OPEN.indexOf(r.status) >= 0;
@@ -72,6 +88,7 @@
     var mine = m.querySelector('#sd-mine'); if (mine) mine.onclick = function () {
       sb.from('service_requests').update({ assigned_to: SD.uid(), updated_at: new Date().toISOString() }).eq('id', r.id).then(function (x) { if (x.error) return SD.toast(SD.err(x.error), 'error'); reload(); });
     };
+    var share = m.querySelector('#sd-share-result'); if (share) share.onclick = function () { SD.shareResult(r); };
     var send = m.querySelector('#sd-send'); if (send) send.onclick = function () {
       var t = document.getElementById('sd-cm').value.trim(), f = document.getElementById('sd-cf').files[0], int = admin && document.getElementById('sd-int').checked;
       if (!t && !f) return;
