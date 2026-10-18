@@ -18,7 +18,7 @@
   }
   var card = function (h, st) { return '<div class="cob-card" style="padding:16px;margin-bottom:12px;' + (st || '') + '">' + h + '</div>'; };
   function page(body) {
-    root.innerHTML = '<div class="cob-root" style="max-width:480px;margin:0 auto;padding:18px 16px 40px"><div class="row" style="justify-content:space-between;margin-bottom:16px"><div class="row" style="gap:8px"><i class="ti ti-hexagon-letter-m" style="font-size:26px;color:var(--primary)"></i><b style="font-size:16px;letter-spacing:.02em">M-CORE</b></div>' +
+    root.innerHTML = '<div class="cob-root" style="max-width:480px;margin:0 auto;padding:18px 16px 40px"><div class="row" style="justify-content:space-between;margin-bottom:16px"><div class="row" style="gap:8px"><img src="./mcore-logo.jpg" alt="M-Core" style="width:32px;height:32px;border-radius:6px;object-fit:cover"><b style="font-size:16px;letter-spacing:.02em">M-CORE</b></div>' +
       '<div class="cob-seg" role="group" aria-label="Language"><button type="button" data-lang="en" class="' + (lang === 'en' ? 'on' : '') + '">EN</button><button type="button" data-lang="bm" class="' + (lang === 'bm' ? 'on' : '') + '">BM</button></div></div>' + body +
       '<div class="cob-xs" style="text-align:center;margin-top:18px">' + L('Powered by M-Core', 'Dikuasakan oleh M-Core') + (D && D.tenant_name ? ' · ' + L('Your data is only shared with ', 'Data anda hanya dikongsi dengan ') + esc(D.tenant_name) : '') + '</div></div>';
     root.querySelectorAll('[data-lang]').forEach(function (b) { b.onclick = function () { lang = b.dataset.lang; D ? show() : inactive(); }; });
@@ -47,7 +47,7 @@
       card('<b style="font-size:15px">' + L('Result files', 'Fail hasil') + ' (' + (d.files || []).length + ')</b>' + (files || '<div class="cob-xs" style="padding:10px 0">' + L('No files attached.', 'Tiada fail dilampirkan.') + '</div>') +
         (d.paid === false && (d.files || []).length ? '<div class="cob-banner warn" style="margin-top:10px"><i class="ti ti-lock"></i><div>' + L('Downloads are released after full payment.', 'Muat turun dibuka selepas bayaran penuh.') + '</div></div>' : '') +
         '<div class="cob-xs" style="margin-top:10px"><i class="ti ti-hourglass"></i> ' + L('This link is valid until ', 'Link ini sah sehingga ') + dt(d.expires_at, 1) + L('. After that, ask ', '. Selepas itu, minta link baharu daripada ') + esc(d.tenant_name || 'M-Core') + L(' for a new link.', /\.$/.test(d.tenant_name || '') ? '' : '.') + '</div>') +
-      (d.timeline_count != null ? '<div class="cob-xs">Timeline: ' + (d.timeline_count || 0) + '</div>' : '') + (d.timeline && d.timeline.length ? card('<b style="font-size:15px">' + L('Timeline', 'Garis masa') + '</b>' + d.timeline.map(function (e) {
+      (d.timeline && d.timeline.length ? card('<b style="font-size:15px">' + L('Timeline', 'Garis masa') + '</b>' + d.timeline.map(function (e) {
         var ic = e.type === 'comment' ? 'ti-message' : e.type === 'attachment' ? 'ti-paperclip' : 'ti-arrows-exchange';
         var lb = e.type === 'comment' ? L('Comment', 'Komen') : e.type === 'attachment' ? L('File', 'Fail') : L('Status', 'Status');
         return '<div style="display:flex;gap:10px;margin-top:10px"><i class="ti ' + ic + '" style="color:var(--text-secondary);margin-top:2px"></i><div style="min-width:0"><b>' + lb + '</b><div style="overflow-wrap:anywhere">' + esc(e.body || '') + '</div><div class="cob-xs">' + dt(e.created_at) + '</div></div></div>';
