@@ -89,7 +89,7 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
       delivered_at: r.delivered_at, closed_at: r.closed_at, expires_at: link.expires_at,
       hours_taken: end ? Math.max(0, Math.round(bhBetween(r.created_at, end) - (r.sla_paused_seconds || 0) / 3600)) : null, sla_hours: sla,
       paid, files: files.map((f) => ({ name: String(f.body || (f.meta && (f.meta as { name?: string }).name) || f.file_path.split('/').pop()), size: Number((f.meta && (f.meta as { size?: number }).size) || 0), url: urls[f.file_path] || null })),
-      response: last, timeline: tl, can_respond: r.status === 'delivered',
+      response: last, timeline: tl, timeline_count: (tl || []).length, can_respond: r.status === 'delivered',
       can_reopen: r.status === 'closed' && 'reopen_count' in r && !!db.reopen, reopened_at: r.reopened_at || null,
     });
   }
