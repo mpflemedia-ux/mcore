@@ -78,11 +78,36 @@ async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
     const { data: emps } = await sb.from('employees').select('id,name,nickname').in('id', empIds).is('deleted_at', null)
     ;((emps || []) as Record<string, unknown>[]).forEach((e) => { names[e.id as string] = (e.nickname as string) || (e.name as string) || '' })
   }
+  // attachments: screenshots pasted on project_task_comments (not the WhatsApp share log, which
+  // stays internal-only) - signed URLs, 5 min, same pattern as sd-result's deliverable files.
+  const taskIds = rows.map((t) => t.id) as string[]
+  const attByTask: Record<string, { name: string; url: string; by: string; created_at: string }[]> = {}
+  if (taskIds.length) {
+    const { data: comments } = await sb.from('project_task_comments')
+      .select('task_id,file_path,file_name,created_by_name,created_at')
+      .in('task_id', taskIds).not('file_path', 'is', null).is('deleted_at', null).order('created_at')
+    const commentRows = (comments || []) as Record<string, unknown>[]
+    const paths = commentRows.map((c) => c.file_path).filter(Boolean) as string[]
+    let urlByPath: Record<string, string> = {}
+    if (paths.length) {
+      const { data: su } = await sb.storage.from('project-comments').createSignedUrls(paths, 300)
+      ;(su || []).forEach((x) => { if (x.path && x.signedUrl) urlByPath[x.path] = x.signedUrl })
+    }
+    commentRows.forEach((c) => {
+      const tid = c.task_id as string
+      ;(attByTask[tid] = attByTask[tid] || []).push({
+        name: (c.file_name as string) || 'image', url: urlByPath[c.file_path as string] || '',
+        by: (c.created_by_name as string) || '', created_at: c.created_at as string,
+      })
+    })
+  }
+
   const tasksOut = rows.map((t) => ({
     id: t.id, title: t.title, column_key: t.column_key, tag: t.tag,
     assignee_name: t.assignee_employee_id ? (names[t.assignee_employee_id as string] || '') : '',
     start_date: t.start_date, due_date: t.due_date, progress: t.progress, notes: t.notes,
     is_important: !!t.is_important, is_urgent: !!t.is_urgent,
+    attachments: attByTask[t.id as string] || [],
   }))
   return {
     project_name: (proj as Record<string, unknown>)?.name || '', project_kind: (proj as Record<string, unknown>)?.kind || 'internal',
