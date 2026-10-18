@@ -10,7 +10,7 @@
   W.share = function (o) {
     var k = o.task, multi = !k;
     var emp = k && W.emps.find(function (e) { return W.same(e.id, k.assignee_employee_id); });
-    S = { o: o, step: multi ? 2 : 1, tpl: o.tpl || 'reminder', lang: W.bm() ? 'bm' : 'en', kind: 'staff', rid: emp && !multi ? emp.id : null, q: '', edit: false, text: null };
+    S = { o: o, step: multi ? 2 : 1, tpl: o.tpl || 'reminder', lang: W.bm() ? 'bm' : 'en', kind: 'staff', rid: o.rid != null ? o.rid : (emp && !multi ? emp.id : null), q: '', edit: false, text: null };
     if (o.kind) S.kind = o.kind;
     W.SS = S;
     paint();
@@ -23,7 +23,7 @@
   }
   function preHtml() {
     var r = S.kind === 'other' ? null : cur(), ph = r ? W.phone(r.ph) : '';
-    return '<div class="pjw-hd" style="margin-bottom:8px"><span class="cob-xs" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + W.L('To', 'Kepada') + ': <b style="color:var(--text)">' + (r ? W.esc(r.n) + (ph ? ' · +' + ph : '') : W.L('Choose in WhatsApp', 'Pilih dalam WhatsApp')) + '</b></span><span class="badge badge-blue" style="white-space:nowrap">' + (S.o.task ? W.tplName(S.tpl) : W.L('Summary', 'Ringkasan')) + ' · ' + S.lang.toUpperCase() + '</span></div>' +
+    return '<div class="pjw-hd" style="margin-bottom:8px"><span class="cob-xs" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + W.L('To', 'Kepada') + ': <b style="color:var(--text)">' + (r ? W.esc(r.n) + (ph ? ' · +' + ph : '') : W.L('Choose in WhatsApp', 'Pilih dalam WhatsApp')) + '</b></span><span class="badge badge-blue" style="white-space:nowrap">' + (S.o.badge || (S.o.task ? W.tplName(S.tpl) : W.L('Summary', 'Ringkasan'))) + ' · ' + S.lang.toUpperCase() + '</span></div>' +
       (S.edit ? '<textarea class="pjw-ta" id="pjw-ta" data-no-titlecase="1">' + W.esc(text()) + '</textarea>' : W.bubble(text())) +
       '<div class="pjw-lock"><i class="ti ti-lock"></i><span>' + W.L('Internal notes & confidential attachments are not included. The recipient must log in to M-Core to open the task.', 'Nota dalaman & lampiran sulit tidak dimasukkan. Penerima perlu log masuk M-Core untuk buka task.') + '</span></div>' +
       '<div class="pjw-row"><button type="button" class="btn btn-outline" id="pjw-ed" style="flex:0 0 auto"><i class="ti ti-' + (S.edit ? 'check' : 'pencil') + '"></i> ' + (S.edit ? W.L('Done', 'Siap') : 'Edit') + '</button><button type="button" class="btn btn-outline" id="pjw-cp" style="flex:0 0 auto"><i class="ti ti-copy"></i> ' + W.L('Copy', 'Salin') + '</button><button type="button" class="btn pjw-go" id="pjw-go"><i class="ti ti-brand-whatsapp"></i> ' + W.L('Open WhatsApp', 'Buka WhatsApp') + '</button></div>' +
@@ -34,7 +34,7 @@
     var ov = document.getElementById('pjw-ov'); if (!ov) { ov = document.createElement('div'); ov.id = 'pjw-ov'; ov.className = 'pjw-ov'; ov.onclick = close; document.body.appendChild(ov); }
     var sh = document.getElementById('pjw-sh'); if (!sh) { sh = document.createElement('div'); sh.id = 'pjw-sh'; sh.className = 'pjw-sh'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); document.body.appendChild(sh); }
     var k = S.o.task, wd = wide(), ttl = wd ? W.L('Share to WhatsApp', 'Share ke WhatsApp') : [W.L('Share to WhatsApp', 'Share ke WhatsApp'), W.L('Choose recipient', 'Pilih penerima'), W.L('Message preview', 'Pratonton mesej')][S.step - 1];
-    var sub = k ? k.title : W.L('Summary', 'Ringkasan') + ' · ' + (S.o.tasks ? S.o.tasks.length + ' task' : '');
+    var sub = S.o.subtitle || (k ? k.title : W.L('Summary', 'Ringkasan') + ' · ' + (S.o.tasks ? S.o.tasks.length + ' task' : ''));
     var h = '<div class="pjw-grab"></div><div class="pjw-hd"><b><i class="ti ti-brand-whatsapp" style="color:var(--pjw)"></i> ' + ttl + '</b><button type="button" class="pjw-x" id="pjw-x" aria-label="' + W.L('Close', 'Tutup') + '"><i class="ti ti-x"></i></button></div>' +
       '<div class="cob-xs" style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (wd ? '' : W.L('Step ', 'Langkah ') + S.step + ' / 3 · ') + W.esc(sub) + '</div><div class="pjw-prog">' + [1, 2, 3].map(function (i) { return '<i class="' + (i <= S.step ? 'on' : '') + '"></i>'; }).join('') + '</div>';
     if (wd) h += '<div class="pjw-wide" style="margin-top:12px"><div>' + (k ? W._tplHtml(true) : '<div class="pjw-hd" style="margin-bottom:10px"><b style="font-size:13px">' + W.L('Language', 'Bahasa') + '</b>' + W._seg() + '</div>') + '<b style="font-size:13px;display:block;margin:10px 0 8px">' + W.L('Recipient', 'Penerima') + '</b>' + W._recHtml() + '</div><div>' + preHtml() + '</div></div>';
@@ -62,7 +62,7 @@
       if (r && !ph && !confirm(W.L('This contact has no phone number. Open WhatsApp and choose the contact there?', 'Kenalan ini tiada no. telefon. Buka WhatsApp dan pilih kenalan di sana?'))) return;
       W.open(W.waUrl(ph, msg));
       var base = { template: S.o.task ? S.tpl : S.o.tpl, lang: S.lang, recipient_kind: S.kind, recipient_id: r ? r.id : null, recipient_label: r ? String(r.n || '').slice(0, 200) : null, phone: ph || null, message: msg };
-      var rows = S.o.task ? [Object.assign({ task_id: S.o.task.id, project_id: S.o.task.project_id }, base)] : S.o.tpl === 'daily' ? [base] : S.o.tasks.map(function (t) { return Object.assign({ task_id: t.id, project_id: t.project_id }, base); });
+      var rows = S.o.task ? [Object.assign({ task_id: S.o.task.id, project_id: S.o.task.project_id }, base)] : S.o.tpl === 'daily' ? [base] : (S.o.tasks && S.o.tasks.length) ? S.o.tasks.map(function (t) { return Object.assign({ task_id: t.id, project_id: t.project_id }, base); }) : S.o.projectId ? [Object.assign({ project_id: S.o.projectId }, base)] : [base];
       W.log(rows).then(function () { if (W.after) W.after(); }, function (e) { W.toast((e && e.message) || 'Error', 'error'); });
       close();
     });
