@@ -1,6 +1,7 @@
-/* M-Core Projects - Share public report (admin): button in toolbar (platform admin or tenant
-   owner/admin, real project selected), modal to generate/regenerate/revoke a no-login report link
-   (QR + copy), view count/last viewed, read-only list of messages left by viewers.
+/* M-Core Projects - Share public report (admin) core: toolbar button (whole project), modal to
+   generate/regenerate/revoke a no-login report link (QR + copy), view count/last viewed, messages
+   left by viewers. Optional task scope (task_id) and the per-task share icon live in
+   pj-share-tasks.js; WhatsApp share lives in pj-share-wa.js (both extend via window.PJS).
    Hook: projects.js paint() -> window._pjAfterPaint(state) (same chain as pj-wa-board.js etc). */
 (function () {
   if (window._pjShare) return; window._pjShare = 1;
@@ -29,23 +30,27 @@
 
   function closeModal() { var m = document.getElementById('pjs-modal'); if (m) m.remove(); }
 
-  function loadLink(projectId) {
-    return sb.from('project_share_links').select('*').eq('project_id', projectId).is('revoked_at', null).is('deleted_at', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  function loadLink(projectId, taskId) {
+    var q = sb.from('project_share_links').select('*').eq('project_id', projectId).is('revoked_at', null).is('deleted_at', null);
+    q = taskId ? q.eq('task_id', taskId) : q.is('task_id', null);
+    return q.order('created_at', { ascending: false }).limit(1).maybeSingle()
       .then(function (r) { if (r.error) throw r.error; return r.data; });
   }
-  function loadMessages(projectId) {
-    return sb.from('project_share_messages').select('body,created_at').eq('project_id', projectId).is('deleted_at', null).order('created_at', { ascending: false }).limit(20)
+  function loadMessages(linkId) {
+    if (!linkId) return Promise.resolve([]);
+    return sb.from('project_share_messages').select('body,created_at').eq('link_id', linkId).is('deleted_at', null).order('created_at', { ascending: false }).limit(20)
       .then(function (r) { return r.error ? [] : (r.data || []); });
   }
-
-  function paintModal(proj, link, messages) {
+  function paintModal(proj, task, link, messages) {
     var m = document.getElementById('pjs-modal');
     var url = link ? shareUrl(link._tok || '') : '';
-    var body = '<div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15px">' + esc(t('Share public report', 'Kongsi laporan awam')) + ' — ' + esc(proj.name) + '</b><button type="button" class="btn btn-sm btn-outline" id="pjs-x"><i class="ti ti-x"></i></button></div>' +
+    var title = task ? (t('Share task report', 'Kongsi laporan task') + ' — ' + task.title) : (t('Share public report', 'Kongsi laporan awam') + ' — ' + proj.name);
+    var body = '<div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15px;word-break:break-word;flex:1">' + esc(title) + '</b><button type="button" class="btn btn-sm btn-outline" id="pjs-x"><i class="ti ti-x"></i></button></div>' +
       '<div class="cob-xs" style="margin-bottom:12px">' + esc(t('View-only link, no login. Viewer can leave a message; nothing else can be changed from the link.', 'Link paparan sahaja, tiada log masuk. Pelawat boleh tinggal mesej; tiada apa lain boleh diubah dari link.')) + '</div>' +
       (link ? (
         '<div class="cob-card" style="padding:12px;margin-bottom:10px">' +
         '<div class="form-group" style="margin-bottom:10px"><label class="form-label">' + esc(t('Link', 'Link')) + '</label><div class="row" style="gap:8px"><input class="form-input" id="pjs-url" readonly value="' + (link._tok ? esc(url) : esc(t('(regenerate to get a fresh link)', '(jana semula untuk dapat link baharu)'))) + '"><button type="button" class="btn btn-outline" id="pjs-copy"' + (link._tok ? '' : ' disabled') + '><i class="ti ti-copy"></i></button></div></div>' +
+        (link._tok ? '<div id="pjs-wa-slot"></div>' : '') +
         (link._tok ? '<div id="pjs-qr" style="width:150px;height:150px;border-radius:8px;background:#fff;margin-bottom:10px"></div>' : '') +
         '<div class="cob-sm" style="margin-bottom:4px">' + esc(t('Expires', 'Tamat tempoh')) + ': <b>' + esc(dmy(link.expires_on)) + '</b></div>' +
         '<div class="cob-xs" style="margin-bottom:10px">' + esc(t('Views', 'Paparan')) + ': ' + (link.view_count || 0) + (link.viewed_at ? ' · ' + esc(t('Last viewed', 'Terakhir dilihat')) + ': ' + esc(dtFull(link.viewed_at)) : ' · ' + esc(t('Not viewed yet', 'Belum dilihat'))) + '</div>' +
@@ -64,60 +69,71 @@
     m.querySelector('.cob-mbody').innerHTML = body;
     m.querySelector('#pjs-x').onclick = closeModal;
     var copyBtn = m.querySelector('#pjs-copy'); if (copyBtn && link && link._tok) copyBtn.onclick = function () { try { navigator.clipboard.writeText(url); if (typeof showToast === 'function') showToast(t('Link copied', 'Link disalin'), 'success'); } catch (e) {} };
+    if (window.PJS && PJS.fillWaSlot) { try { PJS.fillWaSlot(m, proj, task, url); } catch (e) {} }
     if (link && link._tok) { var qrBox = m.querySelector('#pjs-qr'); if (qrBox) drawQr(url).then(function (cv) { qrBox.innerHTML = ''; qrBox.appendChild(cv); }); }
-    var gen = m.querySelector('#pjs-gen'); if (gen) gen.onclick = function () { gen.disabled = true; doGenerate(proj, null, m.querySelector('#pjs-exp').value).catch(function (e) { gen.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); }); };
-    var regen = m.querySelector('#pjs-regen'); if (regen) regen.onclick = function () { regen.disabled = true; doGenerate(proj, link, m.querySelector('#pjs-exp').value).catch(function (e) { regen.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); }); };
+    var gen = m.querySelector('#pjs-gen'); if (gen) gen.onclick = function () { gen.disabled = true; doGenerate(proj, task, null, m.querySelector('#pjs-exp').value).catch(function (e) { gen.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); }); };
+    var regen = m.querySelector('#pjs-regen'); if (regen) regen.onclick = function () { regen.disabled = true; doGenerate(proj, task, link, m.querySelector('#pjs-exp').value).catch(function (e) { regen.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); }); };
     var revoke = m.querySelector('#pjs-revoke'); if (revoke) revoke.onclick = function () {
       if (!window.confirm(t('Revoke this link? It stops working immediately.', 'Tarik balik link ini? Ia berhenti berfungsi serta-merta.'))) return;
       revoke.disabled = true;
       sb.from('project_share_links').update({ revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', link.id).then(function (x) {
         if (x.error) throw x.error;
         if (typeof showToast === 'function') showToast(t('Link revoked', 'Link ditarik balik'), 'success');
-        return refresh(proj);
+        return refresh(proj, task);
       }).catch(function (e) { revoke.disabled = false; if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); });
     };
   }
 
-  function doGenerate(proj, existingLink, expiresOn) {
+  function doGenerate(proj, task, existingLink, expiresOn) {
     var tok = rndTok(28);
     return sha256hex(tok).then(function (h) {
       var now = new Date().toISOString();
       var p = existingLink
         ? sb.from('project_share_links').update({ token_hash: h, expires_on: expiresOn || defExpiry(), view_count: 0, viewed_at: null, updated_at: now }).eq('id', existingLink.id)
-        : sb.from('project_share_links').insert({ tenant_id: window.APP && APP.tenant && APP.tenant.id, project_id: proj.id, token_hash: h, expires_on: expiresOn || defExpiry() });
+        : sb.from('project_share_links').insert({ tenant_id: window.APP && APP.tenant && APP.tenant.id, project_id: proj.id, task_id: task ? task.id : null, token_hash: h, expires_on: expiresOn || defExpiry() });
       return p.then(function (x) {
         if (x.error) throw x.error;
         if (typeof showToast === 'function') showToast(t('Link ready — copy it below', 'Link sedia — salin di bawah'), 'success');
-        return refresh(proj, tok);
+        return refresh(proj, task, tok);
       });
     });
   }
 
-  function refresh(proj, freshTok) {
-    return Promise.all([loadLink(proj.id), loadMessages(proj.id)]).then(function (r) {
-      var link = r[0]; if (link && freshTok) link._tok = freshTok;
-      paintModal(proj, link, r[1]);
+  function refresh(proj, task, freshTok) {
+    return loadLink(proj.id, task ? task.id : null).then(function (link) {
+      if (link && freshTok) link._tok = freshTok;
+      return loadMessages(link ? link.id : null).then(function (msgs) {
+        paintModal(proj, task, link, msgs);
+      });
     });
   }
 
-  function openModal(proj) {
+  function openModal(proj, task) {
     closeModal();
     var m = document.createElement('div'); m.id = 'pjs-modal'; m.className = 'cob-modal';
     m.innerHTML = '<div class="cob-card cob-mbox"><div class="cob-mbody"><div class="page-loading"><div class="spinner"></div></div></div></div>';
     document.body.appendChild(m);
     m.addEventListener('click', function (e) { if (e.target === m) closeModal(); });
-    refresh(proj).catch(function (e) { closeModal(); if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); });
+    refresh(proj, task).catch(function (e) { closeModal(); if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); });
   }
 
   function decorate(st) {
     var main = document.getElementById('main'); if (!main) return;
-    var box = main.querySelector('.pj-tools'); if (!box) return;
-    if (!can() || !st.projectId || st.projectId === '__all__') return;
-    var proj = (st.projects || []).find(function (p) { return String(p.id) === String(st.projectId); }); if (!proj) return;
-    if (box.querySelector('#pjs-open')) return;
-    box.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-sm btn-outline" id="pjs-open"><i class="ti ti-share"></i> ' + esc(t('Share report', 'Kongsi laporan')) + '</button>');
-    box.querySelector('#pjs-open').onclick = function () { openModal(proj); };
+    if (!can()) return;
+    var box = main.querySelector('.pj-tools');
+    if (box && st.projectId && st.projectId !== '__all__' && !box.querySelector('#pjs-open')) {
+      var proj = (st.projects || []).find(function (p) { return String(p.id) === String(st.projectId); });
+      if (proj) {
+        box.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-sm btn-outline" id="pjs-open"><i class="ti ti-share"></i> ' + esc(t('Share report', 'Kongsi laporan')) + '</button>');
+        box.querySelector('#pjs-open').onclick = function () { openModal(proj, null); };
+      }
+    }
   }
+
+  window.PJS = window.PJS || {};
+  PJS.openModal = openModal;
+  PJS.can = can;
+  PJS.t = t; PJS.esc = esc; PJS.dmy = dmy;
 
   function hook() {
     var prev = window._pjAfterPaint; if (prev && prev._pjs) return;
