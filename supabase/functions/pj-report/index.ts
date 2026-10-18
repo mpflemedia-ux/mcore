@@ -151,9 +151,9 @@ async function tgFanOut(sb: ReturnType<typeof createClient>, tenantId: string, u
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
           body: JSON.stringify({ tenant_id: tenantId, subject_type: 'user', subject_id: id, text: 'M-Core · ' + title + (body ? '\n' + body : '') }),
         })
-      } catch (_e) { /* best-effort */ }
+      } catch (e) { console.error('pj-report: telegram-send call failed', e) /* best-effort */ }
     }
-  } catch (_e) { /* best-effort, never blocks the caller */ }
+  } catch (e) { console.error('pj-report: tgFanOut failed', e) /* best-effort, never blocks the caller */ }
 }
 
 type NotifyOpts = { title: string; body: string; type: string; refTable?: string; refId?: string; link?: Record<string, unknown>; groupKey?: string }
@@ -176,9 +176,9 @@ async function notifyOwners(sb: ReturnType<typeof createClient>, tenantId: strin
       group_key: opts.groupKey || null,
     }))
     const ins = await sb.from('notifications').insert(rows)
-    if (ins.error) return
+    if (ins.error) { console.error('pj-report: notifyOwners insert failed', ins.error); return }
     await tgFanOut(sb, tenantId, owners.map((p) => p.id as string), cat, opts.title, opts.body)
-  } catch (_e) { /* notification failures never block the action */ }
+  } catch (e) { console.error('pj-report: notifyOwners failed', e) /* notification failures never block the action */ }
 }
 
 Deno.serve(async (req: Request) => {
