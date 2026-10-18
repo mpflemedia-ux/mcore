@@ -119,7 +119,27 @@
     m.innerHTML = '<div class="cob-card cob-mbox"><div class="cob-mbody"><div class="page-loading"><div class="spinner"></div></div></div></div>';
     document.body.appendChild(m);
     m.addEventListener('click', function (e) { if (e.target === m) closeModal(); });
-    refresh(proj, task).catch(function (e) { closeModal(); if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); });
+    refresh(proj, task).then(function () { markSeen(proj, task); }).catch(function (e) { closeModal(); if (typeof showToast === 'function') showToast(e.message || String(e), 'error'); });
+  }
+
+  // "unread messages" badge on the toolbar button only (whole-project link - per-task would need one
+  // query per visible card, too costly to run on every paint). Opening ANY modal (whole-project or
+  // task) still marks that specific link's own messages_seen_at, independent of the badge's scope.
+  var unreadKey = '';
+  function markSeen(proj, task) {
+    loadLink(proj.id, task ? task.id : null).then(function (link) {
+      if (!link) return;
+      return sb.from('project_share_links').update({ messages_seen_at: new Date().toISOString() }).eq('id', link.id);
+    }).then(function () { unreadKey = ''; loadUnread(proj); }).catch(function () {});
+  }
+  function loadUnread(proj) {
+    if (unreadKey === proj.id) return; unreadKey = proj.id;
+    loadLink(proj.id, null).then(function (link) {
+      if (!link) return 0;
+      return sb.from('project_share_messages').select('id', { count: 'exact', head: true }).eq('link_id', link.id).is('deleted_at', null).gt('created_at', link.messages_seen_at || '1970-01-01T00:00:00Z').then(function (r) { return r.count || 0; });
+    }).then(function (n) {
+      var dot = document.getElementById('pjs-unread'); if (dot) dot.style.display = n > 0 ? 'inline-block' : 'none';
+    }).catch(function () {});
   }
 
   function decorate(st) {
@@ -130,8 +150,9 @@
     if (box && st.projectId && st.projectId !== '__all__' && !box.querySelector('#pjs-open')) {
       var proj = (st.projects || []).find(function (p) { return String(p.id) === String(st.projectId); });
       if (proj) {
-        box.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-sm btn-outline" id="pjs-open"><i class="ti ti-share"></i> ' + esc(t('Share report', 'Kongsi laporan')) + '</button>');
+        box.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-sm btn-outline" id="pjs-open"><i class="ti ti-share"></i> ' + esc(t('Share report', 'Kongsi laporan')) + '<span id="pjs-unread" style="display:none;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-left:5px"></span></button>');
         box.querySelector('#pjs-open').onclick = function () { openModal(proj, null); };
+        loadUnread(proj);
       }
     }
   }

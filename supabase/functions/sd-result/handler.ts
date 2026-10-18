@@ -8,6 +8,11 @@
 //              due_at = now + same business-hour window (created_at -> old due_at); paused/delivered/closed cleared. Bells admins + owner.
 export type Link = { id: string; tenant_id: string; request_id: string; expires_at: string; revoked_at: string | null; deleted_at: string | null; viewed_at: string | null; view_count: number };
 export type Req = { id: string; tenant_id: string; contract_id: string | null; ref_no: string; title: string; service_code: string; status: string; created_at: string; due_at: string | null; delivered_at: string | null; closed_at: string | null; sla_paused_seconds: number | null; deleted_at: string | null; reopen_count?: number | null; reopened_at?: string | null };
+// optional enrichment so bellAdmins/bellOwners can mirror app/notif-core.js's NT.notify() row shape
+// (type/ref_table/ref_id/group_key) for bell grouping + Telegram fan-out; category/link routing for
+// service_desk notifications stays on the existing "SR-xxxxxx-n" regex in notif-items.js's link() -
+// deliberately NOT overridden here to avoid touching that already-working routing.
+export type NotifyMeta = { type: string; refTable?: string; refId?: string; groupKey?: string };
 export interface Db {
   linkByHash(hash: string): Promise<Link | null>;
   request(id: string): Promise<Req | null>;
@@ -23,9 +28,9 @@ export interface Db {
   moveStatus(req: Req, to: 'closed' | 'revision', nowIso: string): Promise<boolean>;
   insertResponse(row: Record<string, unknown>): Promise<void>;
   insertEvent(row: Record<string, unknown>): Promise<void>;
-  bellAdmins(title: string, body: string): Promise<void>;
+  bellAdmins(title: string, body: string, meta?: NotifyMeta): Promise<void>;
   reopen?(req: Req, patch: Record<string, unknown>): Promise<boolean>;
-  bellOwners?(tenantId: string, title: string, body: string): Promise<void>;
+  bellOwners?(tenantId: string, title: string, body: string, meta?: NotifyMeta): Promise<void>;
 }
 export const ORIGINS = ['https://mpflemedia.my', 'https://www.mpflemedia.my'];
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
@@ -105,8 +110,9 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
     await db.insertResponse({ tenant_id: r.tenant_id, request_id: r.id, link_id: link.id, action, comment });
     await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'status', from_status: 'closed', to_status: 'in_progress', body: comment, actor_id: null, meta: { via: 'result_link', link_id: link.id, reopen: true } });
     const t = r.ref_no + ': reopened by client (Dibuka semula)';
-    await db.bellAdmins(t, comment).catch(() => {});
-    if (db.bellOwners) await db.bellOwners(r.tenant_id, t, comment).catch(() => {});
+    const reopenMeta: NotifyMeta = { type: 'sd.reopened', refTable: 'service_requests', refId: r.id, groupKey: 'sd_event:' + r.id + ':reopen:' + nowIso.slice(0, 10) };
+    await db.bellAdmins(t, comment, reopenMeta).catch(() => {});
+    if (db.bellOwners) await db.bellOwners(r.tenant_id, t, comment, reopenMeta).catch(() => {});
     return json({ ok: true, status: 'in_progress' });
   }
   if (r.status !== 'delivered') return json({ error: 'state', status: r.status }, 409);
@@ -115,6 +121,6 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
   if (!(await db.moveStatus(r, to, nowIso))) return json({ error: 'state' }, 409);
   await db.insertResponse({ tenant_id: r.tenant_id, request_id: r.id, link_id: link.id, action, comment: comment || null });
   await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'status', from_status: 'delivered', to_status: to, body: comment || null, actor_id: null, meta: { via: 'result_link', link_id: link.id } });
-  await db.bellAdmins(r.ref_no + (to === 'closed' ? ': client confirmed (Disahkan)' : ': revision requested (Minta pindaan)'), comment || r.title).catch(() => {});
+  await db.bellAdmins(r.ref_no + (to === 'closed' ? ': client confirmed (Disahkan)' : ': revision requested (Minta pindaan)'), comment || r.title, { type: to === 'closed' ? 'sd.confirmed' : 'sd.revision', refTable: 'service_requests', refId: r.id, groupKey: 'sd_event:' + r.id + ':' + action + ':' + nowIso.slice(0, 10) }).catch(() => {});
   return json({ ok: true, status: to });
 }
