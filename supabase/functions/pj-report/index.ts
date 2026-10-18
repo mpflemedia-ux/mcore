@@ -166,14 +166,17 @@ async function notifyOwners(sb: ReturnType<typeof createClient>, tenantId: strin
   try {
     const { data: ps, error: psErr } = await sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', tenantId)
     if (psErr) { console.error('pj-report: notifyOwners user_profiles query failed', psErr); return }
-    console.error('pj-report: notifyOwners tenant', tenantId, 'profiles', JSON.stringify(ps))
     const owners = ((ps || []) as Record<string, unknown>[]).filter((p) => ['owner', 'admin'].includes(String(p.role || '').toLowerCase()))
     if (!owners.length) { console.error('pj-report: notifyOwners found 0 owner/admin for tenant', tenantId); return }
+    // cat ('assigned') is the settings/Telegram channel-toggle bucket (NT.TYPES), NOT the
+    // notifications.category column - that one has its own DB check constraint (notifications_
+    // category_check) that doesn't include 'assigned', so it's hardcoded to 'projects' below
+    // (same approach as sd-result's hardcoded 'service_desk' category).
     const cat = opts.type.split('.')[0]
     const rows = owners.map((p) => ({
       tenant_id: p.tenant_id, user_id: p.id, actor_id: null,
       title: opts.title.slice(0, 200), body: (opts.body || '').slice(0, 500),
-      category: cat, kind: 'for_you', type: opts.type, priority: 0,
+      category: 'projects', kind: 'for_you', type: opts.type, priority: 0,
       link: opts.link || null, ref_table: opts.refTable || null, ref_id: opts.refId != null ? String(opts.refId) : null,
       group_key: opts.groupKey || null,
     }))
