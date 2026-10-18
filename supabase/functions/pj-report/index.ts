@@ -68,7 +68,7 @@ function stats(tasks: Record<string, unknown>[]) {
 async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
   const [{ data: proj }, { data: tasks }] = await Promise.all([
     sb.from('projects').select('name,kind').eq('id', link.project_id).maybeSingle(),
-    sb.from('project_tasks').select('id,title,column_key,tag,assignee_employee_id,due_date,progress')
+    sb.from('project_tasks').select('id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,is_important,is_urgent')
       .eq('project_id', link.project_id).is('deleted_at', null).order('sort_order'),
   ])
   const rows = (tasks || []) as Record<string, unknown>[]
@@ -81,7 +81,8 @@ async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
   const tasksOut = rows.map((t) => ({
     id: t.id, title: t.title, column_key: t.column_key, tag: t.tag,
     assignee_name: t.assignee_employee_id ? (names[t.assignee_employee_id as string] || '') : '',
-    due_date: t.due_date, progress: t.progress,
+    start_date: t.start_date, due_date: t.due_date, progress: t.progress, notes: t.notes,
+    is_important: !!t.is_important, is_urgent: !!t.is_urgent,
   }))
   return {
     project_name: (proj as Record<string, unknown>)?.name || '', project_kind: (proj as Record<string, unknown>)?.kind || 'internal',
