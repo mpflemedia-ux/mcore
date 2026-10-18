@@ -330,7 +330,7 @@
     var tab = state.tab;
     var body = tab === 'list' ? listHtml(list) : tab === 'timeline' ? timelineHtml(list) : tab === 'files' ? filesHtml() : tab === 'overview' ? overviewHtml(proj, st) : tab === 'matrix' ? matrixHtml(list) : boardHtml(list);
     return '<style>' + css() + '</style><div class="pj-wrap">' +
-      '<aside class="pj-side' + (state.sideHidden ? ' pj-side-hidden' : '') + '"><div class="pj-side-h"><button type="button" id="pj-side-toggle" title="' + esc(t('Hide projects', 'Sembunyi projek')) + '"><i class="ti ti-chevron-left"></i></button>' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-arch-view">' + esc(state.showArchived ? t('Active', 'Aktif') : t('Archive', 'Arkib')) + '</button><button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
+      ' + (state.sideHidden ? '<button type="button" id="pj-side-show" style="position:fixed;left:8px;top:70px;z-index:30;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);cursor:pointer;min-height:40px"><i class="ti ti-chevron-right"></i> ' + esc(t('Projects', 'Projek')) + '</button>' : '') + '<aside class="pj-side' + (state.sideHidden ? ' pj-side-hidden' : '') + '"><div class="pj-side-h"><button type="button" id="pj-side-toggle" title="' + esc(t('Hide projects', 'Sembunyi projek')) + '"><i class="ti ti-chevron-left"></i></button>' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-arch-view">' + esc(state.showArchived ? t('Active', 'Aktif') : t('Archive', 'Arkib')) + '</button><button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
       (state.showArchived ? '' : '<div class="pj-proj pja-all' + (state.projectId === '__all__' ? ' on' : '') + '"><button type="button" data-proj="__all__"><i style="background:var(--primary)"></i><span>' + esc(t('All projects', 'Semua projek')) + '</span></button><small>' + esc(t('Board', 'Papan')) + '</small></div>') +
       state.projects.map(function (p, i) {
         var on = String(p.id) === String(state.projectId) ? ' on' : '';
@@ -406,7 +406,7 @@
       '@media(max-width:800px){.pj-wrap{flex-direction:column}.pj-side{width:auto;max-height:160px}.pj-stats{grid-template-columns:repeat(2,1fr)}.pj-tools{flex-wrap:wrap}.pj-tools input,.pj-tools select{flex:1;min-width:0}#pj-task{flex:1 1 100%;justify-content:center}}';
   }
 
-  function bindSideToggle() { var btn = document.getElementById('pj-side-toggle'); if (btn) btn.onclick = function () { state.sideHidden = !state.sideHidden; paint(); }; }
+  function bindSideToggle() { var btn = document.getElementById('pj-side-toggle'); if (btn) btn.onclick = function () { state.sideHidden = !state.sideHidden; paint(); }; var show = document.getElementById('pj-side-show'); if (show) show.onclick = function () { state.sideHidden = false; paint(); }; }
   function paint() {
     var main = document.getElementById('main');
     if (!main) return;
