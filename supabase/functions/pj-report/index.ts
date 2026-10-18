@@ -164,9 +164,11 @@ type NotifyOpts = { title: string; body: string; type: string; refTable?: string
 // Dashboard. notify this project's own tenant owner/admin.
 async function notifyOwners(sb: ReturnType<typeof createClient>, tenantId: string, opts: NotifyOpts) {
   try {
-    const { data: ps } = await sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', tenantId)
+    const { data: ps, error: psErr } = await sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', tenantId)
+    if (psErr) { console.error('pj-report: notifyOwners user_profiles query failed', psErr); return }
+    console.error('pj-report: notifyOwners tenant', tenantId, 'profiles', JSON.stringify(ps))
     const owners = ((ps || []) as Record<string, unknown>[]).filter((p) => ['owner', 'admin'].includes(String(p.role || '').toLowerCase()))
-    if (!owners.length) return
+    if (!owners.length) { console.error('pj-report: notifyOwners found 0 owner/admin for tenant', tenantId); return }
     const cat = opts.type.split('.')[0]
     const rows = owners.map((p) => ({
       tenant_id: p.tenant_id, user_id: p.id, actor_id: null,
