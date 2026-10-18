@@ -13,7 +13,7 @@
   }
 
   var COLORS = ['#0E7490', '#16A34A', '#D97706', '#7C3AED', '#DC2626', '#0891B2'];
-  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', matrix: '', tlSort: 'priority', focus: '' };
+  var state = { projects: [], tasks: [], employees: [], customers: [], files: [], links: [], projectId: null, tab: 'board', tagPanel: false, filter: '', group: '', assignee: '', sort: 'due', matrix: '', tlSort: 'priority', focus: '', sideHidden: false };
 
   function bm() { return window.APP && APP.language === 'bm'; }
   function t(en, ms) { return bm() ? ms : en; }
@@ -330,7 +330,7 @@
     var tab = state.tab;
     var body = tab === 'list' ? listHtml(list) : tab === 'timeline' ? timelineHtml(list) : tab === 'files' ? filesHtml() : tab === 'overview' ? overviewHtml(proj, st) : tab === 'matrix' ? matrixHtml(list) : boardHtml(list);
     return '<style>' + css() + '</style><div class="pj-wrap">' +
-      '<aside class="pj-side"><div class="pj-side-h">' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-arch-view">' + esc(state.showArchived ? t('Active', 'Aktif') : t('Archive', 'Arkib')) + '</button><button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
+      '<aside class="pj-side' + (state.sideHidden ? ' pj-side-hidden' : '') + '"><div class="pj-side-h"><button type="button" id="pj-side-toggle" title="' + esc(t('Hide projects', 'Sembunyi projek')) + '"><i class="ti ti-chevron-left"></i></button>' + esc(t('Projects', 'Projek')) + '<button type="button" id="pj-arch-view">' + esc(state.showArchived ? t('Active', 'Aktif') : t('Archive', 'Arkib')) + '</button><button type="button" id="pj-new" class="btn btn-sm btn-primary">+</button></div>' +
       (state.showArchived ? '' : '<div class="pj-proj pja-all' + (state.projectId === '__all__' ? ' on' : '') + '"><button type="button" data-proj="__all__"><i style="background:var(--primary)"></i><span>' + esc(t('All projects', 'Semua projek')) + '</span></button><small>' + esc(t('Board', 'Papan')) + '</small></div>') +
       state.projects.map(function (p, i) {
         var on = String(p.id) === String(state.projectId) ? ' on' : '';
@@ -379,7 +379,7 @@
   }
   function css() {
     return '.pj-tags{display:flex;flex-direction:column;gap:8px;margin:8px 0;color:var(--text)} .pj-tags span{display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-card);color:var(--text)} .pj-tags b{flex:1;min-width:0;color:var(--text);font-size:14px} .pj-tags button{min-height:40px}.pj-tlcards{display:flex;flex-direction:column;gap:16px} .pj-tlsec header{display:flex;align-items:center;gap:8px;margin-bottom:8px} .pj-tlsec header b{color:var(--primary);font-size:16px} .pj-tlsec header i{flex:1;height:1px;background:var(--primary)} .pj-tlcard{display:flex;cursor:pointer;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg-card);color:var(--text);margin-bottom:8px} .pj-tlcard>div:first-child{flex:1;min-width:0} .pj-tlcard b{display:block;color:var(--text);font-size:14px;line-height:1.35;word-break:break-word} .pj-tlcard small{display:flex;align-items:center;gap:4px;color:var(--danger);font-size:12px;margin-top:6px} .pj-tlcard small svg,.pj-tlempy svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8} .pj-tltrack{position:relative;flex:0 0 46%;min-width:140px;height:34px} .pj-tltrack span{display:flex;justify-content:space-between;gap:6px;color:var(--text-3);font-size:11px} .pj-tltrack u{position:absolute;left:0;right:0;bottom:4px;height:8px;border-radius:6px;background:var(--border)} .pj-tltrack i{position:absolute;bottom:4px;height:8px;border-radius:6px;background:var(--primary)} .pj-tlempy{display:flex;flex-direction:column;align-items:center;gap:4px;padding:18px 8px;color:var(--text-2);text-align:center} .pj-tlempy svg{width:36px;height:36px;color:var(--primary)} .pj-tlempy span{color:var(--text-3);font-size:12px} .pj-wrap{display:flex;gap:12px;min-height:calc(100dvh - 92px);align-items:stretch}' +
-      '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto}' +
+      '.pj-side{width:220px;flex:none;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:auto;transition:width .2s,padding .2s}.pj-side-hidden{width:0;padding:0;overflow:hidden;border:none}#pj-side-toggle{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;min-width:28px;min-height:28px}' +
       '.pj-side-h,.pj-top,.pj-tools,.pj-row{display:flex;align-items:center;gap:8px}' +
       '.pj-side-h{justify-content:space-between;margin-bottom:8px}' +
       '.pj-proj{display:flex;gap:6px;align-items:center;width:100%;text-align:left;padding:8px;border-radius:8px;color:var(--text)} .pj-proj>button[data-proj]{display:flex;gap:8px;align-items:center;flex:1;min-width:0;background:none;border:0;color:var(--text);text-align:left} .pj-proj>button[data-proj] span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pj-proj>button[data-proj-edit],.pj-proj>button[data-proj-del],.pj-proj>button[data-proj-arch],.pj-proj>button[data-proj-restore],#pj-arch-view{min-height:32px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 6px;font-size:11px} .pj-proj>button[data-proj-del]{color:#b91c1c}' +
@@ -406,10 +406,11 @@
       '@media(max-width:800px){.pj-wrap{flex-direction:column}.pj-side{width:auto;max-height:160px}.pj-stats{grid-template-columns:repeat(2,1fr)}.pj-tools{flex-wrap:wrap}.pj-tools input,.pj-tools select{flex:1;min-width:0}#pj-task{flex:1 1 100%;justify-content:center}}';
   }
 
+  function bindSideToggle() { var btn = document.getElementById('pj-side-toggle'); if (btn) btn.onclick = function () { state.sideHidden = !state.sideHidden; paint(); }; }
   function paint() {
     var main = document.getElementById('main');
     if (!main) return;
-    main.innerHTML = pageHtml();
+    main.innerHTML = pageHtml(); bindSideToggle();
     bind();
     if (typeof window._pjAfterPaint === 'function') { try { window._pjAfterPaint(state); } catch (e) { console.error(e); } }
   }
