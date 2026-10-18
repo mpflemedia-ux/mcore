@@ -36,7 +36,7 @@ function todayKL() {
 }
 
 type Link = {
-  id: string; tenant_id: string; project_id: string; expires_on: string
+  id: string; tenant_id: string; project_id: string; task_id: string | null; expires_on: string
   revoked_at: string | null; view_count: number; viewed_at: string | null
 }
 
@@ -44,7 +44,7 @@ async function findLink(sb: ReturnType<typeof createClient>, token: string): Pro
   if (!token || token.length < 16 || token.length > 64) return null
   const h = await hashToken(token)
   const { data: l } = await sb.from('project_share_links')
-    .select('id,tenant_id,project_id,expires_on,revoked_at,view_count,viewed_at')
+    .select('id,tenant_id,project_id,task_id,expires_on,revoked_at,view_count,viewed_at')
     .eq('token_hash', h).is('deleted_at', null).maybeSingle()
   if (!l) return null
   const row = l as unknown as Link
@@ -66,10 +66,14 @@ function stats(tasks: Record<string, unknown>[]) {
 }
 
 async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
+  const taskQuery = link.task_id
+    ? sb.from('project_tasks').select('id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,is_important,is_urgent')
+        .eq('id', link.task_id).is('deleted_at', null)
+    : sb.from('project_tasks').select('id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,is_important,is_urgent')
+        .eq('project_id', link.project_id).is('deleted_at', null).order('sort_order')
   const [{ data: proj }, { data: tasks }] = await Promise.all([
     sb.from('projects').select('name,kind').eq('id', link.project_id).maybeSingle(),
-    sb.from('project_tasks').select('id,title,column_key,tag,assignee_employee_id,start_date,due_date,progress,notes,is_important,is_urgent')
-      .eq('project_id', link.project_id).is('deleted_at', null).order('sort_order'),
+    taskQuery,
   ])
   const rows = (tasks || []) as Record<string, unknown>[]
   const empIds = Array.from(new Set(rows.map((t) => t.assignee_employee_id).filter(Boolean))) as string[]
@@ -78,14 +82,15 @@ async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
     const { data: emps } = await sb.from('employees').select('id,name,nickname').in('id', empIds).is('deleted_at', null)
     ;((emps || []) as Record<string, unknown>[]).forEach((e) => { names[e.id as string] = (e.nickname as string) || (e.name as string) || '' })
   }
-  // attachments: screenshots pasted on project_task_comments (not the WhatsApp share log, which
-  // stays internal-only) - signed URLs, 5 min, same pattern as sd-result's deliverable files.
+  // full activity: every comment (text and/or screenshot) on project_task_comments - NOT the
+  // WhatsApp share log, which stays internal-only (phone numbers / internal chat shouldn't leak
+  // to an external view-only link). File URLs are 5-min signed, same pattern as sd-result.
   const taskIds = rows.map((t) => t.id) as string[]
-  const attByTask: Record<string, { name: string; url: string; by: string; created_at: string }[]> = {}
+  const actByTask: Record<string, { body: string | null; file: { name: string; url: string } | null; by: string; created_at: string }[]> = {}
   if (taskIds.length) {
     const { data: comments } = await sb.from('project_task_comments')
-      .select('task_id,file_path,file_name,created_by_name,created_at')
-      .in('task_id', taskIds).not('file_path', 'is', null).is('deleted_at', null).order('created_at')
+      .select('task_id,body,file_path,file_name,created_by_name,created_at')
+      .in('task_id', taskIds).is('deleted_at', null).order('created_at', { ascending: false })
     const commentRows = (comments || []) as Record<string, unknown>[]
     const paths = commentRows.map((c) => c.file_path).filter(Boolean) as string[]
     let urlByPath: Record<string, string> = {}
@@ -95,9 +100,9 @@ async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
     }
     commentRows.forEach((c) => {
       const tid = c.task_id as string
-      ;(attByTask[tid] = attByTask[tid] || []).push({
-        name: (c.file_name as string) || 'image', url: urlByPath[c.file_path as string] || '',
-        by: (c.created_by_name as string) || '', created_at: c.created_at as string,
+      const file = c.file_path ? { name: (c.file_name as string) || 'image', url: urlByPath[c.file_path as string] || '' } : null
+      ;(actByTask[tid] = actByTask[tid] || []).push({
+        body: (c.body as string) || null, file, by: (c.created_by_name as string) || '', created_at: c.created_at as string,
       })
     })
   }
@@ -107,9 +112,10 @@ async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
     assignee_name: t.assignee_employee_id ? (names[t.assignee_employee_id as string] || '') : '',
     start_date: t.start_date, due_date: t.due_date, progress: t.progress, notes: t.notes,
     is_important: !!t.is_important, is_urgent: !!t.is_urgent,
-    attachments: attByTask[t.id as string] || [],
+    activity: actByTask[t.id as string] || [],
   }))
   return {
+    mode: link.task_id ? 'task' : 'project',
     project_name: (proj as Record<string, unknown>)?.name || '', project_kind: (proj as Record<string, unknown>)?.kind || 'internal',
     stats: stats(rows), tasks: tasksOut, expires_on: link.expires_on,
   }
