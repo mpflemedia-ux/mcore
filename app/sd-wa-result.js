@@ -18,7 +18,7 @@
   }
   var card = function (h, st) { return '<div class="cob-card" style="padding:16px;margin-bottom:12px;' + (st || '') + '">' + h + '</div>'; };
   function page(body) {
-    root.innerHTML = '<div class="cob-root" style="max-width:480px;margin:0 auto;padding:18px 16px 40px"><div class="row" style="justify-content:space-between;margin-bottom:16px"><div class="row" style="gap:8px"><img src="./mcore-logo.jpg" alt="M-Core" style="width:32px;height:32px;border-radius:6px;object-fit:cover"><b style="font-size:16px;letter-spacing:.02em">M-CORE</b></div>' +
+    root.innerHTML = '<div class="cob-root" style="max-width:480px;margin:0 auto;padding:18px 16px 40px"><div class="row" style="justify-content:space-between;margin-bottom:16px"><div class="row" style="gap:8px"><img src="./mcore-logo.png" alt="M-Core" style="width:32px;height:32px;border-radius:6px;object-fit:cover"><b style="font-size:16px;letter-spacing:.02em">M-CORE</b></div>' +
       '<div class="cob-seg" role="group" aria-label="Language"><button type="button" data-lang="en" class="' + (lang === 'en' ? 'on' : '') + '">EN</button><button type="button" data-lang="bm" class="' + (lang === 'bm' ? 'on' : '') + '">BM</button></div></div>' + body +
       '<div class="cob-xs" style="text-align:center;margin-top:18px">' + L('Powered by M-Core', 'Dikuasakan oleh M-Core') + (D && D.tenant_name ? ' · ' + L('Your data is only shared with ', 'Data anda hanya dikongsi dengan ') + esc(D.tenant_name) : '') + '</div></div>';
     root.querySelectorAll('[data-lang]').forEach(function (b) { b.onclick = function () { lang = b.dataset.lang; D ? show() : inactive(); }; });
