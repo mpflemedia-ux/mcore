@@ -221,7 +221,7 @@ Deno.serve(async (req: Request) => {
         body: message,
         type: 'assigned.report_message',
         refTable: 'project_share_links', refId: link.id,
-        link: { page: 'projects', params: { id: link.project_id }, icon: 'ti-message-circle' },
+        link: { page: 'projects', params: link.task_id ? { id: link.project_id, taskId: link.task_id } : { id: link.project_id }, icon: 'ti-message-circle' },
         groupKey: 'report_msg:' + link.id + ':' + todayKL(),
       })
       return json({ success: true })

@@ -75,6 +75,7 @@
   NT.open = function (it) {
     if (!it) return; NT.markRead(it.ids); if (it.kind === 'action' && it.row) NT.acted(it.ids);
     var g = it.go || ['dashboard', {}], p = Object.assign({}, g[1]);
+    if (p.taskId) { window._pjOpenTask = p.taskId; delete p.taskId; } // projects.js reads+clears this to auto-open that task's detail (same mechanism as the WhatsApp task deep-link)
     if (p.ref && !p.id) {
       return sb.from('service_requests').select('id').eq('ref_no', p.ref).maybeSingle().then(function (r) { if (r && r.data) p.id = r.data.id; delete p.ref; window.openPage(g[0], p); }, function () { delete p.ref; window.openPage(g[0], p); });
     }
