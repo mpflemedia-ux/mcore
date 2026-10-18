@@ -121,14 +121,63 @@ async function buildPayload(sb: ReturnType<typeof createClient>, link: Link) {
   }
 }
 
-// mirrors SD.bellFor's tenant-owner branch: notify this project's own tenant owner/admin
-async function notifyOwners(sb: ReturnType<typeof createClient>, tenantId: string, title: string, body: string) {
+// mirrors app/notif-core.js's NT.tgFan() + NT.quiet() (browser JS the edge function can't import) -
+// same channel-toggle + quiet-hours rules, sent through the existing telegram-send function so the
+// bot token never needs to be duplicated here.
+async function tgFanOut(sb: ReturnType<typeof createClient>, tenantId: string, userIds: string[], cat: string, title: string, body: string) {
+  if (!userIds.length) return
+  try {
+    const { data: rows } = await sb.from('notification_settings').select('user_id,settings').eq('tenant_id', tenantId).in('user_id', userIds)
+    const smap: Record<string, Record<string, unknown>> = {}
+    ;((rows || []) as Record<string, unknown>[]).forEach((r) => { smap[r.user_id as string] = (r.settings as Record<string, unknown>) || {} })
+    const url = Deno.env.get('SUPABASE_URL') || '', key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    const nowKL = new Date(Date.now() + 8 * 3600000)
+    const wd = nowKL.getUTCDay() || 7
+    const hm = String(nowKL.getUTCHours()).padStart(2, '0') + ':' + String(nowKL.getUTCMinutes()).padStart(2, '0')
+    for (const id of userIds) {
+      const s = smap[id] || {}
+      const m = ((s.m as Record<string, { t?: number }>) || {})[cat]
+      if (!m || !m.t) continue // channel toggle: off unless the admin turned Telegram on for this category
+      const q = s.q as { on?: number; from?: string; to?: string; days?: number[] } | undefined
+      if (q && q.on) {
+        const f = q.from || '22:00', t = q.to || '07:00'
+        const inR = f <= t ? (hm >= f && hm < t) : (hm >= f || hm < t)
+        const days = q.days || [1, 2, 3, 4, 5]
+        const dayOk = !days.length || days.indexOf(f > t && hm < t ? ((wd + 5) % 7) + 1 : wd) >= 0
+        if (inR && dayOk) continue // quiet hours
+      }
+      try {
+        await fetch(url + '/functions/v1/telegram-send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+          body: JSON.stringify({ tenant_id: tenantId, subject_type: 'user', subject_id: id, text: 'M-Core · ' + title + (body ? '\n' + body : '') }),
+        })
+      } catch (_e) { /* best-effort */ }
+    }
+  } catch (_e) { /* best-effort, never blocks the caller */ }
+}
+
+type NotifyOpts = { title: string; body: string; type: string; refTable?: string; refId?: string; link?: Record<string, unknown>; groupKey?: string }
+
+// mirrors app/notif-core.js's NT.notify() row shape (kind/type/link/ref_table/ref_id/group_key) so
+// this lands correctly in the bell (click -> right page) and groups same-link messages same-day,
+// instead of the old bare {tenant_id,user_id,title,body,category} insert that always opened on
+// Dashboard. notify this project's own tenant owner/admin.
+async function notifyOwners(sb: ReturnType<typeof createClient>, tenantId: string, opts: NotifyOpts) {
   try {
     const { data: ps } = await sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', tenantId)
-    const rows = ((ps || []) as Record<string, unknown>[])
-      .filter((p) => ['owner', 'admin'].includes(String(p.role || '').toLowerCase()))
-      .map((p) => ({ tenant_id: p.tenant_id, user_id: p.id, title, body, category: 'projects' }))
-    if (rows.length) await sb.from('notifications').insert(rows)
+    const owners = ((ps || []) as Record<string, unknown>[]).filter((p) => ['owner', 'admin'].includes(String(p.role || '').toLowerCase()))
+    if (!owners.length) return
+    const cat = opts.type.split('.')[0]
+    const rows = owners.map((p) => ({
+      tenant_id: p.tenant_id, user_id: p.id, actor_id: null,
+      title: opts.title.slice(0, 200), body: (opts.body || '').slice(0, 500),
+      category: cat, kind: 'for_you', type: opts.type, priority: 0,
+      link: opts.link || null, ref_table: opts.refTable || null, ref_id: opts.refId != null ? String(opts.refId) : null,
+      group_key: opts.groupKey || null,
+    }))
+    const ins = await sb.from('notifications').insert(rows)
+    if (ins.error) return
+    await tgFanOut(sb, tenantId, owners.map((p) => p.id as string), cat, opts.title, opts.body)
   } catch (_e) { /* notification failures never block the action */ }
 }
 
@@ -152,12 +201,24 @@ Deno.serve(async (req: Request) => {
       const link = await findLink(sb, token)
       if (!link) return json({ success: false, error: 'not_found' }, 404)
       if (!message) return json({ success: false, error: 'message_required' }, 400)
+      // rate limit: at most 5 messages per link per hour (same spirit as sd-result's per-link cap)
+      const hourAgo = new Date(Date.now() - 3600000).toISOString()
+      const { count: recentCount } = await sb.from('project_share_messages').select('id', { count: 'exact', head: true })
+        .eq('link_id', link.id).is('deleted_at', null).gte('created_at', hourAgo)
+      if ((recentCount || 0) >= 5) return json({ success: false, error: 'rate_limited' }, 429)
       const { error: insErr } = await sb.from('project_share_messages').insert({
         tenant_id: link.tenant_id, project_id: link.project_id, link_id: link.id, body: message,
       })
       if (insErr) throw insErr
       const { data: proj } = await sb.from('projects').select('name').eq('id', link.project_id).maybeSingle()
-      await notifyOwners(sb, link.tenant_id, ((proj as Record<string, unknown>)?.name || 'Project') + ': new message', message)
+      await notifyOwners(sb, link.tenant_id, {
+        title: ((proj as Record<string, unknown>)?.name || 'Project') + ': new message',
+        body: message,
+        type: 'assigned.report_message',
+        refTable: 'project_share_links', refId: link.id,
+        link: { page: 'projects', params: { id: link.project_id }, icon: 'ti-message-circle' },
+        groupKey: 'report_msg:' + link.id + ':' + todayKL(),
+      })
       return json({ success: true })
     }
     return json({ success: false, error: 'method_not_allowed' }, 405)

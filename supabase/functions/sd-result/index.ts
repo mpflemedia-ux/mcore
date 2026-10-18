@@ -2,7 +2,43 @@
 // Deploy: supabase functions deploy sd-result --no-verify-jwt   (public page has no user JWT; access = token only)
 // Secrets: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are injected by Supabase automatically. Nothing else needed.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { cors, handle, type Db, type Link, type Req } from './handler.ts';
+import { cors, handle, type Db, type Link, type Req, type NotifyMeta } from './handler.ts';
+
+// mirrors app/notif-core.js's NT.tgFan() + NT.quiet() (browser JS this edge function can't import) -
+// same channel-toggle + quiet-hours rules, sent through the existing telegram-send function so the
+// bot token never needs to be duplicated here. Scoped to one tenant (bellOwners); bellAdmins
+// (platform_admin, spans tenants) is intentionally left bell-only - see OUT-OF-SCOPE note in the PR.
+async function tgFanOut(sb: ReturnType<typeof createClient>, tenantId: string, userIds: string[], cat: string, title: string, body: string) {
+  if (!userIds.length) return;
+  try {
+    const { data: rows } = await sb.from('notification_settings').select('user_id,settings').eq('tenant_id', tenantId).in('user_id', userIds);
+    const smap: Record<string, Record<string, unknown>> = {};
+    ((rows || []) as Record<string, unknown>[]).forEach((r) => { smap[r.user_id as string] = (r.settings as Record<string, unknown>) || {}; });
+    const url = Deno.env.get('SUPABASE_URL') || '', key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const nowKL = new Date(Date.now() + 8 * 3600000);
+    const wd = nowKL.getUTCDay() || 7;
+    const hm = String(nowKL.getUTCHours()).padStart(2, '0') + ':' + String(nowKL.getUTCMinutes()).padStart(2, '0');
+    for (const id of userIds) {
+      const s = smap[id] || {};
+      const m = ((s.m as Record<string, { t?: number }>) || {})[cat];
+      if (!m || !m.t) continue; // channel toggle: off unless the admin turned Telegram on for this category
+      const q = s.q as { on?: number; from?: string; to?: string; days?: number[] } | undefined;
+      if (q && q.on) {
+        const f = q.from || '22:00', t = q.to || '07:00';
+        const inR = f <= t ? (hm >= f && hm < t) : (hm >= f || hm < t);
+        const days = q.days || [1, 2, 3, 4, 5];
+        const dayOk = !days.length || days.indexOf(f > t && hm < t ? ((wd + 5) % 7) + 1 : wd) >= 0;
+        if (inR && dayOk) continue; // quiet hours
+      }
+      try {
+        await fetch(url + '/functions/v1/telegram-send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+          body: JSON.stringify({ tenant_id: tenantId, subject_type: 'user', subject_id: id, text: 'M-Core · ' + title + (body ? '\n' + body : '') }),
+        });
+      } catch (_e) { /* best-effort */ }
+    }
+  } catch (_e) { /* best-effort, never blocks the caller */ }
+}
 
 function db(): Db {
   const url = Deno.env.get('SUPABASE_URL') || '', key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -50,15 +86,24 @@ function db(): Db {
       const x = await sb.from('service_requests').update(patch).eq('id', r.id).eq('status', 'closed').select('id');
       return !x.error && (x.data || []).length === 1;
     },
-    bellOwners: async (tid, title, body) => {
+    // enrichment (type/ref_table/ref_id/group_key) mirrors app/notif-core.js's NT.notify() row shape
+    // for bell grouping; category stays 'service_desk' and link is left unset so the existing
+    // "SR-xxxxxx-n" regex routing in notif-items.js's link() keeps deep-linking correctly (unchanged).
+    bellOwners: async (tid, title, body, meta?: NotifyMeta) => {
       const a = await sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', tid).eq('role', 'owner');
-      const rows = (a.data || []).map((u) => ({ tenant_id: u.tenant_id, user_id: u.id, title, body, category: 'service_desk' }));
-      if (rows.length) await sb.from('notifications').insert(rows);
+      const ids = (a.data || []).map((u) => u.id);
+      const rows = (a.data || []).map((u) => ({ tenant_id: u.tenant_id, user_id: u.id, actor_id: null, title, body, category: 'service_desk', kind: 'for_you', type: meta?.type || null, ref_table: meta?.refTable || null, ref_id: meta?.refId != null ? String(meta.refId) : null, group_key: meta?.groupKey || null }));
+      if (!rows.length) return;
+      await sb.from('notifications').insert(rows);
+      await tgFanOut(sb, tid, ids, 'sd', title, body);
     },
-    bellAdmins: async (title, body) => {
+    bellAdmins: async (title, body, meta?: NotifyMeta) => {
       const a = await sb.from('user_profiles').select('id,tenant_id').eq('role', 'platform_admin');
-      const rows = (a.data || []).filter((u) => u.tenant_id).map((u) => ({ tenant_id: u.tenant_id, user_id: u.id, title, body, category: 'service_desk' }));
+      const rows = (a.data || []).filter((u) => u.tenant_id).map((u) => ({ tenant_id: u.tenant_id, user_id: u.id, actor_id: null, title, body, category: 'service_desk', kind: 'for_you', type: meta?.type || null, ref_table: meta?.refTable || null, ref_id: meta?.refId != null ? String(meta.refId) : null, group_key: meta?.groupKey || null }));
       if (rows.length) await sb.from('notifications').insert(rows);
+      // platform_admin Telegram fan-out intentionally skipped - telegram_links/notification_settings
+      // are tenant-scoped and a platform admin's own tenant_id for this purpose isn't established
+      // anywhere in the schema seen; see OUT-OF-SCOPE FINDINGS.
     },
   };
 }
