@@ -5,6 +5,10 @@
   if (!TOK || window.SDR) return;
   window.SDR = 1;
   var lang = qs.get('lang') === 'en' ? 'en' : 'bm', root, D = null;
+  // same allowlist as app/sd-pub-form.js's client-side check + the sd-result edge function's own
+  // server-side check (duplicated, not shared - Deno/browser can't import each other's files)
+  var TYPES = /\.(pdf|jpe?g|png|webp|heic|xlsx?|csv|txt|docx?)$/i, MAX = 10485760, FMAX = 3, IMG_RE = /\.(jpe?g|png|webp|heic)$/i;
+  var selectedFiles = [];
   var L = function (en, bm) { return lang === 'bm' ? bm : en; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
   var MB = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'], ME = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -39,7 +43,13 @@
         (f.url ? '<a class="btn btn-sm btn-outline" href="' + esc(f.url) + '" target="_blank" rel="noopener" download><i class="ti ti-download"></i> ' + L('Download', 'Muat turun') + '</a>' : '<button type="button" class="btn btn-sm btn-outline" disabled><i class="ti ti-lock"></i></button>') + '</div>';
     }).join('');
     var badge = done ? '<span class="badge badge-gray"><i class="ti ti-circle-check"></i> ' + L('Confirmed & closed', 'Disahkan & ditutup') + '</span>' : rev ? '<span class="badge badge-yellow"><i class="ti ti-arrow-back-up"></i> ' + L('Changes requested', 'Pindaan diminta') + '</span>' : '<span class="badge badge-green"><i class="ti ti-circle-check"></i> ' + L('Done', 'Siap') + '</span>';
-    var resp = d.can_respond ? card('<b style="font-size:15px">' + L('All good?', 'Semua okey?') + '</b><button type="button" class="btn" id="sdr-ok" style="width:100%;justify-content:center;margin-top:10px;background:var(--success);border-color:var(--success);color:#fff;font-weight:700;min-height:44px"><i class="ti ti-check"></i> ' + L('Confirm & close', 'Sahkan & tutup') + '</button>' +
+    var attachHtml = '<div class="form-group" style="margin:10px 0 0">' +
+      '<input type="file" id="sdr-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,.xls,.csv,.txt,.docx,.doc" multiple style="display:none">' +
+      '<button type="button" class="btn btn-sm btn-outline" id="sdr-file-btn"><i class="ti ti-paperclip"></i> ' + L('Attach files', 'Lampirkan fail') + '</button>' +
+      '<div class="cob-xs" style="margin-top:6px">' + L('Up to 3 files, 10MB each (PDF, image, Excel, Word, CSV, TXT).', 'Maksimum 3 fail, 10MB setiap satu (PDF, imej, Excel, Word, CSV, TXT).') + '</div>' +
+      '<div id="sdr-file-list"></div>' +
+      '<div id="sdr-file-err" class="cob-banner err" style="display:none;margin-top:8px"><i class="ti ti-alert-circle"></i><div></div></div></div>';
+    var resp = d.can_respond ? card('<b style="font-size:15px">' + L('All good?', 'Semua okey?') + '</b>' + attachHtml + '<button type="button" class="btn" id="sdr-ok" style="width:100%;justify-content:center;margin-top:10px;background:var(--success);border-color:var(--success);color:#fff;font-weight:700;min-height:44px"><i class="ti ti-check"></i> ' + L('Confirm & close', 'Sahkan & tutup') + '</button>' +
       '<div class="form-group" style="margin:14px 0 8px"><label class="form-label" for="sdr-cm">' + L('Request changes', 'Minta pindaan') + '</label><textarea class="form-input" id="sdr-cm" rows="3" maxlength="2000" data-no-titlecase="1" placeholder="' + L('E.g. Ali’s overtime allowance is missing…', 'Contoh: Elaun lebih masa Ali belum dimasukkan…') + '"></textarea></div><button type="button" class="btn btn-outline" id="sdr-rev" style="width:100%;justify-content:center;min-height:44px"><i class="ti ti-pencil"></i> ' + L('Request changes', 'Minta pindaan') + '</button>')
       : card('<div class="row" style="gap:10px"><i class="ti ti-' + (rev ? 'arrow-back-up' : 'circle-check') + '" style="font-size:22px;color:var(--' + (rev ? 'warning' : 'success') + ')"></i><div class="cob-sm">' + (msg || (rev ? L('Thanks - your change request was sent. We will update you soon.', 'Terima kasih - permintaan pindaan telah dihantar. Kami akan maklumkan semula.') : done ? L('Thanks - this request is confirmed and closed.', 'Terima kasih - permintaan ini telah disahkan dan ditutup.') : L('This request is not waiting for your confirmation.', 'Permintaan ini tidak menunggu pengesahan anda.'))) + '</div></div>');
     page(card('<div class="row" style="gap:6px;flex-wrap:wrap">' + badge + '<span class="sd-ref" style="margin-left:auto">' + esc(d.ref_no) + '</span></div><div style="font-weight:700;font-size:17px;margin-top:8px;overflow-wrap:anywhere">' + esc(d.title) + '</div><div class="cob-sm">' + esc(lang === 'bm' ? d.service_bm : d.service_en) + ' · ' + esc(d.tenant_name || '') + '</div>' +
@@ -50,17 +60,66 @@
       (d.timeline && d.timeline.length ? card('<b style="font-size:15px">' + L('Timeline', 'Garis masa') + '</b>' + d.timeline.map(function (e) {
         var ic = e.type === 'comment' ? 'ti-message' : e.type === 'attachment' ? 'ti-paperclip' : 'ti-arrows-exchange';
         var lb = e.type === 'comment' ? L('Comment', 'Komen') : e.type === 'attachment' ? L('File', 'Fail') : L('Status', 'Status');
-        return '<div style="display:flex;gap:10px;margin-top:10px"><i class="ti ' + ic + '" style="color:var(--text-secondary);margin-top:2px"></i><div style="min-width:0"><b>' + lb + '</b><div style="overflow-wrap:anywhere">' + esc(e.body || '') + '</div><div class="cob-xs">' + dt(e.created_at) + '</div></div></div>';
+        var fh = '';
+        if (e.file) {
+          fh = (IMG_RE.test(e.file.name) && e.file.url) ? '<a href="' + esc(e.file.url) + '" target="_blank" rel="noopener"><img src="' + esc(e.file.url) + '" alt="' + esc(e.file.name) + '" style="max-width:160px;max-height:160px;border-radius:8px;margin-top:6px;display:block"></a>'
+            : e.file.url ? '<a href="' + esc(e.file.url) + '" target="_blank" rel="noopener" download class="row" style="gap:6px;margin-top:6px;color:var(--primary);font-size:13px"><i class="ti ti-download"></i> ' + esc(e.file.name) + '</a>'
+            : '<div class="cob-xs" style="margin-top:6px"><i class="ti ti-lock"></i> ' + esc(e.file.name) + '</div>';
+        }
+        return '<div style="display:flex;gap:10px;margin-top:10px"><i class="ti ' + ic + '" style="color:var(--text-secondary);margin-top:2px"></i><div style="min-width:0"><b>' + lb + '</b>' + (e.body ? '<div style="overflow-wrap:anywhere">' + esc(e.body) + '</div>' : '') + fh + '<div class="cob-xs">' + dt(e.created_at) + '</div></div></div>';
       }).join('')) : '') + resp);
     var ok = root.querySelector('#sdr-ok'), rv = root.querySelector('#sdr-rev');
+    function fileErr(m) { var e = root.querySelector('#sdr-file-err'); if (!e) return; if (m) { e.querySelector('div').textContent = m; e.style.display = 'flex'; } else e.style.display = 'none'; }
+    function renderFilePreview() {
+      var list = root.querySelector('#sdr-file-list'); if (!list) return;
+      list.innerHTML = selectedFiles.map(function (f, i) {
+        var thumb = IMG_RE.test(f.name) ? '<img src="' + URL.createObjectURL(f) + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover">' : '<i class="ti ti-file-text" style="font-size:22px;color:var(--primary)"></i>';
+        return '<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' + thumb + '<div class="grow" style="min-width:0"><b class="cob-ell" style="font-size:12.5px;display:block">' + esc(f.name) + '</b><div class="cob-xs">' + size(f.size) + '</div></div><button type="button" class="btn btn-sm btn-outline" data-rm="' + i + '" aria-label="Remove"><i class="ti ti-x"></i></button></div>';
+      }).join('');
+      list.querySelectorAll('[data-rm]').forEach(function (b) { b.onclick = function () { selectedFiles.splice(+b.dataset.rm, 1); renderFilePreview(); }; });
+      var fb = root.querySelector('#sdr-file-btn');
+      if (fb) fb.innerHTML = '<i class="ti ti-paperclip"></i> ' + L('Attach files', 'Lampirkan fail') + (selectedFiles.length ? ' (' + selectedFiles.length + '/' + FMAX + ')' : '');
+    }
+    var fileBtn = root.querySelector('#sdr-file-btn'), fileIn = root.querySelector('#sdr-file');
+    if (fileBtn && fileIn) {
+      fileBtn.onclick = function () { fileIn.click(); };
+      fileIn.onchange = function () {
+        var picked = Array.prototype.slice.call(fileIn.files || []); fileIn.value = ''; fileErr('');
+        for (var i = 0; i < picked.length; i++) {
+          var f = picked[i];
+          if (selectedFiles.length >= FMAX) { fileErr(L('Maximum 3 files.', 'Maksimum 3 fail.')); break; }
+          if (!TYPES.test(f.name)) { fileErr(L('Unsupported file type: ', 'Jenis fail tidak disokong: ') + f.name); continue; }
+          if (f.size > MAX) { fileErr(L('File too large (max 10MB): ', 'Fail terlalu besar (maks 10MB): ') + f.name); continue; }
+          selectedFiles.push(f);
+        }
+        renderFilePreview();
+      };
+    }
+    renderFilePreview();
+    function uploadAll() {
+      return selectedFiles.reduce(function (p, f) {
+        return p.then(function (acc) {
+          return call({ action: 'upload_url', filename: f.name, size: f.size }).then(function (j) {
+            if (!j.ok) throw new Error(j.error || 'upload_url');
+            return sb.storage.from('service-files').uploadToSignedUrl(j.path, j.token, f).then(function (u) {
+              if (u.error) throw u.error;
+              acc.push({ path: j.path, name: f.name.slice(-200), size: f.size });
+              return acc;
+            });
+          });
+        });
+      }, Promise.resolve([]));
+    }
     var send = function (action, btn) {
       var cm = (root.querySelector('#sdr-cm') || {}).value || '';
       if (action === 'revise' && cm.trim().length < 3) { var t = root.querySelector('#sdr-cm'); t.focus(); t.style.borderColor = 'var(--danger)'; return; }
-      btn.disabled = true;
-      call({ action: action, comment: cm.trim() }).then(function (j) {
+      fileErr(''); btn.disabled = true;
+      uploadAll().then(function (files) {
+        return call(Object.assign({ action: action, comment: cm.trim() }, files.length ? { files: files } : {}));
+      }).then(function (j) {
         if (j.ok) { D.status = j.status; D.can_respond = false; if (j.status === 'closed') D.closed_at = new Date().toISOString(); show(); }
         else { btn.disabled = false; show(j.error === 'rate' ? L('Too many attempts. Please try again later.', 'Terlalu banyak cubaan. Sila cuba sebentar lagi.') : null); }
-      }, function () { btn.disabled = false; });
+      }, function () { btn.disabled = false; fileErr(L('Could not upload file(s). Please try again.', 'Tidak dapat memuat naik fail. Sila cuba lagi.')); });
     };
     if (ok) ok.onclick = function () { send('confirm', ok); };
     if (rv) rv.onclick = function () { send('revise', rv); };

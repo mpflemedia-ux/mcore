@@ -67,9 +67,20 @@ function db(): Db {
       (r.data || []).forEach((x) => { if (x.path && x.signedUrl) m[x.path] = x.signedUrl; }); return m;
     },
     timeline: async (rid) => {
-      const rows = (await one<{ type: string; body: string | null; created_at: string; actor_id: string | null }[]>(
-        sb.from('service_request_events').select('type,body,created_at,actor_id').eq('request_id', rid).order('created_at', { ascending: false }).limit(40))) || [];
-      return rows.map((e) => ({ type: e.type || 'note', body: e.body, created_at: e.created_at, actor: e.actor_id }));
+      const rows = (await one<{ type: string; body: string | null; created_at: string; actor_id: string | null; file_path: string | null; file_name: string | null }[]>(
+        sb.from('service_request_events').select('type,body,created_at,actor_id,file_path,file_name').eq('request_id', rid).order('created_at', { ascending: false }).limit(40))) || [];
+      return rows.map((e) => ({ type: e.type || 'note', body: e.body, created_at: e.created_at, actor: e.actor_id, file_path: e.file_path, file_name: e.file_name }));
+    },
+    // signed upload slot for a client-submitted attachment on confirm/revise - the public page PUTs
+    // the file straight to this URL (sb.storage.uploadToSignedUrl); no anon Storage RLS added, the
+    // signed token is itself the one-time authorization. Path matches the existing deliverables
+    // convention ((storage.foldername(name))[2] = 'service-requests') for consistency.
+    uploadUrl: async (tid, rid, filename) => {
+      const safe = filename.replace(/[^\w.\-]+/g, '_').slice(-120);
+      const path = tid + '/service-requests/' + rid + '/client-' + Date.now() + '-' + safe;
+      const r = await sb.storage.from('service-files').createSignedUploadUrl(path);
+      if (r.error || !r.data) return null;
+      return { path: r.data.path, token: r.data.token };
     },
 
     markViewed: async (l, now) => { await sb.from('service_result_links').update({ viewed_at: l.viewed_at || now, view_count: (l.view_count || 0) + 1 }).eq('id', l.id); },
