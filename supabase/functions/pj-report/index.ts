@@ -53,14 +53,14 @@ async function findLink(sb: ReturnType<typeof createClient>, token: string): Pro
   return row
 }
 
-// same spirit as sd-result's FILE_TYPES/FILE_MAX/FILES_MAX, but scoped to what the 'project-comments'
-// Storage bucket itself allows (images only, 5MB - see projects_wa_share_01.sql's bucket insert):
+// same allowlist + cap as sd-result's FILE_TYPES/FILE_MAX/FILES_MAX, matching what the
+// 'project-comments' Storage bucket itself now allows (see projects_share_06.sql's bucket update):
 // uploading anything else would be rejected by Storage regardless of what this function allows.
-const IMG_TYPES = /\.(jpe?g|png|webp|heic|gif)$/i
-const FILE_MAX = 5242880
+const FILE_TYPES = /\.(pdf|jpe?g|png|webp|heic|gif|xlsx?|csv|txt|docx?)$/i
+const FILE_MAX = 10485760
 const FILES_MAX = 3
 
-// signed upload slot for a client-submitted image on the public report link - same mechanism as
+// signed upload slot for a client-submitted file on the public report link - same mechanism as
 // sd-result's uploadUrl (no anon Storage RLS added, the signed token is the one-time grant). Path
 // mirrors the staff upload convention in app/pj-wa-activity.js (tenant/task/...) for task-mode links;
 // project-mode links (no single task) get a parallel tenant/project-<id>/... prefix.
@@ -228,7 +228,7 @@ Deno.serve(async (req: Request) => {
       if (action === 'upload_url') {
         const filename = typeof body.filename === 'string' ? body.filename.slice(-200) : ''
         const size = typeof body.size === 'number' ? body.size : 0
-        if (!filename || !IMG_TYPES.test(filename)) return json({ success: false, error: 'file_type' }, 400)
+        if (!filename || !FILE_TYPES.test(filename)) return json({ success: false, error: 'file_type' }, 400)
         if (!size || size > FILE_MAX) return json({ success: false, error: 'file_size' }, 400)
         const up = await clientUploadUrl(sb, link, filename)
         if (!up) return json({ success: false, error: 'upload_failed' }, 500)

@@ -19,9 +19,9 @@
   function dtFull(d) { if (!d) return ''; try { return new Date(d).toLocaleString(lang === 'bm' ? 'ms-MY' : 'en-MY', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return String(d).slice(0, 16); } }
   var COLS = [['backlog', 'Backlog', 'Belakang'], ['progress', 'In Progress', 'Sedang Jalan'], ['review', 'Review', 'Semakan'], ['done', 'Done', 'Siap']];
   var FN = 'https://wjqhhnjlgoigoagsnsen.supabase.co/functions/v1/pj-report';
-  // 'project-comments' Storage bucket itself is images-only, 5MB (see projects_wa_share_01.sql) - not
-  // the broader PDF/Office/CSV allowlist sd-wa-result.js uses with its own 'service-files' bucket.
-  var IMG_TYPES = /\.(jpe?g|png|webp|heic|gif)$/i, FILE_MAX = 5242880, FILES_MAX = 3;
+  // same allowlist + 10MB cap as sd-wa-result.js, matching what the 'project-comments' Storage bucket
+  // itself now allows (see projects_share_06.sql's bucket update).
+  var FILE_TYPES = /\.(pdf|jpe?g|png|webp|heic|gif|xlsx?|csv|txt|docx?)$/i, FILE_MAX = 10485760, FILES_MAX = 3, IMG_RE = /\.(jpe?g|png|webp|heic|gif)$/i;
   var selectedPjFiles = [];
   function size(b) { b = +b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
   var root, data;
@@ -54,9 +54,15 @@
 
   function activityItem(a) {
     var icon = a.file ? 'ti-paperclip' : 'ti-message';
+    var fileHtml = '';
+    if (a.file && a.file.url) {
+      fileHtml = IMG_RE.test(a.file.name || '')
+        ? '<a class="pjp-att" href="' + esc(a.file.url) + '" target="_blank" rel="noopener"><img src="' + esc(a.file.url) + '" alt="' + esc(a.file.name || '') + '" loading="lazy"></a>'
+        : '<a href="' + esc(a.file.url) + '" target="_blank" rel="noopener" download class="row" style="gap:6px;margin-top:6px;color:var(--primary);font-size:13px"><i class="ti ti-download"></i>' + esc(a.file.name || '') + '</a>';
+    }
     return '<div class="pjp-act"><i class="ti ' + icon + '"></i><div class="grow" style="min-width:0">' +
       (a.body ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word">' + esc(a.body) + '</div>' : '') +
-      (a.file && a.file.url ? '<a class="pjp-att" href="' + esc(a.file.url) + '" target="_blank" rel="noopener"><img src="' + esc(a.file.url) + '" alt="' + esc(a.file.name || '') + '" loading="lazy"></a>' : '') +
+      fileHtml +
       '<div class="cob-xs" style="margin-top:3px">' + esc(dtFull(a.created_at)) + (a.by ? ' · ' + esc(a.by) : '') + '</div></div></div>';
   }
 
@@ -79,9 +85,9 @@
     return card('<b style="font-size:14px">' + L('Leave a message', 'Tinggal mesej') + '</b><div class="cob-xs" style="margin:2px 0 10px">' + L('We will see it, not a live chat.', 'Kami akan nampak, bukan sembang langsung.') + '</div>' +
       '<textarea class="form-input" id="pjp-msg" rows="3" maxlength="2000" placeholder="' + L('Type a message…', 'Taip mesej…') + '"></textarea>' +
       '<div class="form-group" style="margin:10px 0 0">' +
-      '<input type="file" id="pjp-file" accept=".jpg,.jpeg,.png,.webp,.heic,.gif" multiple style="display:none">' +
-      '<button type="button" class="btn btn-sm btn-outline" id="pjp-file-btn"><i class="ti ti-paperclip"></i> ' + L('Attach images', 'Lampirkan imej') + '</button>' +
-      '<div class="cob-xs" style="margin-top:6px">' + L('Up to 3 images, 5MB each (JPG, PNG, WEBP, HEIC, GIF).', 'Maksimum 3 imej, 5MB setiap satu (JPG, PNG, WEBP, HEIC, GIF).') + '</div>' +
+      '<input type="file" id="pjp-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.gif,.xlsx,.xls,.csv,.txt,.docx,.doc" multiple style="display:none">' +
+      '<button type="button" class="btn btn-sm btn-outline" id="pjp-file-btn"><i class="ti ti-paperclip"></i> ' + L('Attach files', 'Lampirkan fail') + '</button>' +
+      '<div class="cob-xs" style="margin-top:6px">' + L('Up to 3 files, 10MB each (PDF, image, Excel, Word, CSV, TXT).', 'Maksimum 3 fail, 10MB setiap satu (PDF, imej, Excel, Word, CSV, TXT).') + '</div>' +
       '<div id="pjp-file-list"></div>' +
       '<div id="pjp-file-err" class="cob-banner err" style="display:none;margin-top:8px"><i class="ti ti-alert-circle"></i><div></div></div></div>' +
       '<div id="pjp-msg-err" class="cob-xs" style="color:var(--danger);display:none;margin-top:6px"></div>' +
@@ -92,11 +98,12 @@
   function renderPjFilePreview() {
     var list = root.querySelector('#pjp-file-list'); if (!list) return;
     list.innerHTML = selectedPjFiles.map(function (f, i) {
-      return '<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--border)"><img src="' + URL.createObjectURL(f) + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover"><div class="grow" style="min-width:0"><b class="cob-ell" style="font-size:12.5px;display:block">' + esc(f.name) + '</b><div class="cob-xs">' + size(f.size) + '</div></div><button type="button" class="btn btn-sm btn-outline" data-prm="' + i + '" aria-label="Remove"><i class="ti ti-x"></i></button></div>';
+      var thumb = IMG_RE.test(f.name) ? '<img src="' + URL.createObjectURL(f) + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover">' : '<i class="ti ti-file-text" style="font-size:22px;color:var(--primary)"></i>';
+      return '<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' + thumb + '<div class="grow" style="min-width:0"><b class="cob-ell" style="font-size:12.5px;display:block">' + esc(f.name) + '</b><div class="cob-xs">' + size(f.size) + '</div></div><button type="button" class="btn btn-sm btn-outline" data-prm="' + i + '" aria-label="Remove"><i class="ti ti-x"></i></button></div>';
     }).join('');
     list.querySelectorAll('[data-prm]').forEach(function (b) { b.onclick = function () { selectedPjFiles.splice(+b.dataset.prm, 1); renderPjFilePreview(); }; });
     var fb = root.querySelector('#pjp-file-btn');
-    if (fb) fb.innerHTML = '<i class="ti ti-paperclip"></i> ' + L('Attach images', 'Lampirkan imej') + (selectedPjFiles.length ? ' (' + selectedPjFiles.length + '/' + FILES_MAX + ')' : '');
+    if (fb) fb.innerHTML = '<i class="ti ti-paperclip"></i> ' + L('Attach files', 'Lampirkan fail') + (selectedPjFiles.length ? ' (' + selectedPjFiles.length + '/' + FILES_MAX + ')' : '');
   }
   function uploadPjAll() {
     return selectedPjFiles.reduce(function (p, f) {
@@ -122,9 +129,9 @@
         var picked = Array.prototype.slice.call(fileIn.files || []); fileIn.value = ''; pjFileErr('');
         for (var i = 0; i < picked.length; i++) {
           var f = picked[i];
-          if (selectedPjFiles.length >= FILES_MAX) { pjFileErr(L('Maximum 3 images.', 'Maksimum 3 imej.')); break; }
-          if (!IMG_TYPES.test(f.name)) { pjFileErr(L('Unsupported file type: ', 'Jenis fail tidak disokong: ') + f.name); continue; }
-          if (f.size > FILE_MAX) { pjFileErr(L('Image too large (max 5MB): ', 'Imej terlalu besar (maks 5MB): ') + f.name); continue; }
+          if (selectedPjFiles.length >= FILES_MAX) { pjFileErr(L('Maximum 3 files.', 'Maksimum 3 fail.')); break; }
+          if (!FILE_TYPES.test(f.name)) { pjFileErr(L('Unsupported file type: ', 'Jenis fail tidak disokong: ') + f.name); continue; }
+          if (f.size > FILE_MAX) { pjFileErr(L('File too large (max 10MB): ', 'Fail terlalu besar (maks 10MB): ') + f.name); continue; }
           selectedPjFiles.push(f);
         }
         renderPjFilePreview();
@@ -142,7 +149,7 @@
         send.disabled = false;
         if (!x.success) { err.textContent = x.error === 'rate_limited' ? L('Too many messages. Please try again later.', 'Terlalu banyak mesej. Sila cuba sebentar lagi.') : L('Could not send. Please try again.', 'Tidak dapat dihantar. Sila cuba lagi.'); err.style.display = 'block'; return; }
         ta.value = ''; selectedPjFiles = []; renderPjFilePreview(); ok.style.display = 'block';
-      }).catch(function () { send.disabled = false; pjFileErr(L('Could not upload image(s). Please try again.', 'Tidak dapat memuat naik imej. Sila cuba lagi.')); });
+      }).catch(function () { send.disabled = false; pjFileErr(L('Could not upload file(s). Please try again.', 'Tidak dapat memuat naik fail. Sila cuba lagi.')); });
     };
   }
 
