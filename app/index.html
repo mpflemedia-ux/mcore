@@ -3422,6 +3422,14 @@ function openPage(page, params={}) {
   if(item) document.getElementById('header-title').textContent = APP.language==='bm'?item.label_bm:item.label_en
   const main = document.getElementById('main')
   main.innerHTML = '<div class="page-loading"><div class="spinner dark"></div></div>'
+  // #main's own overflow-y:auto never actually becomes the active scroll container (its ancestor
+  // #app{height:100vh;overflow:hidden} selector targets an id that doesn't exist in this DOM - the
+  // real shell root is #shell), so in practice the whole window scrolls. Deep-scrolling on one page
+  // (eg. Dashboard's Card Shortcuts, which jump down the SAME page) then switching pages here left
+  // the new, shorter page landing at that stale offset - its heading rendered clipped behind the
+  // header. Reset both so whichever element ends up scrolling starts a fresh page at the top.
+  window.scrollTo(0, 0)
+  main.scrollTop = 0
   setTimeout(()=>{
     const _safeRender = (fn) => {
       try {
