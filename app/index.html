@@ -123,7 +123,7 @@ input,select,textarea{font-family:inherit}
 #main-area{background:var(--bg)}
 #shell.active{background:var(--bg)}
 #shell{display:none;flex:1;min-width:0;min-height:0;overflow:hidden}
-#shell.active{display:flex;height:100%;min-height:0;width:100%;overflow:hidden}
+#shell.active{display:flex;height:100%;height:calc(100dvh - var(--pa-banner-h,0px));max-height:100dvh;min-height:0;width:100%;overflow:hidden;margin-top:var(--pa-banner-h,0px)}
 
 /* SIDEBAR */
 #sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--bg-sidebar);display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.05);overflow:hidden;transition:width var(--transition);z-index:100}
