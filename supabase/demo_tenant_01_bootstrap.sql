@@ -107,7 +107,13 @@ set is_demo = true,
     trial_ends_at = null
 where code = 'DEMO';
 
--- ---------- STEP 4: complete onboarding (company profile + fiscal year 2026) ----------
+-- ---------- STEP 4: company profile + fiscal year 2026 ----------
+-- NOTE: complete_onboarding() itself checks auth.uid() = the owner's own
+-- session (it's designed to be called from the app while the owner is
+-- logged in), which is null when run from the SQL Editor -> raises
+-- "Unauthorized". So this does the exact same thing directly instead
+-- (confirmed from the RPC's real source: UPDATE tenants + INSERT
+-- fiscal_years), which needs no session auth.
 do $$
 declare
   v_tenant_id uuid;
@@ -121,29 +127,27 @@ begin
     return;
   end if;
 
-  perform complete_onboarding(
-    v_tenant_id,
-    jsonb_build_object(
-      'legal_name', 'Maju Trading Sdn Bhd',
-      'reg_no', '202601012345',
-      'tax_no', 'C12345678000',
-      'email', 'demo@majutrading.my',
-      'phone', '+603-78881234',
-      'address_line1', 'No. 12, Jalan Perniagaan 5',
-      'address_line2', 'Taman Perindustrian Maju',
-      'city', 'Shah Alam',
-      'state', 'Selangor',
-      'postcode', '40150',
-      'sst_registered', true
-    ),
-    jsonb_build_object(
-      'year_label', '2026',
-      'start_date', '2026-01-01',
-      'end_date', '2026-12-31'
-    ),
-    'default_my'
-  );
-  raise notice 'onboarding completed for tenant %', v_tenant_id;
+  update tenants set
+    legal_name      = 'Maju Trading Sdn Bhd',
+    reg_no          = '202601012345',
+    tax_no          = 'C12345678000',
+    email           = 'demo@majutrading.my',
+    phone           = '+603-78881234',
+    address_line1   = 'No. 12, Jalan Perniagaan 5',
+    address_line2   = 'Taman Perindustrian Maju',
+    city            = 'Shah Alam',
+    state           = 'Selangor',
+    postcode        = '40150',
+    sst_registered  = true,
+    onboarding_done = true
+  where id = v_tenant_id;
+
+  if not exists (select 1 from fiscal_years where tenant_id = v_tenant_id) then
+    insert into fiscal_years (tenant_id, year_label, start_date, end_date, is_current)
+    values (v_tenant_id, '2026', '2026-01-01', '2026-12-31', true);
+  end if;
+
+  raise notice 'onboarding completed directly for tenant %', v_tenant_id;
 end $$;
 
 -- ---------- STEP 5: seed Chart of Accounts ----------
