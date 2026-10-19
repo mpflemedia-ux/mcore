@@ -9,6 +9,7 @@
   // server-side check (duplicated, not shared - Deno/browser can't import each other's files)
   var TYPES = /\.(pdf|jpe?g|png|webp|heic|xlsx?|csv|txt|docx?)$/i, MAX = 10485760, FMAX = 3, IMG_RE = /\.(jpe?g|png|webp|heic)$/i;
   var selectedFiles = [];
+  var selectedMsgFiles = [];
   var L = function (en, bm) { return lang === 'bm' ? bm : en; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
   var MB = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'], ME = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -52,6 +53,20 @@
     var resp = d.can_respond ? card('<b style="font-size:15px">' + L('All good?', 'Semua okey?') + '</b>' + attachHtml + '<button type="button" class="btn" id="sdr-ok" style="width:100%;justify-content:center;margin-top:10px;background:var(--success);border-color:var(--success);color:#fff;font-weight:700;min-height:44px"><i class="ti ti-check"></i> ' + L('Confirm & close', 'Sahkan & tutup') + '</button>' +
       '<div class="form-group" style="margin:14px 0 8px"><label class="form-label" for="sdr-cm">' + L('Request changes', 'Minta pindaan') + '</label><textarea class="form-input" id="sdr-cm" rows="3" maxlength="2000" data-no-titlecase="1" placeholder="' + L('E.g. Ali’s overtime allowance is missing…', 'Contoh: Elaun lebih masa Ali belum dimasukkan…') + '"></textarea></div><button type="button" class="btn btn-outline" id="sdr-rev" style="width:100%;justify-content:center;min-height:44px"><i class="ti ti-pencil"></i> ' + L('Request changes', 'Minta pindaan') + '</button>')
       : card('<div class="row" style="gap:10px"><i class="ti ti-' + (rev ? 'arrow-back-up' : 'circle-check') + '" style="font-size:22px;color:var(--' + (rev ? 'warning' : 'success') + ')"></i><div class="cob-sm">' + (msg || (rev ? L('Thanks - your change request was sent. We will update you soon.', 'Terima kasih - permintaan pindaan telah dihantar. Kami akan maklumkan semula.') : done ? L('Thanks - this request is confirmed and closed.', 'Terima kasih - permintaan ini telah disahkan dan ditutup.') : L('This request is not waiting for your confirmation.', 'Permintaan ini tidak menunggu pengesahan anda.'))) + '</div></div>');
+    // "Leave a message" - always visible regardless of status/can_respond (unlike the Confirm/Revise
+    // card above), mirrors app/pj-pub-report.js's msgSectionHtml() pattern + reuses the same attach-file
+    // UI as the Confirm/Revise card but with its own ids/array so neither section affects the other.
+    var msgCard = card('<b style="font-size:15px">' + L('Leave a message', 'Tinggal mesej') + '</b><div class="cob-xs" style="margin:2px 0 10px">' + L('We will see it, not a live chat.', 'Kami akan nampak, bukan sembang langsung.') + '</div>' +
+      '<textarea class="form-input" id="sdr-msg" rows="3" maxlength="2000" data-no-titlecase="1" placeholder="' + L('Type a message…', 'Taip mesej…') + '"></textarea>' +
+      '<div class="form-group" style="margin:10px 0 0">' +
+      '<input type="file" id="sdr-mfile" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,.xls,.csv,.txt,.docx,.doc" multiple style="display:none">' +
+      '<button type="button" class="btn btn-sm btn-outline" id="sdr-mfile-btn"><i class="ti ti-paperclip"></i> ' + L('Attach files', 'Lampirkan fail') + '</button>' +
+      '<div class="cob-xs" style="margin-top:6px">' + L('Up to 3 files, 10MB each (PDF, image, Excel, Word, CSV, TXT).', 'Maksimum 3 fail, 10MB setiap satu (PDF, imej, Excel, Word, CSV, TXT).') + '</div>' +
+      '<div id="sdr-mfile-list"></div>' +
+      '<div id="sdr-mfile-err" class="cob-banner err" style="display:none;margin-top:8px"><i class="ti ti-alert-circle"></i><div></div></div></div>' +
+      '<div id="sdr-msg-err" class="cob-xs" style="color:var(--danger);display:none;margin-top:8px"></div>' +
+      '<button type="button" class="btn btn-primary" id="sdr-msg-send" style="width:100%;justify-content:center;margin-top:10px"><i class="ti ti-send"></i> ' + L('Send', 'Hantar') + '</button>' +
+      '<div id="sdr-msg-ok" class="cob-xs" style="color:var(--success);display:none;margin-top:8px"><i class="ti ti-circle-check"></i> ' + L('Message sent. Thank you.', 'Mesej dihantar. Terima kasih.') + '</div>');
     page(card('<div class="row" style="gap:6px;flex-wrap:wrap">' + badge + '<span class="sd-ref" style="margin-left:auto">' + esc(d.ref_no) + '</span></div><div style="font-weight:700;font-size:17px;margin-top:8px;overflow-wrap:anywhere">' + esc(d.title) + '</div><div class="cob-sm">' + esc(lang === 'bm' ? d.service_bm : d.service_en) + ' · ' + esc(d.tenant_name || '') + '</div>' +
       (d.delivered_at ? '<div class="cob-sm" style="margin-top:6px"><i class="ti ti-clock-check" style="color:var(--success)"></i> ' + L('Done ', 'Siap ') + dt(d.delivered_at) + (d.hours_taken != null ? ' · ' + L('in ' + d.hours_taken + ' hours', 'dalam ' + d.hours_taken + ' jam') + (d.sla_hours ? ' (SLA ' + d.sla_hours + ' ' + L('hours', 'jam') + ')' : '') : '') + '</div>' : '')) +
       card('<b style="font-size:15px">' + L('Result files', 'Fail hasil') + ' (' + (d.files || []).length + ')</b>' + (files || '<div class="cob-xs" style="padding:10px 0">' + L('No files attached.', 'Tiada fail dilampirkan.') + '</div>') +
@@ -67,7 +82,7 @@
             : '<div class="cob-xs" style="margin-top:6px"><i class="ti ti-lock"></i> ' + esc(e.file.name) + '</div>';
         }
         return '<div style="display:flex;gap:10px;margin-top:10px"><i class="ti ' + ic + '" style="color:var(--text-secondary);margin-top:2px"></i><div style="min-width:0"><b>' + lb + '</b>' + (e.body ? '<div style="overflow-wrap:anywhere">' + esc(e.body) + '</div>' : '') + fh + '<div class="cob-xs">' + dt(e.created_at) + '</div></div></div>';
-      }).join('')) : '') + resp);
+      }).join('')) : '') + resp + msgCard);
     var ok = root.querySelector('#sdr-ok'), rv = root.querySelector('#sdr-rev');
     function fileErr(m) { var e = root.querySelector('#sdr-file-err'); if (!e) return; if (m) { e.querySelector('div').textContent = m; e.style.display = 'flex'; } else e.style.display = 'none'; }
     function renderFilePreview() {
@@ -123,6 +138,63 @@
     };
     if (ok) ok.onclick = function () { send('confirm', ok); };
     if (rv) rv.onclick = function () { send('revise', rv); };
+    // "Leave a message" - separate ids/array from the Confirm/Revise attach section above, so neither
+    // touches the other's state; same validation rules (TYPES/MAX/FMAX) and upload_url/uploadToSignedUrl flow.
+    function msgFileErr(m) { var e = root.querySelector('#sdr-mfile-err'); if (!e) return; if (m) { e.querySelector('div').textContent = m; e.style.display = 'flex'; } else e.style.display = 'none'; }
+    function renderMsgFilePreview() {
+      var list = root.querySelector('#sdr-mfile-list'); if (!list) return;
+      list.innerHTML = selectedMsgFiles.map(function (f, i) {
+        var thumb = IMG_RE.test(f.name) ? '<img src="' + URL.createObjectURL(f) + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover">' : '<i class="ti ti-file-text" style="font-size:22px;color:var(--primary)"></i>';
+        return '<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' + thumb + '<div class="grow" style="min-width:0"><b class="cob-ell" style="font-size:12.5px;display:block">' + esc(f.name) + '</b><div class="cob-xs">' + size(f.size) + '</div></div><button type="button" class="btn btn-sm btn-outline" data-mrm="' + i + '" aria-label="Remove"><i class="ti ti-x"></i></button></div>';
+      }).join('');
+      list.querySelectorAll('[data-mrm]').forEach(function (b) { b.onclick = function () { selectedMsgFiles.splice(+b.dataset.mrm, 1); renderMsgFilePreview(); }; });
+      var fb = root.querySelector('#sdr-mfile-btn');
+      if (fb) fb.innerHTML = '<i class="ti ti-paperclip"></i> ' + L('Attach files', 'Lampirkan fail') + (selectedMsgFiles.length ? ' (' + selectedMsgFiles.length + '/' + FMAX + ')' : '');
+    }
+    var mFileBtn = root.querySelector('#sdr-mfile-btn'), mFileIn = root.querySelector('#sdr-mfile');
+    if (mFileBtn && mFileIn) {
+      mFileBtn.onclick = function () { mFileIn.click(); };
+      mFileIn.onchange = function () {
+        var picked = Array.prototype.slice.call(mFileIn.files || []); mFileIn.value = ''; msgFileErr('');
+        for (var i = 0; i < picked.length; i++) {
+          var f = picked[i];
+          if (selectedMsgFiles.length >= FMAX) { msgFileErr(L('Maximum 3 files.', 'Maksimum 3 fail.')); break; }
+          if (!TYPES.test(f.name)) { msgFileErr(L('Unsupported file type: ', 'Jenis fail tidak disokong: ') + f.name); continue; }
+          if (f.size > MAX) { msgFileErr(L('File too large (max 10MB): ', 'Fail terlalu besar (maks 10MB): ') + f.name); continue; }
+          selectedMsgFiles.push(f);
+        }
+        renderMsgFilePreview();
+      };
+    }
+    renderMsgFilePreview();
+    function uploadMsgAll() {
+      return selectedMsgFiles.reduce(function (p, f) {
+        return p.then(function (acc) {
+          return call({ action: 'upload_url', filename: f.name, size: f.size }).then(function (j) {
+            if (!j.ok) throw new Error(j.error || 'upload_url');
+            return sb.storage.from('service-files').uploadToSignedUrl(j.path, j.token, f).then(function (u) {
+              if (u.error) throw u.error;
+              acc.push({ path: j.path, name: f.name.slice(-200), size: f.size });
+              return acc;
+            });
+          });
+        });
+      }, Promise.resolve([]));
+    }
+    var msgSend = root.querySelector('#sdr-msg-send');
+    if (msgSend) msgSend.onclick = function () {
+      var ta = root.querySelector('#sdr-msg'), v = (ta.value || '').trim(), err = root.querySelector('#sdr-msg-err'), okEl = root.querySelector('#sdr-msg-ok');
+      err.style.display = 'none'; okEl.style.display = 'none'; msgFileErr('');
+      if (!v) { err.textContent = L('Please write a message first.', 'Sila tulis mesej dahulu.'); err.style.display = 'block'; ta.focus(); return; }
+      msgSend.disabled = true;
+      uploadMsgAll().then(function (files) {
+        return call(Object.assign({ action: 'message', comment: v }, files.length ? { files: files } : {}));
+      }).then(function (j) {
+        msgSend.disabled = false;
+        if (!j.ok) { err.textContent = j.error === 'rate' ? L('Too many messages. Please try again later.', 'Terlalu banyak mesej. Sila cuba sebentar lagi.') : L('Could not send. Please try again.', 'Tidak dapat dihantar. Sila cuba lagi.'); err.style.display = 'block'; return; }
+        ta.value = ''; selectedMsgFiles = []; renderMsgFilePreview(); okEl.style.display = 'block';
+      }, function () { msgSend.disabled = false; msgFileErr(L('Could not upload file(s). Please try again.', 'Tidak dapat memuat naik fail. Sila cuba lagi.')); });
+    };
     if (window.SDR_X) window.SDR_X({ root: root, d: d, lang: lang, msg: msg, call: call, show: show });
   }
   function boot() {

@@ -82,6 +82,14 @@ function db(): Db {
       if (r.error || !r.data) return null;
       return { path: r.data.path, token: r.data.token };
     },
+    // same fetch-then-filter-in-JS style as deliverables() above (no jsonb '->>' operator filter, to
+    // stay on query patterns already proven in this codebase) - counts only 'message' action sends,
+    // not confirm/revise's own status-event comment or admin-authored comments.
+    messageCount: async (rid) => {
+      const rows = (await one<{ meta: Record<string, unknown> | null }[]>(
+        sb.from('service_request_events').select('meta').eq('request_id', rid).eq('type', 'comment'))) || [];
+      return rows.filter((e) => e.meta && (e.meta as { message?: boolean }).message === true).length;
+    },
 
     markViewed: async (l, now) => { await sb.from('service_result_links').update({ viewed_at: l.viewed_at || now, view_count: (l.view_count || 0) + 1 }).eq('id', l.id); },
     responseCount: async (lid) => { const r = await sb.from('service_result_responses').select('id', { count: 'exact', head: true }).eq('link_id', lid); return r.count || 0; },
