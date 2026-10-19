@@ -53,6 +53,26 @@ async function findLink(sb: ReturnType<typeof createClient>, token: string): Pro
   return row
 }
 
+// same spirit as sd-result's FILE_TYPES/FILE_MAX/FILES_MAX, but scoped to what the 'project-comments'
+// Storage bucket itself allows (images only, 5MB - see projects_wa_share_01.sql's bucket insert):
+// uploading anything else would be rejected by Storage regardless of what this function allows.
+const IMG_TYPES = /\.(jpe?g|png|webp|heic|gif)$/i
+const FILE_MAX = 5242880
+const FILES_MAX = 3
+
+// signed upload slot for a client-submitted image on the public report link - same mechanism as
+// sd-result's uploadUrl (no anon Storage RLS added, the signed token is the one-time grant). Path
+// mirrors the staff upload convention in app/pj-wa-activity.js (tenant/task/...) for task-mode links;
+// project-mode links (no single task) get a parallel tenant/project-<id>/... prefix.
+async function clientUploadUrl(sb: ReturnType<typeof createClient>, link: Link, filename: string) {
+  const safe = filename.replace(/[^\w.\-]+/g, '_').slice(-120)
+  const prefix = link.task_id ? link.tenant_id + '/' + link.task_id : link.tenant_id + '/project-' + link.project_id
+  const path = prefix + '/client-' + Date.now() + '-' + safe
+  const r = await sb.storage.from('project-comments').createSignedUploadUrl(path)
+  if (r.error || !r.data) return null
+  return { path: r.data.path, token: r.data.token }
+}
+
 // same formula as app/projects.js stats() — total/in-progress/done/overdue/avg progress
 function stats(tasks: Record<string, unknown>[]) {
   const today = todayKL()
@@ -200,24 +220,66 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, data: await buildPayload(sb, link) })
     }
     if (req.method === 'POST') {
-      const body = (await req.json().catch(() => ({}))) as Record<string, string>
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
       const token = String(body.t || '')
-      const message = String(body.message || '').trim().slice(0, 2000)
+      const action = typeof body.action === 'string' ? body.action : 'message'
       const link = await findLink(sb, token)
       if (!link) return json({ success: false, error: 'not_found' }, 404)
+      if (action === 'upload_url') {
+        const filename = typeof body.filename === 'string' ? body.filename.slice(-200) : ''
+        const size = typeof body.size === 'number' ? body.size : 0
+        if (!filename || !IMG_TYPES.test(filename)) return json({ success: false, error: 'file_type' }, 400)
+        if (!size || size > FILE_MAX) return json({ success: false, error: 'file_size' }, 400)
+        const up = await clientUploadUrl(sb, link, filename)
+        if (!up) return json({ success: false, error: 'upload_failed' }, 500)
+        return json({ success: true, path: up.path, token: up.token })
+      }
+      const message = String(body.message || '').trim().slice(0, 2000)
       if (!message) return json({ success: false, error: 'message_required' }, 400)
-      // rate limit: at most 5 messages per link per hour (same spirit as sd-result's per-link cap)
+      // path must belong to THIS link's own tenant/task (or tenant/project for a project-mode link) -
+      // same spoofing guard as sd-result's confirm/revise file path check.
+      const prefix = (link.task_id ? link.tenant_id + '/' + link.task_id : link.tenant_id + '/project-' + link.project_id) + '/'
+      const filesIn = Array.isArray(body.files) ? (body.files as Record<string, unknown>[]).slice(0, FILES_MAX) : []
+      const files = filesIn.filter((f): f is { path: string; name: string; size: number } =>
+        typeof f.path === 'string' && f.path.startsWith(prefix) && typeof f.name === 'string' && typeof f.size === 'number')
+      // rate limit: at most 5 messages per link per hour (same spirit as sd-result's per-link cap).
+      // Counted off the one "body row" every send always writes (task-mode: project_task_comments row
+      // with created_by null + non-null body; project-mode: project_share_messages row with file_path
+      // null) so a message with several attachments still only counts once, same as before this change.
       const hourAgo = new Date(Date.now() - 3600000).toISOString()
-      const { count: recentCount } = await sb.from('project_share_messages').select('id', { count: 'exact', head: true })
-        .eq('link_id', link.id).is('deleted_at', null).gte('created_at', hourAgo)
-      if ((recentCount || 0) >= 5) return json({ success: false, error: 'rate_limited' }, 429)
-      const { error: insErr } = await sb.from('project_share_messages').insert({
-        tenant_id: link.tenant_id, project_id: link.project_id, link_id: link.id, body: message,
-      })
-      if (insErr) throw insErr
+      if (link.task_id) {
+        const { count: recentCount } = await sb.from('project_task_comments').select('id', { count: 'exact', head: true })
+          .eq('task_id', link.task_id).is('deleted_at', null).is('created_by', null).not('body', 'is', null).gte('created_at', hourAgo)
+        if ((recentCount || 0) >= 5) return json({ success: false, error: 'rate_limited' }, 429)
+        const { error: insErr } = await sb.from('project_task_comments').insert({
+          tenant_id: link.tenant_id, task_id: link.task_id, body: message, created_by: null, created_by_name: null,
+        })
+        if (insErr) throw insErr
+        for (const f of files) {
+          const { error: fErr } = await sb.from('project_task_comments').insert({
+            tenant_id: link.tenant_id, task_id: link.task_id, file_path: f.path, file_name: f.name.slice(-200), file_size: f.size, created_by: null, created_by_name: null,
+          })
+          if (fErr) throw fErr
+        }
+      } else {
+        const { count: recentCount } = await sb.from('project_share_messages').select('id', { count: 'exact', head: true })
+          .eq('link_id', link.id).is('deleted_at', null).is('file_path', null).gte('created_at', hourAgo)
+        if ((recentCount || 0) >= 5) return json({ success: false, error: 'rate_limited' }, 429)
+        const { error: insErr } = await sb.from('project_share_messages').insert({
+          tenant_id: link.tenant_id, project_id: link.project_id, link_id: link.id, body: message,
+        })
+        if (insErr) throw insErr
+        for (const f of files) {
+          const { error: fErr } = await sb.from('project_share_messages').insert({
+            tenant_id: link.tenant_id, project_id: link.project_id, link_id: link.id, file_path: f.path, file_name: f.name.slice(-200), file_size: f.size,
+          })
+          if (fErr) throw fErr
+        }
+      }
       const { data: proj } = await sb.from('projects').select('name').eq('id', link.project_id).maybeSingle()
+      const fileTag = files.length ? ' \u{1F4CE}' + (files.length > 1 ? 'x' + files.length : '') : ''
       await notifyOwners(sb, link.tenant_id, {
-        title: ((proj as Record<string, unknown>)?.name || 'Project') + ': new message',
+        title: ((proj as Record<string, unknown>)?.name || 'Project') + fileTag + ': new message',
         body: message,
         type: 'assigned.report_message',
         refTable: 'project_share_links', refId: link.id,
