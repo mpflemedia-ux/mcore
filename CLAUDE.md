@@ -7,8 +7,8 @@ Tagline: "ERP Yang Faham Bisnes Anda" | EN: "The ERP That Understands Your Busin
 ## Stack
 - Frontend: Vanilla JS, HTML, CSS — **tiada framework** (jangan cadangkan React/Vue/dll)
 - Backend/DB: Supabase (PostgreSQL + Auth + Storage + Realtime), Project ID: wjqhhnjlgoigoagsnsen, Region: Singapore
-- Hosting: GitHub Pages — mpflemedia-ux.github.io/nexerp
-- Repo: github.com/mpflemedia-ux/nexerp (public), branch aktif: main
+- Hosting: GitHub Pages — custom domain **mpflemedia.my** (bukan github.io; `nexerp` repo lama dah tak guna sejak Ogo 2026)
+- Repo: github.com/mpflemedia-ux/mcore (public), branch aktif: main
 - AI: Groq API (llama-3.3-70b-versatile)
 - Libs: pdf-lib (PDF), Chart.js (charts), Tabler Icons, font Inter
 
@@ -101,10 +101,10 @@ MPERS (Malaysia Private Entities Reporting Standard) — Statement of Financial 
 - Font: Inter | Dark/Light guna CSS variables (`data-theme` attribute)
 
 ## Testing / Preview Workflow
-Tiada local dev server — perubahan di-test dengan push terus ke GitHub, then verify live di **mpflemedia-ux.github.io/nexerp**. Bila buat perubahan:
+Tiada local dev server — perubahan di-test dengan push terus ke GitHub, then verify live di **mpflemedia.my/app/**. Bila buat perubahan:
 1. Commit + push ke branch `main`
 2. Tunggu GitHub Pages rebuild (biasanya <1 minit)
-3. Refresh mpflemedia-ux.github.io/nexerp untuk verify perubahan
+3. Refresh mpflemedia.my/app/ untuk verify perubahan
 4. Kalau perubahan besar/berisiko (contoh: ubah struktur APP/LANG, ubah auth flow), bagitau dulu sebelum push supaya boleh direview dulu
 
 ## Keselamatan API Key
