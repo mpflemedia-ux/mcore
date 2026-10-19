@@ -37,8 +37,8 @@ where t.code = 'DEMO'
   and not exists (select 1 from bank_accounts b where b.id = v.id);
 
 -- ---------- JOURNAL ENTRIES (4 manual entries) ----------
-insert into journal_entries (id, tenant_id, fiscal_year_id, ref_no, entry_date, entry_type, description, total_debit, total_credit, is_balanced, status, period_month, period_year)
-select v.id, t.id, fy.id, v.ref_no, v.entry_date, 'manual', v.description, v.amount, v.amount, true, 'posted', v.period_month, 2026
+insert into journal_entries (id, tenant_id, fiscal_year_id, ref_no, entry_date, entry_type, description, total_debit, total_credit, status, period_month, period_year)
+select v.id, t.id, fy.id, v.ref_no, v.entry_date, 'manual', v.description, v.amount, v.amount, 'posted', v.period_month, 2026
 from tenants t
 join fiscal_years fy on fy.tenant_id = t.id and fy.is_current = true
 cross join (values
