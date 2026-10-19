@@ -20,7 +20,7 @@ export interface Db {
   service(code: string): Promise<{ name_en: string; name_bm: string; default_sla_hours: number | null } | null>;
   contractPaid(tenantId: string, contractId: string | null): Promise<boolean>;
   deliverables(requestId: string): Promise<{ file_path: string; body: string | null; meta: Record<string, unknown> | null; created_at: string }[]>;
-  timeline(requestId: string): Promise<{ type: string; body: string | null; created_at: string; actor: string | null }[]>;
+  timeline(requestId: string): Promise<{ type: string; body: string | null; created_at: string; actor: string | null; file_path?: string | null; file_name?: string | null }[]>;
   sign(paths: string[], seconds: number): Promise<Record<string, string>>;
   markViewed(link: Link, nowIso: string): Promise<void>;
   responseCount(linkId: string): Promise<number>;
@@ -31,7 +31,25 @@ export interface Db {
   bellAdmins(title: string, body: string, meta?: NotifyMeta): Promise<void>;
   reopen?(req: Req, patch: Record<string, unknown>): Promise<boolean>;
   bellOwners?(tenantId: string, title: string, body: string, meta?: NotifyMeta): Promise<void>;
+  // client-submitted attachment on confirm/revise (not admin deliverables): a signed upload slot the
+  // public page PUTs the file to directly (sb.storage.uploadToSignedUrl) - no anon Storage RLS needed,
+  // the signed token itself is the one-time grant. Optional so the pre-existing handler_test.ts mock
+  // (already missing `timeline`, a separate pre-existing bug) doesn't need touching.
+  uploadUrl?(tenantId: string, requestId: string, filename: string): Promise<{ path: string; token: string } | null>;
+  // count of prior free-standing 'message' action sends on this request (type='comment' events whose
+  // meta.message === true) - a separate budget from MAX_RESPONSES/responseCount, which only governs
+  // confirm/revise/reopen. Optional for the same reason as uploadUrl above.
+  messageCount?(requestId: string): Promise<number>;
 }
+// same allowlist as app/sd-pub-form.js's client-side check (extension-based, not mime-sniffed) and the
+// same 10MB cap - kept independently duplicated (Deno can't import that browser file), not shared with
+// the 'service-files' bucket's own 25MB limit which stays as the hard backstop.
+const FILE_TYPES = /\.(pdf|jpe?g|png|webp|heic|xlsx?|csv|txt|docx?)$/i;
+const FILE_MAX = 10485760;
+const FILES_MAX = 3;
+// free-standing "leave a message" action - available at any request status (not gated on 'delivered'
+// like confirm/revise), so it gets its own, more generous per-request budget.
+const MAX_MESSAGES = 10;
 export const ORIGINS = ['https://mpflemedia.my', 'https://www.mpflemedia.my'];
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 const MAX_RESPONSES = 5, RL_MAX = 30, RL_WIN = 60000;
@@ -73,18 +91,48 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
   if (origin && !ORIGINS.includes(origin)) return json({ error: 'origin' }, 403);
   const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'na';
   if (!rateOk(ip, now)) return json({ error: 'rate' }, 429);
-  let p: { token?: unknown; action?: unknown; comment?: unknown };
+  let p: { token?: unknown; action?: unknown; comment?: unknown; filename?: unknown; size?: unknown; files?: unknown };
   try { p = await req.json(); } catch { return json({ error: 'bad' }, 400); }
   const token = typeof p.token === 'string' ? p.token : '', action = typeof p.action === 'string' ? p.action : 'view';
-  if (!TOKEN_RE.test(token) || !['view', 'confirm', 'revise', 'reopen'].includes(action)) return json({ error: 'inactive' }, 404);
+  if (!TOKEN_RE.test(token) || !['view', 'confirm', 'revise', 'reopen', 'upload_url', 'message'].includes(action)) return json({ error: 'inactive' }, 404);
   const link = await db.linkByHash(await sha256hex(token));
   if (!link || link.deleted_at || link.revoked_at || new Date(link.expires_at).getTime() <= now) return json({ error: 'inactive' }, 404);
   const r = await db.request(link.request_id);
   if (!r || r.deleted_at || String(r.tenant_id) !== String(link.tenant_id)) return json({ error: 'inactive' }, 404);
   const nowIso = new Date(now).toISOString();
+  if (action === 'upload_url') {
+    if (!db.uploadUrl) return json({ error: 'unsupported' }, 501);
+    // no status gate here deliberately: 'message' (below) is available at any request status, and
+    // needs a signed upload slot too. confirm/revise still gate on 'delivered' themselves, further down.
+    const filename = typeof p.filename === 'string' ? p.filename.slice(-200) : '';
+    const size = typeof p.size === 'number' ? p.size : 0;
+    if (!filename || !FILE_TYPES.test(filename)) return json({ error: 'file_type' }, 400);
+    if (!size || size > FILE_MAX) return json({ error: 'file_size' }, 400);
+    const up = await db.uploadUrl(r.tenant_id, r.id, filename);
+    if (!up) return json({ error: 'upload_failed' }, 500);
+    return json({ ok: true, path: up.path, token: up.token });
+  }
+  if (action === 'message') {
+    if (!db.messageCount) return json({ error: 'unsupported' }, 501);
+    const msg = typeof p.comment === 'string' ? p.comment.trim().slice(0, 2000) : '';
+    if (!msg) return json({ error: 'comment' }, 400);
+    if ((await db.messageCount(r.id)) >= MAX_MESSAGES) return json({ error: 'rate' }, 429);
+    const filesIn = Array.isArray(p.files) ? (p.files as Record<string, unknown>[]).slice(0, FILES_MAX) : [];
+    const files = filesIn.filter((f): f is { path: string; name: string; size: number } =>
+      typeof f.path === 'string' && f.path.startsWith(r.tenant_id + '/service-requests/' + r.id + '/') && typeof f.name === 'string' && typeof f.size === 'number');
+    await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'comment', body: msg, actor_id: null, meta: { via: 'result_link', link_id: link.id, message: true } });
+    for (const f of files) {
+      await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'attachment', file_path: f.path, file_name: f.name.slice(-200), file_size: f.size, body: null, actor_id: null, meta: { via: 'result_link', link_id: link.id, client_reply: true } });
+    }
+    const fileTag = files.length ? ' \u{1F4CE}' + (files.length > 1 ? 'x' + files.length : '') : '';
+    await db.bellAdmins(r.ref_no + fileTag + ': client sent a message (Mesej dari klien)', msg, { type: 'sd.message', refTable: 'service_requests', refId: r.id, groupKey: 'sd_event:' + r.id + ':message:' + nowIso.slice(0, 10) }).catch(() => {});
+    return json({ ok: true });
+  }
   if (action === 'view') {
     const [tname, svc, paid, files, last, tl] = await Promise.all([db.tenantName(r.tenant_id), db.service(r.service_code), db.contractPaid(r.tenant_id, r.contract_id), db.deliverables(r.id), db.lastResponse(link.id), db.timeline(r.id)]);
     const urls = paid && files.length ? await db.sign(files.map((f) => f.file_path), 600) : {};
+    const tlPaths = tl.map((e) => e.file_path).filter((p): p is string => !!p);
+    const tlUrls = tlPaths.length ? await db.sign(tlPaths, 300) : {};
     await db.markViewed(link, nowIso);
     const end = r.delivered_at || r.closed_at;
     const sla = r.due_at ? Math.round(bhBetween(r.created_at, r.due_at)) : (svc && svc.default_sla_hours) || null;
@@ -94,7 +142,7 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
       delivered_at: r.delivered_at, closed_at: r.closed_at, expires_at: link.expires_at,
       hours_taken: end ? Math.max(0, Math.round(bhBetween(r.created_at, end) - (r.sla_paused_seconds || 0) / 3600)) : null, sla_hours: sla,
       paid, files: files.map((f) => ({ name: String(f.body || (f.meta && (f.meta as { name?: string }).name) || f.file_path.split('/').pop()), size: Number((f.meta && (f.meta as { size?: number }).size) || 0), url: urls[f.file_path] || null })),
-      response: last, timeline: tl, timeline_count: (tl || []).length, can_respond: r.status === 'delivered',
+      response: last, timeline: tl.map((e) => ({ type: e.type, body: e.body, created_at: e.created_at, actor: e.actor, file: e.file_path ? { name: e.file_name || e.file_path.split('/').pop() || '', url: tlUrls[e.file_path] || null } : null })), timeline_count: (tl || []).length, can_respond: r.status === 'delivered',
       can_reopen: r.status === 'closed' && 'reopen_count' in r && !!db.reopen, reopened_at: r.reopened_at || null,
     });
   }
@@ -117,10 +165,17 @@ export async function handle(req: Request, db: Db, now = Date.now()): Promise<Re
   }
   if (r.status !== 'delivered') return json({ error: 'state', status: r.status }, 409);
   if ((await db.responseCount(link.id)) >= MAX_RESPONSES) return json({ error: 'rate' }, 429);
+  const filesIn = Array.isArray(p.files) ? (p.files as Record<string, unknown>[]).slice(0, FILES_MAX) : [];
+  const files = filesIn.filter((f): f is { path: string; name: string; size: number } =>
+    typeof f.path === 'string' && f.path.startsWith(r.tenant_id + '/service-requests/' + r.id + '/') && typeof f.name === 'string' && typeof f.size === 'number');
   const to = action === 'confirm' ? 'closed' : 'revision';
   if (!(await db.moveStatus(r, to, nowIso))) return json({ error: 'state' }, 409);
   await db.insertResponse({ tenant_id: r.tenant_id, request_id: r.id, link_id: link.id, action, comment: comment || null });
   await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'status', from_status: 'delivered', to_status: to, body: comment || null, actor_id: null, meta: { via: 'result_link', link_id: link.id } });
-  await db.bellAdmins(r.ref_no + (to === 'closed' ? ': client confirmed (Disahkan)' : ': revision requested (Minta pindaan)'), comment || r.title, { type: to === 'closed' ? 'sd.confirmed' : 'sd.revision', refTable: 'service_requests', refId: r.id, groupKey: 'sd_event:' + r.id + ':' + action + ':' + nowIso.slice(0, 10) }).catch(() => {});
+  for (const f of files) {
+    await db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'attachment', file_path: f.path, file_name: f.name.slice(-200), file_size: f.size, body: null, actor_id: null, meta: { via: 'result_link', link_id: link.id, client_reply: true } });
+  }
+  const fileTag = files.length ? ' \u{1F4CE}' + (files.length > 1 ? 'x' + files.length : '') : '';
+  await db.bellAdmins(r.ref_no + fileTag + (to === 'closed' ? ': client confirmed (Disahkan)' : ': revision requested (Minta pindaan)'), comment || r.title, { type: to === 'closed' ? 'sd.confirmed' : 'sd.revision', refTable: 'service_requests', refId: r.id, groupKey: 'sd_event:' + r.id + ':' + action + ':' + nowIso.slice(0, 10) }).catch(() => {});
   return json({ ok: true, status: to });
 }
