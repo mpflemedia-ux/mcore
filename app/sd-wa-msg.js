@@ -33,7 +33,7 @@
     if (o.tpl === 'done') L.push(W.svcLine(r.service_code, o.lang), '');
     if (o.tpl === 'need_info') L.push(T('Please reply to this message or open M-Core → My Services to add the details.', 'Sila balas mesej ini atau buka M-Core → Servis Saya untuk tambah maklumat.'), '');
     if (o.tpl === 'reminder' && r.status !== 'delivered') L.push(T('We are still waiting for your reply so we can continue.', 'Kami masih menunggu maklum balas anda untuk teruskan.'), '');
-    if (o.url) L.push('📂 ' + T('View result (valid 7 days)', 'Lihat hasil (sah 7 hari)') + ':', o.url, '', '✅ ' + T('Confirm', 'Sahkan') + ' / ✏️ ' + T('Request changes on the same link.', 'Minta pindaan di link yang sama.'), '');
+    if (o.url) L.push('📂 ' + T('View result (valid 30 days)', 'Lihat hasil (sah 30 hari)') + ':', o.url, '', '✅ ' + T('Confirm', 'Sahkan') + ' / ✏️ ' + T('Request changes on the same link.', 'Minta pindaan di link yang sama.'), '');
     L.push('_' + T('Sent via M-Core', 'Dihantar melalui M-Core') + '_');
     return L.join('\n');
   };
