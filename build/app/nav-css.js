@@ -40,16 +40,6 @@
     '#sidebar.collapsed .nv-h{height:1px;padding:0;margin:6px 14px;background:rgba(255,255,255,.1);pointer-events:none}#sidebar.collapsed .nv-h *{display:none}',
     '#sidebar.collapsed .nv-closed .nv-body{display:block}#sidebar.collapsed .nav-item.nv-child{margin-left:8px}',
     '#sidebar.collapsed .nv-bdg{position:absolute;top:3px;right:3px;min-width:8px;height:8px;padding:0;font-size:0}#sidebar.collapsed .nv-status{justify-content:center;padding:10px 0}}',
-    /* phone bottom bar */
-    '#nv-bb{display:none}',
-    '@media (max-width:768px){body.nv-bb #nv-bb{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:150;height:calc(58px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:var(--bg-card,#fff);border-top:1px solid var(--border);box-shadow:0 -2px 10px rgba(0,0,0,.08)}',
-    '#nv-bb button{flex:1;min-width:0;background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--text-2);font-size:10.5px;font-weight:600;cursor:pointer;position:relative;padding:4px 0}',
-    '#nv-bb button i{font-size:21px}#nv-bb button.on{color:var(--primary)}',
-    '#nv-bb .nv-plus i{background:var(--primary);color:var(--on-primary,#fff);border-radius:12px;width:36px;height:28px;display:flex;align-items:center;justify-content:center}',
-    '#nv-bb .nv-bb-b{position:absolute;top:3px;left:calc(50% + 4px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--danger);color:#fff;font-size:9.5px;line-height:16px}',
-    'body.nv-bb #main{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))!important}',
-    'body.nv-bb #ai-chat-fab{bottom:82px!important}body.nv-bb #dash-home-fab{bottom:142px!important}body.nv-bb #scroll-top-btn{bottom:202px!important}',
-    'body.nv-bb #ai-chat-panel{top:max(8px,env(safe-area-inset-top,0px))!important;bottom:calc(66px + env(safe-area-inset-bottom,0px))!important;height:auto!important;max-height:none!important}body.nv-bb:has(#ai-chat-panel.active) #ai-chat-fab,body.nv-bb:has(#ai-chat-panel.active) #dash-home-fab,body.nv-bb:has(#ai-chat-panel.active) #scroll-top-btn{visibility:hidden!important;pointer-events:none!important;opacity:0!important}body.nv-bb #ai-chat-panel.active .ai-chat-messages{min-height:0;flex:1 1 auto;overflow-y:auto}body.nv-bb .sd-fab{bottom:80px!important}}',
     '.nv-sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2050;display:flex;align-items:flex-end;justify-content:center}',
     '.nv-sheet{background:var(--bg-card,#fff);color:var(--text);width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:10px 14px calc(16px + env(safe-area-inset-bottom,0px));box-shadow:var(--shadow)}',
     '.nv-sheet h3{font-size:14px;margin:6px 4px 10px}.nv-sheet .nv-grab{width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 6px}',
@@ -64,8 +54,8 @@
     '.nv-lr .nv-mv{background:none;border:1px solid var(--border);border-radius:6px;width:30px;height:30px;color:var(--text-2);cursor:pointer}',
     '.nv-lr input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary)}',
     /* print / Save as PDF: window.print() prints the live app page, so fixed screen chrome must not print */
-    '@media print{#nv-bb,body.nv-bb #nv-bb,#ai-chat-fab,#dash-home-fab,#scroll-top-btn,#ai-chat-panel,#toast-container,.nv-sheet-bg,#pa-banner,#support-tenant-banner,.support-banner{display:none!important}' +
-      'body.nv-bb #main{padding-bottom:0!important}.cob-root,.cob-root:has(.cob-aud),body.nv-bb .cob-root:has(.cob-aud),.nt-setp,body.nv-bb .nt-setp{padding-bottom:0!important}}'
+    '@media print{#ai-chat-fab,#dash-home-fab,#scroll-top-btn,#ai-chat-panel,#toast-container,.nv-sheet-bg,#pa-banner,#support-tenant-banner,.support-banner{display:none!important}' +
+      '.cob-root,.cob-root:has(.cob-aud),.nt-setp{padding-bottom:0!important}}'
   ].join('\n');
   var s = document.createElement('style'); s.id = 'nv-css'; s.textContent = c; document.head.appendChild(s);
 })();
