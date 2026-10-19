@@ -27,7 +27,7 @@
     s.textContent = ':root{--pa-banner-bg:#c2410c;--pa-banner-fg:#ffffff;--pa-banner-btn-bg:#ffffff;--pa-banner-btn-fg:#9a3412}' +
       '[data-theme="dark"]{--pa-banner-bg:#fb923c;--pa-banner-fg:#1c1917;--pa-banner-btn-bg:#1c1917;--pa-banner-btn-fg:#fed7aa}' +
       'body.pa-in #support-tenant-banner{display:none!important}' +
-      '#pa-banner{position:sticky;top:0;z-index:85;background:var(--pa-banner-bg);color:var(--pa-banner-fg);font-size:12px;padding:6px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;line-height:1.3}' +
+      '#pa-banner{position:fixed;top:0;left:0;right:0;z-index:85;background:var(--pa-banner-bg);color:var(--pa-banner-fg);font-size:12px;padding:6px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;line-height:1.3}' +
       '#pa-banner .pa-n{font-weight:700;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '#pa-banner label{display:inline-flex;gap:4px;align-items:center;cursor:pointer;font-weight:600}' +
       '#pa-banner select{max-width:150px;font-size:12px;padding:3px 4px;border-radius:6px;border:0;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg)}' +
@@ -39,6 +39,11 @@
     document.head.appendChild(s);
   }
   function fmt(ms) { ms = Math.max(0, ms); var m = Math.floor(ms / 60000), s = Math.floor(ms % 60000 / 1000); return m + ':' + (s < 10 ? '0' : '') + s; }
+  function measureBannerHeight() {
+    var el = document.getElementById('pa-banner');
+    if (el) document.documentElement.style.setProperty('--pa-banner-h', el.offsetHeight + 'px');
+    else document.documentElement.style.removeProperty('--pa-banner-h');
+  }
   function lastA() { var v = +localStorage.getItem(LA); return v || Date.now(); }
   function touch() { if (inS()) try { localStorage.setItem(LA, String(Date.now())); warned = false; } catch (e) {} }
   async function loadTenants() {
@@ -49,7 +54,7 @@
   function draw() {
     var s = sess(), el = document.getElementById('pa-banner'), lg = document.getElementById('support-tenant-banner');
     if (lg) lg.remove();
-    if (!inS()) { if (el) el.remove(); document.body.classList.remove('pa-in'); return; }
+    if (!inS()) { if (el) el.remove(); document.body.classList.remove('pa-in'); document.documentElement.style.removeProperty('--pa-banner-h'); return; }
     css(); document.body.classList.add('pa-in');
     if (!el) { el = document.createElement('div'); el.id = 'pa-banner'; el.setAttribute('role', 'status');
       var host = document.getElementById('app') || document.body; host.insertBefore(el, host.firstChild); }
@@ -65,6 +70,7 @@
     var sel = el.querySelector('#pa-sw');
     loadTenants().then(function (ts) { ts.forEach(function (t) { if (String(t.id) === String(s.tid)) return; var o = document.createElement('option'); o.value = t.id; o.textContent = t.name; sel.appendChild(o); }); });
     sel.onchange = function () { if (this.value) sw(this.value); };
+    measureBannerHeight();
   }
   async function setVO(on) {
     try { localStorage.setItem(VO, on ? '1' : '0'); } catch (e) {}
@@ -134,8 +140,10 @@
     if (t) { t.textContent = fmt(left); t.classList.toggle('warn', left <= WARN); }
     if (left <= WARN && !warned) { warned = true; toast(L('Support session ends in 2 min unless you continue', 'Sesi sokongan tamat dalam 2 min jika tiada aktiviti'), 'warning'); }
     if (left <= 0) exit('idle');
+    measureBannerHeight();
   }
   ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (e) { document.addEventListener(e, touch, { passive: true, capture: true }); });
+  try { window.addEventListener('resize', measureBannerHeight, { passive: true }); } catch (e) {}
   install();
   setInterval(tick, 1000);
   setTimeout(function () { if (inS() && Date.now() - lastA() > IDLE) exit('idle'); else tick(); }, 800);
