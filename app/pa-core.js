@@ -33,6 +33,8 @@
       '#pa-banner select{max-width:150px;font-size:12px;padding:3px 4px;border-radius:6px;border:0;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg)}' +
       '#pa-banner .pa-t{font-variant-numeric:tabular-nums;font-weight:600}#pa-banner .pa-t.warn{text-decoration:underline;font-weight:800}' +
       '#pa-banner .pa-x{margin-left:auto;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg);border:0;border-radius:6px;padding:4px 10px;font-weight:700;font-size:12px;cursor:pointer;min-height:28px}' +
+      '#pa-banner .pa-reset{margin-left:auto;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg);border:1px solid var(--pa-banner-btn-fg);border-radius:6px;padding:4px 10px;font-weight:700;font-size:12px;cursor:pointer;min-height:28px;display:flex;align-items:center;gap:4px}' +
+      '#pa-banner .pa-x{margin-left:8px}' +
       '#pa-banner .pa-vo{padding:1px 6px;border-radius:4px;background:var(--pa-banner-btn-bg);color:var(--pa-banner-btn-fg);font-weight:700}' +
       '@media(max-width:480px){#pa-banner .pa-n{max-width:60vw}#pa-banner select{max-width:120px}}' +
       '@media print{#pa-banner,#support-tenant-banner{display:none!important}}';
@@ -59,18 +61,43 @@
     if (!el) { el = document.createElement('div'); el.id = 'pa-banner'; el.setAttribute('role', 'status');
       var host = document.getElementById('app') || document.body; host.insertBefore(el, host.firstChild); }
     var vo = localStorage.getItem(VO) === '1';
+    var isDemo = !!(APP.tenant && String(APP.tenant.code) === 'DEMO');
     el.innerHTML = '<i class="ti ti-shield-lock" aria-hidden="true"></i><span>' + L('Support', 'Sokongan') + ':</span><span class="pa-n" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' +
       (vo ? '<span class="pa-vo">' + L('VIEW ONLY', 'LIHAT SAHAJA') + '</span>' : '') +
       '<label><input type="checkbox" id="pa-vo-t"' + (vo ? ' checked' : '') + '> ' + L('View only', 'Lihat sahaja') + '</label>' +
       '<select id="pa-sw" aria-label="' + L('Switch tenant', 'Tukar tenant') + '"><option value="">' + L('Switch tenant…', 'Tukar tenant…') + '</option></select>' +
       '<span title="' + L('Auto exit when idle', 'Keluar auto bila tiada aktiviti') + '"><i class="ti ti-clock" aria-hidden="true"></i> <span class="pa-t" id="pa-t">' + fmt(IDLE - (Date.now() - lastA())) + '</span></span>' +
+      (isDemo ? '<button type="button" class="pa-reset" id="pa-reset"><i class="ti ti-refresh-dot" aria-hidden="true"></i>' + L('Reset Demo', 'Reset Demo') + '</button>' : '') +
       '<button type="button" class="pa-x" id="pa-x">' + L('Exit', 'Keluar') + '</button>';
     el.querySelector('#pa-x').onclick = function () { window._exitSupportTenant(); };
     el.querySelector('#pa-vo-t').onchange = function () { setVO(this.checked); };
+    var rb = el.querySelector('#pa-reset');
+    if (rb) rb.onclick = resetDemo;
     var sel = el.querySelector('#pa-sw');
     loadTenants().then(function (ts) { ts.forEach(function (t) { if (String(t.id) === String(s.tid)) return; var o = document.createElement('option'); o.value = t.id; o.textContent = t.name; sel.appendChild(o); }); });
     sel.onchange = function () { if (this.value) sw(this.value); };
     measureBannerHeight();
+  }
+  async function resetDemo() {
+    if (!inS() || busy) return;
+    if (!(APP.tenant && String(APP.tenant.code) === 'DEMO')) return;
+    if (!window.confirm(L(
+      'Reset ALL demo tenant data? This permanently deletes every seeded customer, invoice, product, etc. You will need to re-run the reseed SQL afterwards. This cannot be undone.',
+      'Reset SEMUA data demo tenant? Ni akan padam kekal semua customer, invois, produk contoh dan lain-lain. Kau perlu run semula SQL reseed selepas ni. Tindakan ni tak boleh undo.'
+    ))) return;
+    busy = true;
+    toast(L('Resetting demo data…', 'Sedang reset data demo…'), 'warning');
+    try {
+      var rpc = await sb.rpc('reset_demo_tenant');
+      if (rpc.error) { toast(rpc.error.message || L('Reset failed', 'Reset gagal'), 'error'); return; }
+      toast(L(
+        'Demo data wiped. Run demo_tenant_05_reseed_all.sql in Supabase SQL Editor to repopulate.',
+        'Data demo dah dipadam. Run demo_tenant_05_reseed_all.sql dalam Supabase SQL Editor untuk isi semula.'
+      ), 'success');
+      if (typeof openPage === 'function') openPage('dashboard');
+    } catch (e) {
+      toast((e && e.message) || L('Reset failed', 'Reset gagal'), 'error');
+    } finally { busy = false; }
   }
   async function setVO(on) {
     try { localStorage.setItem(VO, on ? '1' : '0'); } catch (e) {}
