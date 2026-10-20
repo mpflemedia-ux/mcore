@@ -60,7 +60,7 @@ declare
   v_cash_acc uuid; v_bank_acc uuid; v_rev_acc uuid; v_cogs_acc uuid; v_inv_acc uuid; v_exp_acc uuid;
   v_entry_id uuid;
   v_cogs numeric;
-  r record;
+  rec record;
 begin
 
   select id into v_tenant_id from tenants where code = 'DEMO' and is_demo = true and deleted_at is null;
@@ -982,39 +982,39 @@ select account_id into v_exp_acc  from default_account_mappings where tenant_id 
 
 if v_cash_acc is not null and v_rev_acc is not null then
 
-  for r in
+  for rec in
     select i.id as inv_id, i.ref_no, i.paid_amt, i.total, coalesce(i.paid_date, i.issue_date) as edate
     from invoices i
     where i.tenant_id = v_tenant_id and coalesce(i.paid_amt,0) > 0
       and not exists (select 1 from journal_entries je where je.tenant_id = v_tenant_id and je.source_table = 'invoices' and je.source_id = i.id)
   loop
-    select coalesce(sum(ii.qty * coalesce(p.unit_cost,0)), 0) * (r.paid_amt / nullif(r.total,0))
+    select coalesce(sum(ii.qty * coalesce(p.unit_cost,0)), 0) * (rec.paid_amt / nullif(rec.total,0))
       into v_cogs
     from invoice_items ii left join products p on p.id = ii.product_id
-    where ii.invoice_id = r.inv_id;
+    where ii.invoice_id = rec.inv_id;
     v_cogs := round(coalesce(v_cogs,0), 2);
 
     v_entry_id := gen_random_uuid();
     insert into journal_entries (id, tenant_id, fiscal_year_id, ref_no, entry_date, entry_type, description,
       total_debit, total_credit, status, period_month, period_year, source_table, source_id)
     values (v_entry_id, v_tenant_id,
-      coalesce((select fy.id from fiscal_years fy where fy.tenant_id = v_tenant_id and r.edate between fy.start_date and fy.end_date limit 1), v_fy_id),
-      'JNL-AUTO-' || substr(v_entry_id::text,1,8), r.edate, 'auto', 'Auto-post: invoice payment ' || r.ref_no,
-      r.paid_amt + v_cogs, r.paid_amt + v_cogs, 'posted',
-      extract(month from r.edate)::int, extract(year from r.edate)::int, 'invoices', r.inv_id);
+      coalesce((select fy.id from fiscal_years fy where fy.tenant_id = v_tenant_id and rec.edate between fy.start_date and fy.end_date limit 1), v_fy_id),
+      'JNL-AUTO-' || substr(v_entry_id::text,1,8), rec.edate, 'auto', 'Auto-post: invoice payment ' || rec.ref_no,
+      rec.paid_amt + v_cogs, rec.paid_amt + v_cogs, 'posted',
+      extract(month from rec.edate)::int, extract(year from rec.edate)::int, 'invoices', rec.inv_id);
 
     insert into journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt) values
-      (gen_random_uuid(), v_tenant_id, v_entry_id, v_cash_acc, 1, 'Invoice payment ' || r.ref_no, r.paid_amt, 0),
-      (gen_random_uuid(), v_tenant_id, v_entry_id, v_rev_acc, 2, 'Invoice payment ' || r.ref_no, 0, r.paid_amt);
+      (gen_random_uuid(), v_tenant_id, v_entry_id, v_cash_acc, 1, 'Invoice payment ' || rec.ref_no, rec.paid_amt, 0),
+      (gen_random_uuid(), v_tenant_id, v_entry_id, v_rev_acc, 2, 'Invoice payment ' || rec.ref_no, 0, rec.paid_amt);
 
     if v_cogs_acc is not null and v_inv_acc is not null and v_cogs > 0 then
       insert into journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt) values
-        (gen_random_uuid(), v_tenant_id, v_entry_id, v_cogs_acc, 3, 'COGS ' || r.ref_no, v_cogs, 0),
-        (gen_random_uuid(), v_tenant_id, v_entry_id, v_inv_acc, 4, 'COGS ' || r.ref_no, 0, v_cogs);
+        (gen_random_uuid(), v_tenant_id, v_entry_id, v_cogs_acc, 3, 'COGS ' || rec.ref_no, v_cogs, 0),
+        (gen_random_uuid(), v_tenant_id, v_entry_id, v_inv_acc, 4, 'COGS ' || rec.ref_no, 0, v_cogs);
     end if;
   end loop;
 
-  for r in
+  for rec in
     select pt.id as pos_id, pt.receipt_no, pt.total, pt.payment_method, pt.created_at::date as edate
     from pos_transactions pt
     where pt.tenant_id = v_tenant_id and pt.status = 'completed'
@@ -1022,35 +1022,35 @@ if v_cash_acc is not null and v_rev_acc is not null then
   loop
     select coalesce(sum(pti.qty * coalesce(p.unit_cost,0)), 0) into v_cogs
     from pos_transaction_items pti left join products p on p.id = pti.product_id
-    where pti.txn_id = r.pos_id;
+    where pti.txn_id = rec.pos_id;
     v_cogs := round(coalesce(v_cogs,0), 2);
 
     v_entry_id := gen_random_uuid();
     insert into journal_entries (id, tenant_id, fiscal_year_id, ref_no, entry_date, entry_type, description,
       total_debit, total_credit, status, period_month, period_year, source_table, source_id)
     values (v_entry_id, v_tenant_id,
-      coalesce((select fy.id from fiscal_years fy where fy.tenant_id = v_tenant_id and r.edate between fy.start_date and fy.end_date limit 1), v_fy_id),
-      'JNL-AUTO-' || substr(v_entry_id::text,1,8), r.edate, 'auto', 'Auto-post: POS sale ' || r.receipt_no,
-      r.total + v_cogs, r.total + v_cogs, 'posted',
-      extract(month from r.edate)::int, extract(year from r.edate)::int, 'pos_transactions', r.pos_id);
+      coalesce((select fy.id from fiscal_years fy where fy.tenant_id = v_tenant_id and rec.edate between fy.start_date and fy.end_date limit 1), v_fy_id),
+      'JNL-AUTO-' || substr(v_entry_id::text,1,8), rec.edate, 'auto', 'Auto-post: POS sale ' || rec.receipt_no,
+      rec.total + v_cogs, rec.total + v_cogs, 'posted',
+      extract(month from rec.edate)::int, extract(year from rec.edate)::int, 'pos_transactions', rec.pos_id);
 
     insert into journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt) values
       (gen_random_uuid(), v_tenant_id, v_entry_id,
-        case when r.payment_method <> 'cash' and v_bank_acc is not null then v_bank_acc else v_cash_acc end,
-        1, 'POS sale ' || r.receipt_no, r.total, 0),
-      (gen_random_uuid(), v_tenant_id, v_entry_id, v_rev_acc, 2, 'POS sale ' || r.receipt_no, 0, r.total);
+        case when rec.payment_method <> 'cash' and v_bank_acc is not null then v_bank_acc else v_cash_acc end,
+        1, 'POS sale ' || rec.receipt_no, rec.total, 0),
+      (gen_random_uuid(), v_tenant_id, v_entry_id, v_rev_acc, 2, 'POS sale ' || rec.receipt_no, 0, rec.total);
 
     if v_cogs_acc is not null and v_inv_acc is not null and v_cogs > 0 then
       insert into journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt) values
-        (gen_random_uuid(), v_tenant_id, v_entry_id, v_cogs_acc, 3, 'COGS POS ' || r.receipt_no, v_cogs, 0),
-        (gen_random_uuid(), v_tenant_id, v_entry_id, v_inv_acc, 4, 'COGS POS ' || r.receipt_no, 0, v_cogs);
+        (gen_random_uuid(), v_tenant_id, v_entry_id, v_cogs_acc, 3, 'COGS POS ' || rec.receipt_no, v_cogs, 0),
+        (gen_random_uuid(), v_tenant_id, v_entry_id, v_inv_acc, 4, 'COGS POS ' || rec.receipt_no, 0, v_cogs);
     end if;
   end loop;
 
 end if;
 
 if v_cash_acc is not null and v_exp_acc is not null then
-  for r in
+  for rec in
     select ec.id as claim_id, ec.ref_no, ec.total_amount, ec.claim_date as edate
     from expense_claims ec
     where ec.tenant_id = v_tenant_id and ec.status in ('approved','paid')
@@ -1060,14 +1060,14 @@ if v_cash_acc is not null and v_exp_acc is not null then
     insert into journal_entries (id, tenant_id, fiscal_year_id, ref_no, entry_date, entry_type, description,
       total_debit, total_credit, status, period_month, period_year, source_table, source_id)
     values (v_entry_id, v_tenant_id,
-      coalesce((select fy.id from fiscal_years fy where fy.tenant_id = v_tenant_id and r.edate between fy.start_date and fy.end_date limit 1), v_fy_id),
-      'JNL-AUTO-' || substr(v_entry_id::text,1,8), r.edate, 'auto', 'Auto-post: expense claim ' || r.ref_no,
-      r.total_amount, r.total_amount, 'posted',
-      extract(month from r.edate)::int, extract(year from r.edate)::int, 'expense_claims', r.claim_id);
+      coalesce((select fy.id from fiscal_years fy where fy.tenant_id = v_tenant_id and rec.edate between fy.start_date and fy.end_date limit 1), v_fy_id),
+      'JNL-AUTO-' || substr(v_entry_id::text,1,8), rec.edate, 'auto', 'Auto-post: expense claim ' || rec.ref_no,
+      rec.total_amount, rec.total_amount, 'posted',
+      extract(month from rec.edate)::int, extract(year from rec.edate)::int, 'expense_claims', rec.claim_id);
 
     insert into journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt) values
-      (gen_random_uuid(), v_tenant_id, v_entry_id, v_exp_acc, 1, 'Expense claim ' || r.ref_no, r.total_amount, 0),
-      (gen_random_uuid(), v_tenant_id, v_entry_id, v_cash_acc, 2, 'Expense claim ' || r.ref_no, 0, r.total_amount);
+      (gen_random_uuid(), v_tenant_id, v_entry_id, v_exp_acc, 1, 'Expense claim ' || rec.ref_no, rec.total_amount, 0),
+      (gen_random_uuid(), v_tenant_id, v_entry_id, v_cash_acc, 2, 'Expense claim ' || rec.ref_no, 0, rec.total_amount);
   end loop;
 end if;
 
