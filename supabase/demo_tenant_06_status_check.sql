@@ -3,6 +3,8 @@
 -- Confirms: (1) whether reset_demo_tenant() function exists yet, and
 -- (2) current row counts for the demo tenant's operational data.
 -- ============================================================================
+reset role;
+
 select 'reset_demo_tenant() function exists' as check_item,
   exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname = 'reset_demo_tenant')::text as result
