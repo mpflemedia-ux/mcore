@@ -62,12 +62,13 @@ begin
   delete from leave_requests where tenant_id = v_tenant_id;
   delete from delivery_orders where tenant_id = v_tenant_id;
   delete from job_applicants where tenant_id = v_tenant_id;
+  delete from payroll_records where tenant_id = v_tenant_id;
 
   delete from pos_transactions where tenant_id = v_tenant_id;
   delete from payments where tenant_id = v_tenant_id;
   delete from invoices where tenant_id = v_tenant_id;
-  delete from goods_received_notes where tenant_id = v_tenant_id;
   delete from supplier_bills where tenant_id = v_tenant_id;
+  delete from goods_received_notes where tenant_id = v_tenant_id;
   delete from purchase_order_items where po_id in (select id from purchase_orders where tenant_id = v_tenant_id);
   delete from fixed_assets where tenant_id = v_tenant_id;
   delete from journal_entries where tenant_id = v_tenant_id;
