@@ -10942,7 +10942,7 @@ async function _loadAdminAnnouncementsHistory() {
     <th>${isBm?'Mesej':'Message'}</th><th>${t.severity||'Severity'}</th><th>${t.active||'Active'}</th><th>${t.when||'When'}</th>
   </tr></thead><tbody>
   ${data.map(a => `<tr>
-    <td style="max-width:420px">${_aiEscapeHtml(isBm ? a.message_bm : a.message_en)}</td>
+    <td style="min-width:220px;max-width:420px">${_aiEscapeHtml(isBm ? a.message_bm : a.message_en)}</td>
     <td style="color:${a.severity==='warning'?'var(--warning)':'var(--text-2)'}">${_aiEscapeHtml(a.severity)}</td>
     <td style="color:${a.is_active?'var(--success)':'var(--text-3)'}">${a.is_active?(isBm?'Ya':'Yes'):(isBm?'Tidak':'No')}</td>
     <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${a.created_at?new Date(a.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
