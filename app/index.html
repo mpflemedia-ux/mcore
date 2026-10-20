@@ -34768,7 +34768,7 @@ async function _poshLoadTable() {
     return `<tr>
     <td><strong>${_aiEscapeHtml(r.receipt_no||'-')}</strong></td>
     <td style="color:var(--text-3);font-size:12px">${_aiEscapeHtml(sessionNoById[r.session_id]||'-')}</td>
-    <td>${r.created_at ? new Date(r.created_at).toLocaleString('en-MY') : '-'}</td>
+    <td style="white-space:nowrap">${r.created_at ? new Date(r.created_at).toLocaleString('en-MY') : '-'}</td>
     <td style="text-align:right;font-weight:600">${formatRM(r.total)}</td>
     <td>${_aiEscapeHtml(r.payment_method||'-')}</td>
     <td><span style="color:${statusColor(r)};font-weight:600">${_aiEscapeHtml(statusLabel(r))}</span></td>
