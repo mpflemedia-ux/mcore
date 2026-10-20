@@ -5,7 +5,7 @@ reset role;
 
 select current_user, (select rolsuper from pg_roles where rolname = current_user) as is_superuser;
 
-select rowsecurity, relforcerowsecurity
+select relrowsecurity, relforcerowsecurity
 from pg_class
 where oid = 'public.sales_plans'::regclass;
 
