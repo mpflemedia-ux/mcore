@@ -5,6 +5,12 @@
 -- "Delete user" fails ("Database error loading user") - so this deletes them
 -- directly via SQL instead, in dependency order (children first).
 --
+-- Wrapped as a SECURITY DEFINER function (not a plain anonymous DO block):
+-- the SQL Editor's session role does not have direct SELECT/DELETE on
+-- auth.users (confirmed by the "permission denied for table users" error on
+-- the first attempt), the same reason Mike's own register_tenant() etc. are
+-- all SECURITY DEFINER functions rather than plain blocks.
+--
 -- AFTER running this: go to Supabase Dashboard -> Authentication -> Users ->
 -- "Add User" and create BOTH accounts fresh there (NOT via SQL this time):
 --   demo.owner@mpflemedia.my / password: mcore123 / tick "Auto Confirm User"
@@ -13,7 +19,11 @@
 -- re-link user_profiles + the Planner entries to the new UIDs.
 -- ============================================================================
 
-do $$
+create or replace function public._fix_demo_auth_cleanup()
+returns jsonb
+language plpgsql
+security definer
+as $$
 declare
   v_tenant_id uuid;
   v_owner_id uuid;
@@ -46,9 +56,6 @@ begin
     begin delete from auth.sessions where user_id = v_owner_id; exception when others then null; end;
     begin delete from auth.refresh_tokens where user_id = v_owner_id::text; exception when others then null; end;
     delete from auth.users where id = v_owner_id;
-    raise notice 'force-deleted demo.owner@mpflemedia.my (%)', v_owner_id;
-  else
-    raise notice 'demo.owner@mpflemedia.my not found, nothing to delete';
   end if;
 
   if v_staff_id is not null then
@@ -56,11 +63,21 @@ begin
     begin delete from auth.sessions where user_id = v_staff_id; exception when others then null; end;
     begin delete from auth.refresh_tokens where user_id = v_staff_id::text; exception when others then null; end;
     delete from auth.users where id = v_staff_id;
-    raise notice 'force-deleted demo.staff@mpflemedia.my (%)', v_staff_id;
-  else
-    raise notice 'demo.staff@mpflemedia.my not found, nothing to delete';
   end if;
-end $$;
 
--- sanity check: both should return 0 rows
+  return jsonb_build_object(
+    'owner_deleted', v_owner_id is not null,
+    'staff_deleted', v_staff_id is not null
+  );
+end;
+$$;
+
+grant execute on function public._fix_demo_auth_cleanup() to authenticated;
+
+select public._fix_demo_auth_cleanup();
+
+-- sanity check: should return 0 rows
 select email, id from auth.users where email in ('demo.owner@mpflemedia.my', 'demo.staff@mpflemedia.my');
+
+-- one-off function, no longer needed once the cleanup above has run
+drop function if exists public._fix_demo_auth_cleanup();
