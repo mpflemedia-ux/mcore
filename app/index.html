@@ -36995,6 +36995,18 @@ function _repCustomFmtVal(row, col) {
   return v ?? ''
 }
 
+// Custom Report columns are user-selectable across 4 different data sources,
+// so (unlike the rest of the app's tables) nowrap can't be hardcoded per
+// <td> — it has to be decided per column definition instead. Dates and
+// currency figures never wrap; short fixed-format codes/identifiers are
+// listed explicitly since they don't carry a col.type. Free-text columns
+// (customer/supplier/product name, email, city) are left wrapping on
+// purpose, same as every other table in the app.
+const _REP_CUSTOM_NOWRAP_KEYS = new Set(['ref_no','po_no','code','status','phone','stock_qty','reorder_point'])
+function _repCustomNowrap(col) {
+  return col.type==='currency' || col.type==='date' || _REP_CUSTOM_NOWRAP_KEYS.has(col.key)
+}
+
 
 async function renderSstReport() {
   const isBm = APP.language==='bm'
@@ -37238,7 +37250,7 @@ async function _repCustomGenerate() {
       <button class="btn btn-outline btn-sm" onclick="_repCustomExportCsv()"><i class="ti ti-download"></i> ${t.exportCsv}</button>
     </div>
     <div style="overflow-x:auto"><table><thead><tr>${selectedCols.map(c=>`<th>${isBm?c.bm:c.en}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(row=>`<tr>${selectedCols.map(c=>`<td>${_repCustomFmtVal(row,c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    <tbody>${rows.map(row=>`<tr>${selectedCols.map(c=>`<td${_repCustomNowrap(c)?' style="white-space:nowrap"':''}>${_repCustomFmtVal(row,c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
   </div>`
 }
 
