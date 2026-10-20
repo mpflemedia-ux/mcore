@@ -12528,8 +12528,8 @@ function _adminReferralRenderTable() {
     ${th('name', t.name)}<th>${t.contact}</th>${th('registered', t.registered)}${th('converted', t.converted)}${th('commission', t.commission)}${th('created', t.created)}
   </tr></thead><tbody>
   ${rows.map(p => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'referral-detail',id:'${p.id}'})">
-    <td>${_aiEscapeHtml(p.full_name||'—')}<div style="font-size:11px;color:var(--text-3)">${_aiEscapeHtml(p.referral_code||'')}</div></td>
-    <td style="font-size:12px">${_aiEscapeHtml(p.phone||'')}<br>${_aiEscapeHtml(p.email||'')}</td>
+    <td style="white-space:nowrap">${_aiEscapeHtml(p.full_name||'—')}<div style="font-size:11px;color:var(--text-3)">${_aiEscapeHtml(p.referral_code||'')}</div></td>
+    <td style="font-size:12px;white-space:nowrap">${_aiEscapeHtml(p.phone||'')}<br>${_aiEscapeHtml(p.email||'')}</td>
     <td>${p.registered}</td>
     <td>${p.converted}</td>
     <td>${formatRM(p.totalCommission)}</td>
