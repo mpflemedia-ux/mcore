@@ -180,8 +180,8 @@ insert into sales_plan_weeks (id, tenant_id, plan_id, period_id, code, start_dat
 select v.id, t.id, '00000000-0000-0000-0312-000000000001'::uuid, '00000000-0000-0000-0313-000000000001'::uuid, v.code, v.start_date, v.end_date, v.gmv_target, v.units_target, v.orders_target
 from tenants t
 cross join (values
-  ('00000000-0000-0000-0314-000000000001'::uuid,'W1','2026-10-01'::date,'2026-10-07'::date,12500::numeric,125::numeric,12::numeric),
-  ('00000000-0000-0000-0314-000000000002'::uuid,'W2','2026-10-08'::date,'2026-10-14'::date,12500::numeric,125::numeric,12::numeric)
+  ('00000000-0000-0000-0314-000000000001'::uuid,'W01','2026-10-01'::date,'2026-10-07'::date,12500::numeric,125::numeric,12::numeric),
+  ('00000000-0000-0000-0314-000000000002'::uuid,'W02','2026-10-08'::date,'2026-10-14'::date,12500::numeric,125::numeric,12::numeric)
 ) as v(id, code, start_date, end_date, gmv_target, units_target, orders_target)
 where t.code = 'DEMO'
   and not exists (select 1 from sales_plan_weeks w where w.id = v.id);
