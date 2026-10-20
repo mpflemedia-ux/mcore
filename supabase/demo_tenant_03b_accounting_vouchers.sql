@@ -53,7 +53,6 @@ where t.code = 'DEMO'
 insert into journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt)
 select gen_random_uuid(), t.id, v.entry_id, coa.id, v.line_no, v.description, v.debit_amt, v.credit_amt
 from tenants t
-join chart_of_accounts coa on coa.tenant_id = t.id and coa.code = v.coa_code
 cross join (values
   ('00000000-0000-0000-0202-000000000001'::uuid,'1120',1,'Suntikan modal awal pemilik',50000::numeric,0::numeric),
   ('00000000-0000-0000-0202-000000000001'::uuid,'3100',2,'Suntikan modal awal pemilik',0::numeric,50000::numeric),
@@ -64,6 +63,7 @@ cross join (values
   ('00000000-0000-0000-0202-000000000004'::uuid,'6300',1,'Perbelanjaan pemasaran - kempen media sosial',1200::numeric,0::numeric),
   ('00000000-0000-0000-0202-000000000004'::uuid,'1120',2,'Perbelanjaan pemasaran - kempen media sosial',0::numeric,1200::numeric)
 ) as v(entry_id, coa_code, line_no, description, debit_amt, credit_amt)
+join chart_of_accounts coa on coa.tenant_id = t.id and coa.code = v.coa_code
 where t.code = 'DEMO'
   and not exists (
     select 1 from journal_lines jl where jl.entry_id = v.entry_id and jl.line_no = v.line_no
@@ -114,12 +114,12 @@ where t.code = 'DEMO'
 insert into expense_claim_items (id, tenant_id, claim_id, account_id, date, description, amount)
 select gen_random_uuid(), t.id, v.claim_id, coa.id, v.date, v.description, v.amount
 from tenants t
-join chart_of_accounts coa on coa.tenant_id = t.id and coa.code = v.coa_code
 cross join (values
   ('00000000-0000-0000-0205-000000000001'::uuid,'6500','2026-10-08'::date,'Minyak kenderaan - lawatan Koperasi Warga Maju',450::numeric),
   ('00000000-0000-0000-0205-000000000002'::uuid,'6400','2026-10-16'::date,'Bekalan pejabat pelbagai',180::numeric),
   ('00000000-0000-0000-0205-000000000003'::uuid,'6220','2026-10-11'::date,'Bil telefon & internet bulanan',220::numeric)
 ) as v(claim_id, coa_code, date, description, amount)
+join chart_of_accounts coa on coa.tenant_id = t.id and coa.code = v.coa_code
 where t.code = 'DEMO'
   and not exists (
     select 1 from expense_claim_items ei where ei.claim_id = v.claim_id and ei.description = v.description
