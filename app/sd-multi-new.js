@@ -77,14 +77,15 @@
     if (N.step === 2 && N.svcs.some(function (k) { return !det(k).title; })) return SD.toast(SD.L('Enter a title for every service', 'Masukkan tajuk untuk setiap servis'), 'error');
     if (N.step < 3) { N.step++; persist(); return paint(); }
     btn.disabled = true;
-    SD.mgSubmit(N, plan(), det, S).then(function (msg) { MG.draftDrop(); SD.toast(msg, 'success'); SD.go('servis_saya'); }, function (e) { btn.disabled = false; SD.toast(SD.err(e), 'error'); });
+    var hook = SD.taskSrLinkCallback; SD.taskSrLinkCallback = null;
+    SD.mgSubmit(N, plan(), det, S, hook).then(function (msg) { MG.draftDrop(); SD.toast(msg, 'success'); SD.go('servis_saya'); }, function (e) { btn.disabled = false; SD.toast(SD.err(e), 'error'); });
   }
-  SD.newReq = function () {
+  SD.newReq = function (prefill) {
     S = SD.CL;
     MG.probe().then(function (on) {
-      if (!on) return orig();
-      N = fresh(); saved = null; draft = null; MG.draftUse(null);
-      return Promise.all([MG.templates(), MG.draftGet()]).then(function (r) { tpls = r[0]; draft = r[1] && r[1].payload && (r[1].payload.svcs || []).length ? r[1] : null; if (!draft && r[1]) MG.draftUse(r[1]); paint(); });
+      if (!on) return orig(prefill);
+      N = Object.assign(fresh(), prefill || {}); saved = null; draft = null; MG.draftUse(null);
+      return Promise.all([MG.templates(), MG.draftGet()]).then(function (r) { tpls = r[0]; draft = (!prefill && r[1] && r[1].payload && (r[1].payload.svcs || []).length) ? r[1] : null; if (!draft && r[1] && !prefill) MG.draftUse(r[1]); paint(); });
     });
   };
 })();
