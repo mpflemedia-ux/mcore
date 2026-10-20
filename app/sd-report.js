@@ -51,7 +51,7 @@
           put('sd-r-ops', Object.keys(by).length ? '<table class="cob-tbl"><tr><th>' + SD.L('Service', 'Servis') + '</th><th class="num">' + SD.L('Requests', 'Permohonan') + '</th></tr>' + Object.keys(by).map(function (k) { return '<tr><td>' + SD.esc(SD.svcName(k)) + '</td><td class="num">' + by[k] + '</td></tr>'; }).join('') + '</table>' : '');
         });
       });
-      Promise.all([cnt(sb.from('employees').select('id', { count: 'exact', head: true })), cnt(sb.from('leave_requests').select('id', { count: 'exact', head: true }).gte('created_at', a).lte('created_at', b)), cnt(sb.from('payroll_records').select('id', { count: 'exact', head: true }).gte('created_at', a).lte('created_at', b))])
+      Promise.all([cnt(sb.from('employees').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).is('deleted_at', null)), cnt(sb.from('leave_requests').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).is('deleted_at', null).gte('created_at', a).lte('created_at', b)), cnt(sb.from('payroll_records').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).gte('created_at', a).lte('created_at', b))])
         .then(function (h) { put('sd-r-hr', stat([[SD.L('Employees', 'Pekerja'), h[0]], [SD.L('Leave requests', 'Permohonan cuti'), h[1]], [SD.L('Payslips', 'Slip gaji'), h[2]]])); });
       SD.reuse('renderSalesReport', 'sales-from', 'sales-to', '_salesRepLoad', 'sales-rep-result', rg[0], rg[1]).then(function (h) { put('sd-r-sales', h); });
       SD.reuse('renderPnL', 'pnl-from', 'pnl-to', '_pnlLoad', 'pnl-result', rg[0], rg[1]).then(function (h) { put('sd-r-acc', h); });
