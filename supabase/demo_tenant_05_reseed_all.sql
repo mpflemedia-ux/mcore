@@ -7,6 +7,10 @@
 -- change, rather than editing this file directly.
 -- ============================================================================
 
+-- session role sometimes gets stuck on 'authenticated' in this SQL Editor
+-- (RLS then blocks these plain INSERTs). Reset it first.
+reset role;
+
 
 do $$ begin
   if not exists (select 1 from tenants where code = 'DEMO') then
