@@ -95,7 +95,10 @@
         priority: r.priority, avg_hours: ctx.avgHours,
       }).catch(function () { return { data: null, error: true }; });
     }).then(function (ai) {
-      ctx.draft = (ai && ai.data && ai.data.title) ? ai.data : null;
+      /* ai-proxy wraps its payload: {success, data:{title,notes,tag,est_hours}} — same shape every
+         other ai-proxy caller in index.html unwraps via `data.data` (eg. _pcOcrOneFile's receipt scan). */
+      var payload = (ai && ai.data && ai.data.success) ? ai.data.data : null;
+      ctx.draft = (payload && payload.title) ? payload : null;
       return openReviewModal(r, ctx);
     });
   };
