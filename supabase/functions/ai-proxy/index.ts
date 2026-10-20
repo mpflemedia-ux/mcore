@@ -12,7 +12,7 @@
 // draft_reminder, follow_up_suggestion, reconcile_match, month_end_summary,
 // generate_po, marketing_advice, tax_guidance, generate_document,
 // daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
-// production_check, hr_payslip_note.
+// production_check, hr_payslip_note, draft_project_task.
 // 'receipt', 'scan_application_form', 'scan_ssm_certificate',
 // 'scan_bank_statement', 'extract_bank_transactions', and
 // 'scan_product_image' use a
@@ -1350,6 +1350,64 @@ async function handleFollowUpSuggestion(body: Record<string, unknown>) {
   return { suggestion: reply }
 }
 
+// Drafts an internal project task (agency's own task board) from a Service Desk ticket. Best-effort
+// only — the caller (sd-task-sync.js) falls back to the raw title/description on any failure, and
+// never lets this block the admin's "Create Project Task" flow. due_date/due_time, assignee and
+// is_important/is_urgent are filled deterministically by the caller, NEVER by this action.
+async function handleDraftProjectTask(body: Record<string, unknown>) {
+  const title = body.title
+  if (!title || typeof title !== 'string') throw new Error('title is required')
+  const description = typeof body.description === 'string' ? body.description : ''
+  const serviceName = typeof body.service_name === 'string' ? body.service_name : ''
+  const priority = typeof body.priority === 'string' ? body.priority : 'normal'
+  const avgHours = typeof body.avg_hours === 'number' && body.avg_hours > 0 ? body.avg_hours : null
+
+  const systemPrompt =
+    'You are drafting an internal project task (for the agency\'s own task board, not for the client) from a ' +
+    'service request ticket. Clean up the title, write short actionable notes broken into To Do / In Progress / ' +
+    'Done sections (plain text, use those three as headers), suggest a short one-or-two-word tag based on the ' +
+    'service type, and suggest estimated hours to complete the work. ' +
+    (avgHours
+      ? `Past tickets of the same service type historically took about ${avgHours.toFixed(1)} hours on average ` +
+        'to complete — use that as your baseline and only deviate if this ticket is clearly larger or smaller ' +
+        'than usual. '
+      : 'There is no historical average for this service type — give your best estimate, or null if you cannot ' +
+        'estimate it. ') +
+    'Never invent a due date, assignee or client name — those are filled in separately. Respond with ONLY a ' +
+    'JSON object in this exact shape, no other text: {"title": "<string>", "notes": "<string>", ' +
+    `"tag": "<short string>", "est_hours": <number or null>}. Reply in ${langName(body)}.\n\n` +
+    `Service: ${serviceName || '-'}\nPriority: ${priority}\nOriginal title: ${title}\n` +
+    `Original description: ${description || '(none)'}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Draft the task.' },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { title?: string; notes?: string; tag?: string; est_hours?: number | null }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+
+  // Sanity clamp: an AI estimate more than 3x off the real historical average is more likely a
+  // hallucination than a genuine outlier ticket — fall back to the grounded average instead.
+  let estHours = typeof parsed.est_hours === 'number' && parsed.est_hours > 0 ? parsed.est_hours : null
+  if (avgHours && estHours && (estHours > avgHours * 3 || estHours < avgHours / 3)) estHours = avgHours
+
+  return {
+    title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : title,
+    notes: typeof parsed.notes === 'string' ? parsed.notes.trim() : '',
+    tag: typeof parsed.tag === 'string' ? parsed.tag.trim() : '',
+    est_hours: estHours != null ? estHours : avgHours,
+  }
+}
+
 interface ReconcileCandidate {
   type: string
   ref: string
@@ -1779,6 +1837,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'follow_up_suggestion':
         data = await handleFollowUpSuggestion(body)
+        break
+      case 'draft_project_task':
+        data = await handleDraftProjectTask(body)
         break
       case 'reconcile_match':
         data = await handleReconcileMatch(body)

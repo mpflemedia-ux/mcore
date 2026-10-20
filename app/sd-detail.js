@@ -46,7 +46,8 @@
     var acts = '';
     if (admin) {
       acts = (SD.TR[r.status] || []).filter(function (t) { return t !== 'cancelled'; }).map(function (t) { return '<button class="btn ' + (t === 'delivered' ? 'btn-success' : t === 'out_of_scope' ? 'btn-outline' : 'btn-primary') + '" data-to="' + t + '"><i class="ti ' + SD.ST[t][1] + '"></i> ' + SD.esc(SD.stLabel(t)) + '</button>'; }).join('') +
-        (!r.assigned_to || !SD.same(r.assigned_to, SD.uid()) ? '<button class="btn btn-outline" id="sd-mine"><i class="ti ti-user-check"></i> ' + SD.L('Assign to me', 'Tugaskan kepada saya') + '</button>' : '');
+        (!r.assigned_to || !SD.same(r.assigned_to, SD.uid()) ? '<button class="btn btn-outline" id="sd-mine"><i class="ti ti-user-check"></i> ' + SD.L('Assign to me', 'Tugaskan kepada saya') + '</button>' : '') +
+        (r.linked_task_id ? '<button class="btn btn-outline" id="sd-view-task"><i class="ti ti-subtask"></i> ' + SD.L('View Task', 'Lihat Tugasan') + '</button>' : '<button class="btn btn-outline" id="sd-sync-task"><i class="ti ti-rocket"></i> ' + SD.L('Create Project Task', 'Cipta Tugasan Projek') + '</button>');
     } else if (r.status === 'delivered') acts = '<button class="btn btn-outline" data-to="revision"><i class="ti ti-arrow-back-up"></i> ' + SD.L('Request revision', 'Minta revisi') + '</button><button class="btn btn-success" data-to="closed"><i class="ti ti-check"></i> ' + SD.L('Looks good', 'Nampak OK') + '</button>';
     else if (r.status === 'submitted') acts = '<button class="btn btn-outline" data-to="cancelled" style="color:var(--danger)"><i class="ti ti-x"></i> ' + SD.L('Cancel request', 'Batal permohonan') + '</button>';
     var open = SD.OPEN.indexOf(r.status) >= 0;
@@ -77,11 +78,22 @@
         if ((to === 'revision' || to === 'waiting_client' || to === 'out_of_scope') && !txt.trim()) { SD.toast(SD.L('Write the reason in the comment box first', 'Tulis sebab dalam kotak komen dahulu'), 'error'); var cm = document.getElementById('sd-cm'); if (cm) cm.focus(); return; }
         b.disabled = true;
         var pre = to === 'triaged' && !r.assigned_to ? sb.from('service_requests').update({ assigned_to: SD.uid() }).eq('id', r.id).then(function () { r.assigned_to = SD.uid(); }) : Promise.resolve();
-        pre.then(function () { return SD.setStatus(r, to, txt.trim() || null, !admin); }).then(function () { SD.toast(SD.stLabel(to), 'success'); return reload(); }).catch(function (e) { b.disabled = false; SD.toast(SD.err(e), 'error'); });
+        pre.then(function () { return SD.setStatus(r, to, txt.trim() || null, !admin); }).then(function () {
+          SD.toast(SD.stLabel(to), 'success');
+          if (admin && r.linked_task_id && (to === 'delivered' || to === 'closed') && SD.suggestDone) SD.suggestDone(r);
+          return reload();
+        }).catch(function (e) { b.disabled = false; SD.toast(SD.err(e), 'error'); });
       };
     });
     var mine = m.querySelector('#sd-mine'); if (mine) mine.onclick = function () {
       sb.from('service_requests').update({ assigned_to: SD.uid(), updated_at: new Date().toISOString() }).eq('id', r.id).then(function (x) { if (x.error) return SD.toast(SD.err(x.error), 'error'); reload(); });
+    };
+    var viewTask = m.querySelector('#sd-view-task'); if (viewTask) viewTask.onclick = function () { SD.taskView(r.linked_task_id); };
+    var syncTask = m.querySelector('#sd-sync-task'); if (syncTask) syncTask.onclick = function () {
+      syncTask.disabled = true; syncTask.innerHTML = '<div class="spinner"></div> ' + SD.L('Preparing…', 'Sedang sedia…');
+      SD.taskSync(r).catch(function (e) { SD.toast(SD.err(e), 'error'); }).finally(function () {
+        syncTask.disabled = false; syncTask.innerHTML = '<i class="ti ti-rocket"></i> ' + SD.L('Create Project Task', 'Cipta Tugasan Projek');
+      });
     };
     var send = m.querySelector('#sd-send'); if (send) send.onclick = function () {
       var t = document.getElementById('sd-cm').value.trim(), f = document.getElementById('sd-cf').files[0], int = admin && document.getElementById('sd-int').checked;
