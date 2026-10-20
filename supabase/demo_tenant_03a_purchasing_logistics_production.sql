@@ -10,6 +10,8 @@
 --   0109 work_orders            0110 bom_items
 -- ============================================================================
 
+reset role;
+
 do $$ begin
   if not exists (select 1 from tenants where code = 'DEMO') then
     raise exception 'tenant code DEMO not found — run Part 1 first';

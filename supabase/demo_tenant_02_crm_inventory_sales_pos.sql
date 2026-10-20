@@ -18,6 +18,8 @@
 --   0007 quotation_items   0014 pos_transaction_items
 -- ============================================================================
 
+reset role;
+
 do $$ begin
   if not exists (select 1 from tenants where code = 'DEMO') then
     raise exception 'tenant code DEMO not found — run demo_tenant_01_bootstrap.sql first';
