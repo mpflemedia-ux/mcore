@@ -22,7 +22,7 @@
     guard(); var n = 0, iv = setInterval(function () { guard(); if (++n > 60) clearInterval(iv); }, 300);
   }
   function head(name) {
-    return '<div class="row" style="justify-content:space-between;margin-bottom:16px"><div class="row" style="gap:8px"><i class="ti ti-hexagon-letter-m" style="font-size:26px;color:var(--primary)"></i><b style="font-size:16px;letter-spacing:.02em">M-CORE</b></div>' +
+    return '<div class="row" style="justify-content:space-between;margin-bottom:16px"><div class="row" style="gap:8px"><img src="mcore-logo.png" alt="M-Core" style="width:26px;height:26px;object-fit:contain"><b style="font-size:16px;letter-spacing:.02em">M-CORE</b></div>' +
       '<div class="cob-seg" role="group" aria-label="Language"><button type="button" data-lang="en" class="' + (lang === 'en' ? 'on' : '') + '">EN</button><button type="button" data-lang="bm" class="' + (lang === 'bm' ? 'on' : '') + '">BM</button></div></div>' +
       (name ? '<div class="cob-card" style="padding:14px 16px;margin-bottom:12px;display:flex;gap:12px;align-items:center"><div style="width:42px;height:42px;border-radius:10px;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800">' + esc(name.trim().charAt(0).toUpperCase()) + '</div><div style="min-width:0"><b style="font-size:15px">' + esc(name) + '</b><div class="cob-xs">' + L('Service request · handled by M-Core', 'Permohonan servis · dikendalikan oleh M-Core') + '</div></div></div>' : '');
   }
