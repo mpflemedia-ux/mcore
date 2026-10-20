@@ -33,9 +33,10 @@
   }
 
   function btnHtml(task) {
-    return task.linked_sr_id
-      ? '<button type="button" class="btn btn-sm btn-outline" data-pjsr-view="' + esc(task.id) + '"><i class="ti ti-headset"></i> ' + L('View Request', 'Lihat Permohonan') + '</button>'
-      : '<button type="button" class="btn btn-sm btn-outline" data-pjsr-go="' + esc(task.id) + '"><i class="ti ti-send"></i> ' + L('Request from M-Core', 'Minta daripada M-Core') + '</button>';
+    var btn = task.linked_sr_id
+      ? '<button type="button" class="btn btn-sm btn-outline" style="width:100%;justify-content:center" data-pjsr-view="' + esc(task.id) + '"><i class="ti ti-headset"></i> ' + L('View Request', 'Lihat Permohonan') + '</button>'
+      : '<button type="button" class="btn btn-sm btn-outline" style="width:100%;justify-content:center" data-pjsr-go="' + esc(task.id) + '"><i class="ti ti-send"></i> ' + L('Request from M-Core', 'Minta daripada M-Core') + '</button>';
+    return '<div class="pjsr-row" style="margin-top:8px">' + btn + '</div>';
   }
 
   function convert(task, btn) {
@@ -82,8 +83,8 @@
       var byId = {}; (st.tasks || []).forEach(function (k) { byId[k.id] = k; });
       main.querySelectorAll('.pj-card[data-id]').forEach(function (card) {
         var task = byId[card.getAttribute('data-id')]; if (!task) return;
-        var row = card.querySelector('.pj-row'); if (!row || row.querySelector('[data-pjsr-go],[data-pjsr-view]')) return;
-        row.insertAdjacentHTML('beforeend', btnHtml(task));
+        var row = card.querySelector('.pj-row'); if (!row || card.querySelector('.pjsr-row')) return;
+        row.insertAdjacentHTML('afterend', btnHtml(task));
       });
       main.querySelectorAll('[data-pjsr-go]').forEach(function (b) {
         if (b._pjsrWired) return; b._pjsrWired = 1;
