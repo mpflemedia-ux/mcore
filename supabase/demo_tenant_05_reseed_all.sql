@@ -11,12 +11,17 @@
 -- (RLS then blocks these plain INSERTs). Reset it first.
 reset role;
 
+create or replace function public._reseed_demo_data()
+returns jsonb
+language plpgsql
+security definer
+as $$
+begin
 
-do $$ begin
+
   if not exists (select 1 from tenants where code = 'DEMO') then
     raise exception 'tenant code DEMO not found — run demo_tenant_01_bootstrap.sql first';
   end if;
-end $$;
 
 -- ---------- CUSTOMERS (15) ----------
 insert into customers (id, tenant_id, code, customer_type, name, reg_no, email, phone,
@@ -281,7 +286,7 @@ where t.code = 'DEMO'
   and not exists (select 1 from doc_counters dc where dc.tenant_id = t.id and dc.counter_key = v.counter_key);
 
 -- ---------- SANITY CHECK ----------
-select
+perform
   (select count(*) from customers where tenant_id = t.id) as customers,
   (select count(*) from customer_contacts where tenant_id = t.id) as customer_contacts,
   (select count(*) from product_categories where tenant_id = t.id) as product_categories,
@@ -302,11 +307,9 @@ where t.code = 'DEMO';
 
 -- ============================================================================
 
-do $$ begin
   if not exists (select 1 from tenants where code = 'DEMO') then
     raise exception 'tenant code DEMO not found — run Part 1 first';
   end if;
-end $$;
 
 -- ---------- SUPPLIERS (4) ----------
 insert into suppliers (id, tenant_id, name, phone, email, address)
@@ -416,7 +419,7 @@ where t.code = 'DEMO'
   and not exists (select 1 from work_orders w where w.id = v.id);
 
 -- ---------- SANITY CHECK ----------
-select
+perform
   (select count(*) from suppliers where tenant_id = t.id) as suppliers,
   (select count(*) from purchase_orders where tenant_id = t.id) as purchase_orders,
   (select count(*) from purchase_order_items poi join purchase_orders po on po.id = poi.po_id where po.tenant_id = t.id) as po_items,
@@ -431,11 +434,9 @@ where t.code = 'DEMO';
 
 -- ============================================================================
 
-do $$ begin
   if not exists (select 1 from tenants where code = 'DEMO') then
     raise exception 'tenant code DEMO not found — run Part 1 first';
   end if;
-end $$;
 
 -- ---------- BANK ACCOUNTS (2) ----------
 insert into bank_accounts (id, tenant_id, coa_id, account_name, bank_name, account_no, account_type, currency, opening_balance, current_balance, is_default, is_active)
@@ -562,7 +563,7 @@ where t.code = 'DEMO'
   );
 
 -- ---------- SANITY CHECK ----------
-select
+perform
   (select count(*) from bank_accounts where tenant_id = t.id) as bank_accounts,
   (select count(*) from journal_entries where tenant_id = t.id) as journal_entries,
   (select count(*) from journal_lines jl join journal_entries je on je.id = jl.entry_id where je.tenant_id = t.id) as journal_lines,
@@ -576,11 +577,9 @@ from tenants t
 where t.code = 'DEMO';
 
 -- ============================================================================
-do $$ begin
   if not exists (select 1 from tenants where code = 'DEMO') then
     raise exception 'tenant code DEMO not found — run Part 1 first';
   end if;
-end $$;
 
 -- ---------- EMPLOYEES (4) ----------
 insert into employees (id, tenant_id, name, ic_no, position, basic_salary, epf_no, socso_no,
@@ -758,7 +757,7 @@ where t.code = 'DEMO'
   and not exists (select 1 from sales_plan_milestones m where m.id = v.id);
 
 -- ---------- SANITY CHECK ----------
-select
+perform
   (select count(*) from employees where tenant_id = t.id) as employees,
   (select count(*) from payroll_records pr join employees e on e.id = pr.employee_id where e.tenant_id = t.id) as payroll_records,
   (select count(*) from attendance where tenant_id = t.id) as attendance,
@@ -776,3 +775,13 @@ select
   (select count(*) from sales_plan_milestones where tenant_id = t.id) as sales_plan_milestones
 from tenants t
 where t.code = 'DEMO';
+
+  return jsonb_build_object('success', true);
+end;
+$$;
+
+grant execute on function public._reseed_demo_data() to authenticated;
+
+select public._reseed_demo_data();
+
+drop function if exists public._reseed_demo_data();
