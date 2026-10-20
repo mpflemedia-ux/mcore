@@ -12,7 +12,7 @@
 // draft_reminder, follow_up_suggestion, reconcile_match, month_end_summary,
 // generate_po, marketing_advice, tax_guidance, generate_document,
 // daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
-// production_check, hr_payslip_note, draft_project_task.
+// production_check, hr_payslip_note, draft_project_task, suggest_service_request.
 // 'receipt', 'scan_application_form', 'scan_ssm_certificate',
 // 'scan_bank_statement', 'extract_bank_transactions', and
 // 'scan_product_image' use a
@@ -1354,6 +1354,60 @@ async function handleFollowUpSuggestion(body: Record<string, unknown>) {
 // only — the caller (sd-task-sync.js) falls back to the raw title/description on any failure, and
 // never lets this block the admin's "Create Project Task" flow. due_date/due_time, assignee and
 // is_important/is_urgent are filled deterministically by the caller, NEVER by this action.
+// Suggests which of the TENANT'S OWN contracted services a project task should be submitted under, plus a
+// clean title/details, when the tenant converts their own internal task into a Service Desk request. Must
+// only ever pick from the `services` list it is given (the tenant's contracted catalog) -- never invent a
+// service code. due_date/assignee/priority are filled by the caller, deterministically, never by this action.
+async function handleSuggestServiceRequest(body: Record<string, unknown>) {
+  const taskTitle = body.task_title
+  if (!taskTitle || typeof taskTitle !== 'string') throw new Error('task_title is required')
+  const taskNotes = typeof body.task_notes === 'string' ? body.task_notes : ''
+  const taskTag = typeof body.task_tag === 'string' ? body.task_tag : ''
+  const services = Array.isArray(body.services)
+    ? (body.services as { code?: unknown; name_en?: unknown; name_bm?: unknown }[]).filter((s) => typeof s?.code === 'string')
+    : []
+  if (!services.length) throw new Error('services is required and must be a non-empty list')
+
+  const svcList = services.map((s) => `${s.code}: ${typeof s.name_en === 'string' ? s.name_en : s.code}`).join('\n')
+
+  const systemPrompt =
+    'You are drafting a service request to send to an outsourced admin/ops team (M-Core), based on an ' +
+    "internal project task that needs their help. Pick the SINGLE most relevant service from the list " +
+    'below (at most 2 if the task genuinely spans two distinct service types) -- you MUST pick service codes ' +
+    'ONLY from this list, never invent one. Then write a clean request title and a short details paragraph ' +
+    'summarising what is needed, based on the task information given. Respond with ONLY a JSON object in ' +
+    'this exact shape, no other text: {"service_codes": ["<code>", ...], "title": "<string>", "details": ' +
+    `"<string>"}. Reply in ${langName(body)}.\n\nAvailable services:\n${svcList}\n\n` +
+    `Task title: ${taskTitle}\nTask tag: ${taskTag || '-'}\nTask notes:\n${taskNotes || '(none)'}`
+
+  const raw = await callGroq(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Suggest the service request.' },
+    ],
+    CHAT_MODEL,
+    { response_format: { type: 'json_object' } },
+  )
+
+  let parsed: { service_codes?: unknown; title?: string; details?: string }
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('AI returned an unparseable response')
+  }
+
+  const validCodes = new Set(services.map((s) => s.code as string))
+  const codes = (Array.isArray(parsed.service_codes) ? parsed.service_codes : [])
+    .filter((c: unknown): c is string => typeof c === 'string' && validCodes.has(c))
+    .slice(0, 2)
+
+  return {
+    service_codes: codes,
+    title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : taskTitle,
+    details: typeof parsed.details === 'string' ? parsed.details.trim() : taskNotes,
+  }
+}
+
 async function handleDraftProjectTask(body: Record<string, unknown>) {
   const title = body.title
   if (!title || typeof title !== 'string') throw new Error('title is required')
@@ -1840,6 +1894,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'draft_project_task':
         data = await handleDraftProjectTask(body)
+        break
+      case 'suggest_service_request':
+        data = await handleSuggestServiceRequest(body)
         break
       case 'reconcile_match':
         data = await handleReconcileMatch(body)

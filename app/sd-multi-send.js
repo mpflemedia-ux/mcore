@@ -23,7 +23,7 @@
   function openDup(S, code) { return (S.rows || []).find(function (r) { return r.service_code === code && ['submitted', 'triaged', 'in_progress', 'waiting_client', 'revision'].indexOf(r.status) >= 0; }); }
   function files(r, list) { return list.reduce(function (p, f) { return p.then(function () { return SD.upload(r, f, false).catch(function (e) { SD.toast(SD.err(e), 'error'); }); }); }, Promise.resolve()); }
   /* sequential so ref numbers stay in order; each SR keeps its own SLA due, status and (later) PIC */
-  SD.mgSubmit = function (N, P, det, S) {
+  SD.mgSubmit = function (N, P, det, S, onCreated) {
     var c = S.c, tid = SD.tid(), made = [], g = null;
     var notes = P.note.reduce(function (p, k) {
       var d = det(k), r = openDup(S, k); if (!r) return p;
@@ -37,6 +37,7 @@
           if (g) row.group_id = g.id;
           return SD.createRequest(row).then(function (r) {
             made.push(r);
+            if (typeof onCreated === 'function') onCreated(r);
             return SD.event(r, 'status', { to_status: 'submitted', body: g ? SD.L('Request submitted in group ', 'Permohonan dihantar dalam kumpulan ') + g.ref_no : SD.L('Request submitted', 'Permohonan dihantar') }).catch(function () {})
               .then(function () { return files(r, (N.files || []).concat(N.pf[k] || [])); });
           });

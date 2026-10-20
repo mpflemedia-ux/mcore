@@ -35,10 +35,11 @@
     var c = S.c, now = new Date();
     SD.createRequest({ tenant_id: SD.tid(), contract_id: c.id, service_code: N.svc, title: N.title, description: N.desc || null, priority: N.pri, status: 'submitted', created_by: SD.uid(), due_at: SD.addBH(now, c.sla_hours).toISOString() })
       .then(function (r) {
+        if (SD.taskSrLinkCallback) { var hook = SD.taskSrLinkCallback; SD.taskSrLinkCallback = null; hook(r); }
         return SD.event(r, 'status', { to_status: 'submitted', body: SD.L('Request submitted', 'Permohonan dihantar') }).catch(function () {})
           .then(function () { return N.file ? SD.upload(r, N.file, false).catch(function (e) { SD.toast(SD.err(e), 'error'); }) : null; })
           .then(function () { (SD.bellNew || SD.bellFor)(r, SD.L('New service request ', 'Permohonan servis baharu ') + r.ref_no, r.title); SD.toast(SD.L('Submitted ', 'Dihantar ') + r.ref_no, 'success'); SD.go('servis_saya', { id: r.id }); });
       }).catch(function (e) { btn.disabled = false; SD.toast(SD.err(e), 'error'); });
   }
-  SD.newReq = function () { S = SD.CL; N = { step: 1, svc: null, title: '', desc: '', pri: 'normal', file: null }; paintNew(); };
+  SD.newReq = function (prefill) { S = SD.CL; N = Object.assign({ step: 1, svc: null, title: '', desc: '', pri: 'normal', file: null }, prefill || {}); paintNew(); };
 })();

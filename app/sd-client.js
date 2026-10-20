@@ -55,7 +55,7 @@
   SD.view.servis_saya = function (p) {
     return SD.catalog().then(function (c) { SD.catalogList = c; return load(); }).then(function () {
       if (p.id && SD.detail) return SD.detail(p.id, false);
-      if (p.new && SD.usable(S.c) && SD.newReq) return SD.newReq();
+      if (p.new && SD.usable(S.c) && SD.newReq) return SD.newReq(p.prefill);
       if (!p._noPaint) paint();
     });
   };
