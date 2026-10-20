@@ -8,7 +8,7 @@
       if (!on || !m.isConnected) return;
       var del = (S.rows || []).filter(function (r) { return r.status === 'delivered'; });
       W.loadShares(del.map(function (r) { return r.id; })).then(function () {
-        var chips = m.querySelector('.sd-flt .cob-chips'); if (!chips || chips.querySelector('[data-unn]')) return;
+        var chips = m.querySelector('.sd-flt .cob-chips:not(.mg-seg)'); if (!chips || chips.querySelector('[data-unn]')) return;
         var list = del.filter(W.unnotified);
         var b = document.createElement('button'); b.type = 'button'; b.className = 'cob-chip' + (W.unnOn ? ' on' : ''); b.setAttribute('data-unn', '1');
         b.innerHTML = '<i class="ti ti-bell-off"></i> ' + W.L('Not notified', 'Belum dimaklumkan') + ' (' + list.length + ')';
