@@ -27,7 +27,7 @@
     '.sd-chip{display:inline-flex;margin-left:6px;vertical-align:middle}.sd-chip .badge{font-size:10px;padding:1px 6px}',
     '@media(max-width:1100px){.sd-g2{grid-template-columns:1fr}}',
     '@media(max-width:768px){.sd-board{grid-template-columns:minmax(0,1fr);overflow-x:visible}.sd-colm{min-width:0;width:100%;min-height:0}.sd-colm:not(:has(.sd-tk)){padding:8px 10px}.sd-colm:not(:has(.sd-tk))>h4{margin:0;color:var(--text-2)}.sd-colm:not(:has(.sd-tk))>:not(h4){display:none}}',
-    '@media(max-width:640px){.sd-flt>.cob-chips{flex-basis:100%}.sd-flt>input{width:100%!important}.sd-cbx,.sd-mods{grid-template-columns:1fr}.sd-acts .btn{flex:1;min-height:44px}.sd-kpis{grid-template-columns:1fr 1fr}.sd-fab{bottom:18px}}',
+    '@media(max-width:640px){.sd-flt>.cob-chips{flex-basis:100%}.sd-flt>.mg-seg{flex-basis:100%}.sd-flt>input{width:100%!important}.sd-cbx,.sd-mods{grid-template-columns:1fr}.sd-acts .btn{flex:1;min-height:44px}.sd-kpis{grid-template-columns:1fr 1fr}.sd-kpis>:last-child:nth-child(odd){grid-column:1/-1}.sd-fab{bottom:18px}}',
     /* Monthly pack borrows .pdoc for print; pdoc-preview-light forces #fff/#0F172A on screen -> follow app theme on screen only */
     '@media screen{#main .sd-pack.pdoc,#main .sd-pack.pdoc table,#main .sd-pack.pdoc tr,#main .sd-pack.pdoc td,#main .sd-pack.pdoc th,#main .sd-pack.pdoc td:first-child{background:transparent!important;color:var(--text)!important}.sd-pack .empty-state p{color:var(--text-2)}#main .sd-pack .cob-tbl{min-width:0}}',
     /* phone: keep pack content clear of the right FAB stack (scroll-up/home/chat, right:24px, 48px) */
