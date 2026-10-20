@@ -19,6 +19,11 @@
 -- re-link user_profiles + the Planner entries to the new UIDs.
 -- ============================================================================
 
+-- session role sometimes gets stuck on 'authenticated' instead of 'postgres'
+-- in this SQL Editor (seen earlier - RESET ROLE fixed it), which blocks
+-- CREATE on schema public. Reset it first so this runs in one shot.
+reset role;
+
 create or replace function public._fix_demo_auth_cleanup()
 returns jsonb
 language plpgsql
