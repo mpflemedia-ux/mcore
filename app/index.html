@@ -9873,7 +9873,7 @@ function _dbRenderOverdueTable(list) {
       return `<tr data-href="1" onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')">
         <td style="font-weight:600;color:var(--db-text)">${_aiEscapeHtml(i.ref_no||'-')}</td>
         <td>${_aiEscapeHtml(i.customer_name||'-')}</td>
-        <td>${formatDate(i.due_date)}</td>
+        <td style="white-space:nowrap">${formatDate(i.due_date)}</td>
         <td style="text-align:right;color:#EF4444;font-weight:600">${formatRM(bal)}</td>
       </tr>`
     }).join('')}</tbody>
@@ -10860,7 +10860,7 @@ async function renderAdminAuditLog() {
     <td style="color:${actionColor(r.action)}">${_aiEscapeHtml(actionLabel(r.action))}</td>
     <td>${_aiEscapeHtml(r.target_tenant_name||'-')}</td>
     <td style="font-size:12px;color:var(--text-2);max-width:320px">${_aiEscapeHtml(detailsText(r.details))}</td>
-    <td style="font-size:12px;color:var(--text-3)">${r.created_at?new Date(r.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
+    <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${r.created_at?new Date(r.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
   </tr>`).join('')}
   </tbody></table>`
 }
@@ -10945,7 +10945,7 @@ async function _loadAdminAnnouncementsHistory() {
     <td style="max-width:420px">${_aiEscapeHtml(isBm ? a.message_bm : a.message_en)}</td>
     <td style="color:${a.severity==='warning'?'var(--warning)':'var(--text-2)'}">${_aiEscapeHtml(a.severity)}</td>
     <td style="color:${a.is_active?'var(--success)':'var(--text-3)'}">${a.is_active?(isBm?'Ya':'Yes'):(isBm?'Tidak':'No')}</td>
-    <td style="font-size:12px;color:var(--text-3)">${a.created_at?new Date(a.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
+    <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${a.created_at?new Date(a.created_at).toLocaleString(isBm?'ms-MY':'en-MY'):'—'}</td>
   </tr>`).join('')}
   </tbody></table>`
 }
@@ -11040,7 +11040,7 @@ async function renderAdminTeam() {
       </td>
       <td>${roleCell}</td>
       <td>${statusCell}</td>
-      <td style="font-size:12px;color:var(--text-3)">${u.last_login ? formatDate(String(u.last_login).slice(0,10)) : '—'}</td>
+      <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${u.last_login ? formatDate(String(u.last_login).slice(0,10)) : '—'}</td>
       <td style="white-space:nowrap">${isSelf ? '—' : `
         <button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.id}')"><i class="ti ti-check"></i> ${t.save}</button>
         <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" title="${isBm?'Padam ahli':'Remove member'}" data-uid="${u.id}" data-name="${_aiEscapeHtml(u.full_name||'')}" data-role="${_aiEscapeHtml((u.role||'').toLowerCase())}" onclick="_adminDeleteMember(this)"><i class="ti ti-trash"></i></button>
@@ -11687,7 +11687,7 @@ function _adminClientsRenderTable() {
     ${d.is_trial ? expiryCell(d.trial_ends_at) : `<td style="color:var(--text-3)">—</td>`}
     ${expiryCell(d.plan_expires_at)}
     <td>${countMap[d.id]||'—'}</td>
-    <td style="font-size:12px">${d.created_at?formatDate(String(d.created_at).slice(0,10)):'—'}</td>
+    <td style="font-size:12px;white-space:nowrap">${d.created_at?formatDate(String(d.created_at).slice(0,10)):'—'}</td>
     <td onclick="event.stopPropagation()" style="white-space:nowrap">
       <button type="button" class="btn btn-sm ${d.is_active===false?'btn-primary':'btn-outline'}" onclick="${d.is_active===false?'doReactivateTenant':'doSuspendTenant'}('${d.id}')">${d.is_active===false?(isBm?'Aktifkan semula':'Reactivate'):(isBm?'Gantung':'Suspend')}</button>
       <button type="button" class="btn btn-sm btn-outline" onclick="openRecordPaymentModal('${d.id}')"><i class="ti ti-receipt"></i> ${t.recordPayment}</button>
@@ -11992,10 +11992,10 @@ async function _loadTenantPaymentHistory(tenantId) {
   const methodLabel = m => ({ cash: isBm?'Tunai':'Cash', bank_transfer: isBm?'Pindahan Bank':'Bank Transfer', online_banking: isBm?'Perbankan Online':'Online Banking', card: isBm?'Kad':'Card' }[m] || m || '-')
   host.innerHTML = `<div class="app-scroll"><table><thead><tr><th>${isBm?'Tarikh':'Date'}</th><th style="text-align:right">${isBm?'Jumlah':'Amount'}</th><th>${isBm?'Kaedah':'Method'}</th><th>${isBm?'Tempoh Liputan':'Coverage'}</th><th></th></tr></thead>
     <tbody>${data.map(p=>`<tr>
-      <td style="font-size:12px">${formatDate(p.payment_date)}</td>
+      <td style="font-size:12px;white-space:nowrap">${formatDate(p.payment_date)}</td>
       <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
       <td style="font-size:12px">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
-      <td style="font-size:12px">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
+      <td style="font-size:12px;white-space:nowrap">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
       <td style="text-align:right"><button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:transparent;padding:4px 8px" title="${isBm?'Padam':'Delete'}" onclick="doDeleteTenantPlanPayment('${p.id}','${tenantId}')"><i class="ti ti-trash"></i></button></td>
     </tr>`).join('')}</tbody></table></div>`
 }
@@ -12533,7 +12533,7 @@ function _adminReferralRenderTable() {
     <td>${p.registered}</td>
     <td>${p.converted}</td>
     <td>${formatRM(p.totalCommission)}</td>
-    <td style="font-size:12px;color:var(--text-3)">${p.created_at?formatDate(p.created_at):'—'}</td>
+    <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${p.created_at?formatDate(p.created_at):'—'}</td>
   </tr>`).join('')}
   </tbody></table>`
 }
@@ -12606,8 +12606,8 @@ async function renderAdminReferralDetail(partnerId) {
       <td>${_aiEscapeHtml(_adminReferralTenantNames[c.tenant_id]||c.tenant_id||'—')}</td>
       <td style="color:${c.status==='paid'?'var(--success)':c.status==='converted'?'var(--warning)':'var(--text-3)'}">${_aiEscapeHtml(c.status||'—')}</td>
       <td>${formatRM(Number(c.commission_amount||0))}</td>
-      <td style="font-size:12px;color:var(--text-3)">${c.registered_at?formatDate(c.registered_at):'—'}</td>
-      <td style="font-size:12px;color:var(--text-3)">${c.paid_at?formatDate(c.paid_at):'—'}</td>
+      <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${c.registered_at?formatDate(c.registered_at):'—'}</td>
+      <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${c.paid_at?formatDate(c.paid_at):'—'}</td>
       <td>${c.status==='converted' ? `<button type="button" class="btn btn-outline btn-sm" onclick="doMarkReferralPaid('${c.id}','${partner.id}')">${t.markPaid}</button>` : ''}</td>
     </tr>`).join('')}
     </tbody></table>`}
@@ -14170,7 +14170,7 @@ async function renderAdminTenantDetail(tenantId) {
       <td>${_aiEscapeHtml(u.full_name||'-')}</td>
       <td>${_aiEscapeHtml(u.role||'-')}</td>
       <td>${u.is_active===false?(isBm?'Tidak aktif':'Inactive'):(isBm?'Aktif':'Active')}</td>
-      <td style="font-size:12px;color:var(--text-3)">${u.last_login?formatDate(String(u.last_login).slice(0,10)):'—'}</td>
+      <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${u.last_login?formatDate(String(u.last_login).slice(0,10)):'—'}</td>
     </tr>`).join('')}</tbody></table>`}
   </div>`
 }
@@ -14773,10 +14773,10 @@ async function renderSettings(params={}) {
         ${!myPlanPayments.length ? `<div class="empty-state" style="padding:20px"><p style="font-size:12px">${mp.noPayments}</p></div>` :
         `<div class="app-scroll"><table><thead><tr><th>${mp.date}</th><th style="text-align:right">${mp.amount}</th><th>${mp.method}</th><th>${mp.coverage}</th></tr></thead>
         <tbody>${myPlanPayments.map(p=>`<tr>
-          <td style="font-size:12px">${formatDate(p.payment_date)}</td>
+          <td style="font-size:12px;white-space:nowrap">${formatDate(p.payment_date)}</td>
           <td style="text-align:right;font-size:12px">${formatRM(p.amount)}</td>
           <td style="font-size:12px">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
-          <td style="font-size:12px">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
+          <td style="font-size:12px;white-space:nowrap">${formatDate(p.period_start)} – ${formatDate(p.period_end)}</td>
         </tr>`).join('')}</tbody></table></div>`}
       </div>
     </div>
@@ -16506,10 +16506,10 @@ async function _crmLoad() {
       <tbody>${data.map(c => `<tr onclick="openPage('crm',{view:'detail',id:'${c.id}'})" style="cursor:pointer">
         <td><strong>${c.name||'-'}</strong></td>
         <td style="color:var(--text-2)">${c.email||'-'}</td>
-        <td style="color:var(--text-2)">${c.phone||'-'}</td>
+        <td style="color:var(--text-2);white-space:nowrap">${c.phone||'-'}</td>
         <td style="color:var(--text-2)">${c.city||'-'}</td>
         <td style="color:var(--text-2)">${c.source||'-'}</td>
-        <td style="color:var(--text-3);font-size:12px">${c.created_at?new Date(c.created_at).toLocaleDateString('en-MY'):'-'}</td>
+        <td style="color:var(--text-3);font-size:12px;white-space:nowrap">${c.created_at?new Date(c.created_at).toLocaleDateString('en-MY'):'-'}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('crm',{view:'form',id:'${c.id}'})"><i class="ti ti-edit"></i></button>
           ${(typeof canDelete==='function'&&canDelete('crm'))?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_crmDelete('${c.id}','${(c.name||'').replace(/'/g,'\\\'')}')" title="${t.del}"><i class="ti ti-trash"></i></button>`:''}
@@ -16808,9 +16808,9 @@ async function renderCustomerSOA(id) {
         </tr></thead>
         <tbody>
           ${rows.map(r=>`<tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:9px 10px;font-weight:600">${r.ref_no||'-'}</td>
-            <td style="padding:9px 10px">${formatDate(r.issue_date)}</td>
-            <td style="padding:9px 10px">${formatDate(r.due_date)}</td>
+            <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${r.ref_no||'-'}</td>
+            <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.issue_date)}</td>
+            <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.due_date)}</td>
             <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
             <td style="padding:9px 10px;text-align:right">${formatRM(r.paid_amt)}</td>
             <td style="padding:9px 10px;text-align:right;font-weight:600;color:${r.balance>0.005?'var(--danger)':'var(--success)'}">${formatRM(r.balance)}</td>
@@ -16841,8 +16841,8 @@ async function renderCustomerSOA(id) {
         </tr></thead>
         <tbody>
           ${pays.map(p=>`<tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:9px 10px">${formatDate(p.payment_date)}</td>
-            <td style="padding:9px 10px;font-weight:600">${_aiEscapeHtml(p.ref_no||'-')}</td>
+            <td style="padding:9px 10px;white-space:nowrap">${formatDate(p.payment_date)}</td>
+            <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${_aiEscapeHtml(p.ref_no||'-')}</td>
             <td style="padding:9px 10px">${_aiEscapeHtml(p.payment_method||'-')}</td>
             <td style="padding:9px 10px;color:var(--text-3)">${_aiEscapeHtml(p.notes||'')}</td>
             <td style="padding:9px 10px;text-align:right;font-weight:600;color:var(--success)">${formatRM(p.amount)}</td>
@@ -16957,8 +16957,8 @@ async function renderCustomerDetail(id) {
             const st = String(i.status||'')
             const badge = st==='paid'?'badge-green':st==='partial'?'badge-yellow':st==='cancelled'?'badge-gray':'badge-red'
             return `<tr style="cursor:pointer" onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')">
-            <td style="font-size:11px">${i.ref_no||'-'}</td>
-            <td style="font-size:12px">${i.issue_date ? new Date(i.issue_date).toLocaleDateString('en-MY') : '-'}</td>
+            <td style="font-size:11px;white-space:nowrap">${i.ref_no||'-'}</td>
+            <td style="font-size:12px;white-space:nowrap">${i.issue_date ? new Date(i.issue_date).toLocaleDateString('en-MY') : '-'}</td>
             <td style="text-align:right">${formatRM(i.total)}</td>
             <td style="text-align:right">${formatRM(i.paid_amt)}</td>
             <td style="text-align:right">${formatRM(bal)}</td>
@@ -16986,10 +16986,10 @@ async function renderCustomerDetail(id) {
             <th>${APP.language==='bm'?'Liputan':'Coverage'}</th>
           </tr></thead><tbody>
           ${subPays.map(p => `<tr>
-            <td style="font-size:12px">${p.payment_date ? formatDate(p.payment_date) : '-'}</td>
+            <td style="font-size:12px;white-space:nowrap">${p.payment_date ? formatDate(p.payment_date) : '-'}</td>
             <td style="text-align:right;font-weight:600;color:var(--success)">${formatRM(p.amount)}</td>
             <td style="font-size:12px">${_aiEscapeHtml(String(p.payment_method||'-').replace(/_/g,' '))}</td>
-            <td style="font-size:12px">${p.period_start ? formatDate(p.period_start) : '-'} – ${p.period_end ? formatDate(p.period_end) : '-'}</td>
+            <td style="font-size:12px;white-space:nowrap">${p.period_start ? formatDate(p.period_start) : '-'} – ${p.period_end ? formatDate(p.period_end) : '-'}</td>
           </tr>`).join('')}
           </tbody></table>`}
     </div>
@@ -17614,7 +17614,7 @@ async function _pcLoadList(t, isBm) {
       const st = f.status==='closed' ? t.closed : t.open
       return `<tr style="cursor:pointer" onclick="openPage('accounting',{view:'petty-detail',id:'${f.id}'})">
         <td><strong>${_aiEscapeHtml(f.holder_name)}</strong></td>
-        <td>${formatDate(f.issued_date)}</td>
+        <td style="white-space:nowrap">${formatDate(f.issued_date)}</td>
         <td style="text-align:right">${formatRM(f.amount)}</td>
         <td style="text-align:right">${formatRM(spent)}</td>
         <td style="text-align:right;font-weight:600">${formatRM(bal)}</td>
@@ -17712,7 +17712,7 @@ async function _pcRenderDetail(floatId, t, isBm) {
     <thead><tr><th>${t.date}</th><th>${t.merchant}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.receipt}</th><th class="no-print"></th></tr></thead>
     <tbody>
     ${(exps||[]).length? (exps||[]).map(e => `<tr>
-      <td>${formatDate(e.expense_date)}</td>
+      <td style="white-space:nowrap">${formatDate(e.expense_date)}</td>
       <td>${_aiEscapeHtml(e.merchant||'-')}</td>
       <td>${_aiEscapeHtml(e.description||'-')}</td>
       <td style="text-align:right">${formatRM(e.amount)}</td>
@@ -18500,10 +18500,10 @@ async function _faLoadList() {
   <tbody>${rows.map(a=>{
     const nbv = Number(a.purchase_price) - Number(a.accumulated_dep||0)
     return `<tr onclick="openPage('accounting',{view:'fa-detail',id:'${a.id}'})" style="cursor:pointer">
-      <td><strong>${a.asset_no}</strong></td><td>${a.name}</td><td>${a.category||'-'}</td><td>${formatDate(a.purchase_date)}</td>
+      <td style="white-space:nowrap"><strong>${a.asset_no}</strong></td><td>${a.name}</td><td>${a.category||'-'}</td><td style="white-space:nowrap">${formatDate(a.purchase_date)}</td>
       <td style="text-align:right">${formatRM(a.purchase_price)}</td><td style="text-align:right">${formatRM(a.accumulated_dep||0)}</td>
       <td style="text-align:right">${formatRM(nbv)}</td>
-      <td><span style="color:${a.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${a.status==='active'?t.active:t.disposed}</span></td>
+      <td style="white-space:nowrap"><span style="color:${a.status==='active'?'var(--success)':'var(--text-3)'};font-weight:600">${a.status==='active'?t.active:t.disposed}</span></td>
     </tr>`
   }).join('')}</tbody></table>`
 }
@@ -18634,7 +18634,7 @@ async function renderFADetail(id) {
   <div class="card" style="max-width:800px;margin-top:16px">
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.projTitle}</div>
     <div style="max-height:320px;overflow:auto"><table><thead><tr><th>${t.month}</th><th style="text-align:right">${t.depAmount}</th><th style="text-align:right">${t.accumulated}</th><th style="text-align:right">${t.nbv}</th></tr></thead>
-    <tbody>${scheduleRows.map(r=>`<tr><td>${r.month.toLocaleDateString('en-MY',{month:'short',year:'numeric'})}</td><td style="text-align:right">${formatRM(r.amount)}</td><td style="text-align:right">${formatRM(r.accum)}</td><td style="text-align:right">${formatRM(r.nbv)}</td></tr>`).join('')}</tbody></table></div>
+    <tbody>${scheduleRows.map(r=>`<tr><td style="white-space:nowrap">${r.month.toLocaleDateString('en-MY',{month:'short',year:'numeric'})}</td><td style="text-align:right">${formatRM(r.amount)}</td><td style="text-align:right">${formatRM(r.accum)}</td><td style="text-align:right">${formatRM(r.nbv)}</td></tr>`).join('')}</tbody></table></div>
   </div>
 
   <div class="card" style="max-width:800px;margin-top:16px">
@@ -19240,8 +19240,8 @@ async function _jnlLoadTable(t) {
     <tbody>${entries.map(e => {
       const tot = totals[e.id] || {debit:0,credit:0}
       return `<tr onclick="openPage('accounting',{view:'journal-form',id:'${e.id}'})" style="cursor:pointer">
-        <td><strong>${e.ref_no||'-'}</strong></td>
-        <td style="color:var(--text-2)">${formatDate(e.entry_date)}</td>
+        <td style="white-space:nowrap"><strong>${e.ref_no||'-'}</strong></td>
+        <td style="color:var(--text-2);white-space:nowrap">${formatDate(e.entry_date)}</td>
         <td style="color:var(--text-2)">${_aiEscapeHtml(e.description||'-')}</td>
         <td style="font-size:12px;color:var(--text-3)">${srcLabel(e.source_table)}</td>
         <td style="text-align:right">${formatRM(tot.debit)}</td>
@@ -19622,7 +19622,7 @@ async function _fyLoad() {
   if(!data || data.length===0) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.start}</th><th>${t.end}</th><th>${t.status}</th><th style="width:60px"></th></tr></thead>
   <tbody>${data.map(f=>`<tr>
-    <td>${formatDate(f.start_date)}</td><td>${formatDate(f.end_date)}</td>
+    <td style="white-space:nowrap">${formatDate(f.start_date)}</td><td style="white-space:nowrap">${formatDate(f.end_date)}</td>
     <td><span style="color:${f.is_closed?'var(--text-3)':'var(--success)'}">${f.is_closed?t.closed:t.open}</span>${f.is_current?` <span style="color:var(--primary);font-size:11px">(${t.current})</span>`:''}</td>
     <td>${f.is_closed?'':`<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_fyClose('${f.id}')">${t.close}</button>`}</td>
   </tr>`).join('')}</tbody></table>`
@@ -19789,10 +19789,10 @@ function _expRenderListTable() {
   wrap.innerHTML = `<table><thead><tr><th>${t.claimant}</th><th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
   <tbody>${rows.map(e=>`<tr onclick="openPage('accounting',{view:'exp-form',id:'${e.id}'})" style="cursor:pointer">
     <td>${_aiEscapeHtml(claimantMap[e.claimed_by]||'-')}</td>
-    <td>${formatDate(e.claim_date)}</td>
+    <td style="white-space:nowrap">${formatDate(e.claim_date)}</td>
     <td>${_aiEscapeHtml(e.description||e.ref_no||'-')}</td>
     <td style="text-align:right">${formatRM(e.total_amount)}</td>
-    <td><span style="color:${statusColor(e.status)};font-weight:600">${statusLabel(e.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(e.status)};font-weight:600">${statusLabel(e.status)}</span></td>
     <td style="text-align:center" onclick="event.stopPropagation()">
       <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="_expDelete('${e.id}','${(e.ref_no||e.description||'').replace(/'/g,"\\'")}','${String(e.status||'pending').replace(/'/g,"\\'")}')" title="${t.del||'Delete'}">
@@ -23536,7 +23536,7 @@ async function _invLoad() {
     const rp = p.reorder_point ?? 5
     const isLow = Number(p.stock_qty) <= Number(rp)
     return `<tr>
-    <td>${p.code||'-'}</td><td><strong>${prodName(p)}</strong></td>
+    <td style="white-space:nowrap">${p.code||'-'}</td><td><strong>${prodName(p)}</strong></td>
     <td style="color:var(--text-2);font-size:12px">${_prodCategoryLabel(p.category)}</td>
     <td style="text-align:right">${formatRM(p.unit_price)}</td>
     <td style="text-align:right;color:var(--text-2)">${formatRM(p.unit_cost)}</td>
@@ -24190,9 +24190,9 @@ function _stockRenderTable() {
   if(!rows.length) { wrap.innerHTML = `<div class="empty-state" style="padding:48px"><p>${t.noData||''}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.product}</th><th>${t.type}</th><th style="text-align:right">${t.qty}</th><th>${t.note}</th></tr></thead>
   <tbody>${rows.map(m=>`<tr>
-    <td style="color:var(--text-3);font-size:12px">${m.created_at?new Date(m.created_at).toLocaleString('en-MY'):'-'}</td>
+    <td style="color:var(--text-3);font-size:12px;white-space:nowrap">${m.created_at?new Date(m.created_at).toLocaleString('en-MY'):'-'}</td>
     <td>${m.products?prodName(m.products):'-'}</td>
-    <td><span style="color:${m.type==='in'?'var(--success)':'var(--danger)'}">${m.type==='in'?t.in:t.out}</span></td>
+    <td style="white-space:nowrap"><span style="color:${m.type==='in'?'var(--success)':'var(--danger)'}">${m.type==='in'?t.in:t.out}</span></td>
     <td style="text-align:right">${m.qty}</td>
     <td style="color:var(--text-2)">${_aiEscapeHtml(m.note||'-')}</td>
   </tr>`).join('')}</tbody></table>`
@@ -24489,11 +24489,11 @@ function _invRenderListTable(t) {
   <tbody>${rows.map(i=>{
     const overdue = i.status!=='paid' && i.status!=='cancelled' && i.due_date && i.due_date < today
     return `<tr onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')" style="cursor:pointer">
-    <td><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
-    <td>${formatDate(i.issue_date)}</td><td>${formatDate(i.due_date)}</td>
+    <td style="white-space:nowrap"><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
+    <td style="white-space:nowrap">${formatDate(i.issue_date)}</td><td style="white-space:nowrap">${formatDate(i.due_date)}</td>
     <td style="text-align:right">${formatRM(i.total)}</td>
     <td style="text-align:right">${formatRM(i.paid_amt)}</td>
-    <td><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
     <td style="white-space:nowrap" onclick="event.stopPropagation()">
       ${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i></button>`:''}
       ${(typeof canDelete==='function'&&canDelete('sales'))?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
@@ -25498,7 +25498,7 @@ async function renderInvDetail(id) {
           ${(items||[]).map(it=>`<tr>
             <td style="padding:10px 24px;border-bottom:1px solid #F1F5F9">${_aiEscapeHtml(it.description||'')}</td>
             <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${it.qty}</td>
-            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${formatRM(it.unit_price)}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9;white-space:nowrap">${formatRM(it.unit_price)}</td>
             <td style="text-align:right;padding:10px 24px;border-bottom:1px solid #F1F5F9;font-weight:600">${formatRM(it.line_total)}</td>
           </tr>`).join('')||`<tr><td colspan="4" style="padding:16px 24px;color:#94A3B8">${isBm?'Tiada item':'No items'}</td></tr>`}
         </tbody>
@@ -25803,7 +25803,7 @@ function _quoRenderListTable() {
   const statusLabel = s => String(s||'').toLowerCase()==='converted' ? (t.converted||'Converted') : (t.draft||'Draft')
   wrap.innerHTML = `<table><thead><tr><th>${t.quoNo}</th><th>${t.customer}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
   <tbody>${rows.map(q=>`<tr onclick="openPage('sales',{view:'quo-form',id:'${q.id}'})" style="cursor:pointer">
-    <td><strong>${q.ref_no||'-'}</strong></td><td>${q.customer_name||'-'}</td><td>${formatDate(q.issue_date)}</td>
+    <td style="white-space:nowrap"><strong>${q.ref_no||'-'}</strong></td><td>${q.customer_name||'-'}</td><td style="white-space:nowrap">${formatDate(q.issue_date)}</td>
     <td style="text-align:right">${formatRM(q.total)}</td><td>${statusLabel(q.status)}</td>
     <td style="text-align:center">
       ${(typeof canDelete==='function'&&canDelete('sales'))?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
@@ -25939,7 +25939,7 @@ async function renderQuoForm(id=null) {
           ${(_slItems||[]).filter(it=>it.description).map(it=>`<tr>
             <td style="padding:10px 24px;border-bottom:1px solid #F1F5F9">${_aiEscapeHtml(it.description||'')}</td>
             <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${it.qty}</td>
-            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${formatRM(it.unit_price)}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9;white-space:nowrap">${formatRM(it.unit_price)}</td>
             <td style="text-align:right;padding:10px 24px;border-bottom:1px solid #F1F5F9;font-weight:600">${formatRM(Number(it.qty||0)*Number(it.unit_price||0))}</td>
           </tr>`).join('')||`<tr><td colspan="4" style="padding:16px 24px;color:#94A3B8">${isBmQ?'Tiada item':'No items'}</td></tr>`}
         </tbody>
@@ -26113,12 +26113,12 @@ function _doRenderListTable() {
   const statusLabel = s => s==='delivered'?t.delivered:s==='in_transit'?t.inTransit:t.pending
   wrap.innerHTML = `<table><thead><tr><th>DO No.</th><th>${t.customer}</th><th>${t.driver}</th><th>${t.vehicle}</th><th>${t.date}</th><th>${t.status}</th></tr></thead>
   <tbody>${rows.map(d=>`<tr onclick="openPage('logistics',{view:'do-detail',id:'${d.id}'})" style="cursor:pointer">
-    <td><strong>${d.do_no||'-'}</strong></td>
+    <td style="white-space:nowrap"><strong>${d.do_no||'-'}</strong></td>
     <td>${d.customers?.name||'-'}</td>
     <td>${d.driver_name||'-'}</td>
     <td>${d.vehicle_no||'-'}</td>
-    <td>${d.created_at ? formatDate(d.created_at.slice(0,10)) : '-'}</td>
-    <td><span style="color:${statusColor(d.status)};font-weight:600">${statusLabel(d.status)}</span></td>
+    <td style="white-space:nowrap">${d.created_at ? formatDate(d.created_at.slice(0,10)) : '-'}</td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(d.status)};font-weight:600">${statusLabel(d.status)}</span></td>
   </tr>`).join('')}</tbody></table>`
 }
 
@@ -26517,7 +26517,7 @@ async function _suppLoad() {
   wrap.innerHTML = `<table><thead><tr><th>${t.name}</th><th>${t.phone}</th><th>${t.email}</th><th style="width:100px"></th></tr></thead>
   <tbody>${list.map(s=>`<tr>
     <td><strong>${_aiEscapeHtml(s.name)}</strong></td>
-    <td>${s.phone||'-'}</td>
+    <td style="white-space:nowrap">${s.phone||'-'}</td>
     <td>${s.email||'-'}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" title="${APP.language==='bm'?'Penyata Akaun':'Statement'}" onclick="openPage('purchasing',{view:'supplier-soa',id:'${s.id}'})"><i class="ti ti-file-analytics"></i></button>
@@ -26654,9 +26654,9 @@ async function renderSupplierSOA(id) {
       </tr></thead>
       <tbody>
         ${rows.map(r=>`<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:9px 10px;font-weight:600">${_aiEscapeHtml(r.bill_no||'-')}</td>
-          <td style="padding:9px 10px">${formatDate(r.bill_date)}</td>
-          <td style="padding:9px 10px">${formatDate(r.due_date)}</td>
+          <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${_aiEscapeHtml(r.bill_no||'-')}</td>
+          <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.bill_date)}</td>
+          <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.due_date)}</td>
           <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
           <td style="padding:9px 10px;text-align:right">${formatRM(r.paid_amt)}</td>
           <td style="padding:9px 10px;text-align:right;font-weight:600;color:${r.balance>0.005?'var(--danger)':'var(--success)'}">${formatRM(r.balance)}</td>
@@ -26796,9 +26796,9 @@ function _poRenderListTable() {
   const statusLabel = s => t[s]||s
   wrap.innerHTML = `<table><thead><tr><th>${t.poNo}</th><th>${t.supplier}</th><th>${t.date}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
   <tbody>${rows.map(p=>`<tr onclick="openPage('purchasing',{view:'po-detail',id:'${p.id}'})" style="cursor:pointer">
-    <td><strong>${p.po_no||'-'}</strong></td><td>${p.suppliers?.name||'-'}</td><td>${formatDate(p.order_date)}</td>
+    <td style="white-space:nowrap"><strong>${p.po_no||'-'}</strong></td><td>${p.suppliers?.name||'-'}</td><td style="white-space:nowrap">${formatDate(p.order_date)}</td>
     <td style="text-align:right">${formatRM(p.total)}</td>
-    <td><span style="color:${statusColor(p.status)};font-weight:600">${statusLabel(p.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(p.status)};font-weight:600">${statusLabel(p.status)}</span></td>
     <td style="text-align:center" onclick="event.stopPropagation()">
       <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="_poDelete('${p.id}','${(p.po_no||'').replace(/'/g,"\\'")}','${String(p.status||'').replace(/'/g,"\\'")}')" title="${t.del||'Delete'}">
@@ -27042,8 +27042,8 @@ async function renderPODetail(id) {
       <td>${it.description||prodName(it.products)||'-'}</td>
       <td style="text-align:right">${it.qty}</td>
       <td style="text-align:right;${Number(it.qty_received)>=Number(it.qty)?'color:var(--success);font-weight:600':''}">${it.qty_received}</td>
-      <td style="text-align:right">${formatRM(it.unit_cost)}</td>
-      <td style="text-align:right">${formatRM(it.line_total)}</td>
+      <td style="text-align:right;white-space:nowrap">${formatRM(it.unit_cost)}</td>
+      <td style="text-align:right;white-space:nowrap">${formatRM(it.line_total)}</td>
     </tr>`).join('')}</tbody></table></div>
     <div style="text-align:right;margin-top:16px;font-weight:700;font-size:16px">${t.total}: ${formatRM(po.total)}</div>
     ${po.notes ? `<div style="margin-top:12px;color:var(--text-2);font-size:13px">${t.notes}: ${_aiEscapeHtml(po.notes)}</div>` : ''}
@@ -27052,7 +27052,7 @@ async function renderPODetail(id) {
     <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.grnHistory}</div>
     ${(!grns||grns.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noGrn}</p></div>` :
     `<table><thead><tr><th>${t.grnNo}</th><th>${t.date}</th></tr></thead>
-    <tbody>${grns.map(g=>`<tr><td>${g.grn_no}</td><td>${formatDate(g.received_date)}</td></tr>`).join('')}</tbody></table>`}
+    <tbody>${grns.map(g=>`<tr><td style="white-space:nowrap">${g.grn_no}</td><td style="white-space:nowrap">${formatDate(g.received_date)}</td></tr>`).join('')}</tbody></table>`}
   </div>
 
   <div class="pdoc print-only" style="--pdoc-accent:#0E7490;max-width:820px;margin:24px auto">
@@ -27091,7 +27091,7 @@ async function renderPODetail(id) {
           ${(items||[]).map(it=>`<tr>
             <td style="padding:10px 24px;border-bottom:1px solid #F1F5F9">${_aiEscapeHtml(it.description||prodName(it.products)||'')}</td>
             <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${it.qty}</td>
-            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9">${formatRM(it.unit_cost)}</td>
+            <td style="text-align:right;padding:10px 12px;border-bottom:1px solid #F1F5F9;white-space:nowrap">${formatRM(it.unit_cost)}</td>
             <td style="text-align:right;padding:10px 24px;border-bottom:1px solid #F1F5F9;font-weight:600">${formatRM(it.line_total)}</td>
           </tr>`).join('')||`<tr><td colspan="4" style="padding:16px 24px;color:#94A3B8">${isBm?'Tiada item':'No items'}</td></tr>`}
         </tbody>
@@ -27348,9 +27348,9 @@ function _billRenderListTable() {
   const statusLabel = s => s==='paid'?t.paid:s==='partial'?t.partial:t.unpaid
   wrap.innerHTML = `<table><thead><tr><th>${t.billNo}</th><th>${t.supplier}</th><th>${t.billDate}</th><th>${t.dueDate}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
   <tbody>${rows.map(b=>`<tr onclick="openPage('purchasing',{view:'bill-detail',id:'${b.id}'})" style="cursor:pointer">
-    <td><strong>${b.bill_no||b.ref_no||'-'}</strong></td><td>${b.suppliers?.name||'-'}</td><td>${formatDate(b.bill_date)}</td><td>${formatDate(b.due_date)}</td>
+    <td style="white-space:nowrap"><strong>${b.bill_no||b.ref_no||'-'}</strong></td><td>${b.suppliers?.name||'-'}</td><td style="white-space:nowrap">${formatDate(b.bill_date)}</td><td style="white-space:nowrap">${formatDate(b.due_date)}</td>
     <td style="text-align:right">${formatRM(b.total)}</td>
-    <td><span style="color:${statusColor(b.status)};font-weight:600">${statusLabel(b.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(b.status)};font-weight:600">${statusLabel(b.status)}</span></td>
     <td style="text-align:center" onclick="event.stopPropagation()">
       <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="_billDelete('${b.id}','${(b.bill_no||b.ref_no||'').replace(/'/g,"\\'")}',${Number(b.paid_amt||0)})" title="${t.del||'Delete'}">
@@ -27574,7 +27574,7 @@ async function renderSupplierBillDetail(id) {
     ${(!payments||payments.length===0) ? `<div class="empty-state" style="padding:30px"><p>${t.noPayments}</p></div>` :
     `<div style="overflow-x:auto"><table><thead><tr><th>${t.payDate}</th><th style="text-align:right">${t.payAmount}</th><th>${t.payMethod}</th><th style="width:48px"></th></tr></thead>
     <tbody>${payments.map(p=>`<tr>
-      <td>${formatDate(p.payment_date)}</td>
+      <td style="white-space:nowrap">${formatDate(p.payment_date)}</td>
       <td style="text-align:right">${formatRM(p.amount)}</td>
       <td>${methodLabel(p.method)}</td>
       <td style="text-align:center">
@@ -27759,8 +27759,8 @@ async function renderCreditNoteList() {
     <th style="text-align:right">${t.amount}</th><th>${t.refund}</th><th>${t.reason}</th>
   </tr></thead><tbody>
   ${cnRows.map(r => `<tr>
-    <td><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
-    <td>${formatDate(r.credit_date)}</td>
+    <td style="white-space:nowrap"><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
+    <td style="white-space:nowrap">${formatDate(r.credit_date)}</td>
     <td>${_aiEscapeHtml(r.customer_name||'-')}</td>
     <td>${r.invoice_id ? `<a href="javascript:void(0)" onclick="openPage('sales',{view:'inv-detail',id:'${r.invoice_id}'})" style="color:var(--primary)">${_aiEscapeHtml(invMap[r.invoice_id]||'INV')}</a>` : '-'}</td>
     <td style="text-align:right;font-weight:600">${formatRM(r.amount)}</td>
@@ -28039,12 +28039,12 @@ function _pvRenderListTable() {
   const stLabel = s => t[s]||s
   wrap.innerHTML = `<table><thead><tr><th>${t.ref}</th><th>${t.date}</th><th>${t.payee}</th><th>${t.method}</th><th style="text-align:right">${t.amount}</th><th>${t.status}</th><th style="width:48px"></th></tr></thead>
   <tbody>${rows.map(v=>`<tr onclick="openPage('vouchers',{view:'pv-detail',id:'${v.id}'})" style="cursor:pointer">
-    <td><strong>${_aiEscapeHtml(v.ref_no||'-')}</strong></td>
-    <td>${formatDate(v.voucher_date)}</td>
+    <td style="white-space:nowrap"><strong>${_aiEscapeHtml(v.ref_no||'-')}</strong></td>
+    <td style="white-space:nowrap">${formatDate(v.voucher_date)}</td>
     <td>${_aiEscapeHtml(v.payee_name||'-')}</td>
     <td>${_aiEscapeHtml(v.payment_method||'-')}</td>
     <td style="text-align:right">${formatRM(v.amount)}</td>
-    <td><span style="color:${stColor(v.status)};font-weight:600">${stLabel(v.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${stColor(v.status)};font-weight:600">${stLabel(v.status)}</span></td>
     <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">
       ${(function(){
         const st = String(v.status||'draft').toLowerCase()
@@ -28473,8 +28473,8 @@ async function renderPVDList() {
   if(!data?.length) { wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`; return }
   wrap.innerHTML = `<table><thead><tr><th>${t.ref}</th><th>${t.date}</th><th>${t.titleCol}</th><th style="text-align:right">${t.lines}</th><th style="text-align:right">${t.total}</th><th>${t.status}</th></tr></thead>
   <tbody>${data.map(b=>`<tr onclick="openPage('vouchers',{view:'pvd-detail',id:'${b.id}'})" style="cursor:pointer">
-    <td><strong>${_aiEscapeHtml(b.ref_no||'-')}</strong></td>
-    <td>${formatDate(b.batch_date)}</td>
+    <td style="white-space:nowrap"><strong>${_aiEscapeHtml(b.ref_no||'-')}</strong></td>
+    <td style="white-space:nowrap">${formatDate(b.batch_date)}</td>
     <td>${_aiEscapeHtml(b.title||'-')}</td>
     <td style="text-align:right">${b.line_count||'—'}</td>
     <td style="text-align:right">${formatRM(b.total_amount)}</td>
@@ -28760,12 +28760,12 @@ function _pvdDocHtml(b, lines, tn, isBm, accent) {
           <td>${_aiEscapeHtml(l.payment_method||'-')}</td>
           <td>${_aiEscapeHtml(l.bank_name||'—')}</td>
           <td>${_aiEscapeHtml(l.description||'—')}</td>
-          <td style="text-align:right;font-weight:700;font-family:'Space Grotesk',sans-serif">${formatRM(l.amount)}</td>
+          <td style="text-align:right;font-weight:700;font-family:'Space Grotesk',sans-serif;white-space:nowrap">${formatRM(l.amount)}</td>
         </tr>`).join('')}
       </tbody>
       <tfoot><tr>
         <td colspan="5" style="text-align:right;padding:12px;color:#fff">${isBm?'JUMLAH BESAR':'GRAND TOTAL'}</td>
-        <td style="text-align:right;padding:12px;color:#fff;font-weight:700">${formatRM(total)}</td>
+        <td style="text-align:right;padding:12px;color:#fff;font-weight:700;white-space:nowrap">${formatRM(total)}</td>
       </tr></tfoot>
       </table>
     </div>
@@ -29035,11 +29035,11 @@ function _woRenderListTable() {
   const statusLabel = s => s==='completed'?t.completed:s==='in_progress'?t.inProgress:t.pending
   wrap.innerHTML = `<table><thead><tr><th>${t.date}</th><th>${t.product}</th><th>${t.qty}</th><th>${t.assignedTo}</th><th>${t.status}</th></tr></thead>
   <tbody>${rows.map(w=>`<tr onclick="openPage('production',{view:'wo-detail',id:'${w.id}'})" style="cursor:pointer">
-    <td>${formatDate(w.created_at)}</td>
+    <td style="white-space:nowrap">${formatDate(w.created_at)}</td>
     <td>${prodName(w.products)}</td>
     <td>${w.qty_to_produce}</td>
     <td>${w.user_profiles?.full_name||'-'}</td>
-    <td><span style="color:${statusColor(w.status)};font-weight:600">${statusLabel(w.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(w.status)};font-weight:600">${statusLabel(w.status)}</span></td>
   </tr>`).join('')}</tbody></table>`
 }
 
@@ -29325,9 +29325,9 @@ async function renderEmployeeList() {
   <tbody>${empRows.map(e=>`<tr>
     <td><input type="checkbox" class="hr-emp-check" value="${e.id}" onchange="_hrEmpSyncAllBox()"></td>
     <td>${_aiEscapeHtml(e.name)}</td>
-    <td>${e.ic_no||'-'}</td>
+    <td style="white-space:nowrap">${e.ic_no||'-'}</td>
     <td>${_aiEscapeHtml(e.position||'-')}</td>
-    <td style="text-align:right">${formatRM(e.basic_salary)}</td>
+    <td style="text-align:right;white-space:nowrap">${formatRM(e.basic_salary)}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('hr',{view:'employee-form',id:'${e.id}'})"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_empInviteToTeam('${e.id}')" title="Invite to Team"><i class="ti ti-user-plus"></i></button>
@@ -29362,7 +29362,7 @@ async function renderEmployeeList() {
       return `<tr>
       <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${p.month}/${p.year}</td>
       <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${_aiEscapeHtml(p.employees?.name||'-')}</td>
-      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="text-align:right;cursor:pointer">${formatRM(p.net_pay)}</td>
+      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="text-align:right;cursor:pointer;white-space:nowrap">${formatRM(p.net_pay)}</td>
       <td style="white-space:nowrap;text-align:center">
         <button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" title="${t.del}"
           onclick="event.stopPropagation();_payrollRecordDelete('${p.id}','${nm}','${p.month}','${p.year}')"><i class="ti ti-trash"></i></button>
@@ -29792,9 +29792,9 @@ function _appRenderListTable() {
   <tbody>${rows.map(a=>`<tr onclick="openPage('applicants',{view:'applicant-form',id:'${a.id}'})" style="cursor:pointer">
     <td><strong>${_aiEscapeHtml(a.full_name)}</strong></td>
     <td>${_aiEscapeHtml(a.position_applied||'-')}</td>
-    <td>${formatDate(a.created_at)}</td>
-    <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
-    <td>${a.interview_date?formatDate(a.interview_date):'-'}</td>
+    <td style="white-space:nowrap">${formatDate(a.created_at)}</td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
+    <td style="white-space:nowrap">${a.interview_date?formatDate(a.interview_date):'-'}</td>
     <td onclick="event.stopPropagation()">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_appDelete('${a.id}','${(a.full_name||'').replace(/'/g,"\\'")}')" title="${t.del}"><i class="ti ti-trash"></i></button>
     </td>
@@ -31026,11 +31026,11 @@ function _scRenderLedgerTable() {
     <th>${t.payout}</th><th>${t.status}</th>
   </tr></thead><tbody>${data.map(r=>`<tr>
     <td>${_aiEscapeHtml(r.employees?.name||'-')}</td>
-    <td>${formatDate(r.created_at)}</td>
+    <td style="white-space:nowrap">${formatDate(r.created_at)}</td>
     <td style="text-transform:capitalize">${_aiEscapeHtml(r.channel)}</td>
     <td>${_aiEscapeHtml(prodName2(r.product_id))}</td>
     <td style="text-align:right">${formatRM(r.sale_amount)}</td>
-    <td style="text-align:right">${Number(r.rate_applied).toFixed(2)}%</td>
+    <td style="text-align:right;white-space:nowrap">${Number(r.rate_applied).toFixed(2)}%</td>
     <td style="text-align:right;font-weight:600;color:var(--success)">${formatRM(r.commission_amount)}</td>
     <td>${String(r.payout_month).padStart(2,'0')}/${r.payout_year}</td>
     <td style="text-transform:capitalize">${_aiEscapeHtml(r.status)}</td>
@@ -31286,7 +31286,7 @@ async function renderMyPayslips(params={}) {
     const per = String(r.month).padStart(2,'0') + '/' + r.year
     return `<tr>
       <td>${per}</td>
-      <td style="text-align:right;font-weight:600">${formatRM(r.net_pay)}</td>
+      <td style="text-align:right;font-weight:600;white-space:nowrap">${formatRM(r.net_pay)}</td>
       <td style="text-align:right"><button type="button" class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'payslip',id:'${r.id}'})">${t.open}</button></td>
     </tr>`
   }).join('')}
@@ -31654,7 +31654,7 @@ async function renderSalaryDisbursement(month, year) {
         <div class="pdoc-sd-payee">${_aiEscapeHtml(r.employees?.name||'-')}</div>
       </td>
       <td style="font-size:12px;color:#334155">${bankName}</td>
-      <td style="font-size:12px;font-family:ui-monospace,monospace;color:#334155;letter-spacing:.02em">${bankAcc}</td>
+      <td style="font-size:12px;font-family:ui-monospace,monospace;color:#334155;letter-spacing:.02em;white-space:nowrap">${bankAcc}</td>
       <td class="pdoc-sd-basic">${formatRM(r.basic_salary)}</td>
       <td>
         <div class="print-only pdoc-sd-print-dense" id="sd-print-allow-dense-${r.id}">${_allowDense}</div>
@@ -34307,10 +34307,10 @@ async function _leaveLoadTable() {
   <tbody>${_leaveRequests.map(l=>`<tr>
     <td>${_aiEscapeHtml(l.employees?.name||'-')}</td>
     <td>${typeLabel(l.leave_type)}</td>
-    <td>${formatDate(l.start_date)}</td>
-    <td>${formatDate(l.end_date)}</td>
+    <td style="white-space:nowrap">${formatDate(l.start_date)}</td>
+    <td style="white-space:nowrap">${formatDate(l.end_date)}</td>
     <td style="text-align:right">${l.days_count}</td>
-    <td><span style="color:${statusColor(l.status)};font-weight:600">${statusLabel(l.status)}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(l.status)};font-weight:600">${statusLabel(l.status)}</span></td>
     <td>${l.approved_by ? _aiEscapeHtml(approverMap[l.approved_by]||'-') : '-'}</td>
     <td style="white-space:nowrap">${(isAdminOwner && l.status==='pending') ? `
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px;color:var(--success);border-color:var(--success)" onclick="_leaveApprove('${l.id}')"><i class="ti ti-check"></i> ${t.approve}</button>
@@ -34540,9 +34540,9 @@ async function _advLoadTable() {
   </tr></thead>
   <tbody>${filtered.map(a=>`<tr>
     <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
-    <td style="text-align:right">${formatRM(a.amount)}</td>
-    <td style="text-align:right">${a.status==='approved' ? formatRM(a.outstanding_amount) : '-'}</td>
-    <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
+    <td style="text-align:right;white-space:nowrap">${formatRM(a.amount)}</td>
+    <td style="text-align:right;white-space:nowrap">${a.status==='approved' ? formatRM(a.outstanding_amount) : '-'}</td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
     <td>${a.approved_by ? _aiEscapeHtml(approverMap[a.approved_by]||'-') : '-'}</td>
     <td style="white-space:nowrap">${(isAdminOwner && a.status==='pending') ? `
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px;color:var(--success);border-color:var(--success)" onclick="_advApprove('${a.id}')"><i class="ti ti-check"></i> ${t.approve}</button>
@@ -34766,12 +34766,12 @@ async function _poshLoadTable() {
   ${data.map(r=>{
     const canVoid = isAdminOwner && r.txn_type==='sale' && r.status==='completed'
     return `<tr>
-    <td><strong>${_aiEscapeHtml(r.receipt_no||'-')}</strong></td>
+    <td style="white-space:nowrap"><strong>${_aiEscapeHtml(r.receipt_no||'-')}</strong></td>
     <td style="color:var(--text-3);font-size:12px">${_aiEscapeHtml(sessionNoById[r.session_id]||'-')}</td>
     <td style="white-space:nowrap">${r.created_at ? new Date(r.created_at).toLocaleString('en-MY') : '-'}</td>
-    <td style="text-align:right;font-weight:600">${formatRM(r.total)}</td>
+    <td style="text-align:right;font-weight:600;white-space:nowrap">${formatRM(r.total)}</td>
     <td>${_aiEscapeHtml(r.payment_method||'-')}</td>
-    <td><span style="color:${statusColor(r)};font-weight:600">${_aiEscapeHtml(statusLabel(r))}</span></td>
+    <td style="white-space:nowrap"><span style="color:${statusColor(r)};font-weight:600">${_aiEscapeHtml(statusLabel(r))}</span></td>
     <td style="white-space:nowrap">${canVoid ? `<button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_posOpenVoidModal('${r.id}')"><i class="ti ti-receipt-refund"></i> ${t.voidBtn}</button>` : ''}</td>
   </tr>`
   }).join('')}
@@ -34964,15 +34964,15 @@ async function renderPOSShifts() {
     const varianceLabel = isOpen ? '—' : (varianceVal > 0 ? '+'+formatRM(varianceVal) : formatRM(varianceVal))
     return `<tr>
     <td>${_aiEscapeHtml(nameById[s.cashier_id]||'-')}</td>
-    <td>${s.opened_at ? new Date(s.opened_at).toLocaleString('en-MY') : '-'}</td>
-    <td>${s.closed_at ? new Date(s.closed_at).toLocaleString('en-MY') : '-'}</td>
+    <td style="white-space:nowrap">${s.opened_at ? new Date(s.opened_at).toLocaleString('en-MY') : '-'}</td>
+    <td style="white-space:nowrap">${s.closed_at ? new Date(s.closed_at).toLocaleString('en-MY') : '-'}</td>
     <td style="text-align:right">${formatRM(s.opening_cash)}</td>
     <td style="text-align:right">${isOpen ? '—' : formatRM(s.total_sales)}</td>
     <td style="text-align:right">${isOpen ? '—' : formatRM(s.total_refunds)}</td>
     <td style="text-align:right">${isOpen ? '—' : formatRM(s.closing_cash)}</td>
     <td style="text-align:right">${isOpen ? '—' : formatRM(s.expected_cash)}</td>
     <td style="text-align:right;font-weight:600;color:${varianceColor}">${varianceLabel}</td>
-    <td><span style="color:${isOpen?'var(--success)':'var(--text-3)'};font-weight:600">${isOpen?t.open:t.doneStatus}</span></td>
+    <td style="white-space:nowrap"><span style="color:${isOpen?'var(--success)':'var(--text-3)'};font-weight:600">${isOpen?t.open:t.doneStatus}</span></td>
   </tr>`
   }).join('')}
   </tbody></table>`
@@ -36731,11 +36731,11 @@ async function renderApAgingReport() {
     <tbody>
     ${rows.map(r=>`<tr style="cursor:pointer" onclick="openPage('purchasing',{view:'bill-detail',id:'${r.id}'})">
       <td>${_aiEscapeHtml(r.name)}</td>
-      <td><strong>${_aiEscapeHtml(r.bill_no||r.ref_no||'-')}</strong></td>
-      <td>${formatDate(r.due_date||r.bill_date)}</td>
-      <td style="text-align:right">${formatRM(r.total)}</td>
-      <td style="text-align:right">${formatRM(r.paid_amt)}</td>
-      <td style="text-align:right;font-weight:600;color:var(--danger)">${formatRM(r.balance)}</td>
+      <td style="white-space:nowrap"><strong>${_aiEscapeHtml(r.bill_no||r.ref_no||'-')}</strong></td>
+      <td style="white-space:nowrap">${formatDate(r.due_date||r.bill_date)}</td>
+      <td style="text-align:right;white-space:nowrap">${formatRM(r.total)}</td>
+      <td style="text-align:right;white-space:nowrap">${formatRM(r.paid_amt)}</td>
+      <td style="text-align:right;font-weight:600;color:var(--danger);white-space:nowrap">${formatRM(r.balance)}</td>
       <td style="text-align:right">${r.days}</td>
     </tr>`).join('')}
     <tr style="border-top:2px solid var(--border)">
@@ -36826,11 +36826,11 @@ async function renderArAgingReport() {
     <tbody>
     ${rows.map(r=>`<tr style="cursor:pointer" onclick="openPage('sales',{view:'inv-detail',id:'${r.id}'})">
       <td>${_aiEscapeHtml(r.customer_name||'-')}</td>
-      <td><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
-      <td>${formatDate(r.due_date||r.issue_date)}</td>
-      <td style="text-align:right">${formatRM(r.total)}</td>
-      <td style="text-align:right">${formatRM(r.paid_amt)}</td>
-      <td style="text-align:right;font-weight:600;color:var(--danger)">${formatRM(r.balance)}</td>
+      <td style="white-space:nowrap"><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
+      <td style="white-space:nowrap">${formatDate(r.due_date||r.issue_date)}</td>
+      <td style="text-align:right;white-space:nowrap">${formatRM(r.total)}</td>
+      <td style="text-align:right;white-space:nowrap">${formatRM(r.paid_amt)}</td>
+      <td style="text-align:right;font-weight:600;color:var(--danger);white-space:nowrap">${formatRM(r.balance)}</td>
       <td style="text-align:right">${r.days}</td>
     </tr>`).join('')}
     <tr style="border-top:2px solid var(--border)">
@@ -37103,11 +37103,11 @@ async function _sstRun() {
         </tr></thead>
         <tbody>
           ${rows.map(r=>`<tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:9px 10px;font-weight:600">${_aiEscapeHtml(r.ref_no||'-')}</td>
-            <td style="padding:9px 10px">${formatDate(r.issue_date)}</td>
+            <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${_aiEscapeHtml(r.ref_no||'-')}</td>
+            <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.issue_date)}</td>
             <td style="padding:9px 10px">${_aiEscapeHtml(r.customer_name||'-')}</td>
             <td style="padding:9px 10px;text-align:right">${formatRM(r._sub)}</td>
-            <td style="padding:9px 10px;text-align:right">${(r._rate*100).toFixed(0)}%</td>
+            <td style="padding:9px 10px;text-align:right;white-space:nowrap">${(r._rate*100).toFixed(0)}%</td>
             <td style="padding:9px 10px;text-align:right;font-weight:600">${formatRM(r._tax)}</td>
             <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
           </tr>`).join('')}
