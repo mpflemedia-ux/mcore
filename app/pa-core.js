@@ -82,17 +82,17 @@
     if (!inS() || busy) return;
     if (!(APP.tenant && String(APP.tenant.code) === 'DEMO')) return;
     if (!window.confirm(L(
-      'Reset ALL demo tenant data? This permanently deletes every seeded customer, invoice, product, etc. You will need to re-run the reseed SQL afterwards. This cannot be undone.',
-      'Reset SEMUA data demo tenant? Ni akan padam kekal semua customer, invois, produk contoh dan lain-lain. Kau perlu run semula SQL reseed selepas ni. Tindakan ni tak boleh undo.'
+      'Reset ALL demo tenant data? This permanently deletes every seeded customer, invoice, product, etc. and repopulates everything fresh with today\'s date. This cannot be undone.',
+      'Reset SEMUA data demo tenant? Ni akan padam kekal semua customer, invois, produk contoh dan lain-lain, lepas tu isi semula semuanya ikut tarikh hari ini. Tindakan ni tak boleh undo.'
     ))) return;
     busy = true;
-    toast(L('Resetting demo data…', 'Sedang reset data demo…'), 'warning');
+    toast(L('Resetting and repopulating demo data…', 'Sedang reset dan isi semula data demo…'), 'warning');
     try {
       var rpc = await sb.rpc('reset_demo_tenant');
       if (rpc.error) { toast(rpc.error.message || L('Reset failed', 'Reset gagal'), 'error'); return; }
       toast(L(
-        'Demo data wiped. Run demo_tenant_05_reseed_all.sql in Supabase SQL Editor to repopulate.',
-        'Data demo dah dipadam. Run demo_tenant_05_reseed_all.sql dalam Supabase SQL Editor untuk isi semula.'
+        'Demo data reset and repopulated with fresh, up-to-date records.',
+        'Data demo dah di-reset dan diisi semula dengan rekod terkini.'
       ), 'success');
       if (typeof openPage === 'function') openPage('dashboard');
     } catch (e) {
