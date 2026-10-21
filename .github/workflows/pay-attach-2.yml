@@ -1,0 +1,29 @@
+name: pay-attach-2-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pay-attach-2.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'pay-void.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "d852770172111d51f9bbe6007e3c6ab0259badc6"
+          test "$(git hash-object app/pay-void.js)" = "aed5d52128c998eecd72dd562739c7f97e97d4e0"
+          test "$(git hash-object app/pay-vlist.js)" = "0783b8cfb00d5b9493b94d0c0f1a0be036ebb06f"
+          test "$(git hash-object app/pay-sheet.js)" = "5a7138a490ddb17fa5cdc4a1d90b5da5d98fa115"
+          test "$(git hash-object .github/oneshot/pay2.py)" = "068a1be164cbf7b32871ecac53f3d8abc723ac70"
+          python3 .github/oneshot/pay2.py "$F"
+          test "$(git hash-object "$F")" = "8e7827c48ecdc8cf1b1b2af98cad9d67725ea7a0"
+          git rm -q .github/oneshot/pay2.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(pay): void with reason/archive/reversal hooks + bank-ref recon match + pay-void/pay-vlist v1"
+          git push
