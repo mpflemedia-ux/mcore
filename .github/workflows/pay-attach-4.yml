@@ -1,0 +1,29 @@
+name: pay-attach-4-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pay-attach-4.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'pay-rep.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "7467ced4336159a80acbbee377fc060d88bf8013"
+          test "$(git hash-object app/pay-zip.js)" = "f9ebf1dd4b8533d76ded21027de66917e1129e7d"
+          test "$(git hash-object app/pay-rep.js)" = "b56741a4c7a9a293b1b7322b517c9f28d37f1de0"
+          test "$(git hash-object app/pay-pack.js)" = "d9f48761a41c929327600a410cefd0e4b3d9b078"
+          test "$(git hash-object .github/oneshot/pay4.py)" = "33c1b25020d8288d3832f9bde235a4e91355107d"
+          python3 .github/oneshot/pay4.py "$F"
+          test "$(git hash-object "$F")" = "30b3c3f662ffe76a5bb21fe4b103fe4ab1cd12c6"
+          git rm -q .github/oneshot/pay4.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(pay): No slip filter / slips ZIP / warn setting / report pack scripts (pay-zip, pay-rep, pay-pack v1)"
+          git push
