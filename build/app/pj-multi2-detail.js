@@ -19,7 +19,9 @@
       var pp = det.querySelector('.pjm2-pp');
       var sync = function (inp) { var v = Math.max(0, Math.min(100, Number(inp.value) || 0)), b = inp.parentNode.querySelector('.pjm2-bar'); b.setAttribute('aria-valuenow', v); b.firstChild.style.width = v + '%'; if (prog) prog.value = avg(det, k, ls.map(function (a) { return String(a.employee_id); })); };
       pp.querySelectorAll('[data-pp]').forEach(function (i) { i.oninput = function () { sync(i); }; });
-      pp.querySelectorAll('[data-ppd]').forEach(function (b) { b.onclick = function () { var i = pp.querySelector('[data-pp="' + b.getAttribute('data-ppd') + '"]'); i.value = 100; sync(i); }; });
+      /* Done tick that brings the task average to 100% saves straight away, so the task lands in Done (saveTask rule) */
+      var autoDone = function () { var c = det.closest('.pj-card'), sv = c && c.querySelector('[data-act="save"]'); if (prog && Number(prog.value) >= 100 && sv && !sv.disabled) sv.click(); };
+      pp.querySelectorAll('[data-ppd]').forEach(function (b) { b.onclick = function () { var i = pp.querySelector('[data-pp="' + b.getAttribute('data-ppd') + '"]'); i.value = 100; sync(i); autoDone(); }; });
     }
     var due = det.querySelector('input[data-f="due_date"]'), lab = due && due.closest('label');
     if (lab) lab.insertAdjacentHTML('afterend', '<label>' + M.esc(M.L('Estimated hours (optional)', 'Anggaran jam kerja (pilihan)')) + '<input type="number" min="0.25" max="999" step="0.25" inputmode="decimal" data-pjm2="est" value="' + (k.est_hours != null ? M.esc(k.est_hours) : '') + '" placeholder="' + M.esc(M.L('e.g. 2', 'cth. 2')) + '"></label>');
