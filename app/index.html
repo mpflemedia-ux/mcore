@@ -25680,13 +25680,14 @@ async function _paySave(invoiceId, balance) {
   const {data: inv} = await sb.from('invoices').select('ref_no,customer_id,customer_name,total,paid_amt,status').eq('id',invoiceId).eq('tenant_id',APP.tenant.id).single()
   if(!inv) { errEl.textContent='Invoice not found.'; errEl.style.display='block'; return }
 
+  if(window.PAYX&&PAYX.before&&!(await PAYX.before('inv'))) return
   const {data: refData} = await sb.rpc('next_ref_no', {doc_type:'RCP'}).then(r=>r, ()=>({data:null}))
   const {data: payment, error} = await sb.from('payments').insert({
     tenant_id: APP.tenant.id, ref_no: refData || await _genFallbackRefNo('payments','ref_no','RCP'), payment_type: 'receipt',
     customer_id: inv.customer_id, customer_name: inv.customer_name,
     payment_date: document.getElementById('pay-date').value,
     payment_method: document.getElementById('pay-method').value,
-    amount, status: 'completed', notes: 'Invoice '+inv.ref_no, created_by: APP.user.id
+    amount, status: 'completed', notes: 'Invoice '+inv.ref_no, created_by: APP.user.id, ...(window.PAYX&&PAYX.extra?PAYX.extra('inv'):{})
   }).select('id').single()
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
 
@@ -25721,6 +25722,7 @@ async function _paySave(invoiceId, balance) {
     try { showToast((APP.language==='bm'?'Jurnal bayaran invois gagal: ':'Invoice payment journal failed: ')+(e.message||e), 'error') } catch(x) {}
   }
 
+  try { if(window.PAYX&&PAYX.after) await PAYX.after('inv', payment.id, invoiceId) } catch(e) { console.warn('PAYX.after', e) }
   showToast(APP.language==='bm'?'Bayaran direkod!':'Payment recorded!', 'success')
   try { _tgActivity('sales', APP.language==='bm'?'M-Core · Bayaran invois direkod':'M-Core · Invoice payment recorded') } catch(e) {}
   renderInvDetail(invoiceId)
@@ -27656,13 +27658,14 @@ async function _billPaySave(billId, balance) {
 
   const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt,ref_no,bill_no').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
   if(!bill) { errEl.textContent='Bill not found.'; errEl.style.display='block'; return }
+  if(window.PAYX&&PAYX.before&&!(await PAYX.before('bill'))) return
 
   const payDate = document.getElementById('bill-pay-date').value
   const method = document.getElementById('bill-pay-method').value
   const {data: payRow, error} = await sb.from('supplier_payments').insert({
     tenant_id: APP.tenant.id, bill_id: billId,
     payment_date: payDate,
-    amount, method,
+    amount, method, ...(window.PAYX&&PAYX.extra?PAYX.extra('bill'):{}),
   }).select('id').single()
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
 
@@ -27691,6 +27694,7 @@ async function _billPaySave(billId, balance) {
     }
   } catch(e) { console.error('Supplier bill payment journal post failed:', e) }
 
+  try { if(window.PAYX&&PAYX.after) await PAYX.after('bill', payRow?.id, billId) } catch(e) { console.warn('PAYX.after', e) }
   auditLog('create','supplier_payments', payRow?.id || billId)
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
   try { _tgActivity('sales', isBm?'M-Core · Bayaran direkod':'M-Core · Payment recorded') } catch(e) {}
@@ -38371,5 +38375,9 @@ if('serviceWorker' in navigator){
 <script src="./bo-qr.js?v=1"></script>
 <script src="./admin-health.js?v=1"></script>
 <script src="./tenant-badge-id.js?v=1"></script>
+<script src="./pay-i18n.js?v=1"></script>
+<script src="./pay-core.js?v=1"></script>
+<script src="./pay-ui.js?v=1"></script>
+<script src="./pay-sheet.js?v=1"></script>
 </body>
 </html>
