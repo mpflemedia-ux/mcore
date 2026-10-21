@@ -24295,7 +24295,7 @@ let _invListCache = []
 /** Shared client-side list sort for pages that have filters but no sort UI. */
 function _listSortState(key, defaultField, defaultDir) {
   if(!window._listSort) window._listSort = {}
-  if(!window._listSort[key]) window._listSort[key] = { field: defaultField || 'date', dir: defaultDir || 'desc' }
+  if(!window._listSort[key]) window._listSort[key] = { field: ({inv:'no',quo:'no',cn:'no'})[key] || defaultField || 'date', dir: defaultDir || 'desc' }
   return window._listSort[key]
 }
 function _listSetSort(key, field, dir, rerender) {
@@ -25792,7 +25792,7 @@ function _quoRenderListTable() {
   rows = _listApplySort(rows, 'quo', {
     date: r => r.quote_date || r.date || '',
     total: r => Number(r.total||0),
-    no: r => r.quote_no || r.quo_no || '',
+    no: r => r.quote_no || r.quo_no || r.ref_no || '',
     customer: r => (r.customers && r.customers.name) || '',
     status: r => r.status || ''
   })
