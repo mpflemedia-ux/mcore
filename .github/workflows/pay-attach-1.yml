@@ -1,0 +1,30 @@
+name: pay-attach-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pay-attach-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'pay-core.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "97795edc5d33ceae40fba4caa1c5cfc590c9a730"
+          test "$(git hash-object app/pay-core.js)" = "4bf947e148bbf0776786b17eeb1a258fe46f58a2"
+          test "$(git hash-object app/pay-ui.js)" = "490cf20beb9cb6c4eda8733a4ed2b61f1027b1c9"
+          test "$(git hash-object app/pay-sheet.js)" = "40450150ca8719c9c230925c860051be3e172be1"
+          test "$(git hash-object app/pay-i18n.js)" = "b7ba2bce5c5bbae6cccd22caf76a612a41eb5995"
+          test "$(git hash-object .github/oneshot/pay1.py)" = "5e1d1812b6c81615241db6c42d549840162e85a1"
+          python3 .github/oneshot/pay1.py "$F"
+          test "$(git hash-object "$F")" = "d852770172111d51f9bbe6007e3c6ab0259badc6"
+          git rm -q .github/oneshot/pay1.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(pay): Record Payment hooks (bank ref / cheque / notes / proof files) + pay-* scripts v1"
+          git push
