@@ -1,0 +1,29 @@
+name: pj-done-auto-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pj-done-auto-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'pj-done-auto.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "30b3c3f662ffe76a5bb21fe4b103fe4ab1cd12c6"
+          test "$(git hash-object app/pj-done-auto.js)" = "c9e355493cdb6e9d9347e44eaf28150d3a0c00c5"
+          test "$(git hash-object app/pj-sr-convert.js)" = "a7f3b0dff3d4144561602e506a2a773187417f71"
+          test "$(git hash-object app/pj-multi2-detail.js)" = "09ff8b2ab9f405f92bd9f8035e2a087089a79e57"
+          test "$(git hash-object .github/oneshot/pjda.py)" = "82bb1c3db4272761f4cca2f991ae14cbb56ade11"
+          python3 .github/oneshot/pjda.py "$F"
+          test "$(git hash-object "$F")" = "36292a7597cd0a645420f060742e28c396c9954f"
+          git rm -q .github/oneshot/pjda.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(projects): auto-Done script tag (pj-done-auto v1) + bump pj-sr-convert v3, pj-multi2-detail v2"
+          git push
