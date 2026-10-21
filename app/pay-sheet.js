@@ -1,4 +1,4 @@
-/* M-Core payment attachments - proof sheet per payment: list, view (signed URL), download, add (also on past / ToyyibPay payments), soft remove (uploader / owner / admin / PA; locked period = owner / PA only). v2 */
+/* M-Core payment attachments - proof sheet per payment: list, view (signed URL), download, add (also on past / ToyyibPay payments), soft remove (uploader / owner / admin / PA; locked period = owner / PA only). v3 */
 (function () {
   var P = window.PAYX; if (!P || P.sheet) return;
   var E = P.esc, t = P.t;
@@ -50,7 +50,7 @@
         b.disabled = true; P.remove(a).then(function () { list.splice(list.indexOf(a), 1); draw(); P.toast(t('saved')); }, function (e) { b.disabled = false; P.toast(t('err') + ((e && e.message) || e), 'error'); });
       }; });
     }
-    function load() { return P.list(kind, [row.pay]).then(function (m) { list = m[row.pay] || []; draw(); }); }
+    function load() { if (row.rows) { list = row.rows; draw(); return Promise.resolve(); } return P.list(kind, [row.pay]).then(function (m) { list = m[row.pay] || []; draw(); }); }
     if (!P.viewOnly() && !row.ro) A.appendChild(P.pickers(function (files) {
       P.prep(files, list.length).then(function (r) { if (r.errs.length) P.toast(r.errs.join(' '), 'warning'); return P.dupCheck(r.ok, row.pay); }).then(function (ok) {
         if (!ok.length) return;
