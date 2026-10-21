@@ -1,0 +1,32 @@
+name: sales-sort-default-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sales-sort-default.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q "({inv:'no',quo:'no',cn:'no'})\[key\]" "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "db34b1794a9f55cd8cb06c31278cb73da8577836"
+          python3 - <<'PY'
+          p='app/index.html'; s=open(p).read()
+          a="if(!window._listSort[key]) window._listSort[key] = { field: defaultField || 'date', dir: defaultDir || 'desc' }"
+          b="if(!window._listSort[key]) window._listSort[key] = { field: ({inv:'no',quo:'no',cn:'no'})[key] || defaultField || 'date', dir: defaultDir || 'desc' }"
+          c="    no: r => r.quote_no || r.quo_no || '',"
+          d="    no: r => r.quote_no || r.quo_no || r.ref_no || '',"
+          assert s.count(a)==1 and s.count(c)==1
+          open(p,'w').write(s.replace(a,b).replace(c,d))
+          PY
+          test "$(git hash-object "$F")" = "97795edc5d33ceae40fba4caa1c5cfc590c9a730"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(sales): Invoices/Quotations/Credit Notes default sort = doc no. descending; quotation no. sort reads ref_no"
+          git push
