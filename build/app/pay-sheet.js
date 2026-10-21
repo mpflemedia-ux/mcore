@@ -1,4 +1,4 @@
-/* M-Core payment attachments - proof sheet per payment: list, view (signed URL), download, add (also on past / ToyyibPay payments), soft remove (uploader / owner / admin / PA; locked period = owner / PA only). v1 */
+/* M-Core payment attachments - proof sheet per payment: list, view (signed URL), download, add (also on past / ToyyibPay payments), soft remove (uploader / owner / admin / PA; locked period = owner / PA only). v2 */
 (function () {
   var P = window.PAYX; if (!P || P.sheet) return;
   var E = P.esc, t = P.t;
@@ -16,7 +16,7 @@
     '.payx-hist tbody td:nth-child(3){font-size:13px;color:var(--text-2)}.payx-hist tbody td:nth-child(4){text-align:right!important;font-size:13px}.payx-hist tbody td:nth-child(5){text-align:left!important}.payx-hist tbody td:nth-child(6){text-align:right!important}}' +
     '.payx-ib{display:flex;gap:4px;flex:none}.payx-ib .btn{min-width:36px;min-height:36px;padding:6px 8px!important}.payx-msg{font-size:13px;color:var(--text-2);padding:14px 0;text-align:center}';
   document.head.appendChild(css);
-  P.canRm = function (a, row) { var mine = a.uploaded_by && String(a.uploaded_by) === String(P.uid()); return (mine || P.owner()) && P.lockOk(row.p && row.p.payment_date); };
+  P.canRm = function (a, row) { if (row.ro) return false; var mine = a.uploaded_by && String(a.uploaded_by) === String(P.uid()); return (mine || P.owner()) && P.lockOk(row.p && row.p.payment_date); };
   P.viewOnly = function () { try { var s = JSON.parse(sessionStorage.getItem('mcore_support_session') || 'null'); return !!(P.isPA() && s && (s.view_only || s.viewOnly)); } catch (e) { return false; } };
   /* row = { pay, doc, p:{ref_no, amount, payment_date} } ; done(count) */
   P.sheet = function (kind, row, done) {
@@ -51,7 +51,7 @@
       }; });
     }
     function load() { return P.list(kind, [row.pay]).then(function (m) { list = m[row.pay] || []; draw(); }); }
-    if (!P.viewOnly()) A.appendChild(P.pickers(function (files) {
+    if (!P.viewOnly() && !row.ro) A.appendChild(P.pickers(function (files) {
       P.prep(files, list.length).then(function (r) { if (r.errs.length) P.toast(r.errs.join(' '), 'warning'); return P.dupCheck(r.ok, row.pay); }).then(function (ok) {
         if (!ok.length) return;
         return P.upload(kind, row.pay, ok, kind === 'bill' ? { bill_id: row.doc } : { invoice_id: row.doc }, function (i, n) { St.textContent = t('up', { i: i, n: n }); }).then(function (r) {
@@ -59,7 +59,7 @@
         });
       });
     }));
-    else St.textContent = t('viewOnly');
+    else if (!row.ro) St.textContent = t('viewOnly');
     load();
     setTimeout(function () { var x = bg.querySelector('[data-x]'); if (x) x.focus(); }, 30);
   };
