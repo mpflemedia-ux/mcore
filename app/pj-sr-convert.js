@@ -63,7 +63,7 @@
           var linked = false;
           SD.taskSrLinkCallback = function (r) {
             if (linked || !r || !r.id) return; linked = true;
-            sb.from('project_tasks').update({ linked_sr_id: r.id, column_key: 'review' }).eq('tenant_id', APP.tenant.id).eq('id', task.id)
+            sb.from('project_tasks').update({ linked_sr_id: r.id, column_key: Number(task.progress) >= 100 ? 'done' : 'review' }).eq('tenant_id', APP.tenant.id).eq('id', task.id)
               .then(function (x) { if (x.error) console.warn('[pj-sr-convert] link task failed', x.error); }, function (e2) { console.warn('[pj-sr-convert] link task failed', e2); });
             var who = (window.APP.user && (APP.user.full_name || APP.user.name)) || '';
             sb.from('project_task_comments').insert({ tenant_id: APP.tenant.id, task_id: task.id, body: L('Converted to Service Request ', 'Ditukar kepada Permohonan Servis ') + r.ref_no, created_by: APP.user.id, created_by_name: who })
