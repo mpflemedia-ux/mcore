@@ -1,0 +1,27 @@
+name: sr-fit-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sr-fit-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'sd-result-fit.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "be176d590009f897c38bea032dd3b58a91a81bac"
+          test "$(git hash-object app/sd-result-fit.js)" = "294ebebf4f39868001683782ec05c70d8fe6c9a7"
+          test "$(git hash-object .github/oneshot/srfit.py)" = "210190e2b176adbf7edfbd36dac2ec3989359ae6"
+          python3 .github/oneshot/srfit.py "$F"
+          test "$(git hash-object "$F")" = "4770da29d5339f3e3afb8e806b78e69a04429081"
+          git rm -q .github/oneshot/srfit.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(sd): result page long file name fit script tag (sd-result-fit v1)"
+          git push
