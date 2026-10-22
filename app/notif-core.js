@@ -132,7 +132,7 @@
     try {
       NT.chan = sb.channel('nt-' + NT.uid()).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: 'user_id=eq.' + NT.uid() }, function (p) {
         var n = NT.classify(Object.assign({}, p.new || {})); if (!NT.same(n.tenant_id, NT.tid())) return;
-        if (n._k !== 'activity' && NT.ch(n._cat, 'p') && !NT.quiet(null, n.priority)) { try { _notifOsNotify(n.title, n.body || '', false, n.link); } catch (e) {} }
+        if (n._k !== 'activity' && NT.ch(n._cat, 'p') && !NT.quiet(null, n.priority)) { try { _notifOsNotify(n.title, n.body || '', false, n.link, n); } catch (e) {} }
         if (NT.refresh) NT.refresh();
       }).subscribe();
     } catch (e) {}
