@@ -38120,7 +38120,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     // No controllerchange→reload: that forced a second full load after SW claim
     // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
-    navigator.serviceWorker.register('./sw.js?v=14').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=15').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
@@ -38346,12 +38346,17 @@ if('serviceWorker' in navigator){
 <script src="./sd-multi-admin.js?v=1"></script>
 <script src="./sd-multi-extra.js?v=1"></script>
 <script src="./notif-css.js?v=1"></script>
-<script src="./notif-core.js?v=2"></script>
+<script src="./notif-core.js?v=3"></script>
 <script src="./notif-live.js?v=3"></script>
 <script src="./notif-items.js?v=4"></script>
 <script src="./notif-bell.js?v=3"></script>
 <script src="./notif-page.js?v=2"></script>
 <script src="./notif-settings.js?v=3"></script>
+<script src="./notif-os.js?v=1"></script>
+<script src="./notif-push.js?v=1"></script>
+<script src="./notif-push-boot.js?v=1"></script>
+<script src="./notif-push-ui.js?v=1"></script>
+<script src="./notif-push-admin.js?v=1"></script>
 <script src="./notif-hooks.js?v=2"></script>
 <script src="./nav-css.js?v=4"></script>
 <script src="./nav-core.js?v=1"></script>
