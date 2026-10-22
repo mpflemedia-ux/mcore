@@ -1,0 +1,27 @@
+name: sr-copy-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sr-copy-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'sd-copy.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "36292a7597cd0a645420f060742e28c396c9954f"
+          test "$(git hash-object app/sd-copy.js)" = "38be242ebef1b2d11ffb00623113f91502206568"
+          test "$(git hash-object .github/oneshot/srcopy.py)" = "55139d46c929d06c0a67b2b005507f0bc02c751f"
+          python3 .github/oneshot/srcopy.py "$F"
+          test "$(git hash-object "$F")" = "be176d590009f897c38bea032dd3b58a91a81bac"
+          git rm -q .github/oneshot/srcopy.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(sd): Copy instructions script tag (sd-copy v1)"
+          git push
