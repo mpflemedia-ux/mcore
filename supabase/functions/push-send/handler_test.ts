@@ -1,7 +1,7 @@
 // deno test supabase/functions/push-send/handler_test.ts  (pure, no network)
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { classify, quiet, settingsFor, slaDue } from './core.ts';
-import { Deps, handle, processOne, Repo } from './handler.ts';
+import { Deps, flush, handle, processOne, Repo } from './handler.ts';
 type Row = Record<string, any>;
 const T = 'ten-1', U = 'usr-1', PA = 'pa-1', TP = 'ten-pa';
 function world(over: Row = {}) {
@@ -109,4 +109,12 @@ Deno.test('tick: SLA 2h + overdue (once), escalation after 30 min (0 = off), mor
   assertEquals((await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), w3.d)).body.morning, 1); assert(w3.W.pushed.at(-1).b.body.startsWith('3 amaran'));
   assertEquals((await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), w3.d)).body.morning, 0);
   w3.W.now = new Date('2026-10-23T02:05:00Z'); const w4 = world(); w4.W.now = new Date('2026-10-23T02:05:00Z'); assertEquals((await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), w4.d)).body.morning, 0);
+});
+Deno.test('tick: anonymous public-page message (sd-result bellAdmins row) reaches platform admin', async () => {
+  const subs = [{ id: 'sp', tenant_id: TP, user_id: PA, endpoint: 'ep', lang: 'en', fail_count: 0 }];
+  const { W, d } = world({ subs });
+  W.n.push({ id: 'pm1', tenant_id: TP, user_id: PA, actor_id: null, title: 'SR-000123-1: client sent a message (Mesej dari klien)', body: 'hi', category: 'service_desk', kind: 'for_you', type: 'sd.message', ref_table: 'service_requests', ref_id: 'sr-x', created_at: '2026-10-22T16:44:00Z' });
+  const r = await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3\n' }), d);
+  assertEquals(r.status, 200); assertEquals(r.body.flush.sent, 1); assertEquals(W.pushed.at(-1).s, 'sp');
+  assertEquals((await flush(d, 15)).sent, undefined); /* deduped on next tick */
 });

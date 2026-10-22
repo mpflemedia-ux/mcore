@@ -4,7 +4,7 @@
 // POST {action:'flush'|'test'} (user JWT) · {action:'tick'} / DB webhook INSERT payload (x-push-secret) · {action:'read', id, uid, t} (from sw.js)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
-import { handle } from './handler.ts';
+import { handle, cleanSecret } from './handler.ts';
 import { makeRepo } from './repo.ts';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-push-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
@@ -38,6 +38,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const r = await handle(body, req.headers, { now: () => new Date(), db: makeRepo(sb), push, telegram, sign, authUser, secret: env('PUSH_CRON_SECRET'), fnUrl: URL0 + '/functions/v1/push-send' });
+    if (r.status === 401 && (r.body as { error?: string }).error === 'secret') { const h = req.headers.get('x-push-secret'), e0 = env('PUSH_CRON_SECRET') || ''; console.warn(JSON.stringify({ diag: 'secret_mismatch', action: (body as { action?: string }).action || (body as { type?: string }).type || null, hdr_present: h != null, hdr_len: (h || '').length, env_len: e0.length, clean_len: [cleanSecret(h).length, cleanSecret(e0).length] })); }
+    else if ((body as { action?: string }).action === 'tick' || (body as { action?: string }).action === 'flush' || (body as { type?: string }).type === 'INSERT') console.log(JSON.stringify({ diag: 'result', action: (body as { action?: string }).action || 'webhook', status: r.status, body: r.body }));
     return new Response(JSON.stringify(r.body), { status: r.status, headers: { ...CORS, 'Content-Type': 'application/json' } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: (e as Error).message || 'error' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });

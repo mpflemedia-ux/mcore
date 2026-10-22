@@ -83,6 +83,9 @@ export async function processOne(n: Row, d: Deps): Promise<string> {
   return done(group ? 'grouped' : 'sent', group ? 'n=' + (recent.length + 1) : null);
 }
 
+/* tolerant compare: Vault/dashboard pastes often carry a trailing newline, spaces or wrapping quotes */
+export function cleanSecret(v: string | null | undefined): string { return String(v || '').trim().replace(/^(['"])(.*)\1$/, '$2').trim(); }
+export function secretOk(hdr: string | null | undefined, env: string | null | undefined): boolean { const a = cleanSecret(hdr), b = cleanSecret(env); return !!b && a === b; }
 export async function flush(d: Deps, minutes = 10): Promise<Row> {
   const rows = await d.db.recentNotifications(iso(ago(d.now(), minutes * 60000)), 100);
   const have = new Set(await d.db.loggedKeys(rows.map((r) => 'n:' + r.id)));
@@ -108,7 +111,7 @@ export async function testSend(uid: string, subId: string | null, d: Deps): Prom
 }
 
 export async function handle(body: Row, headers: Headers, d: Deps): Promise<{ status: number; body: Row }> {
-  const sec = headers.get('x-push-secret') || '', trusted = !!d.secret && sec === d.secret;
+  const trusted = secretOk(headers.get('x-push-secret'), d.secret);
   if (body && body.type === 'INSERT' && body.table === 'notifications' && body.record) {
     if (!trusted) return { status: 401, body: { ok: false, error: 'secret' } };
     const rows = await d.db.notifications([String(body.record.id)]);
