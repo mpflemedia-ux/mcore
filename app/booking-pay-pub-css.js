@@ -1,10 +1,10 @@
-/* M-Core booking payment flow - public panel CSS + icons (dark on the booking page, .lt light on the public invoice page). WCAG AA on both. #root = public.html (the service worker sends ?public_inv= there). v2 */
+/* M-Core booking payment flow - public panel CSS + icons (dark on the booking page, .lt light on the public invoice page). WCAG AA on both. #root = public.html (the service worker sends ?public_inv= there). v3 */
 (function () {
   if (window.BKPAYU) return;
   var U = window.BKPAYU = {};
   var I = { clock: 'M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', copy: 'M9 9h10v10H9zM5 15V5h10', cam: 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
     file: 'M14 3H6v18h12V7zM14 3v4h4', ok: 'M5 12l5 5 9-10', x: 'M6 6l12 12M18 6L6 18', dl: 'M12 4v11m-5-5 5 5 5-5M5 20h14', up: 'M12 20V9m-5 5 5-5 5 5M5 4h14',
-    wa: 'M4 20l1.3-4A8 8 0 1 1 8 18.7zM9 9c0 3 3 6 6 6l1-1.5-2-1-1 1c-1-.5-2-1.5-2.5-2.5l1-1-1-2z', link: 'M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1' };
+    wa: 'M4 20l1.3-4A8 8 0 1 1 8 18.7zM9 9c0 3 3 6 6 6l1-1.5-2-1-1 1c-1-.5-2-1.5-2.5-2.5l1-1-1-2z', link: 'M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1', user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0' };
   U.ic = function (n) { return '<svg class="bkpay-ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="' + I[n] + '"/></svg>'; };
   U.css = function () {
     if (document.getElementById('bkpay-css')) return;
@@ -36,6 +36,7 @@
       X + ' .bkpay-err{display:none;margin:8px 0 0;padding:8px 10px;border-radius:8px;background:var(--k-eb);color:var(--k-e)!important;font-size:13px!important;font-weight:600}',
       X + ' .bkpay-or{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--k-t2)!important;font-size:12px!important}' + X + ' .bkpay-or:before,' + X + ' .bkpay-or:after{content:"";flex:1;border-top:1px solid var(--k-bd)}',
       X + ' .bkpay-note{font-size:12.5px!important;color:var(--k-t2)!important;margin:12px 0 0!important}',
+      X + ' .bkpay-wach{display:grid;gap:8px;margin-top:8px;padding:10px;border:1px solid var(--k-bd);border-radius:10px;background:var(--k-card)}' + X + ' .bkpay-wach .bkpay-btn{width:100%;justify-content:flex-start;text-align:left}' + X + ' .bkpay-wach .bkpay-hint{margin:0!important}' +
       X + ' .bkpay-keep{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--k-bd);font-size:12.5px;color:var(--k-t2)!important;flex-wrap:wrap}',
       X + ' .bkpay-tl{list-style:none;margin:12px 0;padding:0}' + X + ' .bkpay-tl li{display:flex;gap:10px;align-items:flex-start;padding:0 0 14px;position:relative;color:var(--k-t2)!important}',
       X + ' .bkpay-tl li:before{content:"";position:absolute;left:11px;top:24px;bottom:2px;border-left:2px solid var(--k-bd)}' + X + ' .bkpay-tl li:last-child:before{display:none}',

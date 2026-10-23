@@ -1,4 +1,4 @@
-/* M-Core booking payment flow - public panel look (dark on the booking page, light on the public invoice page). Markup only; events in booking-pay-pub.js. v1 */
+/* M-Core booking payment flow - public panel look (dark on the booking page, light on the public invoice page). Markup only; events in booking-pay-pub.js. v2 */
 (function () {
   var U = window.BKPAYU, A = window.BKPAYA; if (!U || !A || U.html) return;
   function T(x, k, v) { return A.esc(BKPAYI.t(x.lang, k, v)); }
@@ -21,7 +21,11 @@
       '<label class="bkpay-lb" for="bkpay-amt">' + T(x, 'pAmt') + '</label><input id="bkpay-amt" class="bkpay-in" type="number" inputmode="decimal" step="0.01" min="0.01" data-no-titlecase="1" value="' + (x.amt != null ? x.amt : (x.n.due > 0 ? x.n.due.toFixed(2) : '')) + '">' +
       '<div class="bkpay-err" role="alert" data-err' + (x.err ? ' style="display:block"' : '') + '>' + (x.err ? T(x, x.err) : '') + '</div>' +
       '<button type="button" class="bkpay-btn pri" style="margin-top:12px" data-send' + (x.busy ? ' disabled' : '') + '>' + U.ic('up') + T(x, x.busy ? 'pSending' : 'pSend') + '</button>'; }
-  function wa(x, k) { return x.waHref ? '<a class="bkpay-btn wa" href="' + A.esc(x.waHref) + '" target="_blank" rel="noopener">' + U.ic('wa') + T(x, k || 'pWa') + '</a>' : ''; }
+  function wa(x, k) { /* no company number: go straight to the contact picker; else show both choices inline */
+    if (!x.waAny) return ''; var lbl = U.ic('wa') + T(x, k || 'pWa'), o = 'target="_blank" rel="noopener"';
+    if (!x.waHref) return '<a class="bkpay-btn wa" href="' + A.esc(x.waAny) + '" ' + o + '>' + lbl + '</a>';
+    return '<button type="button" class="bkpay-btn wa" data-wa aria-expanded="' + (x.waOpen ? 'true' : 'false') + '">' + lbl + '</button>' + (x.waOpen ? '<div class="bkpay-wach" role="group" aria-label="' + T(x, 'pWaWho') + '"><span class="bkpay-hint">' + T(x, 'pWaWho') + '</span>' +
+      '<a class="bkpay-btn" href="' + A.esc(x.waHref) + '" ' + o + '>' + U.ic('wa') + '<span>' + T(x, 'pWaTo', { c: x.waCo || '-', p: '\u0001' }).replace('\u0001', '<span style="white-space:nowrap">' + A.esc(x.waPh) + '</span>') + '</span>' + '</a><a class="bkpay-btn" href="' + A.esc(x.waAny) + '" ' + o + '>' + U.ic('user') + T(x, 'pWaPick') + '</a></div>' : ''); }
   function keep(x) { return x.link ? '<div class="bkpay-keep"><span>' + T(x, 'pKeep') + '</span><button type="button" class="bkpay-btn sm" data-copy="' + A.esc(x.link) + '">' + U.ic('link') + T(x, 'pCopyLink') + '</button></div>' : ''; }
   function tl(x, cur) { var v = x.v || {}, st = [['sRecv', v.claim_at], ['sRev', v.claim_seen_at], ['sVer', null]], bm = x.lang === 'bm';
     return '<ol class="bkpay-tl">' + st.map(function (s, i) { var c = i < cur ? 'd' : (i === cur ? 'c' : ''); return '<li class="' + c + '"><i>' + (i < cur ? U.ic('ok') : '') + '</i><div>' + T(x, s[0]) + (s[1] && i <= cur ? '<small>' + A.esc(A.time(s[1], bm)) + '</small>' : '') + '</div></li>'; }).join('') + '</ol>'; }

@@ -1,5 +1,5 @@
 /* M-Core booking payment flow - public side. After "Confirm hold" the Held box becomes the pay panel (DuitNow QR, pay ref, upload receipt,
-   WhatsApp backup, live status). Reopen with ?book=X&bkpay=TOKEN. On ?public_inv= of a booking invoice the same panel shows (light). v1 */
+   WhatsApp backup, live status). Reopen with ?book=X&bkpay=TOKEN. On ?public_inv= of a booking invoice the same panel shows (light). v2 */
 (function () {
   var Q = new URLSearchParams(location.search), onBook = Q.has('book'), onInv = !onBook && Q.get('public_inv');
   if ((!onBook && !onInv) || window.__bkpay) return; window.__bkpay = 1;
@@ -10,7 +10,10 @@
     var v = S.v || null, inv = S.inv || {}, n = A.need(v, inv), l = lang(), x = { lang: l, v: v, inv: inv, n: n, file: S.file, thumb: S.thumb, amt: S.amt, err: S.err, busy: S.busy };
     x.state = S.state = A.state(v, inv);
     var ph = inv.phone || '', ref = (v && v.ref_no) || inv.ref_no || '';
-    if (A.phone(ph)) x.waHref = A.wa(ph, BKPAYI.t(l, 'pWaMsg', { i: ref, a: A.rm(n.due || n.bal), b: v ? (v.quote_ref || '') + ' (' + v.pay_ref + ')' : '' }).trim());
+    var msg = BKPAYI.t(l, 'pWaMsg', { i: ref, a: A.rm(n.due || n.bal), b: v ? (v.quote_ref || '') + ' (' + v.pay_ref + ')' : '' }).trim();
+    /* WhatsApp: customer picks the company number (tenant phone from the invoice) or any contact (wa.me without a number) */
+    x.waAny = 'https://wa.me/?text=' + encodeURIComponent(msg); x.waOpen = S.waOpen;
+    if (A.phone(ph)) { x.waHref = A.wa(ph, msg); x.waCo = inv.tenant_name || ''; x.waPh = ph; }
     if (onBook) { x.again = location.origin + '/app/?book=' + encodeURIComponent(Q.get('book')) + '&lang=' + l; x.link = location.origin + '/app/?book=' + encodeURIComponent(Q.get('book')) + '&bkpay=' + encodeURIComponent(S.tok); }
     else x.link = location.href.split('#')[0];
     if (!v) x.invHref = location.origin + '/app/?public_inv=' + encodeURIComponent(S.tok) + '&lang=' + l;
@@ -37,6 +40,7 @@
     var rm = P.querySelector('[data-rm]'); if (rm) rm.onclick = function () { S.file = null; S.thumb = null; render(); };
     var am = P.querySelector('#bkpay-amt'); if (am) am.oninput = function () { S.amt = am.value; };
     var sd = P.querySelector('[data-send]'); if (sd) sd.onclick = send;
+    P.querySelectorAll('[data-wa]').forEach(function (b) { b.onclick = function () { S.waOpen = !S.waOpen; render(); var f = S.panel.querySelector('.bkpay-wach a'); if (S.waOpen && f) f.focus(); }; });
   }
   function send() {
     var amt = Number(S.amt != null ? S.amt : A.need(S.v, S.inv).due);
