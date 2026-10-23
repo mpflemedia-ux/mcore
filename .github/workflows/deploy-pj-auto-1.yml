@@ -1,0 +1,35 @@
+name: deploy-pj-auto-1-oneshot
+# One-shot: deploy Edge Functions ai-proxy, pj-auto, telegram-webhook (owner-approved), then remove this file.
+on:
+  push:
+    branches: [ccr-363bf08c-fi4j7s]
+    paths: ['.github/workflows/deploy-pj-auto-1.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      REF: wjqhhnjlgoigoagsnsen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.33.0
+      - name: Check token
+        run: test -n "$SUPABASE_ACCESS_TOKEN" && supabase projects list >/dev/null
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          supabase functions deploy ai-proxy --project-ref "$REF"
+          supabase functions deploy pj-auto --project-ref "$REF" --no-verify-jwt
+          supabase functions deploy telegram-webhook --project-ref "$REF" --no-verify-jwt
+      - name: Remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -q .github/workflows/deploy-pj-auto-1.yml
+          git commit -m "ci: remove one-shot deploy-pj-auto-1 workflow"
+          git push
