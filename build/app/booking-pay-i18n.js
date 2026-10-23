@@ -1,4 +1,4 @@
-/* M-Core booking payment flow - EN/BM text keys (public booking page + staff review queue). New keys only, prefix bkpay. v1 */
+/* M-Core booking payment flow - EN/BM text keys (public booking page + staff review queue). New keys only, prefix bkpay. v2 */
 (function () {
   if (window.BKPAYI) return;
   var S = {
@@ -17,7 +17,8 @@
       sOk: 'Payment verified', sConf: 'Your booking is confirmed', sRcpt: 'Receipt {n}', sDl: 'Download receipt', sShare: 'Send to my WhatsApp',
       sShareMsg: 'My receipt {n} for booking {b}: {u}', sBal: 'Balance {b} at your visit', sPart: 'Part payment received',
       sPartMore: 'We received {a}. Please pay {b} more before {t} to confirm.', sExp: 'Hold expired', sExpD: 'Your slot was released because payment was not received in time.',
-      sAgain: 'Book again', sPaid: 'Paid in full', sBasic: 'Pay with the QR below, then send us your receipt on WhatsApp.', sOpenInv: 'Open invoice'
+      sAgain: 'Book again', sPaid: 'Paid in full', sBasic: 'Pay with the QR below, then send us your receipt on WhatsApp.', sOpenInv: 'Open invoice',
+      pWaWho: 'Send on WhatsApp to', pWaTo: 'Send to {c} ({p})', pWaPick: 'Choose contact in WhatsApp'
     },
     bm: {
       pAwait: 'Menunggu bayaran', pTitle: 'Bayar untuk sahkan tempahan', pNow: 'Bayar sekarang', pFull: 'Jumlah penuh', pDep: 'Deposit {p}% daripada {t}',
@@ -34,7 +35,8 @@
       sOk: 'Bayaran disahkan', sConf: 'Tempahan anda disahkan', sRcpt: 'Resit {n}', sDl: 'Muat turun resit', sShare: 'Hantar ke WhatsApp saya',
       sShareMsg: 'Resit {n} untuk tempahan {b}: {u}', sBal: 'Baki {b} semasa hadir', sPart: 'Bayaran separa diterima',
       sPartMore: 'Kami terima {a}. Sila bayar {b} lagi sebelum {t} untuk sahkan.', sExp: 'Tempoh tahan tamat', sExpD: 'Slot anda telah dilepaskan kerana bayaran tidak diterima dalam masa.',
-      sAgain: 'Tempah semula', sPaid: 'Dibayar penuh', sBasic: 'Bayar guna QR di bawah, kemudian hantar resit kepada kami di WhatsApp.', sOpenInv: 'Buka invois'
+      sAgain: 'Tempah semula', sPaid: 'Dibayar penuh', sBasic: 'Bayar guna QR di bawah, kemudian hantar resit kepada kami di WhatsApp.', sOpenInv: 'Buka invois',
+      pWaWho: 'Hantar di WhatsApp kepada', pWaTo: 'Hantar ke {c} ({p})', pWaPick: 'Pilih kenalan dalam WhatsApp'
     }
   };
   var Q = {
@@ -53,7 +55,8 @@
       qRejDone: 'Receipt rejected. The customer sees your reason and has until {t} to upload again.', qFail: 'Could not record the payment: {e}',
       qOpen: 'Open invoice', qZoom: 'Open full size', qNoFile: 'No file', qDeposit: 'Deposit (%)', qDepN: 'deposit {p}%', qDepHint: 'Blank = full payment', qGrace: 'Grace after a rejected or part payment (min)',
       qRemind: 'Remind owners if not reviewed after (min, 0 = off)', qSave: 'Save', qSaved: 'Saved', qPaySet: 'Booking payments',
-      qNeedSql: 'Run supabase/booking_pay_01.sql to turn on deposits and review settings.'
+      qNeedSql: 'Run supabase/booking_pay_01.sql to turn on deposits and review settings.',
+      qRoOk: 'Already verified on {t}. Nothing to do.', qRoRej: 'Rejected on {t}. Reason: {w}', qRoSt: 'Status: {s}', qRoNf: 'This receipt is no longer available.'
     },
     bm: {
       qTab: 'Bayaran untuk disemak', qTitle: 'Bayaran untuk disemak', qSub: 'Resit tempahan daripada pelanggan. Bayaran dikira selepas anda sahkan.',
@@ -70,7 +73,8 @@
       qRejDone: 'Resit ditolak. Pelanggan nampak sebab anda dan ada hingga {t} untuk muat naik semula.', qFail: 'Tidak dapat merekod bayaran: {e}',
       qOpen: 'Buka invois', qZoom: 'Buka saiz penuh', qNoFile: 'Tiada fail', qDeposit: 'Deposit (%)', qDepN: 'deposit {p}%', qDepHint: 'Kosong = bayaran penuh', qGrace: 'Tempoh tambahan selepas ditolak atau bayaran separa (min)',
       qRemind: 'Ingatkan pemilik jika belum disemak selepas (min, 0 = tutup)', qSave: 'Simpan', qSaved: 'Disimpan', qPaySet: 'Bayaran tempahan',
-      qNeedSql: 'Jalankan supabase/booking_pay_01.sql untuk buka deposit dan tetapan semakan.'
+      qNeedSql: 'Jalankan supabase/booking_pay_01.sql untuk buka deposit dan tetapan semakan.',
+      qRoOk: 'Sudah disahkan pada {t}. Tiada tindakan perlu.', qRoRej: 'Ditolak pada {t}. Sebab: {w}', qRoSt: 'Status: {s}', qRoNf: 'Resit ini tidak lagi tersedia.'
     }
   };
   ['en', 'bm'].forEach(function (l) { Object.keys(Q[l]).forEach(function (k) { S[l][k] = Q[l][k]; }); });
