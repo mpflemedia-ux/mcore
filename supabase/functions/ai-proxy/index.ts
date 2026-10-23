@@ -12,7 +12,8 @@
 // draft_reminder, follow_up_suggestion, reconcile_match, month_end_summary,
 // generate_po, marketing_advice, tax_guidance, generate_document,
 // daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
-// production_check, hr_payslip_note, draft_project_task, suggest_service_request.
+// production_check, hr_payslip_note, draft_project_task, suggest_service_request,
+// doc_to_project_tasks (text, or vision when images are sent).
 // 'receipt', 'scan_application_form', 'scan_ssm_certificate',
 // 'scan_bank_statement', 'extract_bank_transactions', and
 // 'scan_product_image' use a
@@ -1462,6 +1463,121 @@ async function handleDraftProjectTask(body: Record<string, unknown>) {
   }
 }
 
+// Projects "Import from doc": a PDF's extracted text and/or up to 5 page/photo images ->
+// a suggested project + a list of actionable tasks. The client shows every task in a preview
+// (tick/untick/edit) before anything is saved; this handler never writes to the database.
+// Owner/assignee and the target project are chosen by the user, never by AI.
+const DOC_MAX_TASKS = 30
+const DOC_MAX_IMAGES = 5
+const DOC_MAX_TEXT = 24000
+
+function docYmd(v: unknown): string | null {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const d = new Date(v + 'T00:00:00Z')
+  return isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? null : v
+}
+
+async function handleDocToProjectTasks(body: Record<string, unknown>) {
+  const text = typeof body.text === 'string' ? body.text.slice(0, DOC_MAX_TEXT) : ''
+  const images = (Array.isArray(body.images) ? body.images : [])
+    .filter((x) => x && typeof (x as { base64?: unknown }).base64 === 'string' && (x as { base64: string }).base64.length > 100)
+    .slice(0, DOC_MAX_IMAGES) as { base64: string; mime?: string }[]
+  if (!text.trim() && !images.length) throw new Error('text or images is required')
+  const today = docYmd(body.today) || new Date().toISOString().slice(0, 10)
+  const tags = (Array.isArray(body.tags) ? body.tags : []).filter((x) => typeof x === 'string' && x.trim()).slice(0, 40) as string[]
+  const projects = (Array.isArray(body.project_names) ? body.project_names : []).filter((x) => typeof x === 'string').slice(0, 80) as string[]
+  const fileNames = (Array.isArray(body.file_names) ? body.file_names : []).filter((x) => typeof x === 'string').slice(0, 10) as string[]
+
+  const systemPrompt =
+    'You turn a business document (brief, proposal, meeting notes, quotation, schedule, letter) into ' +
+    'an internal project task list for a Malaysian SME task board. Read the whole document, then:\n' +
+    '1. Suggest a short project name and the client/company name if the document names one ' +
+    '(if one of the existing project names below clearly matches, return that exact name).\n' +
+    '2. Break the work into concrete, actionable tasks (max ' + DOC_MAX_TASKS + '). Do not invent work ' +
+    'the document does not ask for. Merge tiny steps into one task; split only real deliverables.\n' +
+    '3. Titles: sentence case (capitalise only the first word, proper nouns, brand names and acronyms), ' +
+    'start with a verb, max 70 characters. NOT Title Case For Every Word.\n' +
+    '4. Dates (YYYY-MM-DD). Today is ' + today + '. Use a deadline written in the document; for relative ' +
+    'deadlines ("within 2 weeks", "by month end") count from today. Use working days Monday-Friday only ' +
+    'and avoid Malaysia public holidays. If the document gives no deadline, spread due dates sensibly by ' +
+    'estimated hours so not everything lands on the same day; never return a date before today. ' +
+    'start_date may be null.\n' +
+    '5. tag: pick the single best tag from this list, or null if none fits: ' + (tags.length ? tags.join(' | ') : '(none)') + '.\n' +
+    '6. est_hours: realistic estimated working hours (number, 0.25-999) or null.\n' +
+    '7. important / urgent (booleans) for an Eisenhower matrix: urgent = due within 3 working days or ' +
+    'the document says urgent/ASAP; important = client-facing, money, legal or a key deliverable.\n' +
+    '8. todo: 2-6 short checklist steps for that task (strings). notes: one or two sentences of context ' +
+    'from the document (or ""). source: where in the document this came from, e.g. "page 2" or a ' +
+    'section heading (or "").\n' +
+    'Never invent an assignee, a person\'s phone/email, prices or legal facts. Respond with ONLY a JSON ' +
+    'object, no other text, in this exact shape: {"project_name": "<string or null>", "client_name": ' +
+    '"<string or null>", "summary": "<one sentence>", "tasks": [{"title": "<string>", "tag": "<string ' +
+    'or null>", "start_date": "<YYYY-MM-DD or null>", "due_date": "<YYYY-MM-DD or null>", "est_hours": ' +
+    '<number or null>, "important": <boolean>, "urgent": <boolean>, "todo": ["<string>"], "notes": ' +
+    '"<string>", "source": "<string>"}]}. Write titles, todo, notes and summary in ' + langName(body) + '.\n\n' +
+    'Existing project names: ' + (projects.length ? projects.join(' | ') : '(none)') + '\n' +
+    'File names: ' + (fileNames.length ? fileNames.join(' | ') : '(unknown)')
+
+  const userText = text.trim()
+    ? 'Document text:\n"""\n' + text + '\n"""' + (images.length ? '\nThe attached images are further pages/photos of the same document.' : '')
+    : 'The document is in the attached image(s).'
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+  const model = images.length ? visionModel : CHAT_MODEL
+  const userContent: unknown = images.length
+    ? [{ type: 'text', text: userText }].concat(images.map((im) => ({
+        type: 'image_url',
+        image_url: { url: `data:${typeof im.mime === 'string' && im.mime ? im.mime : 'image/jpeg'};base64,${im.base64}` },
+      })) as never[])
+    : userText
+
+  let raw: string
+  try {
+    raw = await callGroq([{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }], model, { response_format: { type: 'json_object' } })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${text.length}): ${msg}`)
+  }
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${model}): ${raw.slice(0, 300)}`)
+  }
+
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '')
+  const tagOk = (v: unknown) => {
+    const s = str(v, 60); if (!s) return null
+    const hit = tags.find((t) => t.toLowerCase() === s.toLowerCase())
+    return hit || null
+  }
+  const seen = new Set<string>()
+  const tasks = (Array.isArray(parsed.tasks) ? parsed.tasks : []).map((x) => {
+    const t = (x || {}) as Record<string, unknown>
+    const title = str(t.title, 120)
+    let due = docYmd(t.due_date), start = docYmd(t.start_date)
+    if (due && due < today) due = today
+    if (start && start < today) start = today
+    if (start && due && start > due) start = due
+    const h = typeof t.est_hours === 'number' && t.est_hours > 0 ? Math.min(999, Math.max(0.25, Math.round(t.est_hours * 4) / 4)) : null
+    const todo = (Array.isArray(t.todo) ? t.todo : []).map((s) => str(s, 160)).filter(Boolean).slice(0, 10)
+    return {
+      title, tag: tagOk(t.tag), start_date: start, due_date: due, est_hours: h,
+      important: t.important === true, urgent: t.urgent === true,
+      todo, notes: str(t.notes, 600), source: str(t.source, 80),
+    }
+  }).filter((t) => {
+    const k = t.title.toLowerCase(); if (!t.title || seen.has(k)) return false
+    seen.add(k); return true
+  }).slice(0, DOC_MAX_TASKS)
+
+  return {
+    project_name: str(parsed.project_name, 120) || null,
+    client_name: str(parsed.client_name, 160) || null,
+    summary: str(parsed.summary, 400),
+    tasks,
+  }
+}
+
 interface ReconcileCandidate {
   type: string
   ref: string
@@ -1894,6 +2010,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'draft_project_task':
         data = await handleDraftProjectTask(body)
+        break
+      case 'doc_to_project_tasks':
+        data = await handleDocToProjectTasks(body)
         break
       case 'suggest_service_request':
         data = await handleSuggestServiceRequest(body)

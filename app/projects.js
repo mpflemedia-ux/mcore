@@ -619,7 +619,7 @@
     }
     var title = window.prompt(t('Task title', 'Tajuk task'));
     if (!title) return;
-    var ins = await sb.from('project_tasks').insert({ tenant_id: tid(), project_id: pid, title: title.trim(), column_key: col || 'backlog', tag: 'Planning', progress: 0, sort_order: state.tasks.length + 1 }).select('id');
+    var ins = await sb.from('project_tasks').insert({ tenant_id: tid(), project_id: pid, title: title.trim(), column_key: col || 'backlog', tag: 'Planning', start_date: todayISO(), progress: 0, sort_order: state.tasks.length + 1 }).select('id');
     if (ins.error) { showToast(ins.error.message, 'error'); return; }
     refresh();
   }
