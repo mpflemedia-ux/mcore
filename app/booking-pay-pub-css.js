@@ -1,4 +1,4 @@
-/* M-Core booking payment flow - public panel CSS + icons (dark on the booking page, .lt light on the public invoice page). WCAG AA on both. v1 */
+/* M-Core booking payment flow - public panel CSS + icons (dark on the booking page, .lt light on the public invoice page). WCAG AA on both. #root = public.html (the service worker sends ?public_inv= there). v2 */
 (function () {
   if (window.BKPAYU) return;
   var U = window.BKPAYU = {};
@@ -8,7 +8,7 @@
   U.ic = function (n) { return '<svg class="bkpay-ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="' + I[n] + '"/></svg>'; };
   U.css = function () {
     if (document.getElementById('bkpay-css')) return;
-    var X = ':is(#public-book-root,#public-inv-root) .bkpay', c = [
+    var X = ':is(#public-book-root,#public-inv-root,#root) .bkpay', c = [
       X + '{--k-bg:#1E2226;--k-card:#262A2F;--k-t:#E7E9EB;--k-t2:#B4BAC1;--k-bd:rgba(231,233,235,.16);--k-p:#22D3EE;--k-pl:#0B2530;--k-on:#0A0E12;--k-okb:#14532D;--k-ok:#86EFAC;--k-wb:#451A03;--k-w:#FDE68A;--k-eb:#450A0A;--k-e:#FCA5A5;--k-wa:#25D366;--k-waon:#0A0E12;color:var(--k-t)!important;font:14px/1.45 Inter,system-ui,sans-serif;text-align:left}',
       X + '.lt{--k-bg:#F8FAFC;--k-card:#FFFFFF;--k-t:#0F172A;--k-t2:#475569;--k-bd:#CBD5E1;--k-p:#0E7490;--k-pl:#ECFEFF;--k-on:#FFFFFF;--k-okb:#DCFCE7;--k-ok:#166534;--k-wb:#FEF3C7;--k-w:#92400E;--k-eb:#FEE2E2;--k-e:#991B1B;--k-wa:#0E7A5F;--k-waon:#FFFFFF;margin:0 0 18px;padding:16px 14px;border:1px solid var(--k-bd);border-radius:12px;background:var(--k-bg)}',
       X + ' *{box-sizing:border-box;color:inherit}', X + ' .bkpay-ic{width:18px;height:18px;flex:0 0 auto;vertical-align:-4px}',
