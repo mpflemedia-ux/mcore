@@ -5,3 +5,7 @@ verify_jwt = false
 # Auth checked inside (user JWT / x-push-secret / signed read token from sw.js).
 [functions.push-send]
 verify_jwt = false
+
+# Auth checked inside (x-push-secret from pg_cron, or user JWT for digest_me).
+[functions.pj-auto]
+verify_jwt = false
