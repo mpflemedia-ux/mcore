@@ -1,0 +1,28 @@
+name: booking-pay-3-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/booking-pay-3.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'booking-pay-go.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "23fad85090b4c2a539f36c055e294b31dd042957"
+          test "$(git hash-object app/booking-pay-go.js)" = "b6091590a27619ac941f2ac7e24cccabcf8d6f90"
+          test "$(git hash-object app/booking.js)" = "78009936030b9493eee55d88daf7dd8ec9c762f0"
+          test "$(git hash-object .github/oneshot/bkpay3.py)" = "7c0dcd530eeff4d32b73ccf5d7dc3fe510fdc45c"
+          python3 .github/oneshot/bkpay3.py "$F"
+          test "$(git hash-object "$F")" = "e41fee2cfb42757ed181e725cae46a82593967a0"
+          git rm -q .github/oneshot/bkpay3.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(booking-pay): index.html - receipt notification deep link (booking-pay-go.js v1), WhatsApp chooser, MYT booking dates (booking.js v2)"
+          git push
