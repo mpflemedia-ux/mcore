@@ -24,11 +24,14 @@
     try { return new Date(iso).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit' }); }
     catch (e) { return iso; }
   }
+  function myToday() { /* booking dates are Malaysia dates, not UTC */
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }); } catch (e) { return new Date(Date.now() + 288e5).toISOString().slice(0, 10); }
+  }
   function slotTimes(svc, dateStr) {
     if (svc.kind === 'event' && svc.event_starts_at) {
-      return [{ start: svc.event_starts_at, end: svc.event_ends_at || svc.event_starts_at }];
+      return new Date(svc.event_starts_at).getTime() > Date.now() ? [{ start: svc.event_starts_at, end: svc.event_ends_at || svc.event_starts_at }] : [];
     }
-    var d = dateStr || new Date().toISOString().slice(0, 10);
+    var d = dateStr || myToday();
     var start = String(svc.day_start || '09:00').slice(0, 5);
     var end = String(svc.day_end || '18:00').slice(0, 5);
     var dur = Number(svc.duration_min || 60);
@@ -46,7 +49,7 @@
       var n = cur + dur;
       var h2 = String(Math.floor(n / 60)).padStart(2, '0');
       var m2 = String(n % 60).padStart(2, '0');
-      out.push({ start: d + 'T' + h1 + ':' + m1 + ':00+08:00', end: d + 'T' + h2 + ':' + m2 + ':00+08:00', label: h1 + ':' + m1 });
+      if (new Date(d + 'T' + h1 + ':' + m1 + ':00+08:00').getTime() > Date.now()) out.push({ start: d + 'T' + h1 + ':' + m1 + ':00+08:00', end: d + 'T' + h2 + ':' + m2 + ':00+08:00', label: h1 + ':' + m1 });
       cur += dur;
     }
     return out;
@@ -99,7 +102,7 @@
       if (!services.length) {
         body = '<p style="color:#64748b">' + (isBm ? 'Tiada servis untuk staf ini.' : 'No services for this staff.') + '</p>';
       } else {
-        body = '<label style="font-size:13px">' + (isBm ? 'Tarikh' : 'Date') + ' <input id="bk-date" type="date" value="' + escHtml(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px">' +
+        body = '<label style="font-size:13px">' + (isBm ? 'Tarikh' : 'Date') + ' <input id="bk-date" type="date" min="' + myToday() + '" value="' + escHtml(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px">' +
           services.map(function (svc) {
             var slots = slotTimes(svc, date).map(function (sl) {
               var busy = takenCount(board, svc.id, sl.start, sel.id) >= 1;
@@ -142,7 +145,8 @@
       root.style.cssText = 'position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#F8FAFC;padding:24px 16px;font-family:Inter,system-ui,sans-serif';
       document.body.appendChild(root);
     }
-    var date = qs('date') || new Date().toISOString().slice(0, 10);
+    var date = qs('date'), today = myToday();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || date < today) date = today;
     root.innerHTML = '<div style="max-width:720px;margin:40px auto;color:#64748b;text-align:center">Loading booking…</div>';
     var res = await sb.rpc('get_public_booking_board', { p_token: token, p_date: date });
     if (res.error) {
@@ -154,7 +158,7 @@
     holdMinutes = clampHoldMins(board.hold_minutes != null ? board.hold_minutes : holdMinutes);
     if (pickStaffOn(board)) return renderStaffPick(token, board, date, root);
     var services = board.services || [];
-    root.innerHTML = '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px"><div style="font-size:12px;color:#64748b;letter-spacing:.06em;text-transform:uppercase">Booking</div><h1 style="margin:4px 0 8px;font-size:22px">' + esc(board.tenant_name || 'Book a slot') + '</h1><label style="font-size:13px">Date <input id="bk-date" type="date" value="' + esc(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px"></div></div>';
+    root.innerHTML = '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px"><div style="font-size:12px;color:#64748b;letter-spacing:.06em;text-transform:uppercase">Booking</div><h1 style="margin:4px 0 8px;font-size:22px">' + esc(board.tenant_name || 'Book a slot') + '</h1><label style="font-size:13px">Date <input id="bk-date" type="date" min="' + myToday() + '" value="' + esc(date) + '" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px"></label><div id="bk-list" style="margin-top:16px"></div></div>';
     document.getElementById('bk-date').onchange = function () {
       var u = new URL(location.href); u.searchParams.set('date', this.value); history.replaceState({}, '', u); showPublic();
     };
