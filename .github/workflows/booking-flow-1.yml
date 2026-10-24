@@ -1,0 +1,42 @@
+name: booking-flow-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/booking-flow-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'booking-inbox.js?v=1' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object app/index.html)" = "ce33f4baf3140f3f56eeff8bc370dc444a12c638"
+          test "$(git hash-object app/booking-inbox.js)" = "ba53b512de99beb65c5705083467723cdf5659a4"
+          test "$(git hash-object app/booking-inbox2.js)" = "0236d4398d8191c591e2bcc40e2202894d0ac5b8"
+          test "$(git hash-object app/booking-inbox-i18n.js)" = "d807c81b1fb5511119e1df794984c521f8cf8108"
+          test "$(git hash-object app/booking-inbox-css.js)" = "adb72302e5eccf98886ad32320129970db74e4ab"
+          test "$(git hash-object app/booking-notif-set.js)" = "911e045a89a454abc0ceb365c03ae68a8258a1d2"
+          test "$(git hash-object app/booking-token-fix.js)" = "ac06f1b655ff70010ba6f992783f41b21527ab38"
+          test "$(git hash-object app/booking-card-ui.js)" = "4335fc2e592e59764abbc71dc6bd42b4b0757516"
+          test "$(git hash-object app/booking-pay-dep.js)" = "fa64097c517379f5f2f5c6f8ef3bb2beddf5cc95"
+          test "$(git hash-object app/booking-pay-go.js)" = "4bf33c6271b37d38242004cba74262483ac5f5b8"
+          test "$(git hash-object app/booking-pay-i18n.js)" = "f79e6598b3c718a0bfeee3f117b6c591bf3abad6"
+          test "$(git hash-object app/booking-pay-pub-ui.js)" = "8ea5bb68bb50d7586e7cb30ba7ecf74fd5ba7d0a"
+          test "$(git hash-object app/booking-pay-q.js)" = "f779f8cc838494d1b231f42f29cc467900ed6eee"
+          test "$(git hash-object app/booking-pay-ver.js)" = "4bdd1def47a8633f0ffca5750feba473653461e7"
+          test "$(git hash-object app/booking-realtime.js)" = "352cfa57d0f292b17a4775e4174a7a1b02316e24"
+          test "$(git hash-object app/booking-state.js)" = "983f6c8a7982cbba913fa49cfca18337ce7ee33f"
+          test "$(git hash-object app/wa-doc-hooks.js)" = "9a85f7702c59e38b7e80540f1e16459453a525cc"
+          test "$(git hash-object .github/oneshot/bkflow1.py)" = "843c61e6e587852bc0a8964c06319936f86f00be"
+          python3 .github/oneshot/bkflow1.py "$F"
+          test "$(git hash-object "$F")" = "8201ee92babb81d94bcc0359c1e4cd47ed40170c"
+          git rm -q .github/oneshot/bkflow1.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "feat(booking-flow): index.html tags for Booking Inbox + notif settings + bumped pay/WA scripts"
+          git push
