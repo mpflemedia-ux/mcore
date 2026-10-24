@@ -43,11 +43,11 @@
   };
   A.state = function (v, inv) {
     if (!v) return 'basic';
-    var n = A.need(v), st = String(v.bk_status || '');
-    if (st === 'confirmed' || st === 'completed' || v.inv_status === 'paid' || (n.due <= 0.005 && n.paid > 0)) return 'ok';
-    if (st === 'expired' || st === 'cancelled' || st === 'payment_failed') return 'exp';
+    var n = A.need(v), st = String(v.bk_status || ''), hasBk = !!v.booking_id;
+    if ((hasBk && (st === 'confirmed' || st === 'completed')) || v.inv_status === 'paid' || (n.due <= 0.005 && n.paid > 0)) return 'ok';
+    if (hasBk && (st === 'expired' || st === 'cancelled' || st === 'payment_failed')) return 'exp';
     if (v.claim_status === 'pending') return 'rev';
-    if (v.hold_until && new Date(v.hold_until) < new Date()) return 'exp';
+    if (hasBk && v.hold_until && new Date(v.hold_until) < new Date()) return 'exp';
     if (v.claim_status === 'rejected') return 'rej';
     if (v.claim_status === 'approved' && n.paid > 0) return 'part';
     return 'pay';
@@ -89,11 +89,12 @@
             return Promise.resolve(c.storage.from('doc-files').upload(path, f, { contentType: ct, upsert: false })).then(function (u) {
             if (u.error) throw u.error;
             return c.from('payment_claims').insert({ tenant_id: v.tenant_id, link_id: linkId, invoice_id: v.invoice_id, token: tok, amount: A.r2(amt), paid_on: A.today(),
-              bank_ref: null, payer_name: null, note: ('Booking ' + (v.quote_ref || '') + ' · ref ' + v.pay_ref).slice(0, 500), files: [{ path: path, name: f.name, mime: ct, size: f.size, sha256: h, src: 'bkpay' }] });
+              bank_ref: null, payer_name: null, note: (v.booking_id ? ('Booking ' + (v.quote_ref || '') + ' · ref ' + v.pay_ref) : ('Invoice ' + (v.ref_no || '') + ' · ref ' + (v.pay_ref || ''))).slice(0, 500), files: [{ path: path, name: f.name, mime: ct, size: f.size, sha256: h, src: 'bkpay' }] });
           });
         });
       }).then(function (r) {
         if (r.error) { var e = new Error(r.error.message); e.busy = /row-level|policy/i.test(r.error.message || ''); throw e; }
+        if (!v.booking_id) return true;
         return Promise.resolve(c.from('bookings').update({ hold_until: null }).eq('id', v.booking_id)).then(function () { return true; }, function () { return true; });
       });
     });

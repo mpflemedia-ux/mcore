@@ -30,25 +30,25 @@
   function tl(x, cur) { var v = x.v || {}, st = [['sRecv', v.claim_at], ['sRev', v.claim_seen_at], ['sVer', null]], bm = x.lang === 'bm';
     return '<ol class="bkpay-tl">' + st.map(function (s, i) { var c = i < cur ? 'd' : (i === cur ? 'c' : ''); return '<li class="' + c + '"><i>' + (i < cur ? U.ic('ok') : '') + '</i><div>' + T(x, s[0]) + (s[1] && i <= cur ? '<small>' + A.esc(A.time(s[1], bm)) + '</small>' : '') + '</div></li>'; }).join('') + '</ol>'; }
   U.html = function (x) {
-    var s = x.state, v = x.v || {}, n = x.n, bm = x.lang === 'bm', h = '';
+    var s = x.state, v = x.v || {}, n = x.n, bm = x.lang === 'bm', invOnly = !v.booking_id, h = '';
     if (s === 'ok') {
-      h = hd(x, 'ok', U.ic('ok') + T(x, 'sOk')) + '<h3 class="bkpay-ti">' + T(x, n.bal > 0.005 ? 'sConfBal' : 'sConf') + '</h3>' + svc(x) +
-        '<div class="bkpay-box"><div class="bkpay-amt"><div><span>' + T(x, v.receipt_no ? 'sRcpt' : 'sPaid', { n: v.receipt_no || '' }) + '</span><b>' + A.rm(n.paid) + '</b></div><small>' + (n.bal > 0.005 ? T(x, 'sConfBal') + ' · ' + T(x, 'sBal', { b: A.rm(n.bal) }) : T(x, 'sPaid')) + '</small></div></div>' +
-        (v.receipt_url ? '<div class="bkpay-row"><a class="bkpay-btn" href="' + A.esc(v.receipt_url) + '" target="_blank" rel="noopener">' + U.ic('dl') + T(x, 'sDl') + '</a><a class="bkpay-btn" href="https://wa.me/?text=' + encodeURIComponent(BKPAYI.t(x.lang, 'sShareMsg', { n: v.receipt_no || '', b: v.quote_ref || '', u: v.receipt_url })) + '" target="_blank" rel="noopener">' + U.ic('wa') + T(x, 'sShare') + '</a></div>' : '') +
+      h = hd(x, 'ok', U.ic('ok') + T(x, 'sOk')) + '<h3 class="bkpay-ti">' + T(x, n.bal > 0.005 ? (invOnly ? 'sConfBalInv' : 'sConfBal') : (invOnly ? 'sConfInv' : 'sConf')) + '</h3>' + (invOnly ? '' : svc(x)) +
+        '<div class="bkpay-box"><div class="bkpay-amt"><div><span>' + T(x, v.receipt_no ? 'sRcpt' : 'sPaid', { n: v.receipt_no || '' }) + '</span><b>' + A.rm(n.paid) + '</b></div><small>' + (n.bal > 0.005 ? T(x, invOnly ? 'sConfBalInv' : 'sConfBal') + ' · ' + T(x, invOnly ? 'sBalInv' : 'sBal', { b: A.rm(n.bal) }) : T(x, 'sPaid')) + '</small></div></div>' +
+        (v.receipt_url ? '<div class="bkpay-row"><a class="bkpay-btn" href="' + A.esc(v.receipt_url) + '" target="_blank" rel="noopener">' + U.ic('dl') + T(x, 'sDl') + '</a><a class="bkpay-btn" href="https://wa.me/?text=' + encodeURIComponent(BKPAYI.t(x.lang, invOnly ? 'sShareMsgInv' : 'sShareMsg', { n: v.receipt_no || '', b: invOnly ? (v.ref_no || '') : (v.quote_ref || ''), u: v.receipt_url })) + '" target="_blank" rel="noopener">' + U.ic('wa') + T(x, 'sShare') + '</a></div>' : '') +
         '<div style="margin-top:8px">' + wa(x, 'sAsk') + '</div>' + keep(x);
     } else if (s === 'rev') {
-      h = hd(x, 'info', U.ic('clock') + T(x, 'sRev')) + '<h3 class="bkpay-ti">' + T(x, 'sReview') + '</h3>' + svc(x) + tl(x, v.claim_seen_at ? 1 : 0) +
-        '<div class="bkpay-msg ok">' + T(x, 'sKept') + '</div>' + wa(x, 'sAsk') + keep(x);
+      h = hd(x, 'info', U.ic('clock') + T(x, 'sRev')) + '<h3 class="bkpay-ti">' + T(x, 'sReview') + '</h3>' + (invOnly ? '' : svc(x)) + tl(x, v.claim_seen_at ? 1 : 0) +
+        '<div class="bkpay-msg ok">' + T(x, invOnly ? 'sKeptInv' : 'sKept') + '</div>' + wa(x, 'sAsk') + keep(x);
     } else if (s === 'exp') {
       h = hd(x, 'err', U.ic('x') + T(x, 'sExp')) + '<h3 class="bkpay-ti">' + T(x, 'sExp') + '</h3>' + svc(x) + '<div class="bkpay-msg err">' + T(x, 'sExpD') + '</div>' +
         (x.again ? '<a class="bkpay-btn pri" href="' + A.esc(x.again) + '">' + T(x, 'sAgain') + '</a>' : '');
     } else if (s === 'basic') {
       h = '<p class="bkpay-note" style="margin:0 0 6px!important">' + T(x, 'sBasic') + '</p>' + amt(x) + qr(x) + '<div style="margin-top:12px">' + wa(x) + '</div>' + (x.invHref ? '<p class="bkpay-note"><a href="' + A.esc(x.invHref) + '" style="color:var(--k-p)!important;font-weight:700">' + T(x, 'sOpenInv') + '</a></p>' : '');
     } else {
-      var top = s === 'rej' ? '<div class="bkpay-msg err"><b>' + T(x, 'sRej') + '</b><br>' + T(x, 'sRejWhy') + ': ' + A.esc(v.reject_reason || '-') + '<br>' + T(x, 'sRejNew', { t: A.time(v.hold_until, bm) }) + '</div>'
-        : s === 'part' ? '<div class="bkpay-msg w"><b>' + T(x, 'sPart') + '</b><br>' + T(x, 'sPartMore', { a: A.rm(n.paid), b: A.rm(n.due), t: A.time(v.hold_until, bm) }) + '</div>' : '';
-      h = hd(x, s === 'rej' ? 'err' : 'hold', T(x, s === 'rej' ? 'sRej' : (s === 'part' ? 'sPart' : 'pAwait')), timer(x)) + '<h3 class="bkpay-ti">' + T(x, 'pTitle') + '</h3>' + svc(x) + top + amt(x) + qr(x) + upl(x, (x.inv && (x.inv.payment_qr_url || x.inv.account_number)) ? 2 : 1) +
-        '<div class="bkpay-or">' + T(x, 'pOr') + '</div>' + wa(x, 'pWaBackup') + '<p class="bkpay-note">' + T(x, 'pHoldHint') + '</p>' + keep(x);
+      var top = s === 'rej' ? '<div class="bkpay-msg err"><b>' + T(x, 'sRej') + '</b><br>' + T(x, 'sRejWhy') + ': ' + A.esc(v.reject_reason || '-') + '<br>' + T(x, invOnly ? 'sRejNewInv' : 'sRejNew', { t: A.time(v.hold_until, bm) }) + '</div>'
+        : s === 'part' ? '<div class="bkpay-msg w"><b>' + T(x, 'sPart') + '</b><br>' + T(x, invOnly ? 'sPartMoreInv' : 'sPartMore', { a: A.rm(n.paid), b: A.rm(n.due), t: A.time(v.hold_until, bm) }) + '</div>' : '';
+      h = hd(x, s === 'rej' ? 'err' : 'hold', T(x, s === 'rej' ? 'sRej' : (s === 'part' ? 'sPart' : 'pAwait')), invOnly ? '' : timer(x)) + '<h3 class="bkpay-ti">' + T(x, invOnly ? 'pTitleInv' : 'pTitle') + '</h3>' + (invOnly ? '' : svc(x)) + top + amt(x) + qr(x) + upl(x, (x.inv && (x.inv.payment_qr_url || x.inv.account_number)) ? 2 : 1) +
+        '<div class="bkpay-or">' + T(x, 'pOr') + '</div>' + wa(x, 'pWaBackup') + '<p class="bkpay-note">' + T(x, invOnly ? 'pHoldHintInv' : 'pHoldHint') + '</p>' + keep(x);
     }
     return h;
   };
