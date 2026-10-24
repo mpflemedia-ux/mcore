@@ -5,7 +5,7 @@
   var V = window.BKPAYV = {}, t = P.t, MYT = { timeZone: 'Asia/Kuala_Lumpur' };
   function uniq(a) { return a.filter(function (x, i) { return x != null && a.indexOf(x) === i; }); }
   function day(v) { return v ? new Date(v).toLocaleDateString('en-CA', MYT) : ''; }
-  V.ref = function (inv) { return inv && inv.id ? 'BK' + String(inv.id).replace(/-/g, '').slice(0, 6).toUpperCase() : ''; };
+  V.ref = function (inv, hasBk) { if (!inv || !inv.id) return ''; return (hasBk === false ? 'INV' : 'BK') + String(inv.id).replace(/-/g, '').slice(0, 6).toUpperCase(); };
   V.files = function (c) { return Array.isArray(c.files) ? c.files : []; };
   V.set = function () {
     return P.has('pay_settings').then(function (ok) { return ok ? sb.from('pay_settings').select('*').eq('tenant_id', P.tid()).maybeSingle().then(function (r) { return r.data || {}; }) : {}; }).catch(function () { return {}; });
@@ -51,11 +51,11 @@
     else o.push(['ok', t('wAmtOk')]);
     if (ai && Number(ai.amount) > 0 && Math.abs(Number(ai.amount) - amt) > 0.009) o.push(['bad', t('wAiAmt', { a: P.money(ai.amount), b: P.money(amt) })]);
     var d = ai && /^\d{4}-\d{2}-\d{2}$/.test(ai.date || '') ? ai.date : null, made = day((x.bk && x.bk.created_at) || x.inv.created_at);
-    if (d && made && d < made) o.push(['bad', t('wDate', { d: P.date(d) })]); else if (d) o.push(['ok', t('wDateOk')]);
+    if (d && made && d < made) o.push(['bad', t(x.bk ? 'wDate' : 'wDateInv', { d: P.date(d) })]); else if (d) o.push(['ok', t('wDateOk')]);
     if (x.dup) o.push(['bad', t('wDup')]);
     var ref = (ai && ai.ref) || c.bank_ref;
     if (ref) o.push(x.dupRef ? ['bad', t('wDupRef', { r: ref })] : ['ok', t('wBankRef', { r: ref })]); else o.push(['info', t('wBankNo')]);
-    if (x.bk && ai) { var pr = V.ref(x.inv), txt = String([ai.vendor, ai.description, ai.ref].join(' ')).toUpperCase().replace(/\s+/g, ''); o.push(txt.indexOf(pr) >= 0 ? ['ok', t('wRef', { r: pr })] : ['info', t('wRefNo')]); }
+    if (ai) { var pr = V.ref(x.inv, !!x.bk), txt = String([ai.vendor, ai.description, ai.ref].join(' ')).toUpperCase().replace(/\s+/g, ''); o.push(txt.indexOf(pr) >= 0 ? ['ok', t('wRef', { r: pr })] : ['info', t('wRefNo')]); }
     return o;
   };
   /* AI read (ai-proxy receipt), cached on the claim */
@@ -74,8 +74,8 @@
   /* who may verify: owner / admin (PA always), never the invoice / booking maker */
   V.may = function (x) {
     if (P.isPA()) return '';
-    var r = P.role(); if (r !== 'owner' && r !== 'admin') return 'qRole';
-    /* sole-shop: tenant owner may verify own booking invoices; non-owner admin keeps maker-checker */
+    var r = P.role(); if (r !== 'owner' && r !== 'admin') return 'qRoleAll';
+    /* sole-shop: tenant owner may verify own invoices; non-owner admin keeps maker-checker */
     if (r === 'owner') return '';
     var me = String(P.uid()); if (String(x.inv.created_by || '') === me || (x.bk && String(x.bk.created_by || '') === me)) return 'qMaker';
     return '';
@@ -105,7 +105,7 @@
       document.body.appendChild(h);
       var a = Math.min(A.r2(amt), x.n.bal), ref = (x.ai && x.ai.ref) || x.c.bank_ref || '';
       h.querySelector('#pay-amount').value = a.toFixed(2); h.querySelector('#pay-date').value = x.c.paid_on || A.today();
-      h.querySelector('#payx-inv-ref').value = ref; h.querySelector('#payx-inv-notes').value = ('Booking ' + ((x.bk && x.bk.quote_ref) || '') + ' · ref ' + V.ref(x.inv)).slice(0, 500);
+      h.querySelector('#payx-inv-ref').value = ref; h.querySelector('#payx-inv-notes').value = (x.bk ? ('Booking ' + (x.bk.quote_ref || '') + ' · ref ' + V.ref(x.inv, true)) : ('Invoice ' + ((x.inv && x.inv.ref_no) || '') + ' · ref ' + V.ref(x.inv, false))).slice(0, 500);
       var rid = window.renderInvDetail, got = null; window.renderInvDetail = function () {};
       P.pend.inv = []; P.claims.cur = x.c; V._wait = { id: String(x.inv.id), cb: function (pid) { got = pid; } };
       var done = function () { window.renderInvDetail = rid; V._wait = null; P.claims.cur = null; h.remove(); moved.forEach(function (e, i) { if (e) e.id = IDS[i]; }); };
