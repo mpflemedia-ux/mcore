@@ -90,15 +90,19 @@
       if (!ok) return;
       sb.from('payment_claims').select('id,invoice_id,amount,payer_name,created_at').eq('tenant_id', P.tid()).is('notified_at', null).is('deleted_at', null).limit(10).then(function (r) {
         (r.data || []).forEach(function (v) {
-          sb.from('payment_claims').update({ notified_at: new Date().toISOString() }).eq('id', v.id).is('notified_at', null).select('id').then(function (c) {
-            if (!c.data || !c.data.length) return;
-            Promise.all([sb.from('invoices').select('ref_no,customer_name').eq('id', v.invoice_id).eq('tenant_id', P.tid()).maybeSingle(), sb.from('user_profiles').select('id,role').eq('tenant_id', P.tid())]).then(function (a) {
-              var d = a[0].data || {}, rows = (a[1].data || []).filter(function (u) { return /^(owner|admin)$/i.test(u.role || ''); }).map(function (u) {
-                return { tenant_id: P.tid(), user_id: u.id, actor_id: null, title: t('cBell', { r: d.ref_no || '' }).slice(0, 200), body: t('cBellB', { c: v.payer_name || d.customer_name || '-', a: P.money(v.amount) }),
-                  category: 'sales', kind: 'for_you', type: 'sales.payment_slip', priority: 1, link: { page: 'sales', params: { view: 'inv-detail', id: v.invoice_id } }, ref_table: 'invoices', ref_id: String(v.invoice_id) }; });
-              if (rows.length) sb.from('notifications').insert(rows).then(function () {}, function () {});
+          /* Booking claims owned by booking-realtime / cron. */
+          sb.from('bookings').select('id').eq('tenant_id', P.tid()).eq('invoice_id', v.invoice_id).limit(1).then(function (bk) {
+            if (bk.data && bk.data[0]) return;
+            sb.from('payment_claims').update({ notified_at: new Date().toISOString() }).eq('id', v.id).is('notified_at', null).select('id').then(function (c) {
+              if (!c.data || !c.data.length) return;
+              Promise.all([sb.from('invoices').select('ref_no,customer_name').eq('id', v.invoice_id).eq('tenant_id', P.tid()).maybeSingle(), sb.from('user_profiles').select('id,role').eq('tenant_id', P.tid())]).then(function (a) {
+                var d = a[0].data || {}, rows = (a[1].data || []).filter(function (u) { return /^(owner|admin)$/i.test(u.role || ''); }).map(function (u) {
+                  return { tenant_id: P.tid(), user_id: u.id, actor_id: null, title: t('cBell', { r: d.ref_no || '' }).slice(0, 200), body: t('cBellB', { c: v.payer_name || d.customer_name || '-', a: P.money(v.amount) }),
+                    category: 'sales', kind: 'for_you', type: 'sales.payment_slip', priority: 1, link: { page: 'sales', params: { view: 'inv-detail', id: v.invoice_id } }, ref_table: 'invoices', ref_id: String(v.invoice_id) }; });
+                if (rows.length) sb.from('notifications').insert(rows).then(function () {}, function () {});
+              });
             });
-          });
+          }, function () {});
         });
       }, function () {});
     });

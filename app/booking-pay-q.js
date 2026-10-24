@@ -94,7 +94,7 @@
         return sb.from('payment_claims').select('invoice_id').eq('id', cid).eq('tenant_id', P.tid()).maybeSingle().then(function (r) {
           var iid = r.data && r.data.invoice_id;
           if (!iid) { var x = op.call(null, 'sales', {}); Q.open(cid); return x; }
-          return sb.from('bookings').select('id').eq('invoice_id', iid).eq('tenant_id', P.tid()).is('deleted_at', null).limit(1).then(function (b) {
+          return sb.from('bookings').select('id').eq('invoice_id', iid).eq('tenant_id', P.tid()).limit(1).then(function (b) {
             var bk = (b.data || [])[0];
             if (bk && window.BKINB) { return op.call(null, 'dashboard', { bkid: bk.id, bktab: 'proof', claim: cid }); }
             var x2 = op.call(null, 'sales', {}); Q.open(cid); return x2;
