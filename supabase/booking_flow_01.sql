@@ -32,7 +32,6 @@ create policy payment_claims_staff_wa_ins on public.payment_claims for insert to
         select 1 from public.bookings b
         where b.invoice_id = payment_claims.invoice_id
           and b.tenant_id = payment_claims.tenant_id
-          and b.deleted_at is null
       )
     )
   )
