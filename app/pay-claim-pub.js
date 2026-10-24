@@ -1,5 +1,4 @@
-/* M-Core payment attachments - Phase 3, public invoice page: "Already paid? Send your payment slip" (payment_claims + private doc-files/{tenant}/claims/{token}/).
-   Works in index.html (?public_inv=) and public.html. Hidden until pay_attach_03.sql has run, and only on a live (not revoked / expired) invoice link. v1 */
+/* M-Core payment attachments Phase 3 — public invoice slip upload (payment_claims + doc-files/.../claims/). v2 */
 (function () {
   var Q = new URLSearchParams(location.search), tok = Q.get('public_inv');
   if (!tok || window.__payClaimPub) return; window.__payClaimPub = 1;
@@ -12,6 +11,11 @@
   function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }); }
   function rootEl() { return document.getElementById('public-inv-root') || (/public\.html/.test(location.pathname) && document.getElementById('root')); }
   var OKT = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/i, EXT = /\.(jpe?g|png|webp|heic|heif|pdf)$/i;
+  function mimeOf(f) {
+    var t = (f && f.type) || ''; if (OKT.test(t)) return t;
+    var n = String((f && f.name) || '').toLowerCase(), m = { pdf:'application/pdf', jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', heic:'image/heic', heif:'image/heif' };
+    var e = (n.match(/\.([a-z0-9]+)$/) || [])[1]; return (e && m[e]) || t || 'application/pdf';
+  }
   var IN = 'display:block;width:100%;box-sizing:border-box;margin:4px 0 10px;padding:10px;border:1px solid #94a3b8;border-radius:8px;font:inherit;font-size:15px;color:#0f172a;background:#fff';
   var LB = 'font-size:13px;font-weight:700;color:#334155', BTN = 'min-height:44px;padding:10px 16px;border-radius:10px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;';
   function shrink(f) { /* photos > 1.5 MB -> JPEG 1600px; HEIC / PDF as-is */
@@ -60,8 +64,9 @@
       files.reduce(function (p, f0, i) { return p.then(function () { return shrink(f0).then(function (f) {
         return f.arrayBuffer().then(sha).then(function (h) {
           var nm = String(f.name || 'slip').replace(/[^\w.\-]+/g, '_').slice(-80), path = row.tenant_id + '/claims/' + tok + '/' + Date.now() + '-' + i + '-' + nm;
-          return sb.storage.from('doc-files').upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false }).then(function (u) {
-            if (u.error) throw u.error; meta.push({ path: path, name: f.name, mime: f.type || '', size: f.size, sha256: h }); });
+          var ct = mimeOf(f);
+          return sb.storage.from('doc-files').upload(path, f, { contentType: ct, upsert: false }).then(function (u) {
+            if (u.error) throw u.error; meta.push({ path: path, name: f.name, mime: ct, size: f.size, sha256: h }); });
         }); }); }); }, Promise.resolve()).then(function () {
         var v = function (s) { var x = d.querySelector(s).value.trim(); return x || null; };
         return sb.from('payment_claims').insert({ tenant_id: row.tenant_id, link_id: row.id, invoice_id: row.doc_id, token: tok, amount: Math.round(amt * 100) / 100, paid_on: v('[data-dt]'),
@@ -69,7 +74,7 @@
       }).then(function (r) {
         if (r.error) throw r.error;
         d.innerHTML = '<div role="status" style="font-size:15px;font-weight:700;color:#166534">✓ ' + T.ok + '</div>';
-      }).catch(function () { err(T.fail); S.disabled = false; S.textContent = T.send; });
+      }).catch(function (e) { try { console.error('[pay-claim-pub]', e && (e.message || e)); } catch (x) {} err(T.fail); S.disabled = false; S.textContent = T.send; });
     };
   }
   function apply(root) {

@@ -75,10 +75,21 @@
       return A.shrink(file).then(function (f) {
         return f.arrayBuffer().then(A.sha).then(function (h) {
           var nm = String(f.name || 'receipt').replace(/[^\w.\-]+/g, '_').slice(-80), path = v.tenant_id + '/claims/' + tok + '/' + Date.now() + '-0-' + nm;
-          return Promise.resolve(c.storage.from('doc-files').upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false })).then(function (u) {
+          var ct = (function (file) {
+              var t = (file && file.type) || '', n = String((file && file.name) || '').toLowerCase();
+              if (/^image\/(jpeg|png|webp|heic|heif)$/i.test(t) || /^application\/pdf$/i.test(t)) return t;
+              if (/\.pdf$/i.test(n)) return 'application/pdf';
+              if (/\.jpe?g$/i.test(n)) return 'image/jpeg';
+              if (/\.png$/i.test(n)) return 'image/png';
+              if (/\.webp$/i.test(n)) return 'image/webp';
+              if (/\.heic$/i.test(n)) return 'image/heic';
+              if (/\.heif$/i.test(n)) return 'image/heif';
+              return t || 'application/pdf';
+            })(f);
+            return Promise.resolve(c.storage.from('doc-files').upload(path, f, { contentType: ct, upsert: false })).then(function (u) {
             if (u.error) throw u.error;
             return c.from('payment_claims').insert({ tenant_id: v.tenant_id, link_id: linkId, invoice_id: v.invoice_id, token: tok, amount: A.r2(amt), paid_on: A.today(),
-              bank_ref: null, payer_name: null, note: ('Booking ' + (v.quote_ref || '') + ' · ref ' + v.pay_ref).slice(0, 500), files: [{ path: path, name: f.name, mime: f.type || '', size: f.size, sha256: h, src: 'bkpay' }] });
+              bank_ref: null, payer_name: null, note: ('Booking ' + (v.quote_ref || '') + ' · ref ' + v.pay_ref).slice(0, 500), files: [{ path: path, name: f.name, mime: ct, size: f.size, sha256: h, src: 'bkpay' }] });
           });
         });
       }).then(function (r) {
