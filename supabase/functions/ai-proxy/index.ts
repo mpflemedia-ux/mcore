@@ -18,7 +18,7 @@
 // 'scan_bank_statement', 'extract_bank_transactions', and
 // 'scan_product_image' use a
 // vision-capable model read from the GROQ_VISION_MODEL secret (falls back
-// to qwen/qwen3.6-27b) — kept out of code so it can be swapped without a
+// to qwen/qwen3.8-27b) — kept out of code so it can be swapped without a
 // redeploy if Groq deprecates it, which has happened to every prior Groq
 // vision model on a roughly 3-4 month cadence. Every other action uses
 // CHAT_MODEL (text-only), read from the GROQ_CHAT_MODEL secret the same
@@ -249,7 +249,7 @@ async function handleCategorizeBank(body: Record<string, unknown>) {
   return { suggestions }
 }
 
-const DEFAULT_VISION_MODEL = 'qwen/qwen3.6-27b'
+const DEFAULT_VISION_MODEL = 'qwen/qwen3.8-27b'
 
 async function handleReceipt(body: Record<string, unknown>) {
   const imageBase64 = body.image_base64
@@ -1518,24 +1518,74 @@ async function handleDocToProjectTasks(body: Record<string, unknown>) {
     'Existing project names: ' + (projects.length ? projects.join(' | ') : '(none)') + '\n' +
     'File names: ' + (fileNames.length ? fileNames.join(' | ') : '(unknown)')
 
-  const userText = text.trim()
-    ? 'Document text:\n"""\n' + text + '\n"""' + (images.length ? '\nThe attached images are further pages/photos of the same document.' : '')
-    : 'The document is in the attached image(s).'
+  // Image path: two-pass. qwen vision is reliable for OCR into a flat
+  // {"document_text"} but fails Groq json_object validation (400
+  // json_validate_failed, empty failed_generation) when asked for the nested
+  // tasks[] schema in one shot — same failure mode documented above for
+  // scan_application_form. OCR with vision, then structure with CHAT_MODEL
+  // (the proven text/PDF path). Text-only imports skip the OCR pass.
+  let documentText = text.trim()
   const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
-  const model = images.length ? visionModel : CHAT_MODEL
-  const userContent: unknown = images.length
-    ? [{ type: 'text', text: userText }].concat(images.map((im) => ({
+  if (images.length) {
+    const ocrSystem =
+      'You are an OCR assistant. Read every attached image (photo, screenshot, or scanned page) ' +
+      'and return ONLY a JSON object with this exact shape: {"document_text":"<full readable text>"}. ' +
+      'Preserve reading order. Include every visible message, heading, date, name and note. ' +
+      'Do not invent text that is not visible. If an area is illegible, skip it. No other keys.'
+    const ocrUser = ([{ type: 'text', text: 'Extract all readable text from the attached image(s) into document_text.' }] as { type: string; text?: string; image_url?: { url: string } }[])
+      .concat(images.map((im) => ({
         type: 'image_url',
         image_url: { url: `data:${typeof im.mime === 'string' && im.mime ? im.mime : 'image/jpeg'};base64,${im.base64}` },
-      })) as never[])
-    : userText
+      })))
+    const runOcr = () => callGroq(
+      [{ role: 'system', content: ocrSystem }, { role: 'user', content: ocrUser }],
+      visionModel,
+      { response_format: { type: 'json_object' }, max_tokens: 4096 },
+    )
+    let ocrRaw: string
+    try {
+      ocrRaw = await runOcr()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/json_validate_failed/i.test(msg)) {
+        try {
+          ocrRaw = await runOcr()
+        } catch (err2) {
+          const msg2 = err2 instanceof Error ? err2.message : String(err2)
+          throw new Error(`Doc import AI call failed (model=${visionModel}, images=${images.length}, text_len=${text.length}): ${msg2}`)
+        }
+      } else {
+        throw new Error(`Doc import AI call failed (model=${visionModel}, images=${images.length}, text_len=${text.length}): ${msg}`)
+      }
+    }
+    let ocrParsed: Record<string, unknown>
+    try {
+      ocrParsed = JSON.parse(ocrRaw)
+    } catch {
+      throw new Error(`AI returned an unparseable OCR response (model=${visionModel}): ${ocrRaw.slice(0, 300)}`)
+    }
+    const extracted = typeof ocrParsed.document_text === 'string' ? ocrParsed.document_text.replace(/\s+/g, ' ').trim() : ''
+    if (extracted) {
+      documentText = documentText
+        ? documentText + '\n\n--- from images ---\n' + extracted
+        : extracted
+    }
+    if (!documentText) {
+      throw new Error(`Doc import AI call failed (model=${visionModel}, images=${images.length}, text_len=0): Could not read any text from the attached image(s)`)
+    }
+  }
+
+  const userText = 'Document text:\n"""\n' + documentText.slice(0, DOC_MAX_TEXT) + '\n"""'
+  // Always structure with CHAT_MODEL — text-only path unchanged in behaviour;
+  // image path reaches here after OCR so it shares the same nested-JSON call.
+  const model = CHAT_MODEL
 
   let raw: string
   try {
-    raw = await callGroq([{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }], model, { response_format: { type: 'json_object' } })
+    raw = await callGroq([{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], model, { response_format: { type: 'json_object' } })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${text.length}): ${msg}`)
+    throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${documentText.length}): ${msg}`)
   }
   let parsed: Record<string, unknown>
   try {

@@ -1,0 +1,34 @@
+name: deploy-ai-proxy-doc-import-oneshot
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/deploy-ai-proxy-doc-import.yml
+permissions:
+  contents: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy ai-proxy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN}" || { echo "SUPABASE_ACCESS_TOKEN secret missing"; exit 1; }
+          supabase functions deploy ai-proxy --project-ref wjqhhnjlgoigoagsnsen
+      - name: Remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/deploy-ai-proxy-doc-import.yml
+          git commit -m "chore: remove one-shot deploy-ai-proxy-doc-import workflow"
+          git push
