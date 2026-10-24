@@ -24,7 +24,7 @@
     var tid = P.tid(); if (!tid || !id) return Promise.resolve(null);
     return sb.from('payment_claims').select('*').eq('tenant_id', tid).eq('id', id).is('deleted_at', null).maybeSingle().then(function (r) {
       var c = r && r.data; if (!c || String(c.tenant_id) !== String(tid)) return null;
-      return Promise.all([sb.from('invoices').select('*').eq('tenant_id', tid).eq('id', c.invoice_id).maybeSingle(), sb.from('bookings').select('*').eq('tenant_id', tid).eq('invoice_id', c.invoice_id).is('deleted_at', null).limit(1)]).then(function (a) {
+      return Promise.all([sb.from('invoices').select('*').eq('tenant_id', tid).eq('id', c.invoice_id).maybeSingle(), sb.from('bookings').select('*').eq('tenant_id', tid).eq('invoice_id', c.invoice_id).limit(1)]).then(function (a) {
         var i = (a[0] && a[0].data) || {}, b = ((a[1] && a[1].data) || [])[0] || null;
         return (b && b.service_id ? sb.from('booking_services').select('*').eq('tenant_id', tid).eq('id', b.service_id).maybeSingle() : Promise.resolve({})).then(function (s) {
           var s2 = (s && s.data) || null, x = { c: c, inv: i, bk: b, svc: s2, ai: c.ai_check || null, ro: String(c.status) !== 'pending' };
