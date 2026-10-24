@@ -1,0 +1,29 @@
+name: booking-notif-dash-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/booking-notif-dash-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'booking-realtime.js?v=2' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "e41fee2cfb42757ed181e725cae46a82593967a0"
+          test "$(git hash-object app/booking-realtime.js)" = "bbdc23e53ecd15fe9abbd5ad095794e58ebfa617"
+          test "$(git hash-object app/booking-card-ui.js)" = "8b5f752e15134979080e0f5d15051000ace62101"
+          test "$(git hash-object app/booking.js)" = "9d793e72ef069f2ea99d661d7bd47e49e15cef8d"
+          test "$(git hash-object .github/oneshot/bknotif1.py)" = "154121ab80b81864a380596a35de33833f72b525"
+          python3 .github/oneshot/bknotif1.py "$F"
+          test "$(git hash-object "$F")" = "d96e06bad54a67c3d79e39e8a9992694df02cdda"
+          git rm -q .github/oneshot/bknotif1.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(booking): index.html - New booking deep link (booking-realtime.js v2), dashboard MYT bounds (booking-card-ui.js v3, booking.js v3)"
+          git push
