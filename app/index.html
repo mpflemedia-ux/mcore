@@ -1989,7 +1989,11 @@ const LANG = {
       active:'Active'
     },
     settings:{
-      title:'Settings',account:'My Account',name:'Name',email:'Email',role:'Role',company:'Company'
+      title:'Settings',account:'My Account',name:'Name',email:'Email',role:'Role',company:'Company',
+      changePw:'Change Password',currentPw:'Current password',newPw:'New password',confirmPw:'Confirm new password',
+      changePwBtn:'Change Password',pwMinHint:'Minimum 8 characters',changingPw:'Changing…',
+      pwUpdated:'Password updated',pwWrong:'Current password is incorrect',pwMismatch:'New passwords do not match',
+      pwShort:'New password must be at least 8 characters',pwRequired:'Please fill all password fields',pwNoEmail:'Account email not found',pwFail:'Failed to change password'
     }
   },
   bm:{
@@ -2007,7 +2011,11 @@ const LANG = {
       active:'Aktif'
     },
     settings:{
-      title:'Tetapan',account:'Akaun Saya',name:'Nama',email:'E-mel',role:'Peranan',company:'Syarikat'
+      title:'Tetapan',account:'Akaun Saya',name:'Nama',email:'E-mel',role:'Peranan',company:'Syarikat',
+      changePw:'Tukar Kata Laluan',currentPw:'Kata laluan semasa',newPw:'Kata laluan baru',confirmPw:'Sahkan kata laluan baru',
+      changePwBtn:'Tukar Kata Laluan',pwMinHint:'Minimum 8 aksara',changingPw:'Menukar…',
+      pwUpdated:'Kata laluan dikemas kini',pwWrong:'Kata laluan semasa salah',pwMismatch:'Kata laluan baru tidak sepadan',
+      pwShort:'Kata laluan baru mesti sekurang-kurangnya 8 aksara',pwRequired:'Sila isi semua medan kata laluan',pwNoEmail:'E-mel akaun tidak dijumpai',pwFail:'Gagal tukar kata laluan'
     }
   }
 }
@@ -5272,6 +5280,31 @@ async function saveMyName() {
     if (sn) sn.textContent = name
   } catch (e) {}
   showToast(APP.language==='bm'?'Nama disimpan':'Name saved', 'success')
+}
+
+async function changeMyPassword() {
+  const t = (LANG[APP.language] && LANG[APP.language].settings) ? LANG[APP.language].settings : (LANG.en.settings || {})
+  const cur = (document.getElementById('acct-pw-current') || {}).value || ''
+  const pwd = (document.getElementById('acct-pw-new') || {}).value || ''
+  const pwd2 = (document.getElementById('acct-pw-confirm') || {}).value || ''
+  const btn = document.getElementById('btn-change-pw')
+  const email = (APP.user && APP.user.email) || ''
+  if (!cur || !pwd || !pwd2) { showToast(t.pwRequired || 'Please fill all password fields', 'error'); return }
+  if (pwd.length < 8) { showToast(t.pwShort || 'New password must be at least 8 characters', 'error'); return }
+  if (pwd !== pwd2) { showToast(t.pwMismatch || 'New passwords do not match', 'error'); return }
+  if (!email) { showToast(t.pwNoEmail || 'Account email not found', 'error'); return }
+  const label = t.changePwBtn || 'Change Password'
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> ' + (t.changingPw || 'Changing…') }
+  try {
+    const { error: reAuthErr } = await sb.auth.signInWithPassword({ email, password: cur })
+    if (reAuthErr) { showToast(t.pwWrong || 'Current password is incorrect', 'error'); return }
+    const { error } = await sb.auth.updateUser({ password: pwd })
+    if (error) { showToast(error.message || t.pwFail || 'Failed to change password', 'error'); return }
+    ;['acct-pw-current','acct-pw-new','acct-pw-confirm'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    showToast(t.pwUpdated || 'Password updated', 'success')
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label }
+  }
 }
 
 async function doLogout() {
@@ -14709,6 +14742,7 @@ async function renderSettings(params={}) {
       </div>
     </div>`
   })()}
+  <!-- t549u change password -->
   <div class="card" style="max-width:500px" id="stg-account">
     <div class="card-header"><div class="card-title">${t.account}</div></div>
     <div style="display:flex;flex-direction:column;gap:14px">
@@ -14716,6 +14750,25 @@ async function renderSettings(params={}) {
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.email}</label><input type="text" class="form-select" value="${APP.user.email||''}" readonly></div>
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.role}</label><input type="text" class="form-select" value="${APP.user.role||''}" readonly></div>
       <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.company}</label><input type="text" class="form-select" value="${APP.tenant.name||''}" readonly></div>
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">${t.changePw}</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.currentPw}</label>
+            <div class="input-group"><input id="acct-pw-current" type="password" class="form-input has-eye" style="padding-left:12px" autocomplete="current-password" placeholder="••••••••">
+              <i class="ti ti-eye eye-toggle" onclick="togglePw('acct-pw-current',this)" title="Show/hide password"></i></div>
+          </div>
+          <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.newPw}</label>
+            <div class="input-group"><input id="acct-pw-new" type="password" class="form-input has-eye" style="padding-left:12px" autocomplete="new-password" placeholder="••••••••">
+              <i class="ti ti-eye eye-toggle" onclick="togglePw('acct-pw-new',this)" title="Show/hide password"></i></div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:4px">${t.pwMinHint}</div>
+          </div>
+          <div class="form-group"><label class="form-label" style="color:var(--text-2)">${t.confirmPw}</label>
+            <div class="input-group"><input id="acct-pw-confirm" type="password" class="form-input has-eye" style="padding-left:12px" autocomplete="new-password" placeholder="••••••••">
+              <i class="ti ti-eye eye-toggle" onclick="togglePw('acct-pw-confirm',this)" title="Show/hide password"></i></div>
+          </div>
+          <div><button class="btn btn-primary" type="button" id="btn-change-pw" onclick="changeMyPassword()">${t.changePwBtn}</button></div>
+        </div>
+      </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-primary" type="button" onclick="saveMyName()">${APP.language==='bm'?'Simpan Nama':'Save Name'}</button>
         <button class="btn btn-danger" style="width:fit-content" onclick="doLogout()"><i class="ti ti-logout"></i> ${c.signOut}</button>
