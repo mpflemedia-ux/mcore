@@ -50,13 +50,13 @@ jobs:
           )
           if [ -z "$SR" ]; then
             echo "could not resolve service_role" >&2
-            python3 -c "import json; k=json.load(open("/tmp/keys.json")); print(type(k).__name__, (list(k[0].keys()) if isinstance(k,list) and k else k))" >&2
+            python3 -c 'import json; k=json.load(open("/tmp/keys.json")); print(type(k).__name__, (list(k[0].keys()) if isinstance(k,list) and k else k))' >&2
             exit 1
           fi
           BASE="https://${PROJECT_REF}.supabase.co"
           curl -sS -H "apikey: $SR" -H "Authorization: Bearer $SR" \
             "$BASE/auth/v1/admin/users?page=1&per_page=200" > /tmp/users.json
-          UID=$(python3 - <<'PY'
+          USER_ID=$(python3 - <<'PY'
           import json,os
           email=os.environ["EMAIL"].lower()
           data=json.load(open("/tmp/users.json"))
@@ -66,23 +66,27 @@ jobs:
               print(u["id"]); break
           PY
           )
-          if [ -z "$UID" ]; then
+          if [ -z "$USER_ID" ]; then
             echo "USER_NOT_FOUND:$EMAIL" >&2
             exit 2
           fi
-          echo "USER_FOUND:$UID"
-          echo "$UID" > /tmp/amirah-uid.txt
-          BODY=$(python3 -c "import json; print(json.dumps({"password":open("/tmp/amirah-temp-password.txt").read()}))")
+          echo "USER_FOUND:$USER_ID"
+          echo "$USER_ID" > /tmp/amirah-uid.txt
+          BODY=$(python3 - <<'PY'
+          import json
+          print(json.dumps({"password": open("/tmp/amirah-temp-password.txt").read()}))
+          PY
+          )
           CODE=$(curl -sS -o /tmp/upd.json -w "%{http_code}" -X PUT \
             -H "apikey: $SR" -H "Authorization: Bearer $SR" -H "Content-Type: application/json" \
-            "$BASE/auth/v1/admin/users/$UID" -d "$BODY")
+            "$BASE/auth/v1/admin/users/$USER_ID" -d "$BODY")
           echo "UPDATE_HTTP:$CODE"
           if [ "$CODE" != "200" ]; then
             head -c 400 /tmp/upd.json >&2; echo >&2
             exit 3
           fi
           echo "PASSWORD_SET_OK"
-          echo "uid=$UID" >> "$GITHUB_OUTPUT"
+          echo "uid=$USER_ID" >> "$GITHUB_OUTPUT"
 
       - name: Upload temp password artifact (Mike/agent only)
         uses: actions/upload-artifact@v4
