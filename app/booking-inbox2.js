@@ -1,19 +1,20 @@
-/* Booking Inbox docs/actions + WA claim + cash-close. v1 */
+/* Booking Inbox docs/actions + WA claim + cash-close. v2 */
 (function () {
   var B = window.BKINB, V = window.BKPAYV, P = window.PAYX; if (!B || B.docsHtml) return;
   var t = B._t, esc = B._esc, tid = B._tid, money = B._money, toast = B._toast;
   B.docsHtml = function (d) {
-    function row(lab, href, copyTxt) {
-      var right = !href && !copyTxt ? '<span class="bkinb-meta">' + esc(t('docNone')) + '</span>' :
+    function row(lab, href, copyTxt, slipPath) {
+      var right = !href && !copyTxt && !slipPath ? '<span class="bkinb-meta">' + esc(t('docNone')) + '</span>' :
         ((href ? '<a class="db-btn" href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(t('open')) + '</a>' : '') +
+          (slipPath ? '<a class="db-btn" href="#" target="_blank" rel="noopener" data-slip-open="' + esc(slipPath) + '">' + esc(t('open')) + '</a>' : '') +
           (copyTxt ? '<button type="button" class="db-btn" data-bkinb="copy" data-v="' + esc(copyTxt) + '">' + esc(t('copy')) + '</button>' : ''));
       return '<div class="bkinb-doc"><span>' + esc(lab) + '</span><span style="display:flex;gap:6px">' + right + '</span></div>';
     }
     var slip = null, rcpt = null;
     (d.claims || []).forEach(function (c) { if (!slip && c.files && c.files[0] && c.files[0].path) slip = c; if (!rcpt && c.receipt_url) rcpt = c.receipt_url; });
     var pay = d.inv && d.inv.public_token ? (location.origin + '/app/?public_inv=' + encodeURIComponent(d.inv.public_token)) : '';
-    var h = row(t('docInv'), null, d.inv ? d.inv.ref_no : '') + row(t('docSlip'), null, slip ? (slip.files[0].name || 'slip') : '') + row(t('docRcpt'), rcpt, null) + row(t('docPay'), pay || null, pay);
-    if (slip) h += '<div class="bkinb-meta" data-slip="' + esc(slip.files[0].path) + '"></div>';
+    var sp = slip && slip.files[0].path;
+    var h = row(t('docInv'), null, d.inv ? d.inv.ref_no : '') + row(t('docSlip'), null, slip ? (slip.files[0].name || 'slip') : '', sp) + row(t('docRcpt'), rcpt, null) + row(t('docPay'), pay || null, pay);
     return h;
   };
   B.actHtml = function (d) {
@@ -87,9 +88,13 @@
         V.reject(x, why).then(function () { toast(t('rejected')); B.mount(root.parentNode, d.bk.id, 'proof'); }, function (e) { toast(t('fail', { e: (e && e.message) || e }), 'error'); });
       };
     });
-    var slip = root.querySelector('[data-slip]');
-    if (slip && V && V.url) V.url({ path: slip.getAttribute('data-slip') }).then(function (u) {
-      if (u) { var a = document.createElement('a'); a.className = 'db-btn'; a.target = '_blank'; a.rel = 'noopener'; a.href = u; a.textContent = t('open'); slip.appendChild(a); }
+    root.querySelectorAll('[data-slip-open]').forEach(function (a) {
+      var path = a.getAttribute('data-slip-open'); if (!path || !V || !V.url) return;
+      a.onclick = function (e) { e.preventDefault(); };
+      V.url({ path: path }).then(function (u) {
+        if (u) { a.href = u; a.onclick = null; }
+        else a.style.display = 'none';
+      });
     });
   };
 })();
