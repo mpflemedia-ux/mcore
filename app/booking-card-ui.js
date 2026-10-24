@@ -1,4 +1,4 @@
-/* Bookings card: default all dates + date/status/time asc-desc + amend/delete */
+/* Bookings card: default all dates + date/status/time asc-desc + amend/delete. Day bounds = MYT. Tap New booking alert opens that row. v3 */
 (function () {
   var STATE = { range: 'all', status: 'all', sort: 'starts', force: false };
   function isBm() { return APP.language === 'bm'; }
@@ -18,13 +18,21 @@
     var p = function (n) { return String(n).padStart(2, '0'); };
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
+  function myToday() {
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }); }
+    catch (e) { return new Date(Date.now() + 288e5).toISOString().slice(0, 10); }
+  }
+  function mytMid(d) { return new Date(d + 'T00:00:00+08:00'); }
+  function addDays(d, n) {
+    var x = new Date(d.getTime() + n * 864e5);
+    try { return x.toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }); }
+    catch (e) { return new Date(x.getTime() + 288e5).toISOString().slice(0, 10); }
+  }
   function bounds() {
-    var now = new Date();
-    var start = new Date(now); start.setHours(0, 0, 0, 0);
-    var end = new Date(now); end.setHours(23, 59, 59, 999);
-    if (STATE.range === '7d') { end = new Date(start); end.setDate(end.getDate() + 7); end.setHours(23, 59, 59, 999); }
-    if (STATE.range === 'upcoming') { start = now; end = new Date(start); end.setFullYear(end.getFullYear() + 2); }
-    if (STATE.range === 'all') { start = new Date(now); start.setFullYear(start.getFullYear() - 1); end = new Date(now); end.setFullYear(end.getFullYear() + 2); }
+    var today = myToday(), start = mytMid(today), end = new Date(today + 'T23:59:59.999+08:00');
+    if (STATE.range === '7d') { end = new Date(addDays(start, 7) + 'T23:59:59.999+08:00'); }
+    if (STATE.range === 'upcoming') { start = new Date(); end = mytMid(addDays(mytMid(today), 730)); }
+    if (STATE.range === 'all') { start = mytMid(addDays(mytMid(today), -365)); end = mytMid(addDays(mytMid(today), 730)); }
     return { start: start.toISOString(), end: end.toISOString() };
   }
   function ensureTools() {
@@ -207,10 +215,32 @@
         '</details>';
     }).join('');
     fitListScroll(body);
+    openWanted(body);
+  }
+  function openWanted(body) {
+    var id = window.__bkWantId; if (!id || !body) return;
+    var row = body.querySelector('details[data-bk-row="' + id.replace(/"/g, '') + '"]');
+    if (!row && STATE.range !== 'all') { STATE.range = 'all'; STATE.status = 'all'; STATE.force = true; paint(); return; }
+    if (!row) { window.__bkWantId = null; return; }
+    row.open = true;
+    try { if (typeof _dbScrollToSec === 'function') _dbScrollToSec('db-sec-booking'); } catch (e) {}
+    try { row.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { try { row.scrollIntoView(true); } catch (e2) {} }
+    window.__bkWantId = null;
+  }
+  function wrapOpen() {
+    if (typeof window.openPage !== 'function' || window.openPage.__bkcard) return;
+    var o = window.openPage;
+    window.openPage = function (page, params) {
+      params = params || {};
+      if (params.bkid && /^[0-9a-f-]{36}$/i.test(String(params.bkid))) window.__bkWantId = String(params.bkid);
+      return o.apply(this, arguments);
+    };
+    window.openPage.__bkcard = 1;
   }
   window.__bkCardPaint = function () { STATE.force = true; return paint(); };
   var last = 0;
   function boot() {
+    wrapOpen();
     if (!document.getElementById('db-sec-booking')) return;
     var now = Date.now();
     if (now - last < 800) return;

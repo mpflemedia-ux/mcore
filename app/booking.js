@@ -234,8 +234,9 @@
       catch (e) { prompt('Public booking link', publicUrl(tok)); }
     };
     if (!window.sb || !APP.tenant) return;
-    var start = new Date(); start.setHours(0,0,0,0);
-    var end = new Date(); end.setHours(23,59,59,999);
+    var day = myToday();
+    var start = new Date(day + 'T00:00:00+08:00');
+    var end = new Date(day + 'T23:59:59.999+08:00');
     var q = await sb.from('bookings').select('id,customer_name,starts_at,status,booking_services(name)').eq('tenant_id', APP.tenant.id).gte('starts_at', start.toISOString()).lte('starts_at', end.toISOString()).order('starts_at');
     if (q.error) { body.textContent = isBm ? 'Jalankan SQL booking dulu.' : 'Run booking SQL first.'; return; }
     var rows = q.data || [];

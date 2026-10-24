@@ -1,4 +1,5 @@
-/* Realtime booking alert: toast + beep + OS notification + bell badge */
+/* Realtime booking alert: toast + beep + OS notification + bell badge.
+   New booking rows carry ref_table/ref_id/link so a tap opens that booking on the dashboard card. v2 */
 (function () {
   function beep() {
     try {
@@ -19,6 +20,19 @@
     try { return new Date(iso).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit' }); }
     catch (e) { return iso || ''; }
   }
+  function uuid(id) { return /^[0-9a-f-]{36}$/i.test(String(id || '')) ? String(id) : null; }
+  /* bell / push: if the row points at a booking, open dashboard with that booking selected */
+  function wrapNT() {
+    var NT = window.NT; if (!NT || typeof NT.fromRow !== 'function') return false; if (NT.fromRow.__bkrt) return true;
+    var fr = NT.fromRow;
+    NT.fromRow = function (n) {
+      var it = fr.apply(this, arguments), id = n && n.ref_table === 'bookings' ? uuid(n.ref_id) : null;
+      if (id && it) it.go = ['dashboard', Object.assign({}, (it.go && it.go[1]) || {}, { bkid: id })];
+      return it;
+    };
+    NT.fromRow.__bkrt = 1; return true;
+  }
+  var ntTries = 0; (function go() { if (!wrapNT() && ++ntTries < 40) setTimeout(go, 250); })();
   async function bumpBadge() {
     if (!window.sb || !APP.tenant) return;
     var since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
@@ -35,6 +49,26 @@
       if (!cur || cur < n) badge.textContent = String(n);
     }
   }
+  function pushBell(b, msg, when) {
+    var NT = window.NT, id = uuid(b && b.id);
+    /* self-row with link+ref (NT.notify skips the actor, so insert here). OS alert comes from NT.listen with ?nt= */
+    if (NT && NT.on && id && NT.tid() && NT.uid()) {
+      sb.from('notifications').insert({
+        tenant_id: NT.tid(), user_id: NT.uid(), actor_id: null,
+        title: String(msg || '').slice(0, 200), body: String(when || '').slice(0, 500),
+        category: 'self', kind: 'for_you', type: 'assigned.booking',
+        ref_table: 'bookings', ref_id: id,
+        link: { page: 'dashboard', params: { bkid: id }, icon: 'ti-calendar-plus' }
+      }).then(function () { if (NT.refresh) NT.refresh(); }, function () {});
+      return;
+    }
+    if (typeof _notifPushBell === 'function') _notifPushBell(msg, when);
+    if (typeof _notifOsNotify === 'function') {
+      try { _notifOsNotify('New booking', (b.customer_name || 'Customer') + ' · ' + when); } catch (e) {}
+    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try { new Notification('New booking', { body: (b.customer_name || 'Customer') + ' · ' + when }); } catch (e) {}
+    }
+  }
   function handleNewBooking(b) {
     if (!b) return;
     var name = b.customer_name || 'Customer';
@@ -42,12 +76,7 @@
     var msg = 'New booking: ' + name;
     if (typeof showToast === 'function') showToast(msg, 'success');
     beep();
-    if (typeof _notifPushBell === 'function') _notifPushBell(msg, when);
-    if (typeof _notifOsNotify === 'function') {
-      try { _notifOsNotify('New booking', name + ' · ' + when); } catch (e) {}
-    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      try { new Notification('New booking', { body: name + ' · ' + when }); } catch (e) {}
-    }
+    pushBell(b, msg, when);
     if (typeof loadNotifications === 'function') try { loadNotifications(); } catch (e) {}
     bumpBadge();
   }
