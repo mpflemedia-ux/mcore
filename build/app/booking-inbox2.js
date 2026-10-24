@@ -1,4 +1,4 @@
-/* Booking Inbox docs/actions + WA claim + cash-close. v2 */
+/* Booking Inbox docs/actions + WA claim + cash-close. v3 */
 (function () {
   var B = window.BKINB, V = window.BKPAYV, P = window.PAYX; if (!B || B.docsHtml) return;
   var t = B._t, esc = B._esc, tid = B._tid, money = B._money, toast = B._toast;
@@ -6,7 +6,7 @@
     function row(lab, href, copyTxt, slipPath) {
       var right = !href && !copyTxt && !slipPath ? '<span class="bkinb-meta">' + esc(t('docNone')) + '</span>' :
         ((href ? '<a class="db-btn" href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(t('open')) + '</a>' : '') +
-          (slipPath ? '<a class="db-btn" href="#" target="_blank" rel="noopener" data-slip-open="' + esc(slipPath) + '">' + esc(t('open')) + '</a>' : '') +
+          (slipPath ? '<a class="db-btn" href="#" role="button" data-slip-open="' + esc(slipPath) + '" data-slip-name="' + esc((slip && slip.files[0].name) || 'receipt') + '" data-slip-mime="' + esc((slip && slip.files[0].mime) || '') + '">' + esc(t('open')) + '</a>' : '') +
           (copyTxt ? '<button type="button" class="db-btn" data-bkinb="copy" data-v="' + esc(copyTxt) + '">' + esc(t('copy')) + '</button>' : ''));
       return '<div class="bkinb-doc"><span>' + esc(lab) + '</span><span style="display:flex;gap:6px">' + right + '</span></div>';
     }
@@ -90,11 +90,52 @@
     });
     root.querySelectorAll('[data-slip-open]').forEach(function (a) {
       var path = a.getAttribute('data-slip-open'); if (!path || !V || !V.url) return;
-      a.onclick = function (e) { e.preventDefault(); };
-      V.url({ path: path }).then(function (u) {
-        if (u) { a.href = u; a.onclick = null; }
-        else a.style.display = 'none';
-      });
+      a.onclick = function (e) {
+        e.preventDefault();
+        if (a.getAttribute('data-busy')) return;
+        a.setAttribute('data-busy', '1');
+        var prev = a.textContent; a.textContent = t('slipLoad');
+        V.url({ path: path }).then(function (u) {
+          a.removeAttribute('data-busy'); a.textContent = prev;
+          if (!u) { a.style.display = 'none'; return; }
+          B.previewSlip(u, { name: a.getAttribute('data-slip-name') || 'receipt', mime: a.getAttribute('data-slip-mime') || '' });
+        }, function () { a.removeAttribute('data-busy'); a.textContent = prev; });
+      };
     });
   };
+
+  /* In-app slip preview (image/PDF) then Download — shared for Proof + Docs */
+  B.previewSlip = function (url, meta) {
+    meta = meta || {};
+    var old = document.getElementById('bkinb-lb'); if (old) old.remove();
+    var name = meta.name || 'receipt';
+    var mime = String(meta.mime || '');
+    var isImg = /^image\//i.test(mime) || /\.(jpe?g|png|gif|webp|bmp)$/i.test(name) || /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+    var isPdf = /pdf/i.test(mime) || /\.pdf(\?|$)/i.test(name) || /\.pdf(\?|$)/i.test(url);
+    if (!isImg && !isPdf) isImg = true;
+    var ov = document.createElement('div');
+    ov.id = 'bkinb-lb'; ov.className = 'bkinb-lb'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', t('slipTitle'));
+    var body = isImg
+      ? '<img class="bkinb-lb-img" src="' + esc(url) + '" alt="' + esc(t('slipTitle')) + '">'
+      : (isPdf
+        ? '<iframe class="bkinb-lb-pdf" src="' + esc(url) + '#toolbar=0" title="' + esc(t('slipTitle')) + '"></iframe>'
+        : '<div class="bkinb-lb-ph">' + esc(name) + '</div>');
+    ov.innerHTML = '<div class="bkinb-lb-panel"><div class="bkinb-lb-hd"><span>' + esc(t('slipTitle')) + '</span><button type="button" class="db-btn" data-lb-x aria-label="' + esc(t('slipClose')) + '">' + esc(t('slipClose')) + '</button></div><div class="bkinb-lb-body">' + body + '</div><div class="bkinb-lb-ft"><button type="button" class="db-btn" data-lb-dl>' + esc(t('slipDl')) + '</button><button type="button" class="db-btn" data-lb-x>' + esc(t('slipClose')) + '</button></div></div>';
+    function close() { ov.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    ov.querySelectorAll('[data-lb-x]').forEach(function (b) { b.onclick = close; });
+    ov.querySelector('[data-lb-dl]').onclick = function () {
+      var btn = this; btn.disabled = true;
+      fetch(url).then(function (r) { return r.blob(); }).then(function (b) {
+        var u = URL.createObjectURL(b), a = document.createElement('a');
+        a.href = u; a.download = name; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 2500);
+      }, function () { window.open(url, '_blank', 'noopener'); }).then(function () { btn.disabled = false; }, function () { btn.disabled = false; });
+    };
+    document.body.appendChild(ov);
+    document.addEventListener('keydown', onKey);
+    var focus = ov.querySelector('[data-lb-x]'); if (focus) try { focus.focus(); } catch (e1) {}
+  };
+  if (V && !V.preview) V.preview = function (url, meta) { return B.previewSlip(url, meta); };
 })();
