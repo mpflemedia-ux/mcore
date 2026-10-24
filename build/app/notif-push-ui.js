@@ -24,7 +24,8 @@
       if (st === 'ios') b += btn('guide', 'guide', 1);
       b += btn('test', 'test');
       var ios = '<div class="nt-pios-w"' + (st === 'ios' ? '' : ' hidden') + '><b style="display:block;margin-top:10px">' + esc(T('iosT')) + '</b><ol class="nt-pios"><li>' + esc(T('ios1')) + '</li><li>' + esc(T('ios2')) + '</li><li>' + esc(T('ios3')) + '</li><li>' + esc(T('ios4')) + '</li></ol><div class="nt-m">' + esc(T('iosN')) + '</div></div>';
-      card.innerHTML = '<div class="nt-row"><i class="ti ti-device-mobile nt-big"></i><div class="nt-bd"><b>' + esc(T('phoneT')) + '</b><div class="nt-m' + cls + '" id="nt-push-st" role="status" aria-live="polite">' + esc(T(MSG[st] || 'stDefault')) + '</div></div></div>' +
+      var hint = (P.inSupport && P.inSupport()) ? '<div class="nt-m" style="margin-top:6px">' + esc(T('supHint')) + '</div>' : '';
+      card.innerHTML = '<div class="nt-row"><i class="ti ti-device-mobile nt-big"></i><div class="nt-bd"><b>' + esc(T('phoneT')) + '</b><div class="nt-m' + cls + '" id="nt-push-st" role="status" aria-live="polite">' + esc(T(MSG[st] || 'stDefault')) + '</div>' + hint + '</div></div>' +
         '<div class="nt-pbtns">' + b + '</div>' + ios + (P.on ? '<div class="nt-pdev" id="nt-pdev"></div>' : '');
       wire(card);
       if (P.on) devices(card);
@@ -71,7 +72,12 @@
       if (a === 'test') return test(card).then(function () { b.disabled = false; });
       if (a === 'allow') return Promise.resolve(typeof _notifRequestOsPermission === 'function' ? _notifRequestOsPermission() : (typeof Notification !== 'undefined' ? Notification.requestPermission() : null))
         .then(function () { return P.perm() === 'granted' && P.canPush() ? P.probe().then(function (on) { return on && P.subscribe(); }) : null; }).then(done, done);
-      if (a === 'sub') return P.subscribe().then(function (ok) { toast(ok ? 'subOk' : 'subFail', ok ? 'success' : 'error'); return done(); }, done);
+      if (a === 'sub') return P.subscribe().then(function (r) {
+        var ok = r && (r.ok === true || r === true);
+        var reason = (r && r.reason) || (ok ? 'subOk' : 'subFail');
+        toast(ok ? 'subOk' : reason, ok ? 'success' : 'error');
+        return done();
+      }, done);
       if (a === 'unsub') return P.off().then(function () { toast('subOff', 'success'); return done(); }, done);
     }; });
   }
