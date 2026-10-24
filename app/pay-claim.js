@@ -70,7 +70,7 @@
     }).join('');
     list.forEach(function (c, i) { var w = d.querySelector('[data-c="' + i + '"]');
       w.querySelector('[data-v]').onclick = function () { view(c); };
-      if (w.querySelector('[data-a]')) { w.querySelector('[data-a]').onclick = function () { approve(c); }; w.querySelector('[data-r]').onclick = function () { reject(c, list.length > 1 ? w : d); }; } });
+      if (w.querySelector('[data-a]')) { w.querySelector('[data-a]').onclick = function () { if (window.BKPAYQ && typeof BKPAYQ.open === 'function') BKPAYQ.open(c.id); else approve(c); }; w.querySelector('[data-r]').onclick = function () { reject(c, list.length > 1 ? w : d); }; } });
     anchor.parentNode.insertBefore(d, anchor);
   }
   function scan() {

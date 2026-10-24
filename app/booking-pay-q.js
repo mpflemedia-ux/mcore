@@ -24,7 +24,7 @@
     return '<div class="bkq-c"><div class="bkq-h"><span>' + E(t('qSlip')) + '</span>' + (x.url ? '<button type="button" class="btn btn-outline btn-sm" data-zoom><i class="ti ti-zoom-in"></i> ' + E(t('qZoom')) + '</button>' : '') + '</div>' + slip +
       kv('qSent', E(P.money(x.c.amount)) + ' · ' + E(A.time(x.c.created_at, bm())) + ' (MYT)') + '</div>' +
       '<div class="bkq-c"><div class="bkq-h"><span>' + E(t('qInv')) + ' ' + E(x.inv.ref_no || '') + '</span><button type="button" class="btn btn-outline btn-sm" data-open>' + E(t('qOpen')) + '</button></div>' +
-      (bk ? kv('qBk', E((bk.quote_ref || '') + ' · ' + V.ref(x.inv))) + kv('qSvc', x.svc ? E(x.svc.name || '') : '') + kv('qWhen', E(A.time(bk.starts_at, bm())) + ' (MYT)') : '') +
+      (bk ? kv('qBk', E((bk.quote_ref || '') + ' · ' + V.ref(x.inv, true))) + kv('qSvc', x.svc ? E(x.svc.name || '') : '') + kv('qWhen', E(A.time(bk.starts_at, bm())) + ' (MYT)') : '') +
       kv('qTotal', E(P.money(n.total))) + kv('qPaid', E(P.money(n.paid))) + kv('qDue', E(P.money(n.due)) + (n.pct ? ' (' + E(t('qDepN', { p: n.pct })) + ')' : '')) +
       (x.ro ? '<div class="bkq-msg" role="status" style="border-color:var(' + (x.c.status === 'approved' ? '--q-ok' : x.c.status === 'rejected' ? '--q-b' : '--q-w') + ')">' + E(V.roTxt ? V.roTxt(x) : '') + '</div></div>' :
       '<div class="bkq-h" style="margin:14px 0 0">' + E(t('qChecks')) + '</div>' + checks(x) +
@@ -51,9 +51,9 @@
     if (x.ro) return;
     var rj = dt.querySelector('.bkq-rj');
     dt.querySelector('[data-rj]').onclick = function () { rj.hidden = !rj.hidden; if (!rj.hidden) dt.querySelector('#bkq-w').focus(); };
-    dt.querySelector('[data-rg]').onclick = function () { var w = dt.querySelector('#bkq-w').value.trim(); if (w.length < 3) return dt.querySelector('#bkq-w').focus(); act(this, V.reject(x, w), function (u) { P.toast(t('qRejDone', { t: A.time(u, bm()) + ' (MYT)' })); }); };
+    dt.querySelector('[data-rg]').onclick = function () { var w = dt.querySelector('#bkq-w').value.trim(); if (w.length < 3) return dt.querySelector('#bkq-w').focus(); act(this, V.reject(x, w), function (u) { P.toast(x.bk ? t('qRejDone', { t: A.time(u, bm()) + ' (MYT)' }) : t('qRejDoneInv')); }); };
     dt.querySelector('[data-ok]').onclick = function () { var a = Number(dt.querySelector('#bkq-a').value || 0); if (!(a > 0)) return dt.querySelector('#bkq-a').focus();
-      act(this, V.verify(x, a), function (r) { P.toast(r.part ? t('qPart', { t: r.until ? A.time(r.until, bm()) + ' (MYT)' : '-' }) : t('qDone', { n: r.no || '' })); }); };
+      act(this, V.verify(x, a), function (r) { P.toast(r.part ? (x.bk ? t('qPart', { t: r.until ? A.time(r.until, bm()) + ' (MYT)' : '-' }) : t('qPartInv')) : t('qDone', { n: r.no || '' })); }); };
   }
   function act(btn, pr, ok) {
     var o = btn.innerHTML; S.busy = true; S.el.querySelectorAll('.bkq-act .btn,[data-rg]').forEach(function (b) { b.disabled = true; }); btn.innerHTML = '<i class="ti ti-loader"></i> ' + E(t('qDoing'));
@@ -77,7 +77,7 @@
   Q.open = function (id) {
     S.want = id ? String(id) : null; css(); if (S.el) return load(); Q.mob = matchMedia('(max-width:899px)').matches;
     var el = S.el = document.createElement('div'); el.className = 'bkq'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'bkq-t');
-    el.innerHTML = '<div class="bkq-hd"><button type="button" class="btn btn-outline btn-sm bkq-back" data-b><i class="ti ti-arrow-left"></i> ' + E(t('qBack')) + '</button><div><div class="bkq-ti" id="bkq-t">' + E(t('qTitle')) + '</div><div class="bkq-sub">' + E(t('qSub')) + '</div></div>' +
+    el.innerHTML = '<div class="bkq-hd"><button type="button" class="btn btn-outline btn-sm bkq-back" data-b><i class="ti ti-arrow-left"></i> ' + E(t('qBack')) + '</button><div><div class="bkq-ti" id="bkq-t">' + E(t('qTitle')) + '</div><div class="bkq-sub">' + E(t('qSubAll')) + '</div></div>' +
       '<button type="button" class="btn btn-outline btn-sm" data-x aria-label="' + E(t('close')) + '"><i class="ti ti-x"></i></button></div><div class="bkq-bd"><div class="bkq-ls"></div><div class="bkq-dt" aria-live="polite"></div></div>';
     document.body.appendChild(el);
     el.querySelector('[data-x]').onclick = Q.close; el.querySelector('[data-b]').onclick = function () { S.sel = null; paint(); };
