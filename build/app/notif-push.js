@@ -41,7 +41,10 @@
   };
   P.reg = function () {
     if (!('serviceWorker' in nav)) return Promise.resolve(null);
-    return Promise.race([nav.serviceWorker.ready, new Promise(function (r) { setTimeout(function () { r(null); }, 4000); })]);
+    var ready = nav.serviceWorker.getRegistration('./').then(function (ex) {
+      return (ex ? Promise.resolve(ex) : nav.serviceWorker.register('./sw.js?v=15')).then(function () { return nav.serviceWorker.ready; });
+    }).catch(function () { return null; });
+    return Promise.race([ready, new Promise(function (r) { setTimeout(function () { r(null); }, 12000); })]);
   };
   P.current = function () { return P.reg().then(function (r) { return r && r.pushManager ? r.pushManager.getSubscription() : null; }).catch(function () { return null; }); };
   function u8(b64) { var s = (b64 + '===='.slice((b64.length % 4) || 4)).replace(/-/g, '+').replace(/_/g, '/'), raw = atob(s), a = new Uint8Array(raw.length); for (var i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i); return a; }
