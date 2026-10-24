@@ -1466,7 +1466,7 @@ async function handleDraftProjectTask(body: Record<string, unknown>) {
 // Projects "Import from doc": a PDF's extracted text and/or up to 5 page/photo images ->
 // a suggested project + a list of actionable tasks. The client shows every task in a preview
 // (tick/untick/edit) before anything is saved; this handler never writes to the database.
-// Owner/assignee and the target project are chosen by the user, never by AI.
+// Target project is chosen by the user. AI may suggest suggested_assignee from a client-supplied member list; the client maps that to Owner (single owner for all tasks).
 const DOC_MAX_TASKS = 30
 const DOC_MAX_IMAGES = 5
 const DOC_MAX_TEXT = 24000
@@ -1487,9 +1487,20 @@ async function handleDocToProjectTasks(body: Record<string, unknown>) {
   const tags = (Array.isArray(body.tags) ? body.tags : []).filter((x) => typeof x === 'string' && x.trim()).slice(0, 40) as string[]
   const projects = (Array.isArray(body.project_names) ? body.project_names : []).filter((x) => typeof x === 'string').slice(0, 80) as string[]
   const fileNames = (Array.isArray(body.file_names) ? body.file_names : []).filter((x) => typeof x === 'string').slice(0, 10) as string[]
+  const members = (Array.isArray(body.members) ? body.members : [])
+    .map((x) => {
+      const m = (x || {}) as Record<string, unknown>
+      const id = typeof m.id === 'string' ? m.id.trim() : ''
+      const name = typeof m.name === 'string' ? m.name.replace(/\s+/g, ' ').trim() : ''
+      return id && name ? { id, name } : null
+    })
+    .filter((x): x is { id: string; name: string } => !!x)
+    .slice(0, 80)
+  const memberNames = members.map((m) => m.name)
+  const uiLang = langName(body)
 
   const systemPrompt =
-    'You turn a business document (brief, proposal, meeting notes, quotation, schedule, letter) into ' +
+    'You turn a business document (brief, proposal, meeting notes, quotation, schedule, letter, chat screenshot) into ' +
     'an internal project task list for a Malaysian SME task board. Read the whole document, then:\n' +
     '1. Suggest a short project name and the client/company name if the document names one ' +
     '(if one of the existing project names below clearly matches, return that exact name).\n' +
@@ -1499,23 +1510,31 @@ async function handleDocToProjectTasks(body: Record<string, unknown>) {
     'start with a verb, max 70 characters. NOT Title Case For Every Word.\n' +
     '4. Dates (YYYY-MM-DD). Today is ' + today + '. Use a deadline written in the document; for relative ' +
     'deadlines ("within 2 weeks", "by month end") count from today. Use working days Monday-Friday only ' +
-    'and avoid Malaysia public holidays. If the document gives no deadline, spread due dates sensibly by ' +
-    'estimated hours so not everything lands on the same day; never return a date before today. ' +
-    'start_date may be null.\n' +
+    'and avoid Malaysia public holidays. If the document gives no deadline, leave due_date null (do not invent ' +
+    'a schedule). never return a date before today. start_date may be null.\n' +
     '5. tag: pick the single best tag from this list, or null if none fits: ' + (tags.length ? tags.join(' | ') : '(none)') + '.\n' +
-    '6. est_hours: realistic estimated working hours (number, 0.25-999) or null.\n' +
-    '7. important / urgent (booleans) for an Eisenhower matrix: urgent = due within 3 working days or ' +
-    'the document says urgent/ASAP; important = client-facing, money, legal or a key deliverable.\n' +
+    '6. est_hours: ONLY if the document clearly implies effort/time (e.g. "2 hours", "half day"); otherwise null. ' +
+    'Never invent hours.\n' +
+    '7. important / urgent: ONLY if the document clearly implies it (urgent/ASAP/deadline language, or ' +
+    'client-facing money/legal key deliverable stated). Otherwise both false. Do not invent an Eisenhower matrix.\n' +
     '8. todo: 2-6 short checklist steps for that task (strings). notes: one or two sentences of context ' +
     'from the document (or ""). source: where in the document this came from, e.g. "page 2" or a ' +
     'section heading (or "").\n' +
-    'Never invent an assignee, a person\'s phone/email, prices or legal facts. Respond with ONLY a JSON ' +
+    '9. suggested_assignee: if the document clearly assigns a person to that task, return their display name ' +
+    'EXACTLY as listed under Member names below (match nickname/full name case-insensitively when deciding, ' +
+    'but output the list spelling). If multiple people are named for one task, pick the primary owner only. ' +
+    'If no clear match or the name is not on the list, null. Never invent people or names not on the list.\n' +
+    'Never invent a person\'s phone/email, prices or legal facts. Respond with ONLY a JSON ' +
     'object, no other text, in this exact shape: {"project_name": "<string or null>", "client_name": ' +
     '"<string or null>", "summary": "<one sentence>", "tasks": [{"title": "<string>", "tag": "<string ' +
     'or null>", "start_date": "<YYYY-MM-DD or null>", "due_date": "<YYYY-MM-DD or null>", "est_hours": ' +
     '<number or null>, "important": <boolean>, "urgent": <boolean>, "todo": ["<string>"], "notes": ' +
-    '"<string>", "source": "<string>"}]}. Write titles, todo, notes and summary in ' + langName(body) + '.\n\n' +
+    '"<string>", "source": "<string>", "suggested_assignee": "<string or null>"}]}.\n' +
+    'LANGUAGE (binding): Follow the app UI language selection only — NOT the document language. ' +
+    'Write titles, todo, notes and summary in ' + uiLang + '. ' +
+    'If the UI is English, translate BM source text into English task wording; if the UI is BM, write BM even when the source is English.\n\n' +
     'Existing project names: ' + (projects.length ? projects.join(' | ') : '(none)') + '\n' +
+    'Member names (suggested_assignee must be one of these or null): ' + (memberNames.length ? memberNames.join(' | ') : '(none)') + '\n' +
     'File names: ' + (fileNames.length ? fileNames.join(' | ') : '(unknown)')
 
   // Image path: two-pass. qwen vision is reliable for OCR into a flat
@@ -1610,10 +1629,21 @@ async function handleDocToProjectTasks(body: Record<string, unknown>) {
     if (start && due && start > due) start = due
     const h = typeof t.est_hours === 'number' && t.est_hours > 0 ? Math.min(999, Math.max(0.25, Math.round(t.est_hours * 4) / 4)) : null
     const todo = (Array.isArray(t.todo) ? t.todo : []).map((s) => str(s, 160)).filter(Boolean).slice(0, 10)
+    const rawAsg = str(t.suggested_assignee, 80)
+    let suggested_assignee: string | null = null
+    if (rawAsg && memberNames.length) {
+      const hit = members.find((m) => m.name.toLowerCase() === rawAsg.toLowerCase())
+        || members.find((m) => {
+          const a = m.name.toLowerCase(), b = rawAsg.toLowerCase()
+          return a.includes(b) || b.includes(a)
+        })
+      suggested_assignee = hit ? hit.name : null
+    }
     return {
       title, tag: tagOk(t.tag), start_date: start, due_date: due, est_hours: h,
       important: t.important === true, urgent: t.urgent === true,
       todo, notes: str(t.notes, 600), source: str(t.source, 80),
+      suggested_assignee,
     }
   }).filter((t) => {
     const k = t.title.toLowerCase(); if (!t.title || seen.has(k)) return false

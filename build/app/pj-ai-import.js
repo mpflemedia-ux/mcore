@@ -18,6 +18,18 @@
   function nm(e) { return e ? (e.nickname || e.name || '') : ''; }
   function allowed() { try { return typeof canAccess !== 'function' || canAccess('core'); } catch (e) { return false; } }
   function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9À-ɏ]+/g, ' ').trim(); }
+  function membersPayload(emps) {
+    return (emps || []).map(function (e) { return { id: e.id, name: nm(e) }; }).filter(function (m) { return m.id && m.name; }).slice(0, 80);
+  }
+  /* fuzzy name → employee id; only when exactly one employee matches */
+  function matchMemberId(name, emps) {
+    var n = norm(name); if (!n) return null;
+    var hits = (emps || []).filter(function (e) {
+      var a = norm(nm(e));
+      return a && (a === n || a.indexOf(n) >= 0 || n.indexOf(a) >= 0);
+    });
+    return hits.length === 1 ? hits[0].id : null;
+  }
   function isPdf(f) { return /pdf/i.test(f.type || '') || /\.pdf$/i.test(f.name || ''); }
   function isImg(f) { return /^image\//i.test(f.type || '') || /\.(png|jpe?g|webp|gif|heic)$/i.test(f.name || ''); }
 
@@ -202,7 +214,8 @@
       setMsg(L('AI is drafting tasks… (10-40 seconds)', 'AI sedang draf task… (10-40 saat)'));
       var res = await _invokeAiProxy({
         action: 'doc_to_project_tasks', language: bm() ? 'bm' : 'en', text: got.text, images: got.images, today: today(),
-        tags: tagOptions(), project_names: (st.projects || []).map(function (p) { return p.name; }), file_names: files.map(function (f) { return f.name; })
+        tags: tagOptions(), project_names: (st.projects || []).map(function (p) { return p.name; }), file_names: files.map(function (f) { return f.name; }),
+        members: membersPayload(st.employees)
       });
       if (!S) return;
       var payload = res && res.data && res.data.success ? res.data.data : null;
@@ -227,12 +240,26 @@
     S.newName = r.project_name || (S.files[0] ? S.files[0].name.replace(/\.[^.]+$/, '') : '');
     var cu = r.client_name ? (st.customers || []).filter(function (c) { var a = norm(c.name), b = norm(r.client_name); return a && b && (a === b || a.indexOf(b) >= 0 || b.indexOf(a) >= 0); })[0] : null;
     S.kind = cu ? 'client' : 'internal'; S.cust = cu ? String(cu.id) : '';
-    S.owner = (await myEmp()) || '';
+    var me = (await myEmp()) || '';
+    S.owner = me;
     var hol = await holidays(), t0 = today();
+    var vote = {}, hints = [];
     S.items = r.tasks.map(function (k) {
       var sd = I.shiftDue(k.due_date, hol, t0);
-      return { on: true, title: k.title, tag: k.tag || '', due: sd.d || '', moved: sd.moved ? sd.from : '', start: k.start_date || '', h: k.est_hours, imp: !!k.important, urg: !!k.urgent, todo: (k.todo || []).join('\n'), notes: k.notes || '', src: k.source || '', dup: '' };
+      var asgName = k.suggested_assignee ? String(k.suggested_assignee).trim() : '';
+      var asgId = asgName ? matchMemberId(asgName, st.employees) : null;
+      if (asgId) vote[asgId] = (vote[asgId] || 0) + 1;
+      else if (asgName) hints.push(asgName);
+      var notes = k.notes || '';
+      if (asgName) {
+        var tip = L('Doc named assignee: ', 'Dokumen namakan assignee: ') + asgName;
+        notes = notes ? (notes + '\n' + tip) : tip;
+      }
+      return { on: true, title: k.title, tag: k.tag || '', due: sd.d || '', moved: sd.moved ? sd.from : '', start: k.start_date || '', h: k.est_hours, imp: !!k.important, urg: !!k.urgent, todo: (k.todo || []).join('\n'), notes: notes, src: k.source || '', dup: '', asg: asgId || '' };
     });
+    /* If every matched task points at the same member, preselect Owner; else keep me */
+    var ids = Object.keys(vote);
+    if (ids.length === 1) S.owner = ids[0];
     await markDup();
   }
   async function markDup() {

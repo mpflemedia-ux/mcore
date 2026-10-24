@@ -1,0 +1,48 @@
+name: deploy-ai-proxy-doc-acc-oneshot
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-ai-proxy-doc-acc.yml'
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump pj-ai-import cache bust
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/index.html')
+          t = p.read_text()
+          old, new = 'pj-ai-import.js?v=1', 'pj-ai-import.js?v=2'
+          if old not in t:
+              # already bumped or different
+              if new in t:
+                  print('already v=2')
+              else:
+                  raise SystemExit('pj-ai-import.js?v=1 not found')
+          else:
+              p.write_text(t.replace(old, new, 1))
+              print('bumped to v=2')
+          PY
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy ai-proxy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy ai-proxy --project-ref wjqhhnjlgoigoagsnsen
+      - name: Commit cache bust + remove oneshot workflow
+        run: |
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/deploy-ai-proxy-doc-acc.yml
+          git add -A app/index.html .github/workflows/deploy-ai-proxy-doc-acc.yml
+          git diff --cached --quiet && echo "nothing to commit" && exit 0
+          git commit -m "chore: bump pj-ai-import?v=2 + remove oneshot deploy-ai-proxy-doc-acc"
+          git push
