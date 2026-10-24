@@ -1,4 +1,4 @@
-/* Booking Inbox i18n (Details|Proof|Docs|Actions). New keys only. v1 */
+/* Booking Inbox i18n (Details|Proof|Docs|Actions). New keys only. v2 */
 (function () {
   var I = window.BKINBI = window.BKINBI || {};
   I.en = {
@@ -12,6 +12,8 @@
     verify: 'Verify', reject: 'Reject', openQ: 'Open in Payments list',
     docInv: 'Invoice', docSlip: 'Uploaded slip', docRcpt: 'Official receipt', docPay: 'Client status link',
     docNone: 'Not available yet', copy: 'Copy', open: 'Open',
+    openSlip: 'Open receipt', noSlipCash: 'No uploaded receipt — closed as cash / paid outside.',
+    noSlipWa: 'WA proof has no file. Ask customer to upload, or verify from note.',
     actShareWa: 'WhatsApp', actCash: 'Confirm cash / paid outside', actCashHint: 'Walk-in or paid outside the system. Closes any open proof and confirms the booking.',
     actRel: 'Release slot', actAmend: 'Amend', actDel: 'Delete',
     confBal: 'Confirmed — balance due later', confFull: 'Confirmed — paid',
@@ -29,6 +31,8 @@
     verify: 'Sahkan', reject: 'Tolak', openQ: 'Buka senarai Bayaran',
     docInv: 'Invois', docSlip: 'Resit dimuat naik', docRcpt: 'Resit rasmi', docPay: 'Link status pelanggan',
     docNone: 'Belum ada', copy: 'Salin', open: 'Buka',
+    openSlip: 'Buka resit', noSlipCash: 'Tiada resit dimuat naik — ditutup tunai / bayar luar sistem.',
+    noSlipWa: 'Bukti WA tiada fail. Minta pelanggan muat naik, atau sahkan dari nota.',
     actShareWa: 'WhatsApp', actCash: 'Sahkan tunai / bayar luar sistem', actCashHint: 'Walk-in atau bayar di luar sistem. Tutup bukti terbuka dan sahkan tempahan.',
     actRel: 'Lepaskan slot', actAmend: 'Pinda', actDel: 'Padam',
     confBal: 'Disahkan — baki perlu dibayar kemudian', confFull: 'Disahkan — sudah dibayar',

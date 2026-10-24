@@ -1,4 +1,4 @@
-/* Booking Inbox core: tabs + proof + claim highlight. v2 */
+/* Booking Inbox core: tabs + proof + claim highlight. v3 */
 (function () {
   if (window.BKINB) return;
   var I = window.BKINBI, V = window.BKPAYV, A = window.BKPAYA, P = window.PAYX;
@@ -55,7 +55,11 @@
     if (B.wantClaim) list.sort(function (a, b) { return (String(a.id) === String(B.wantClaim) ? 0 : 1) - (String(b.id) === String(B.wantClaim) ? 0 : 1); });
     list.forEach(function (c, i) {
       var hi = B.wantClaim && String(c.id) === String(B.wantClaim);
+      var f0 = c.files && c.files[0];
       h += '<div class="bkinb-card' + (hi ? ' bkinb-hi' : '') + '" data-cid="' + esc(c.id) + '">' + stPill(c.status) + ' <span class="bkinb-meta">' + esc(srcLabel(c.source)) + '</span><div class="bkinb-amt">' + esc(money(c.amount)) + '</div><div class="bkinb-meta">' + esc(t('wait')) + ': ' + esc(ago(c.created_at)) + (c.note ? ' · ' + esc(c.note) : '') + (c.reject_reason ? '<br>' + esc(c.reject_reason) : '') + '</div>';
+      if (f0 && f0.path) h += '<div class="bkinb-act"><a class="db-btn" href="#" target="_blank" rel="noopener" data-slip-open="' + esc(f0.path) + '">' + esc(t('openSlip')) + '</a></div>';
+      else if (c.source === 'cash_close') h += '<p class="bkinb-hint">' + esc(t('noSlipCash')) + '</p>';
+      else if (c.source === 'wa_staff') h += '<p class="bkinb-hint">' + esc(t('noSlipWa')) + '</p>';
       if (c.status === 'pending' && (hi || i === 0)) h += '<div class="bkinb-act"><button type="button" class="db-btn" data-bkinb="ok" data-cid="' + esc(c.id) + '">' + esc(t('verify')) + '</button><button type="button" class="db-btn" data-bkinb="rj" data-cid="' + esc(c.id) + '">' + esc(t('reject')) + '</button></div>';
       if (c.status === 'approved') h += '<div class="bkinb-alert">' + esc(n.bal > 0.005 ? t('confBal') + ' · ' + t('balDue', { b: money(n.bal) }) : t('confFull')) + '</div>';
       h += '</div>';
