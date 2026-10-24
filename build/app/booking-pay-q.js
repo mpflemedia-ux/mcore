@@ -1,4 +1,4 @@
-/* M-Core booking payment flow - staff "Payments to review" queue: receipt on the left, invoice + checks on the right, one-tap Verify / Reject.
+/* M-Core booking payment flow - staff "Payments to review" queue: receipt on the left, invoice + checks on the right, one-tap Verify / Reject. Slip preview via V.preview when inbox loaded.
    Opens from the Sales tabs, from the bell (link {page:'sales', params:{bkpq:1, claim}}), ?page=bkpq&id= and by BKPAYQ.open(id). Mobile: list -> detail with Back. v2 */
 (function () {
   var P = window.PAYX, V = window.BKPAYV, A = window.BKPAYA; if (!P || !V || !A || window.BKPAYQ) return;
@@ -20,8 +20,8 @@
   function detail(x) {
     var f = V.files(x.c)[0], img = f && /^image\//i.test(f.mime || ''), why = V.may(x), n = x.n, bk = x.bk;
     var slip = !f ? '<div class="bkq-ph">' + E(t('qNoFile')) + '</div>' : !x.url ? '<div class="bkq-ph"><i class="ti ti-loader"></i></div>' :
-      img ? '<a href="' + E(x.url) + '" target="_blank" rel="noopener"><img class="bkq-img" src="' + E(x.url) + '" alt="' + E(t('qSlip')) + '"></a>' : '<div class="bkq-ph"><i class="ti ti-file-type-pdf"></i> ' + E(f.name || 'PDF') + '</div>';
-    return '<div class="bkq-c"><div class="bkq-h"><span>' + E(t('qSlip')) + '</span>' + (x.url ? '<a class="btn btn-outline btn-sm" href="' + E(x.url) + '" target="_blank" rel="noopener"><i class="ti ti-zoom-in"></i> ' + E(t('qZoom')) + '</a>' : '') + '</div>' + slip +
+      img ? '<button type="button" class="bkq-img-btn" data-zoom><img class="bkq-img" src="' + E(x.url) + '" alt="' + E(t('qSlip')) + '"></button>' : '<div class="bkq-ph"><i class="ti ti-file-type-pdf"></i> ' + E(f.name || 'PDF') + '</div>';
+    return '<div class="bkq-c"><div class="bkq-h"><span>' + E(t('qSlip')) + '</span>' + (x.url ? '<button type="button" class="btn btn-outline btn-sm" data-zoom><i class="ti ti-zoom-in"></i> ' + E(t('qZoom')) + '</button>' : '') + '</div>' + slip +
       kv('qSent', E(P.money(x.c.amount)) + ' · ' + E(A.time(x.c.created_at, bm())) + ' (MYT)') + '</div>' +
       '<div class="bkq-c"><div class="bkq-h"><span>' + E(t('qInv')) + ' ' + E(x.inv.ref_no || '') + '</span><button type="button" class="btn btn-outline btn-sm" data-open>' + E(t('qOpen')) + '</button></div>' +
       (bk ? kv('qBk', E((bk.quote_ref || '') + ' · ' + V.ref(x.inv))) + kv('qSvc', x.svc ? E(x.svc.name || '') : '') + kv('qWhen', E(A.time(bk.starts_at, bm())) + ' (MYT)') : '') +
@@ -41,6 +41,13 @@
     el.querySelectorAll('.bkq-it').forEach(function (b) { b.onclick = function () { pick(l[+b.dataset.i]); }; });
     var x = S.sel; if (!x) return;
     dt.querySelector('[data-open]').onclick = function () { Q.close(); openPage('sales', { view: 'inv-detail', id: x.inv.id }); };
+    dt.querySelectorAll('[data-zoom]').forEach(function (b) {
+      b.onclick = function () {
+        var f = V.files(x.c)[0], meta = { name: (f && f.name) || 'receipt', mime: (f && f.mime) || '' };
+        if (V.preview) V.preview(x.url, meta);
+        else window.open(x.url, '_blank', 'noopener');
+      };
+    });
     if (x.ro) return;
     var rj = dt.querySelector('.bkq-rj');
     dt.querySelector('[data-rj]').onclick = function () { rj.hidden = !rj.hidden; if (!rj.hidden) dt.querySelector('#bkq-w').focus(); };
