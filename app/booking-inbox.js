@@ -1,4 +1,4 @@
-/* Booking Inbox core: tabs + proof. v1 */
+/* Booking Inbox core: tabs + proof + claim highlight. v2 */
 (function () {
   if (window.BKINB) return;
   var I = window.BKINBI, V = window.BKPAYV, A = window.BKPAYA, P = window.PAYX;
@@ -51,9 +51,12 @@
     if (!d.claims.length) {
       return '<div class="bkinb-alert">' + esc(t('noClaim')) + '</div><p class="bkinb-hint">' + esc(t('waRecvHint')) + '</p><div class="bkinb-act"><button type="button" class="db-btn" data-bkinb="wa">' + esc(t('waRecv')) + '</button></div>';
     }
-    d.claims.forEach(function (c, i) {
-      h += '<div class="bkinb-card">' + stPill(c.status) + ' <span class="bkinb-meta">' + esc(srcLabel(c.source)) + '</span><div class="bkinb-amt">' + esc(money(c.amount)) + '</div><div class="bkinb-meta">' + esc(t('wait')) + ': ' + esc(ago(c.created_at)) + (c.note ? ' · ' + esc(c.note) : '') + (c.reject_reason ? '<br>' + esc(c.reject_reason) : '') + '</div>';
-      if (c.status === 'pending' && i === 0) h += '<div class="bkinb-act"><button type="button" class="db-btn" data-bkinb="ok" data-cid="' + esc(c.id) + '">' + esc(t('verify')) + '</button><button type="button" class="db-btn" data-bkinb="rj" data-cid="' + esc(c.id) + '">' + esc(t('reject')) + '</button></div>';
+    var list = d.claims.slice();
+    if (B.wantClaim) list.sort(function (a, b) { return (String(a.id) === String(B.wantClaim) ? 0 : 1) - (String(b.id) === String(B.wantClaim) ? 0 : 1); });
+    list.forEach(function (c, i) {
+      var hi = B.wantClaim && String(c.id) === String(B.wantClaim);
+      h += '<div class="bkinb-card' + (hi ? ' bkinb-hi' : '') + '" data-cid="' + esc(c.id) + '">' + stPill(c.status) + ' <span class="bkinb-meta">' + esc(srcLabel(c.source)) + '</span><div class="bkinb-amt">' + esc(money(c.amount)) + '</div><div class="bkinb-meta">' + esc(t('wait')) + ': ' + esc(ago(c.created_at)) + (c.note ? ' · ' + esc(c.note) : '') + (c.reject_reason ? '<br>' + esc(c.reject_reason) : '') + '</div>';
+      if (c.status === 'pending' && (hi || i === 0)) h += '<div class="bkinb-act"><button type="button" class="db-btn" data-bkinb="ok" data-cid="' + esc(c.id) + '">' + esc(t('verify')) + '</button><button type="button" class="db-btn" data-bkinb="rj" data-cid="' + esc(c.id) + '">' + esc(t('reject')) + '</button></div>';
       if (c.status === 'approved') h += '<div class="bkinb-alert">' + esc(n.bal > 0.005 ? t('confBal') + ' · ' + t('balDue', { b: money(n.bal) }) : t('confFull')) + '</div>';
       h += '</div>';
     });
@@ -90,6 +93,9 @@
       };
     });
     if (B.bindExtra) B.bindExtra(root, d, buildX);
+    var hi = root.querySelector('.bkinb-hi');
+    if (hi) try { hi.scrollIntoView({ block: 'nearest' }); } catch (e1) {}
+    B.wantClaim = null;
   }
 
   function mount(host, bkId, tab) {

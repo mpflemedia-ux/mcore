@@ -1,4 +1,4 @@
-/* Bookings card: default all dates + date/status/time asc-desc + amend/delete. Day bounds = MYT. Tap New booking alert opens that row. v3 */
+/* Bookings card: default all dates + date/status/time asc-desc + amend/delete. Day bounds = MYT. Tap New booking alert opens Inbox (+proof if claim). v5 */
 (function () {
   var STATE = { range: 'all', status: 'all', sort: 'starts', force: false };
   function isBm() { return APP.language === 'bm'; }
@@ -235,7 +235,13 @@
     var o = window.openPage;
     window.openPage = function (page, params) {
       params = params || {};
-      if (params.bkid && /^[0-9a-f-]{36}$/i.test(String(params.bkid))) window.__bkWantId = String(params.bkid);
+      if (params.bkid && /^[0-9a-f-]{36}$/i.test(String(params.bkid))) {
+        window.__bkWantId = String(params.bkid);
+        if (params.bktab) window.__bkWantTab = String(params.bktab);
+        else if (params.claim) window.__bkWantTab = 'proof';
+        else if (!window.__bkWantTab) window.__bkWantTab = 'det';
+        try { if (typeof window.__bkCardPaint === 'function') setTimeout(function () { window.__bkCardPaint(); }, 40); } catch (e0) {}
+      }
       return o.apply(this, arguments);
     };
     window.openPage.__bkcard = 1;

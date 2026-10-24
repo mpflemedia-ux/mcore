@@ -1,4 +1,4 @@
-/* Booking Inbox tabs CSS (light+dark via theme vars). v1 */
+/* Booking Inbox tabs CSS + claim highlight. v2 */
 (function () {
   if (window.__bkinbCss) return; window.__bkinbCss = 1;
   var s = document.createElement('style'); s.id = 'bkinb-css';
@@ -10,6 +10,7 @@
     '.bkinb-tab[aria-selected="true"]{color:var(--k-p,var(--primary,#2dd4bf));border-bottom-color:var(--k-p,var(--primary,#2dd4bf))}',
     '.bkinb-pane{display:none}.bkinb-pane.on{display:block}',
     '.bkinb-card{border:1px solid var(--border,var(--db-border,#2a3544));border-radius:10px;padding:10px;margin:0 0 8px;background:var(--card,var(--db-card,transparent))}',
+    '.bkinb-hi{outline:2px solid var(--primary,#22d3ee);outline-offset:1px}',
     '.bkinb-amt{font-size:20px;font-weight:700;color:var(--k-p,var(--primary,#2dd4bf))}',
     '.bkinb-meta{font-size:12px;color:var(--text-2,var(--db-text3,#9aa8b8));margin-top:4px;line-height:1.45}',
     '.bkinb-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}',
