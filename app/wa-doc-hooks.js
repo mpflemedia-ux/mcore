@@ -90,7 +90,7 @@
       var ids = [];
       rows.forEach(function (r) {
         var act = r.querySelector('[data-bk-act="amend"]'); if (!act) return;
-        var id = r.dataset.bkRow, b = waBtn('db-btn'); b.dataset.wadBk = id; ids.push(id);
+        var id = r.dataset.bkRow, b = waBtn('db-btn'); b.dataset.wadBk = id; b.setAttribute('aria-label', (APP.language==='bm'?'Mesej pelanggan':'Message customer')); b.title = (APP.language==='bm'?'Mesej pelanggan':'Message customer'); try { var tx=b.querySelector('span,b'); } catch(e){} ids.push(id);
         b.onclick = function (e) { e.preventDefault(); shareBooking(id); };
         act.parentNode.insertBefore(b, act);
       });
