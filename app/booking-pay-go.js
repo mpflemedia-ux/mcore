@@ -8,7 +8,14 @@
   function wrapNT() {
     var NT = window.NT; if (!NT || typeof NT.fromRow !== 'function') return false; if (NT.fromRow.__bkgo) return true;
     var fr = NT.fromRow; NT.fromRow = function (n) { var it = fr.apply(this, arguments), c = claimOf(n);
-      if (c && it && it.go && isQ({ page: it.go[0], params: it.go[1] })) it.go = ['sales', Object.assign({}, it.go[1], { claim: c })]; return it; };
+      if (c && it && it.go) {
+        /* Inbox spine: open Dashboard booking with proof tab; claim id kept for highlight */
+        var bk = n && n.link && n.link.params && n.link.params.bkid;
+        if (bk) it.go = ['dashboard', { bkid: String(bk), bktab: 'proof', claim: c }];
+        else if (isQ({ page: it.go[0], params: it.go[1] }) || (it.go[0] === 'dashboard')) it.go = ['dashboard', Object.assign({}, (it.go[1] || {}), { bktab: 'proof', claim: c })];
+        else if (isQ({ page: it.go[0], params: it.go[1] })) it.go = ['sales', Object.assign({}, it.go[1], { claim: c })];
+      }
+      return it; };
     NT.fromRow.__bkgo = 1; return true;
   }
   var tries = 0; (function go() { if (!wrapNT() && ++tries < 40) setTimeout(go, 250); })();

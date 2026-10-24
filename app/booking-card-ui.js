@@ -94,7 +94,7 @@
     var live = pending || r.status === 'confirmed';
     var html = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">';
     if (pending) {
-      html += '<button type="button" class="db-btn" data-bk-act="cash" data-id="' + esc(r.id) + '">' + (isBm() ? 'Sahkan tunai' : 'Confirm cash') + '</button>';
+      html += '<button type="button" class="db-btn" data-bk-act="cash" data-id="' + esc(r.id) + '">' + (isBm() ? 'Sahkan tunai / luar sistem' : 'Confirm cash / outside') + '</button>';
       html += '<button type="button" class="db-btn" data-bk-act="release" data-id="' + esc(r.id) + '">' + (isBm() ? 'Lepaskan' : 'Release') + '</button>';
     }
     var terminal = r.status === 'expired' || r.status === 'cancelled';
@@ -143,7 +143,7 @@
     if (!STATE.force && body.querySelector('details[open]')) return;
     STATE.force = false;
     var b = bounds();
-    var cols = 'id,customer_name,customer_email,customer_phone,starts_at,ends_at,status,quote_ref,payment_channel,created_at,notes,activity_id,booking_services(name)';
+    var cols = 'id,invoice_id,customer_name,customer_email,customer_phone,starts_at,ends_at,status,quote_ref,payment_channel,created_at,notes,activity_id,booking_services(name)';
     var q = await sb.from('bookings')
       .select(cols + ',staff_id,employees(name,nickname)')
       .eq('tenant_id', APP.tenant.id)
@@ -223,6 +223,9 @@
     if (!row && STATE.range !== 'all') { STATE.range = 'all'; STATE.status = 'all'; STATE.force = true; paint(); return; }
     if (!row) { window.__bkWantId = null; return; }
     row.open = true;
+    if (window.__bkWantTab && window.BKINB && typeof BKINB.mount === 'function') {
+      try { BKINB.mount(row, id, window.__bkWantTab); } catch (e0) {}
+    }
     try { if (typeof _dbScrollToSec === 'function') _dbScrollToSec('db-sec-booking'); } catch (e) {}
     try { row.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { try { row.scrollIntoView(true); } catch (e2) {} }
     window.__bkWantId = null;

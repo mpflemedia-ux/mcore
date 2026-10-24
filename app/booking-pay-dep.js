@@ -60,4 +60,6 @@
     D.set(list);
   }
   new MutationObserver(function () { clearTimeout(D._t); D._t = setTimeout(scan, 200); }).observe(document.body, { childList: true, subtree: true });
+
+  (function tag(){ var box=document.getElementById('bkd-set'); if(!box||document.getElementById('bk-pay-dep-root')) return; var w=document.createElement('div'); w.id='bk-pay-dep-root'; box.parentNode.insertBefore(w, box.nextSibling); })(); setInterval(function(){ try{ tag(); }catch(e){} }, 1500);
 })();
