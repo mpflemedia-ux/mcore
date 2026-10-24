@@ -32,8 +32,8 @@
   U.html = function (x) {
     var s = x.state, v = x.v || {}, n = x.n, bm = x.lang === 'bm', h = '';
     if (s === 'ok') {
-      h = hd(x, 'ok', U.ic('ok') + T(x, 'sOk')) + '<h3 class="bkpay-ti">' + T(x, 'sConf') + '</h3>' + svc(x) +
-        '<div class="bkpay-box"><div class="bkpay-amt"><div><span>' + T(x, v.receipt_no ? 'sRcpt' : 'sPaid', { n: v.receipt_no || '' }) + '</span><b>' + A.rm(n.paid) + '</b></div><small>' + (n.bal > 0.005 ? T(x, 'sBal', { b: A.rm(n.bal) }) : T(x, 'sPaid')) + '</small></div></div>' +
+      h = hd(x, 'ok', U.ic('ok') + T(x, 'sOk')) + '<h3 class="bkpay-ti">' + T(x, n.bal > 0.005 ? 'sConfBal' : 'sConf') + '</h3>' + svc(x) +
+        '<div class="bkpay-box"><div class="bkpay-amt"><div><span>' + T(x, v.receipt_no ? 'sRcpt' : 'sPaid', { n: v.receipt_no || '' }) + '</span><b>' + A.rm(n.paid) + '</b></div><small>' + (n.bal > 0.005 ? T(x, 'sConfBal') + ' · ' + T(x, 'sBal', { b: A.rm(n.bal) }) : T(x, 'sPaid')) + '</small></div></div>' +
         (v.receipt_url ? '<div class="bkpay-row"><a class="bkpay-btn" href="' + A.esc(v.receipt_url) + '" target="_blank" rel="noopener">' + U.ic('dl') + T(x, 'sDl') + '</a><a class="bkpay-btn" href="https://wa.me/?text=' + encodeURIComponent(BKPAYI.t(x.lang, 'sShareMsg', { n: v.receipt_no || '', b: v.quote_ref || '', u: v.receipt_url })) + '" target="_blank" rel="noopener">' + U.ic('wa') + T(x, 'sShare') + '</a></div>' : '') +
         '<div style="margin-top:8px">' + wa(x, 'sAsk') + '</div>' + keep(x);
     } else if (s === 'rev') {
@@ -48,7 +48,7 @@
       var top = s === 'rej' ? '<div class="bkpay-msg err"><b>' + T(x, 'sRej') + '</b><br>' + T(x, 'sRejWhy') + ': ' + A.esc(v.reject_reason || '-') + '<br>' + T(x, 'sRejNew', { t: A.time(v.hold_until, bm) }) + '</div>'
         : s === 'part' ? '<div class="bkpay-msg w"><b>' + T(x, 'sPart') + '</b><br>' + T(x, 'sPartMore', { a: A.rm(n.paid), b: A.rm(n.due), t: A.time(v.hold_until, bm) }) + '</div>' : '';
       h = hd(x, s === 'rej' ? 'err' : 'hold', T(x, s === 'rej' ? 'sRej' : (s === 'part' ? 'sPart' : 'pAwait')), timer(x)) + '<h3 class="bkpay-ti">' + T(x, 'pTitle') + '</h3>' + svc(x) + top + amt(x) + qr(x) + upl(x, (x.inv && (x.inv.payment_qr_url || x.inv.account_number)) ? 2 : 1) +
-        '<div class="bkpay-or">' + T(x, 'pOr') + '</div>' + wa(x) + '<p class="bkpay-note">' + T(x, 'pCounts') + '</p>' + keep(x);
+        '<div class="bkpay-or">' + T(x, 'pOr') + '</div>' + wa(x, 'pWaBackup') + '<p class="bkpay-note">' + T(x, 'pHoldHint') + '</p>' + keep(x);
     }
     return h;
   };
