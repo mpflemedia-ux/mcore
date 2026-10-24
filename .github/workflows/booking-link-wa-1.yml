@@ -1,0 +1,27 @@
+name: booking-link-wa-1-oneshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/booking-link-wa-1.yml']
+permissions:
+  contents: write
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          F=app/index.html
+          if grep -q 'booking-token-fix.js?v=2' "$F"; then echo no-op; exit 0; fi
+          test "$(git hash-object "$F")" = "d96e06bad54a67c3d79e39e8a9992694df02cdda"
+          test "$(git hash-object app/booking-token-fix.js)" = "0f860b6422ecc8e8cbc871ee226f0430aa920a7d"
+          test "$(git hash-object .github/oneshot/bklinkwa1.py)" = "ebb8cd3c7738d7d350860f5a7e7a68cf933a7c48"
+          python3 .github/oneshot/bklinkwa1.py "$F"
+          test "$(git hash-object "$F")" = "ce33f4baf3140f3f56eeff8bc370dc444a12c638"
+          git rm -q .github/oneshot/bklinkwa1.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "fix(booking): index.html - WhatsApp share for public booking link (booking-token-fix.js v2)"
+          git push
