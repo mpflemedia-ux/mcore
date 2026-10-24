@@ -1,4 +1,4 @@
-/* M-Core Projects All-projects - UI: mobile compact selector + ⋯ menu, project pills, summary strip, New Task project picker. */
+/* M-Core Projects All-projects - UI: mobile compact selector + ⋯ menu, project pills, summary strip, New Task project picker. t534u: clear orphan .pja-sum2 */
 (function () {
   var A = window.PJA; if (!A || A.ui) return;
   function closeMenus() { document.querySelectorAll('.pja-menu.on').forEach(function (m) { m.classList.remove('on'); }); }
@@ -66,7 +66,8 @@
 
   A.sumUi = function (st) {
     var main = document.getElementById('main'); if (!main) return;
-    var old = main.querySelector('.pja-sum'); if (old) old.remove();
+    /* clear both — sum2 was orphaned on re-decorate (duplicate staff chips) */
+    main.querySelectorAll('.pja-sum, .pja-sum2').forEach(function (el) { el.remove(); });
     if (!(A.isAll(st) || A.hasFilt())) return;
     var list = A.visible(st);
     if (window.PJM && PJM.ok2) {
