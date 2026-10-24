@@ -10,7 +10,8 @@
     var v = S.v || null, inv = S.inv || {}, n = A.need(v, inv), l = lang(), x = { lang: l, v: v, inv: inv, n: n, file: S.file, thumb: S.thumb, amt: S.amt, err: S.err, busy: S.busy };
     x.state = S.state = A.state(v, inv);
     var ph = inv.phone || '', ref = (v && v.ref_no) || inv.ref_no || '';
-    var msg = BKPAYI.t(l, 'pWaMsg', { i: ref, a: A.rm(n.due || n.bal), b: v ? (v.quote_ref || '') + ' (' + v.pay_ref + ')' : '' }).trim();
+    var invOnly = !!(v && !v.booking_id);
+    var msg = BKPAYI.t(l, invOnly ? 'pWaMsgInv' : 'pWaMsg', { i: ref, a: A.rm(n.due || n.bal), b: v ? (v.quote_ref || '') + ' (' + v.pay_ref + ')' : '' }).trim();
     /* WhatsApp: customer picks the company number (tenant phone from the invoice) or any contact (wa.me without a number) */
     x.waAny = 'https://wa.me/?text=' + encodeURIComponent(msg); x.waOpen = S.waOpen;
     if (A.phone(ph)) { x.waHref = A.wa(ph, msg); x.waCo = inv.tenant_name || ''; x.waPh = ph; }
