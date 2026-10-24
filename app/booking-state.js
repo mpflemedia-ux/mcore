@@ -139,6 +139,11 @@
       e.stopPropagation();
       var id = btn.getAttribute('data-id');
       var act = btn.getAttribute('data-bk-act');
+      if (act === 'share-wa') {
+        if (window.WAD && typeof WAD.shareBk === 'function') WAD.shareBk(id);
+        else toast(APP.language === 'bm' ? 'WhatsApp belum sedia' : 'WhatsApp not ready', 'error');
+        return;
+      }
       if (act === 'amend') {
         var row = btn.closest('details');
         var f = row && row.querySelector('.bk-amend-form');

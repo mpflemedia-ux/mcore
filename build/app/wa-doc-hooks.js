@@ -1,4 +1,4 @@
-/* WhatsApp document share (Phase 1) - tiny hooks: invoice detail, quotation, booking card, POS done. Hidden in PA mode / without access / before SQL. v1 */
+/* WhatsApp document share (Phase 1) - tiny hooks: invoice detail, quotation, booking card, POS done. PA full access via W.allowed; Share WhatsApp pjw-btn. v2 */
 (function () {
   if (!window.WAD || WAD.shareInv) return;
   var W = WAD, E = W.esc;
@@ -90,7 +90,9 @@
       var ids = [];
       rows.forEach(function (r) {
         var act = r.querySelector('[data-bk-act="amend"]'); if (!act) return;
-        var id = r.dataset.bkRow, b = waBtn('db-btn'); b.dataset.wadBk = id; b.setAttribute('aria-label', (APP.language==='bm'?'Mesej pelanggan':'Message customer')); b.title = (APP.language==='bm'?'Mesej pelanggan':'Message customer'); try { var tx=b.querySelector('span,b'); } catch(e){} ids.push(id);
+        var id = r.dataset.bkRow, lab = 'Share WhatsApp';
+        var b = waBtn('pjw-btn', lab); b.dataset.wadBk = id;
+        b.setAttribute('aria-label', lab); b.title = lab; ids.push(id);
         b.onclick = function (e) { e.preventDefault(); shareBooking(id); };
         act.parentNode.insertBefore(b, act);
       });
@@ -100,7 +102,7 @@
       }, function () {});
     });
   }
-  function shareBooking(id) {
+  W.shareBk = function shareBooking(id) {
     sb.from('bookings').select('id,customer_name,customer_phone,starts_at,status,quote_ref,booking_services(name)').eq('id', id).single().then(function (r) {
       if (r.error || !r.data) throw r.error || new Error('Not found');
       var d = r.data, svc = (d.booking_services && d.booking_services.name) || 'Booking';

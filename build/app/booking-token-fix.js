@@ -1,4 +1,4 @@
-/* Copy + WhatsApp-share public booking link (?book=TOKEN). Survives ensure_booking_public_token RPC fail. v2 */
+/* Copy + WhatsApp-share public booking link (?book=TOKEN). Survives ensure_booking_public_token RPC fail. v3 · pjw-btn */
 (function () {
   function bm() { return APP.language === 'bm'; }
   async function token() {
@@ -35,17 +35,18 @@
     try { window.open(href, '_blank', 'noopener'); }
     catch (e) { location.href = href; }
   }
-  function ensureWa(copyBtn, id, cls) {
+  function waLabel() { return 'Share WhatsApp'; } /* EN+BM match SR sd-wa-detail */
+  function ensureWa(copyBtn, id) {
     if (!copyBtn || !copyBtn.parentNode) return null;
     var wa = document.getElementById(id);
-    if (wa) return wa;
-    wa = document.createElement('button');
-    wa.type = 'button'; wa.id = id;
-    if (cls) wa.className = cls;
-    else wa.className = copyBtn.className || 'btn btn-outline btn-sm';
-    wa.innerHTML = '<i class="ti ti-brand-whatsapp" aria-hidden="true"></i> ' + (bm() ? 'Kongsi link tempahan' : 'Share booking link');
-    wa.setAttribute('aria-label', bm() ? 'Kongsi link tempahan di WhatsApp' : 'Share booking link on WhatsApp');
-    copyBtn.parentNode.insertBefore(wa, copyBtn.nextSibling);
+    if (!wa) {
+      wa = document.createElement('button');
+      wa.type = 'button'; wa.id = id;
+      copyBtn.parentNode.insertBefore(wa, copyBtn.nextSibling);
+    }
+    wa.className = 'pjw-btn'; /* green outline like SR Share WhatsApp */
+    wa.innerHTML = '<i class="ti ti-brand-whatsapp" aria-hidden="true"></i> ' + waLabel();
+    wa.setAttribute('aria-label', waLabel());
     return wa;
   }
   function bind() {
@@ -59,16 +60,14 @@
       sbtn._tokFixed = true;
       sbtn.addEventListener('click', function (e) { e.preventDefault(); e.stopImmediatePropagation(); copy(); }, true);
     }
-    var dWa = ensureWa(btn, 'db-book-wa', btn ? (btn.className || 'db-btn') : 'db-btn');
+    var dWa = ensureWa(btn, 'db-book-wa');
     if (dWa && !dWa._tokFixed) {
       dWa._tokFixed = true;
       dWa.addEventListener('click', function (e) { e.preventDefault(); e.stopImmediatePropagation(); shareWa(); }, true);
     }
-    var sWa = ensureWa(sbtn, 'bk-link-wa', sbtn ? (sbtn.className || 'btn btn-outline btn-sm') : 'btn btn-outline btn-sm');
+    var sWa = ensureWa(sbtn, 'bk-link-wa');
     if (sWa && !sWa._tokFixed) {
       sWa._tokFixed = true;
-      /* outline next to primary copy */
-      if (sbtn && /btn-primary/.test(sbtn.className || '')) sWa.className = 'btn btn-outline btn-sm';
       sWa.addEventListener('click', function (e) { e.preventDefault(); e.stopImmediatePropagation(); shareWa(); }, true);
     }
   }
