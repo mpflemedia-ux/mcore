@@ -1,4 +1,4 @@
-/* Copy + WhatsApp-share public booking link (?book=TOKEN). Survives ensure_booking_public_token RPC fail. v3 · pjw-btn */
+/* Copy + WhatsApp-share public booking link (?book=TOKEN). Survives ensure_booking_public_token RPC fail. v4 · pjw polish */
 (function () {
   function bm() { return APP.language === 'bm'; }
   async function token() {
@@ -35,7 +35,7 @@
     try { window.open(href, '_blank', 'noopener'); }
     catch (e) { location.href = href; }
   }
-  function waLabel() { return 'Share WhatsApp'; } /* EN+BM match SR sd-wa-detail */
+  function waLabel() { return 'WhatsApp'; } /* short EN+BM — single-line toolbar */
   function ensureWa(copyBtn, id) {
     if (!copyBtn || !copyBtn.parentNode) return null;
     var wa = document.getElementById(id);
