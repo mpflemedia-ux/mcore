@@ -23,6 +23,7 @@
       h += '<button type="button" class="db-btn" data-bk-act="cash" data-id="' + esc(d.bk.id) + '">' + esc(t('actCash')) + '</button>';
       h += '<button type="button" class="db-btn" data-bk-act="release" data-id="' + esc(d.bk.id) + '">' + esc(t('actRel')) + '</button>';
     }
+    h += '<button type="button" class="pjw-btn" data-bk-act="share-wa" data-id="' + esc(d.bk.id) + '"><i class="ti ti-brand-whatsapp" aria-hidden="true"></i> ' + esc(t('actShareWa')) + '</button>';
     h += '<button type="button" class="db-btn" data-bk-act="amend" data-id="' + esc(d.bk.id) + '">' + esc(t('actAmend')) + '</button>';
     h += '<button type="button" class="db-btn" data-bk-act="delete" data-id="' + esc(d.bk.id) + '">' + esc(t('actDel')) + '</button></div>';
     return h;
