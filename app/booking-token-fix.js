@@ -43,7 +43,7 @@
     wa.type = 'button'; wa.id = id;
     if (cls) wa.className = cls;
     else wa.className = copyBtn.className || 'btn btn-outline btn-sm';
-    wa.innerHTML = '<i class="ti ti-brand-whatsapp" aria-hidden="true"></i> ' + (bm() ? 'WhatsApp' : 'WhatsApp');
+    wa.innerHTML = '<i class="ti ti-brand-whatsapp" aria-hidden="true"></i> ' + (bm() ? 'Kongsi link tempahan' : 'Share booking link');
     wa.setAttribute('aria-label', bm() ? 'Kongsi link tempahan di WhatsApp' : 'Share booking link on WhatsApp');
     copyBtn.parentNode.insertBefore(wa, copyBtn.nextSibling);
     return wa;

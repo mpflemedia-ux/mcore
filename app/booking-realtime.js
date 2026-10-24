@@ -74,11 +74,18 @@
     var name = b.customer_name || 'Customer';
     var when = fmt(b.starts_at);
     var msg = 'New booking: ' + name;
-    if (typeof showToast === 'function') showToast(msg, 'success');
-    beep();
-    pushBell(b, msg, when);
-    if (typeof loadNotifications === 'function') try { loadNotifications(); } catch (e) {}
-    bumpBadge();
+    function fire() {
+      if (typeof showToast === 'function') showToast(msg, 'success');
+      beep();
+      pushBell(b, msg, when);
+      if (typeof loadNotifications === 'function') try { loadNotifications(); } catch (e) {}
+      bumpBadge();
+    }
+    if (!window.sb || !APP.tenant) return fire();
+    sb.from('pay_settings').select('bk_n_new').eq('tenant_id', APP.tenant.id).maybeSingle().then(function (r) {
+      if (r.data && r.data.bk_n_new === false) return;
+      fire();
+    }, function () { fire(); });
   }
   function banner() {
     if (typeof Notification === 'undefined') return;

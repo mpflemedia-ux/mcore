@@ -151,6 +151,9 @@
         return;
       }
       if (act === 'cash' || act === 'release') {
+        if (act === 'cash' && window.BKINB && typeof BKINB.closeClaimsFor === 'function') {
+          try { await BKINB.closeClaimsFor(id); } catch (e) {}
+        }
         var r = act === 'cash'
           ? await sb.rpc('confirm_booking_cash', { p_booking_id: id })
           : await sb.rpc('release_booking', { p_booking_id: id });
@@ -158,7 +161,7 @@
         if (act === 'cash') {
           var b = await loadBooking(id);
           if (b) await ensurePlanner(b);
-          toast(APP.language === 'bm' ? 'Disahkan — masuk planner' : 'Confirmed — added to planner');
+          toast(APP.language === 'bm' ? 'Disahkan tunai / luar sistem — masuk planner' : 'Confirmed cash / outside — added to planner');
         } else {
           var rel = await loadBooking(id);
           if (rel) await cancelPlanner(rel);
