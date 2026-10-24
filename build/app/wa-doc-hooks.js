@@ -1,4 +1,4 @@
-/* WhatsApp document share (Phase 1) - tiny hooks: invoice detail, quotation, booking card, POS done. PA full access via W.allowed; Share WhatsApp pjw-btn. v2 */
+/* WhatsApp document share (Phase 1) - tiny hooks: invoice detail, quotation, booking card, POS done. PA full access via W.allowed; WhatsApp pjw-btn polish. v3 */
 (function () {
   if (!window.WAD || WAD.shareInv) return;
   var W = WAD, E = W.esc;
@@ -90,7 +90,7 @@
       var ids = [];
       rows.forEach(function (r) {
         var act = r.querySelector('[data-bk-act="amend"]'); if (!act) return;
-        var id = r.dataset.bkRow, lab = 'Share WhatsApp';
+        var id = r.dataset.bkRow, lab = 'WhatsApp';
         var b = waBtn('pjw-btn', lab); b.dataset.wadBk = id;
         b.setAttribute('aria-label', lab); b.title = lab; ids.push(id);
         b.onclick = function (e) { e.preventDefault(); shareBooking(id); };

@@ -1,9 +1,9 @@
-/* M-Core Projects - Share WhatsApp styles (theme vars, light + dark). */
+/* M-Core Projects - Share WhatsApp styles (theme vars, light + dark). v2 · toolbar polish */
 (function () {
   if (document.getElementById('pjw-css')) return;
   var css = document.createElement('style'); css.id = 'pjw-css';
   css.textContent = ':root{--pjw:#25D366;--pjw-ink:#06281a}' +
-    '.pjw-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:34px;min-height:34px;border:1px solid var(--pjw);color:#0F7A3F;background:transparent;border-radius:8px;cursor:pointer;font-size:12.5px;padding:0 8px}body.dark .pjw-btn,[data-theme=dark] .pjw-btn{color:var(--pjw)}.pjw-btn .ti{font-size:17px}' +
+    '.pjw-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;border:1px solid var(--pjw);color:#0F7A3F;background:rgba(37,211,102,.12);border-radius:8px;cursor:pointer;font-size:13px;line-height:1.2;padding:8px 14px;white-space:nowrap;flex-shrink:0}body.dark .pjw-btn,[data-theme=dark] .pjw-btn{color:var(--pjw);background:rgba(37,211,102,.14)}.pjw-btn .ti{font-size:16px;line-height:1}' +
     '.pjw-go{background:var(--pjw)!important;border-color:var(--pjw)!important;color:var(--pjw-ink)!important;font-weight:700}' +
     '.pjw-foot{display:flex;align-items:center;gap:6px;margin-top:8px}.pjw-foot small{color:var(--text-3);font-size:11.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pjw-foot .sp{margin-left:auto;display:flex;gap:6px;flex-shrink:0}' +
     '.pj-card.pjw-late{border-color:var(--danger)}.pjw-badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:1px 6px;border-radius:99px;background:var(--danger-light,rgba(220,38,38,.15));color:var(--danger);margin-left:4px}' +
