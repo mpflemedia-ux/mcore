@@ -1581,7 +1581,7 @@ html[data-skip-intro="1"] #intro-skip {
       <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(231,233,235,.45)">MPFLE Media</div>
     </div>
     <div style="text-align:center;margin-bottom:20px;margin-top:-16px">
-      <div id="auth-tagline" style="color:rgba(255,255,255,.4);font-size:10px;letter-spacing:.5px">Business OS for books, payroll, stock &amp; sales</div>
+      <div id="auth-tagline" style="color:rgba(255,255,255,.4);font-size:10px;letter-spacing:.5px">Business OS for books, payroll, stock & sales</div>
     </div>
     <div class="auth-tabs">
       <div class="auth-tab active" onclick="switchAuthTab('login')" id="tab-login">Sign In</div>
@@ -1657,7 +1657,7 @@ html[data-skip-intro="1"] #intro-skip {
         </div>
         <button class="btn btn-primary btn-lg btn-block" id="btn-register" onclick="doRegister()">Create Account</button>
         <div class="auth-link" style="font-size:11px;color:rgba(255,255,255,.3)" id="reg-terms-text">
-          By registering, you agree to <a>Terms &amp; Conditions</a> of M-Core
+          By registering, you agree to <a>Terms & Conditions</a> of M-Core
         </div>
       </div>
     </div>
@@ -1703,13 +1703,13 @@ html[data-skip-intro="1"] #intro-skip {
             <i class="ti ti-shield-lock" style="color:var(--on-primary);font-size:22px"></i>
           </div>
           <div style="color:#fff;font-weight:700;font-size:16px">Enter Reset Code</div>
-          <div style="color:rgba(255,255,255,.4);font-size:12px;margin-top:4px">Enter the 6-digit code we emailed you, then choose a new password</div>
+          <div style="color:rgba(255,255,255,.4);font-size:12px;margin-top:4px">Enter the 8-digit code we emailed you, then choose a new password</div>
         </div>
         <div id="reset-otp-msg" class="auth-error"></div>
         <div id="reset-otp-success" class="auth-success"></div>
         <div class="form-group">
-          <label class="form-label">6-Digit Code</label>
-          <input type="text" id="reset-otp-code" class="form-input" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code">
+          <label class="form-label">8-Digit Code</label>
+          <input type="text" id="reset-otp-code" class="form-input" inputmode="numeric" maxlength="8" placeholder="••••••••" autocomplete="one-time-code">
         </div>
         <div class="form-group">
           <label class="form-label">New Password</label>
@@ -5187,11 +5187,12 @@ async function doForgotPassword() {
   document.getElementById('reset-otp-code').value = ''
   const msgEl = document.getElementById('reset-otp-msg'); if(msgEl) msgEl.classList.remove('show')
   const sucEl = document.getElementById('reset-otp-success')
-  if(sucEl) { sucEl.textContent = '✓ A 6-digit code has been sent to ' + email; sucEl.classList.add('show') }
+  if(sucEl) { sucEl.textContent = '✓ An 8-digit code has been sent to ' + email; sucEl.classList.add('show') }
 }
 
 async function doVerifyResetOtp() {
-  const code = (document.getElementById('reset-otp-code').value || '').trim()
+  // Strip spaces/dashes — email template may wrap 8-digit OTP across lines
+  const code = (document.getElementById('reset-otp-code').value || '').replace(/\D+/g, '')
   const pwd = document.getElementById('reset-otp-password').value
   const pwd2 = document.getElementById('reset-otp-password-confirm').value
   const msgEl = document.getElementById('reset-otp-msg')
@@ -5201,8 +5202,8 @@ async function doVerifyResetOtp() {
   msgEl.classList.remove('show')
   sucEl.classList.remove('show')
 
-  if(!code) {
-    msgEl.textContent = 'Please enter the 6-digit code from your email.'
+  if(!code || code.length < 6) {
+    msgEl.textContent = 'Please enter the 8-digit code from your email (all digits, no spaces).'
     msgEl.classList.add('show')
     return
   }
@@ -5712,8 +5713,8 @@ function _applyAuthPageLang() {
     const link = termsEl.querySelector('a')
     const linkText = link ? link.outerHTML : ''
     termsEl.innerHTML = isBm
-      ? `Dengan mendaftar, anda bersetuju dengan ${linkText || '<a>Terma &amp; Syarat</a>'} M-Core`
-      : `By registering, you agree to ${linkText || '<a>Terms &amp; Conditions</a>'} of M-Core`
+      ? `Dengan mendaftar, anda bersetuju dengan ${linkText || '<a>Terma & Syarat</a>'} M-Core`
+      : `By registering, you agree to ${linkText || '<a>Terms & Conditions</a>'} of M-Core`
   }
 }
 
@@ -8859,7 +8860,7 @@ async function _dbFillCardInsights(ctx) {
       body = _dbInsightToSecondPerson(body, isBm)
       let tIdx = c.titleIdx
       if(c.key === 'pnl' && Number(ctx.netPL||0) >= 0) tIdx = 6
-      el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + String(body).replace(/</g, '&lt;') + '</div>'
+      el.innerHTML = _dbInsightTag(tIdx, isBm) + '<div>' + String(body).replace(/</g, '<') + '</div>'
     })
   }
 
@@ -9268,7 +9269,7 @@ async function _dbRenderLowStock() {
       const rp = Number(p.reorder_point != null ? p.reorder_point : 5)
       const unit = p.unit || ''
       return `<tr>
-        <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));color:var(--db-text)">${name.replace(/</g,'&lt;')}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));color:var(--db-text)">${name.replace(/</g,'<')}</td>
         <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));text-align:right;color:${qty<=0?'#EF4444':'#F59E0B'};font-weight:600">${qty}${unit?' '+unit:''}</td>
         <td style="padding:8px 6px;border-bottom:1px solid var(--db-border,rgba(255,255,255,.06));text-align:right;color:var(--db-text4)">${rp}</td>
       </tr>`
@@ -12988,7 +12989,7 @@ async function _devZoneRadarInsight(moduleCoverage) {
     if(error || !data?.success) throw new Error('ai failed')
     let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
     if(!reply || reply.length<12) throw new Error('empty')
-    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'&lt;') + '</div>'
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'<') + '</div>'
   } catch(e) {
     el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + fallback() + '</div>'
   }
@@ -13034,7 +13035,7 @@ async function _devBurnupInsight(items) {
     if(error || !data?.success) throw new Error('ai failed')
     let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
     if(!reply || reply.length<12) throw new Error('empty')
-    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'&lt;') + '</div>'
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'<') + '</div>'
   } catch(e) {
     el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + fallback() + '</div>'
   }
@@ -13559,7 +13560,7 @@ async function _adminContentInsight(stats) {
     if(error || !data?.success) throw new Error('ai failed')
     let reply = String((data.data && (data.data.reply||data.data.text||data.data.message))||'').trim()
     if(!reply || reply.length<12) throw new Error('empty')
-    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'&lt;') + '</div>'
+    el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + reply.replace(/</g,'<') + '</div>'
   } catch(e) {
     el.innerHTML = '<span class="db-ai-tag">AI</span><div>' + fallback() + '</div>'
   }
@@ -16478,7 +16479,7 @@ async function _crmLoad() {
     if (filt && srcRows) {
       const keep = _crmState.source || ''
       const uniq = [...new Set(srcRows.map(r => String(r.source||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b))
-      const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
+      const esc = (s) => String(s).replace(/&/g,'&').replace(/"/g,'"').replace(/</g,'<')
       const allLabel = APP.language==='bm'?'Semua sumber':'All sources'
       filt.innerHTML = `<option value="">${allLabel}</option>` + uniq.map(s => `<option value="${esc(s)}" ${s===keep?'selected':''}>${esc(s)}</option>`).join('')
     }
@@ -17324,7 +17325,7 @@ async function _pcShowIssue() {
       .order('name', {ascending:true})
     if(emps && emps.length) {
       empCount = emps.length
-      opts += emps.map(e => `<option value="${e.id}" data-name="${String(e.name||'').replace(/"/g,'&quot;')}">${_aiEscapeHtml(e.name||'-')}</option>`).join('')
+      opts += emps.map(e => `<option value="${e.id}" data-name="${String(e.name||'').replace(/"/g,'"')}">${_aiEscapeHtml(e.name||'-')}</option>`).join('')
     }
   } catch(err) { console.warn('_pcShowIssue employees', err) }
 
@@ -23819,9 +23820,9 @@ function _prodCategoryDatalistHtml(cats, selected) {
     seen.add(key)
     merged.push(k)
   })
-  const val = (selected || '').replace(/"/g, '&quot;')
+  const val = (selected || '').replace(/"/g, '"')
   const ph = isBm ? 'Contoh: Minuman, Barangan…' : 'e.g. Beverage, Goods…'
-  const opts = merged.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}"></option>`).join('')
+  const opts = merged.map(c => `<option value="${String(c).replace(/"/g, '"')}"></option>`).join('')
   return `<input id="pf-category" type="text" class="form-input" list="pf-category-list" value="${val}" placeholder="${ph}" autocomplete="off">
     <datalist id="pf-category-list">${opts}</datalist>`
 }
@@ -23830,7 +23831,7 @@ function _prodCategoryFilterOptionsHtml(cats, selected) {
   const ph = isBm ? 'Semua kategori' : 'All categories'
   const sel = (selected || '').trim()
   return `<option value="">${ph}</option>` + (cats || []).map(c => {
-    const esc = String(c).replace(/"/g, '&quot;')
+    const esc = String(c).replace(/"/g, '"')
     return `<option value="${esc}" ${sel === c ? 'selected' : ''}>${esc}</option>`
   }).join('')
 }
@@ -25010,7 +25011,7 @@ function _showPublicLinkModal(link, refNo) {
       <div class="modal-box-body">
         <p style="font-size:13px;color:var(--text-3);margin:0">${isBm?'Pelanggan boleh buka tanpa login (view-only).':'Customer can open without login (view-only).'}</p>
         ${refNo?`<div style="font-size:12px;color:var(--text-3)">${_aiEscapeHtml(refNo)}</div>`:''}
-        <input type="text" id="public-link-input" class="form-input" readonly value="${String(link).replace(/"/g,'&quot;')}" style="font-size:12px" onclick="this.select()">
+        <input type="text" id="public-link-input" class="form-input" readonly value="${String(link).replace(/"/g,'"')}" style="font-size:12px" onclick="this.select()">
       </div>
       <div class="modal-box-footer" style="flex-wrap:wrap">
         <button class="btn btn-primary" style="flex:1" onclick="_copyPublicLink()"><i class="ti ti-copy"></i> ${isBm?'Salin link':'Copy link'}</button>
@@ -26167,7 +26168,7 @@ async function renderDOForm(params={}) {
   }
   const preInv = params.invoiceId || params.invoice_id || ''
   const preCust = params.customerId || params.customer_id || ''
-  const preAddr = (params.address || '').replace(/</g,'&lt;')
+  const preAddr = (params.address || '').replace(/</g,'<')
 
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
@@ -27906,7 +27907,7 @@ async function _cnSave(invoiceId) {
 // Print signature blocks: blank space + line + name + role (filled only). Centered.
 function _pdocSigPrintHtml(slots) {
   // slots: [{name, role}] — empty names skipped
-  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const esc = s => String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>')
   const filled = (slots||[]).filter(s => s && String(s.name||'').trim())
   if(!filled.length) return ''
   const cells = filled.map(s =>
@@ -31828,7 +31829,7 @@ function _sdSigSlots() {
   })
 }
 function _sdBuildPrintSigsHtml() {
-  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const esc = s => String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>')
   const items = []
   _sdSigSlots().forEach(s => {
     if(!s.name) return
@@ -31844,7 +31845,7 @@ function _sdBuildPrintSigsHtml() {
   return items.join('')
 }
 function _sdBuildPrintOnlySigsHtml() {
-  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const esc = s => String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>')
   const filled = _sdSigSlots().filter(s => s.name)
   if(!filled.length) return ''
   const cells = filled.map(s =>
@@ -37484,7 +37485,7 @@ function obRenderStep() {
     body += `
       <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Space Grotesk',sans-serif">${L==='bm'?'Nama syarikat anda?':'What is your company name?'}</div>
       <p style="font-size:13px;color:var(--text-3);margin:0 0 18px">${L==='bm'?'Akan dipaparkan pada invois & dokumen.':'Shown on invoices and documents.'}</p>
-      <input class="ob-input" id="ob-company" value="${(OB.data.company_name||'').replace(/"/g,'&quot;')}" placeholder="${L==='bm'?'cth. Atas Angin My Sdn. Bhd.':'e.g. Atas Angin My Sdn. Bhd.'}" style="font-size:16px;padding:14px 16px" oninput="OB.data.company_name=this.value">
+      <input class="ob-input" id="ob-company" value="${(OB.data.company_name||'').replace(/"/g,'"')}" placeholder="${L==='bm'?'cth. Atas Angin My Sdn. Bhd.':'e.g. Atas Angin My Sdn. Bhd.'}" style="font-size:16px;padding:14px 16px" oninput="OB.data.company_name=this.value">
       <div class="ob-actions" style="margin-top:24px">
         <button class="ob-btn ob-btn-outline" onclick="OB.step=0;obRenderStep()"><i class="ti ti-arrow-left"></i> ${L==='bm'?'Balik':'Back'}</button>
         <button class="ob-btn ob-btn-primary" onclick="obNext()">${L==='bm'?'Teruskan':'Continue'} <i class="ti ti-arrow-right"></i></button>
