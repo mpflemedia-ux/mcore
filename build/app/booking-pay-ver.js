@@ -75,6 +75,8 @@
   V.may = function (x) {
     if (P.isPA()) return '';
     var r = P.role(); if (r !== 'owner' && r !== 'admin') return 'qRole';
+    /* sole-shop: tenant owner may verify own booking invoices; non-owner admin keeps maker-checker */
+    if (r === 'owner') return '';
     var me = String(P.uid()); if (String(x.inv.created_by || '') === me || (x.bk && String(x.bk.created_by || '') === me)) return 'qMaker';
     return '';
   };

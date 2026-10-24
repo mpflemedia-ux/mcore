@@ -86,5 +86,22 @@
   if (typeof window._salesTabs === 'function') { var st = window._salesTabs; window._salesTabs = function (a) { var h = st.apply(this, arguments), i = h.lastIndexOf('</div>');
     setTimeout(Q.count, 0); return h.slice(0, i) + '<button type="button" class="btn btn-sm btn-outline" style="border:none" onclick="BKPAYQ.open()"><i class="ti ti-receipt-2"></i> ' + E(t('qTab')) + '<span class="bkq-n" hidden></span></button>' + h.slice(i); }; }
   if (typeof window.openPage === 'function') { var op = window.openPage; window.openPage = function (page, params) {
-    if ((page === 'sales' && params && params.bkpq) || page === 'bkpq') { var r = op.call(this, 'sales', {}); Q.open(params && (params.claim || (page === 'bkpq' && params.id))); return r; } Q.close(); return op.apply(this, arguments); }; }
+    params = params || {};
+    /* Sales queue stays as filter list; prefer Inbox when claim maps to a booking */
+    if ((page === 'sales' && params.bkpq) || page === 'bkpq') {
+      var cid = params.claim || (page === 'bkpq' && params.id) || null;
+      if (cid && window.sb && P.tid()) {
+        return sb.from('payment_claims').select('invoice_id').eq('id', cid).eq('tenant_id', P.tid()).maybeSingle().then(function (r) {
+          var iid = r.data && r.data.invoice_id;
+          if (!iid) { var x = op.call(null, 'sales', {}); Q.open(cid); return x; }
+          return sb.from('bookings').select('id').eq('invoice_id', iid).eq('tenant_id', P.tid()).is('deleted_at', null).limit(1).then(function (b) {
+            var bk = (b.data || [])[0];
+            if (bk && window.BKINB) { return op.call(null, 'dashboard', { bkid: bk.id, bktab: 'proof', claim: cid }); }
+            var x2 = op.call(null, 'sales', {}); Q.open(cid); return x2;
+          });
+        }, function () { var x = op.call(null, 'sales', {}); Q.open(cid); return x; });
+      }
+      var r0 = op.call(this, 'sales', {}); Q.open(cid); return r0;
+    }
+    Q.close(); return op.apply(this, arguments); }; }
 })();
