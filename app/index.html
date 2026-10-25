@@ -695,6 +695,59 @@ html[data-skip-intro="1"] #intro-skip {
 .db-btn{background:var(--db-card);border:1px solid var(--db-border2);color:var(--db-text2);padding:8px 14px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
 .db-btn:hover{filter:brightness(1.15)}
 .db-btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+/* Dashboard Card Shortcuts — chip/pill wrap (scoped; do not restyle .btn / nav) */
+.dash-card-shortcuts{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm,8px);
+  padding:8px;
+  box-sizing:border-box;
+}
+.dash-shortcut-chip{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:40px;
+  padding:8px 14px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--bg-card);
+  color:var(--text);
+  font-size:12px;
+  font-weight:600;
+  line-height:1.2;
+  white-space:nowrap;
+  cursor:pointer;
+  box-sizing:border-box;
+  transition:border-color .15s,color .15s,background .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.dash-shortcut-chip:hover,
+.dash-shortcut-chip:focus-visible{
+  border-color:var(--primary);
+  color:var(--primary);
+  background:color-mix(in srgb,var(--primary) 12%,transparent);
+  outline:none;
+}
+.dash-shortcut-chip .ti{
+  font-size:15px;
+  flex-shrink:0;
+  line-height:1;
+}
+.dash-shortcut-chip span{
+  max-width:42vw;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+@media (min-width:641px){
+  .dash-shortcut-chip span{max-width:none}
+}
+
 .db-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
 .db-kpi-card{background:var(--db-card);border:1px solid var(--db-border);border-radius:12px;padding:12px 12px 10px 14px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s}
 .db-hero-row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
@@ -6186,8 +6239,8 @@ function _dbShortcutsHtml(isBm) {
   ]
   return `<div class="card" style="padding:8px;margin-bottom:14px" id="db-shortcuts">
     <div style="font-size:11px;font-weight:600;color:var(--text-3);margin:0 4px 6px;letter-spacing:.3px">${isBm?'PINTASAN KAD':'CARD SHORTCUTS'}</div>
-    <div style="display:flex;gap:4px;flex-wrap:wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm,8px);padding:4px">
-      ${items.map(it => `<button type="button" class="btn btn-sm btn-outline" style="border:none;white-space:nowrap" onclick="_dbScrollToSec('${it.id}')"><i class="ti ${it.icon}"></i> ${isBm?it.bm:it.en}</button>`).join('')}
+    <div class="dash-card-shortcuts">
+      ${items.map(it => `<button type="button" class="dash-shortcut-chip" onclick="_dbScrollToSec('${it.id}')"><i class="ti ${it.icon}" aria-hidden="true"></i><span>${isBm?it.bm:it.en}</span></button>`).join('')}
     </div>
   </div>`
 }
