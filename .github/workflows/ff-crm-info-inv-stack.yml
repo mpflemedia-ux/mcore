@@ -1,0 +1,49 @@
+name: ff-crm-info-inv-stack
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ff-crm-info-inv-stack.yml
+permissions:
+  contents: write
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch Info/Invoices mobile stack + invoice cards
+        run: python3 scripts/crm_detail_info_inv_mobile_stack.py
+      - name: Commit patched index.html + SQL + remove one-shot
+        run: |
+          set -euo pipefail
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html build/app/index.html supabase/crm_customer_detail_info_inv_mobile_stack_01.sql scripts/crm_detail_info_inv_mobile_stack.py || true
+          if git diff --cached --quiet; then
+            echo "no index changes"
+          else
+            git commit -m "$(cat <<'EOF'
+fix(crm): customer detail Info→Invoices mobile stack + invoice cards
+
+- Mobile ≤640px: Info/Invoices grid stacks 1 column (Info above Invoices)
+- Drop forced min-width:700px page h-scroll (.crm-detail-info-inv)
+- Invoices: card rows on mobile (ref+status+amount); desktop table kept
+- Tap still opens sales inv-detail with canAccess check
+- Scoped .crm-detail-* only; Statement+Edit / metric cards unchanged
+EOF
+)"
+            git push origin HEAD:main
+          fi
+          git pull --ff-only origin main
+          rm -f .github/workflows/ff-crm-info-inv-stack.yml
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'workflow already gone'
+            exit 0
+          fi
+          git commit -m "chore: remove one-shot ff-crm-info-inv-stack workflow"
+          git push origin HEAD:main
