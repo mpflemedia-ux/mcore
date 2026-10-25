@@ -468,6 +468,7 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 .stat-label{font-size:12px;color:var(--text-2);margin-top:2px}
 .crm-detail-stats .crm-stat-short{display:none}
 .crm-detail-stats .crm-stat-full{display:block}
+.crm-detail-inv-cards{display:none}
 .stat-trend{font-size:11px;margin-top:4px}
 .stat-trend.up{color:var(--success)}
 .stat-trend.down{color:var(--danger)}
@@ -1527,6 +1528,69 @@ html[data-skip-intro="1"] #intro-skip {
   }
   .crm-detail-stats .crm-stat-full { display: none !important; }
   .crm-detail-stats .crm-stat-short { display: block !important; }
+  /* Customer detail: stack Info → Invoices; invoice card rows */
+  .crm-detail-info-inv-scroll {
+    overflow-x: visible !important;
+    max-width: 100%;
+  }
+  .crm-detail-info-inv {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    gap: 12px !important;
+  }
+  .crm-detail-inv-table-wrap,
+  .crm-detail-inv-table { display: none !important; }
+  .crm-detail-inv-cards {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .crm-detail-inv-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 4px 12px;
+    align-items: center;
+    padding: 12px;
+    min-height: 44px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 10px);
+    background: var(--bg);
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+  .crm-detail-inv-card:active { opacity: 0.92; }
+  .crm-detail-inv-card-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .crm-detail-inv-ref {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .crm-detail-inv-card-amt {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    justify-self: end;
+  }
+  .crm-detail-inv-card-meta {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: var(--text-3);
+  }
   /* SOA method/notes: ellipsis + tap to expand */
   #soa-doc td.soa-clip {
     max-width: 130px;
@@ -17071,8 +17135,8 @@ async function renderCustomerDetail(id) {
     <div class="stat-card"><div class="stat-icon yellow"><i class="ti ti-calendar"></i></div><div style="min-width:0;width:100%"><div class="stat-value">${lastOrder}</div><div class="stat-label"><span class="crm-stat-full">${t.lastOrder}</span><span class="crm-stat-short">${t.lastOrderShort}</span></div></div></div>
   </div>
 
-  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
-  <div style="display:grid;grid-template-columns:minmax(280px,1fr) minmax(420px,1.5fr);gap:16px;min-width:700px">
+  <div class="crm-detail-info-inv-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+  <div class="crm-detail-info-inv" style="display:grid;grid-template-columns:minmax(280px,1fr) minmax(420px,1.5fr);gap:16px;min-width:700px">
     <div class="card" style="min-width:0">
       <div class="card-header"><div class="card-title">${APP.language==='bm'?'Maklumat':'Info'}</div></div>
       <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
@@ -17094,7 +17158,14 @@ async function renderCustomerDetail(id) {
       <div class="card-header"><div class="card-title">${t.invoices}</div><button class="btn btn-outline btn-sm" onclick="openPage('sales')"><i class="ti ti-plus"></i></button></div>
       ${(invs||[]).length === 0
         ? `<div class="empty-state" style="padding:40px"><i class="ti ti-file-off"></i><p>${t.noInv}</p></div>`
-        : `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="width:max-content;min-width:100%"><thead><tr><th>Ref</th><th>Date</th><th style="text-align:right">Total</th><th style="text-align:right">Paid</th><th style="text-align:right">Bal</th><th>Status</th></tr></thead><tbody>
+        : `<div class="crm-detail-inv-cards">${(invs||[]).map(i=>{
+            const st = String(i.status||'')
+            const badge = st==='paid'?'badge-green':st==='partial'?'badge-yellow':st==='cancelled'?'badge-gray':'badge-red'
+            return `<div class="crm-detail-inv-card" role="button" tabindex="0" onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')">
+            <div class="crm-detail-inv-card-main"><span class="crm-detail-inv-ref">${i.ref_no||'-'}</span><span class="badge ${badge}">${st||'-'}</span></div>
+            <div class="crm-detail-inv-card-amt">${formatRM(i.total)}</div>
+            <div class="crm-detail-inv-card-meta">${i.issue_date ? new Date(i.issue_date).toLocaleDateString('en-MY') : '-'}</div>
+          </div>`}).join('')}</div><div class="crm-detail-inv-table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="crm-detail-inv-table" style="width:max-content;min-width:100%"><thead><tr><th>Ref</th><th>Date</th><th style="text-align:right">Total</th><th style="text-align:right">Paid</th><th style="text-align:right">Bal</th><th>Status</th></tr></thead><tbody>
           ${(invs||[]).map(i=>{
             const bal = Math.max(0, Number(i.total||0)-Number(i.paid_amt||0))
             const st = String(i.status||'')
