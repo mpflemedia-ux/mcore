@@ -1476,6 +1476,41 @@ html[data-skip-intro="1"] #intro-skip {
     width: 100%;
     justify-content: center;
   }
+  /* Customer detail: SOA+Edit must not overlap metric cards on narrow screens */
+  .page-header .crm-detail-actions {
+    width: 100%;
+    flex-basis: 100%;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  .page-header .crm-detail-actions .btn {
+    flex: 1 1 calc(50% - 4px);
+    min-height: 40px;
+    justify-content: center;
+    width: auto !important;
+  }
+  /* Customer SOA: keep money/method on one line; scroll inside card (not page) */
+  #soa-doc {
+    padding: 16px 12px !important;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    min-width: 0;
+  }
+  #soa-doc div[style*="overflow-x"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    min-width: 0;
+  }
+  #soa-doc table {
+    width: max-content !important;
+    min-width: 100% !important;
+  }
+  #soa-doc th, #soa-doc td {
+    white-space: nowrap !important;
+  }
   .card [style*="overflow-x"], #inv-list-wrap, #po-list-wrap, #pv-list-wrap,
   #exp-table-wrap, #bill-list-wrap, #crm-table-wrap, #supp-table-wrap, #audit-log-wrap,
   #settings-audit-preview, #admin-audit-wrap {
@@ -16747,13 +16782,15 @@ async function renderCustomerSOA(id) {
     inv:'Invois', date:'Tarikh', due:'Tarikh Akhir', total:'Jumlah', paid:'Dibayar', balance:'Baki',
     status:'Status', noData:'Tiada invois untuk pelanggan ini.', outstanding:'Jumlah Hutang',
     current:'Semasa', d30:'1–30 hari', d60:'31–60 hari', d90:'61–90 hari', d90p:'>90 hari',
-    aging:'Analisis Umur Hutang', payments:'Sejarah Bayaran', method:'Kaedah', noPay:'Tiada bayaran direkod.', notes:'Nota'
+    aging:'Analisis Umur Hutang', payments:'Sejarah Bayaran', method:'Kaedah', noPay:'Tiada bayaran direkod.', notes:'Nota',
+    methodCash:'Tunai', methodBank:'Pindahan Bank', methodOnline:'Perbankan Online', methodCard:'Kad'
   } : {
     title:'Customer Statement of Account', back:'Customer', print:'Print',
     inv:'Invoice', date:'Date', due:'Due', total:'Total', paid:'Paid', balance:'Balance',
     status:'Status', noData:'No invoices for this customer.', outstanding:'Total Outstanding',
     current:'Current', d30:'1–30 days', d60:'31–60 days', d90:'61–90 days', d90p:'>90 days',
-    aging:'Aging Analysis', payments:'Payment History', method:'Method', noPay:'No payments recorded.', notes:'Notes'
+    aging:'Aging Analysis', payments:'Payment History', method:'Method', noPay:'No payments recorded.', notes:'Notes',
+    methodCash:'Cash', methodBank:'Bank Transfer', methodOnline:'Online Banking', methodCard:'Card'
   }
 
   document.getElementById('main').innerHTML = '<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>'
@@ -16795,6 +16832,7 @@ async function renderCustomerSOA(id) {
   const logo = tn && tn.logo_url ? `<img src="${_aiEscapeHtml(tn.logo_url)}" style="height:40px;object-fit:contain;margin-bottom:6px">` : ''
   const addr = (typeof _pdocAddressLine==='function') ? _pdocAddressLine(tn) : ''
   const statusLabel = s => s==='paid'?(isBm?'Lunas':'Paid'):s==='partial'?(isBm?'Separa':'Partial'):(isBm?'Belum bayar':'Unpaid')
+  const methodLabel = m => ({cash:t.methodCash, bank_transfer:t.methodBank, online_banking:t.methodOnline, card:t.methodCard}[m] || String(m||'-').replace(/_/g,' ') || '-')
   const soaPrintFilename = `SOA_${_pdocSlug(cust.name)}_${_pdocDateStamp()}`.replace(/'/g,"\\'")
 
   document.getElementById('main').innerHTML = `
@@ -16849,8 +16887,8 @@ async function renderCustomerSOA(id) {
     </div>
 
     ${!rows.length ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+      <table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--bg)">
           <th style="padding:10px;text-align:left">${t.inv}</th>
           <th style="padding:10px;text-align:left">${t.date}</th>
@@ -16865,10 +16903,10 @@ async function renderCustomerSOA(id) {
             <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${r.ref_no||'-'}</td>
             <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.issue_date)}</td>
             <td style="padding:9px 10px;white-space:nowrap">${formatDate(r.due_date)}</td>
-            <td style="padding:9px 10px;text-align:right">${formatRM(r.total)}</td>
-            <td style="padding:9px 10px;text-align:right">${formatRM(r.paid_amt)}</td>
-            <td style="padding:9px 10px;text-align:right;font-weight:600;color:${r.balance>0.005?'var(--danger)':'var(--success)'}">${formatRM(r.balance)}</td>
-            <td style="padding:9px 10px">${statusLabel(r.status)}</td>
+            <td style="padding:9px 10px;text-align:right;white-space:nowrap">${formatRM(r.total)}</td>
+            <td style="padding:9px 10px;text-align:right;white-space:nowrap">${formatRM(r.paid_amt)}</td>
+            <td style="padding:9px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${r.balance>0.005?'var(--danger)':'var(--success)'}">${formatRM(r.balance)}</td>
+            <td style="padding:9px 10px;white-space:nowrap">${statusLabel(r.status)}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot>
@@ -16884,8 +16922,8 @@ async function renderCustomerSOA(id) {
     <div style="margin-top:28px">
       <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--primary)">${t.payments}</div>
       ${(!pays||!pays.length) ? `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${t.noPay}</div>` : `
-      <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+      <table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--bg)">
           <th style="padding:10px;text-align:left">${t.date}</th>
           <th style="padding:10px;text-align:left">Ref</th>
@@ -16897,9 +16935,9 @@ async function renderCustomerSOA(id) {
           ${pays.map(p=>`<tr style="border-bottom:1px solid var(--border)">
             <td style="padding:9px 10px;white-space:nowrap">${formatDate(p.payment_date)}</td>
             <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${_aiEscapeHtml(p.ref_no||'-')}</td>
-            <td style="padding:9px 10px">${_aiEscapeHtml(p.payment_method||'-')}</td>
-            <td style="padding:9px 10px;color:var(--text-3)">${_aiEscapeHtml(p.notes||'')}</td>
-            <td style="padding:9px 10px;text-align:right;font-weight:600;color:var(--success)">${formatRM(p.amount)}</td>
+            <td style="padding:9px 10px;white-space:nowrap">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
+            <td style="padding:9px 10px;color:var(--text-3);white-space:nowrap">${_aiEscapeHtml(p.notes||'')}</td>
+            <td style="padding:9px 10px;text-align:right;font-weight:600;white-space:nowrap;color:var(--success)">${formatRM(p.amount)}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot>
@@ -16969,7 +17007,7 @@ async function renderCustomerDetail(id) {
       <div class="page-title">${cust.name}</div>
       <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('crm')">← ${t.back}</div>
     </div>
-    <div style="display:flex;gap:8px">
+    <div class="crm-detail-actions" style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="openPage('crm',{view:'soa',id:'${id}'})"><i class="ti ti-file-analytics"></i> ${APP.language==='bm'?'Penyata Akaun (SOA)':'Statement (SOA)'}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('crm',{view:'form',id:'${id}'})"><i class="ti ti-edit"></i> ${t.edit}</button>
     </div>
@@ -17013,9 +17051,9 @@ async function renderCustomerDetail(id) {
             return `<tr style="cursor:pointer" onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')">
             <td style="font-size:11px;white-space:nowrap">${i.ref_no||'-'}</td>
             <td style="font-size:12px;white-space:nowrap">${i.issue_date ? new Date(i.issue_date).toLocaleDateString('en-MY') : '-'}</td>
-            <td style="text-align:right">${formatRM(i.total)}</td>
-            <td style="text-align:right">${formatRM(i.paid_amt)}</td>
-            <td style="text-align:right">${formatRM(bal)}</td>
+            <td style="text-align:right;white-space:nowrap">${formatRM(i.total)}</td>
+            <td style="text-align:right;white-space:nowrap">${formatRM(i.paid_amt)}</td>
+            <td style="text-align:right;white-space:nowrap">${formatRM(bal)}</td>
             <td><span class="badge ${badge}">${st||'-'}</span></td>
           </tr>`}).join('')}
           </tbody></table></div>`
