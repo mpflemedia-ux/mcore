@@ -17,32 +17,28 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Patch customer detail metric cards + SOA clip
         run: python3 scripts/crm_detail_metric_mobile_fit.py
-      - name: Commit patched index.html + SQL + remove one-shot
+      - name: Commit patched files
         run: |
           set -euo pipefail
           git config user.name "mcore-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/index.html build/app/index.html supabase/crm_customer_detail_metric_mobile_fit_01.sql scripts/crm_detail_metric_mobile_fit.py || true
+          git add app/index.html build/app/index.html
           if git diff --cached --quiet; then
             echo "no index changes"
           else
-            git commit -m "$(cat <<'EOF'
-fix(crm): customer detail metric cards mobile fit
-
-- Stack metric cards icon→amount→label on mobile; amount nowrap (fix RM overlap)
-- Statement(SOA)+Edit equal flex 1 1 0; override page-header .btn-primary width
-- Short mobile labels via new i18n keys (Collected/Due/Invoices/Last + BM)
-- SOA Payment History method/notes: ellipsis + tap expand (.soa-clip)
-- Scoped under .crm-detail-stats / #soa-doc — other stat grids unchanged
-EOF
-)"
+            git commit -m "fix(crm): customer detail metric cards mobile fit"
             git push origin HEAD:main
           fi
+      - name: Remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name "mcore-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --ff-only origin main
           rm -f .github/workflows/ff-crm-detail-metric-fit.yml
           git add -A
           if git diff --cached --quiet; then
-            echo 'workflow already gone'
+            echo "workflow already gone"
             exit 0
           fi
           git commit -m "chore: remove one-shot ff-crm-detail-metric-fit workflow"
