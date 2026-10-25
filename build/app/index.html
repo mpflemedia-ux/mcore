@@ -466,6 +466,8 @@ input[type="date"],input[type="time"],input[type="datetime-local"],input[type="w
 [data-theme="dark"] .stat-icon.red{background:#450A0A}
 .stat-value{font-size:22px;font-weight:700;line-height:1.2}
 .stat-label{font-size:12px;color:var(--text-2);margin-top:2px}
+.crm-detail-stats .crm-stat-short{display:none}
+.crm-detail-stats .crm-stat-full{display:block}
 .stat-trend{font-size:11px;margin-top:4px}
 .stat-trend.up{color:var(--success)}
 .stat-trend.down{color:var(--danger)}
@@ -1485,10 +1487,59 @@ html[data-skip-intro="1"] #intro-skip {
     gap: 8px !important;
   }
   .page-header .crm-detail-actions .btn {
-    flex: 1 1 calc(50% - 4px);
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
     min-height: 40px;
     justify-content: center;
     width: auto !important;
+  }
+  .page-header .crm-detail-actions .btn-primary {
+    width: auto !important;
+  }
+  /* Customer detail metric cards: stack icon → amount → label; RM never wraps */
+  .crm-detail-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+  .crm-detail-stats .stat-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding: 12px !important;
+    min-width: 0 !important;
+    overflow: hidden;
+  }
+  .crm-detail-stats .stat-icon {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 18px !important;
+  }
+  .crm-detail-stats .stat-value {
+    font-size: 15px !important;
+    white-space: nowrap !important;
+    line-height: 1.25 !important;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .crm-detail-stats .stat-label {
+    font-size: 11px !important;
+  }
+  .crm-detail-stats .crm-stat-full { display: none !important; }
+  .crm-detail-stats .crm-stat-short { display: block !important; }
+  /* SOA method/notes: ellipsis + tap to expand */
+  #soa-doc td.soa-clip {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap !important;
+    cursor: pointer;
+  }
+  #soa-doc td.soa-clip.soa-clip-open {
+    max-width: none;
+    white-space: normal !important;
+    overflow: visible;
+    text-overflow: unset;
   }
   /* Customer SOA: keep money/method on one line; scroll inside card (not page) */
   #soa-doc {
@@ -16935,8 +16986,8 @@ async function renderCustomerSOA(id) {
           ${pays.map(p=>`<tr style="border-bottom:1px solid var(--border)">
             <td style="padding:9px 10px;white-space:nowrap">${formatDate(p.payment_date)}</td>
             <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${_aiEscapeHtml(p.ref_no||'-')}</td>
-            <td style="padding:9px 10px;white-space:nowrap">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
-            <td style="padding:9px 10px;color:var(--text-3);white-space:nowrap">${_aiEscapeHtml(p.notes||'')}</td>
+            <td class="soa-clip" style="padding:9px 10px;white-space:nowrap" title="${_aiEscapeHtml(methodLabel(p.payment_method))}" onclick="this.classList.toggle('soa-clip-open')">${_aiEscapeHtml(methodLabel(p.payment_method))}</td>
+            <td class="soa-clip" style="padding:9px 10px;color:var(--text-3);white-space:nowrap" title="${_aiEscapeHtml(p.notes||'')}" onclick="if(this.getAttribute('title'))this.classList.toggle('soa-clip-open')">${_aiEscapeHtml(p.notes||'')}</td>
             <td style="padding:9px 10px;text-align:right;font-weight:600;white-space:nowrap;color:var(--success)">${formatRM(p.amount)}</td>
           </tr>`).join('')}
         </tbody>
@@ -16955,8 +17006,8 @@ async function renderCustomerSOA(id) {
 }
 
 async function renderCustomerDetail(id) {
-  const t = APP.language==='bm' ? { back:'Senarai Pelanggan', edit:'Edit', invoices:'Invois', noInv:'Tiada invois', totalSpent:'Jumlah Dikutip', outstanding:'Tertunggak', lastOrder:'Pesanan Terakhir', created:'Ahli Sejak', subPay:'Bayaran Langganan', noSub:'Tiada bayaran langganan' }
-    : { back:'Customer List', edit:'Edit', invoices:'Invoices', noInv:'No invoices', totalSpent:'Total Collected', outstanding:'Outstanding', lastOrder:'Last Order', created:'Member Since', subPay:'Subscription Payments', noSub:'No subscription payments' }
+  const t = APP.language==='bm' ? { back:'Senarai Pelanggan', edit:'Edit', invoices:'Invois', noInv:'Tiada invois', totalSpent:'Jumlah Dikutip', outstanding:'Tertunggak', lastOrder:'Pesanan Terakhir', created:'Ahli Sejak', subPay:'Bayaran Langganan', noSub:'Tiada bayaran langganan', totalSpentShort:'Kutipan', outstandingShort:'Hutang', invoicesShort:'Invois', lastOrderShort:'Terakhir' }
+    : { back:'Customer List', edit:'Edit', invoices:'Invoices', noInv:'No invoices', totalSpent:'Total Collected', outstanding:'Outstanding', lastOrder:'Last Order', created:'Member Since', subPay:'Subscription Payments', noSub:'No subscription payments', totalSpentShort:'Collected', outstandingShort:'Due', invoicesShort:'Invoices', lastOrderShort:'Last' }
 
   document.getElementById('main').innerHTML = '<div class="empty-state" style="padding:80px"><div class="spinner"></div></div>'
 
@@ -17013,11 +17064,11 @@ async function renderCustomerDetail(id) {
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;margin-bottom:16px">
-    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-cash"></i></div><div><div class="stat-value">${formatRM(totalSpent)}</div><div class="stat-label">${t.totalSpent}</div></div></div>
-    <div class="stat-card"><div class="stat-icon red"><i class="ti ti-alert-circle"></i></div><div><div class="stat-value">${formatRM(outstanding)}</div><div class="stat-label">${t.outstanding}</div></div></div>
-    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-file-invoice"></i></div><div><div class="stat-value">${(invs||[]).length}</div><div class="stat-label">${t.invoices}</div></div></div>
-    <div class="stat-card"><div class="stat-icon yellow"><i class="ti ti-calendar"></i></div><div><div class="stat-value" style="font-size:16px">${lastOrder}</div><div class="stat-label">${t.lastOrder}</div></div></div>
+  <div class="crm-detail-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;margin-bottom:16px">
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-cash"></i></div><div style="min-width:0;width:100%"><div class="stat-value">${formatRM(totalSpent)}</div><div class="stat-label"><span class="crm-stat-full">${t.totalSpent}</span><span class="crm-stat-short">${t.totalSpentShort}</span></div></div></div>
+    <div class="stat-card"><div class="stat-icon red"><i class="ti ti-alert-circle"></i></div><div style="min-width:0;width:100%"><div class="stat-value">${formatRM(outstanding)}</div><div class="stat-label"><span class="crm-stat-full">${t.outstanding}</span><span class="crm-stat-short">${t.outstandingShort}</span></div></div></div>
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-file-invoice"></i></div><div style="min-width:0;width:100%"><div class="stat-value">${(invs||[]).length}</div><div class="stat-label"><span class="crm-stat-full">${t.invoices}</span><span class="crm-stat-short">${t.invoicesShort}</span></div></div></div>
+    <div class="stat-card"><div class="stat-icon yellow"><i class="ti ti-calendar"></i></div><div style="min-width:0;width:100%"><div class="stat-value" style="font-size:16px">${lastOrder}</div><div class="stat-label"><span class="crm-stat-full">${t.lastOrder}</span><span class="crm-stat-short">${t.lastOrderShort}</span></div></div></div>
   </div>
 
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
