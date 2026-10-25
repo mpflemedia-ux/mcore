@@ -23485,7 +23485,7 @@ async function renderProductList() {
       <select id="inv-cat-filter" class="form-select" style="width:auto;min-width:140px;max-width:200px" onchange="_invState.category=this.value;_invLoad()">
         <option value="">${APP.language==='bm'?'Semua kategori':'All categories'}</option>
       </select>
-      <button type="button" class="btn btn-sm ${_invState.lowOnly?'btn-primary':'btn-outline'}" onclick="_invState.lowOnly=!_invState.lowOnly;_invLoad()"><i class="ti ti-alert-triangle"></i> ${t.low}</button>
+      <button type="button" id="inv-low-filter-btn" class="btn btn-sm ${_invState.lowOnly?'btn-primary':'btn-outline'}" onclick="_invState.lowOnly=!_invState.lowOnly;const _b=document.getElementById('inv-low-filter-btn');if(_b){_b.classList.toggle('btn-primary',_invState.lowOnly);_b.classList.toggle('btn-outline',!_invState.lowOnly)};_invLoad()"><i class="ti ti-alert-triangle"></i> ${t.low}</button>
       <button class="btn btn-outline" onclick="_invScanBarcode()"><i class="ti ti-barcode"></i> ${t.scan}</button>
     </div>
     <div id="inv-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
@@ -23735,25 +23735,92 @@ function _prodAiScanConfirm() {
   openPage('inventory', {view:'product-form'})
 }
 
+/** Strip variant/size suffixes so related SKUs group in the low-stock banner. */
+function _invLowStockBaseName(name) {
+  let n = String(name || '').trim()
+  if(!n) return ''
+  if(n.includes(' / ')) n = n.split(' / ')[0].trim()
+  n = n.replace(/\s*\(Size\s+[^)]+\)\s*$/i, '').trim()
+  n = n.replace(/\s+\b(XXS|XS|S|M|L|XL|XXL|XXXL)\b\s*$/i, '').trim()
+  return n || String(name || '').trim()
+}
+
+/** Group low-stock rows by base product name (variants → one line). */
+function _invGroupLowStock(lowStock) {
+  const map = new Map()
+  for(const p of (lowStock || [])) {
+    const full = prodName(p) || (p.code || p.id || '')
+    const base = _invLowStockBaseName(full) || full
+    const key = base.toLowerCase()
+    let g = map.get(key)
+    if(!g) { g = { base, count: 0, minStock: Infinity }; map.set(key, g) }
+    g.count += 1
+    const qty = Number(p.stock_qty || 0)
+    if(qty < g.minStock) g.minStock = qty
+  }
+  return Array.from(map.values()).sort((a, b) => b.count - a.count || a.base.localeCompare(b.base))
+}
+
+/** Activate existing Low Stock filter and scroll to the product table. */
+function _invViewLowStockList() {
+  _invState.lowOnly = true
+  const btn = document.getElementById('inv-low-filter-btn')
+  if(btn) {
+    btn.classList.remove('btn-outline')
+    btn.classList.add('btn-primary')
+  }
+  _invLoad().then(() => {
+    const target = document.getElementById('inv-table-wrap') || document.getElementById('inv-search')
+    if(target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }).catch(() => {})
+}
+
 function _invRenderLowStockAlert() {
   const el = document.getElementById('inv-lowstock-wrap')
   if(!el) return
   const isBm = APP.language==='bm'
   const lowStock = (_invState.data||[]).filter(p => Number(p.stock_qty) <= Number(p.reorder_point ?? 5))
   if(!lowStock.length) { el.innerHTML = ''; return }
-  const label = isBm ? `${lowStock.length} produk stok rendah` : `${lowStock.length} product(s) low on stock`
-  const btnLabel = isBm ? 'Jana Draf PO' : 'Generate PO Draft'
-  el.innerHTML = `<div class="card" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-color:var(--warning)">
-    <div style="display:flex;align-items:center;gap:10px">
-      <i class="ti ti-alert-triangle" style="color:var(--warning);font-size:22px"></i>
-      <div>
-        <div style="font-weight:600;font-size:13px">${isBm?'Stok Rendah':'Stock Low'}</div>
-        <div style="font-size:12px;color:var(--text-3)">${label}: ${lowStock.map(p=>prodName(p)).join(', ')}</div>
+  const t = isBm ? {
+    title: 'Stok Rendah',
+    count: `${lowStock.length} produk stok rendah`,
+    viewList: 'Lihat senarai',
+    variants: (n) => n === 1 ? '1 varian' : `${n} varian`,
+    createPo: 'Cipta PO',
+    genDraft: 'Jana Draf PO'
+  } : {
+    title: 'Stock Low',
+    count: `${lowStock.length} product(s) low on stock`,
+    viewList: 'View list',
+    variants: (n) => n === 1 ? '1 variant' : `${n} variants`,
+    createPo: 'Create PO',
+    genDraft: 'Generate PO Draft'
+  }
+  const groups = _invGroupLowStock(lowStock)
+  const listHtml = groups.map(g => {
+    const label = g.count > 1
+      ? `${_aiEscapeHtml(g.base)} — ${t.variants(g.count)}`
+      : _aiEscapeHtml(g.base)
+    return `<div style="padding:3px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">${label}</span>
+      <span style="flex-shrink:0;color:var(--text-3);font-variant-numeric:tabular-nums">${Number.isFinite(g.minStock) ? g.minStock : '—'}</span>
+    </div>`
+  }).join('')
+  el.innerHTML = `<div class="card" style="padding:12px 14px;border-color:var(--warning)">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <i class="ti ti-alert-triangle" style="color:var(--warning);font-size:22px;flex-shrink:0;margin-top:2px" aria-hidden="true"></i>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div style="font-weight:600;font-size:13px;color:var(--text)">${t.title}</div>
+          <button type="button" class="btn btn-outline btn-sm" style="min-height:40px" onclick="_invViewLowStockList()"><i class="ti ti-list"></i> ${t.viewList}</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:2px">${t.count}</div>
+        <div class="inv-lowstock-list" style="max-height:132px;overflow-y:auto;margin-top:8px;font-size:12px;-webkit-overflow-scrolling:touch">${listHtml}</div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="_invCreatePOFromLowStock()"><i class="ti ti-shopping-cart"></i> ${isBm?'Cipta PO':'Create PO'}</button>
-      <button id="po-generate-btn" class="btn btn-outline btn-sm" onclick="_invGeneratePODraft()"><i class="ti ti-sparkles"></i> ${btnLabel}</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn btn-primary btn-sm" style="min-height:40px" onclick="_invCreatePOFromLowStock()"><i class="ti ti-shopping-cart"></i> ${t.createPo}</button>
+      <button id="po-generate-btn" class="btn btn-outline btn-sm" style="min-height:40px" onclick="_invGeneratePODraft()"><i class="ti ti-sparkles"></i> ${t.genDraft}</button>
     </div>
   </div>`
 }
