@@ -16649,6 +16649,7 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
 // Hari 15 — Customer List | Hari 16 — Form | Hari 17 — Detail
 
 function renderCRM(params={}) {
+  if(params.view==='programmes') { if(typeof renderProgrammes==='function') renderProgrammes(params); return }
   if(params.view==='detail' && params.id) { renderCustomerDetail(params.id); return }
   if(params.view==='form') { renderCustomerForm(params.id||null); return }
   if(params.view==='soa' && params.id) { renderCustomerSOA(params.id); return }
@@ -25401,6 +25402,7 @@ function _publicPayBlock(doc) {
         ${accName ? `<div>${_aiEscapeHtml(accName)}</div>` : ''}
         ${accNo ? `<div style="font-size:16px;font-weight:800;letter-spacing:.04em;margin-top:4px">${_aiEscapeHtml(accNo)}</div>` : ''}
       </div>
+      ${doc.pay_note ? `<div style="margin-top:10px;font-size:12px;color:#475569;text-align:center;line-height:1.5;word-break:break-word">${_aiEscapeHtml(doc.pay_note)}</div>` : ''}
     </div>` : ''
   return { co, pay }
 }
@@ -25739,6 +25741,12 @@ async function renderInvDetail(id) {
     if(!accNo) accNo = String(cp.account_number || '').trim()
     if(!payQr) payQr = String(cp.payment_qr_url || '').trim()
   } catch (e) {}
+  // Programme invoices carry their own collection account (invoices.pay_*); every other invoice keeps the tenant default
+  if(String(inv.pay_account_number||'').trim()) {
+    bankName = String(inv.pay_bank_name||'').trim(); accName = String(inv.pay_account_name||'').trim()
+    accNo = String(inv.pay_account_number||'').trim(); payQr = String(inv.pay_qr_url||'').trim()
+  }
+  const payNote = String(inv.pay_note||'').trim()
   const companyAddr = _pdocAddressLine(tn)
   const isBm = APP.language==='bm'
   const canRecordPayment = balance > 0.005 && inv.status !== 'cancelled'
@@ -25860,6 +25868,7 @@ async function renderInvDetail(id) {
         ${bankName?`<div style="font-weight:700;color:#0F172A">${_aiEscapeHtml(bankName)}</div>`:''}
         ${accName?`<div style="color:#334155;font-size:13px">${_aiEscapeHtml(accName)}</div>`:''}
         ${accNo?`<div style="font-size:16px;font-weight:800;color:#0F172A;margin-top:2px">${_aiEscapeHtml(accNo)}</div>`:''}
+        ${payNote?`<div class="pdoc-pay-note" style="margin-top:8px;font-size:12px;color:#475569;line-height:1.5">${_aiEscapeHtml(payNote)}</div>`:''}
       </div>`:''}${invTerms?`<div class="pdoc-inv-terms" style="padding:8px 8px 12px;font-size:12px;line-height:1.55;color:#334155;white-space:pre-wrap">${_aiEscapeHtml(invTerms)}</div>`:""}${_pdocNoSigNote(isBm)}</div>
     <div class="pdoc-footer-note">${_aiEscapeHtml(tn.name||APP.tenant.name||'')}</div>
   </div>
@@ -38563,6 +38572,8 @@ if('serviceWorker' in navigator){
 <script src="./booking-card-ui.js?v=5"></script>
 <script src="./crm-scan.js?v=1"></script>
 <script src="./customer-public-form.js?v=1"></script>
+<script src="./prog-lsp-i18n.js?v=1"></script>
+<script src="./prog-lsp.js?v=1"></script>
 <script src="./employee-probation.js?v=2"></script>
 <script src="./probation-dash.js?v=3"></script>
 <script src="./employee-probation-save.js?v=3"></script>
