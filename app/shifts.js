@@ -61,10 +61,20 @@
       '.sh-grid{border-collapse:collapse;min-width:720px;width:100%}' +
       '.sh-grid th,.sh-grid td{border-bottom:1px solid var(--border);padding:8px;font-size:12px;text-align:center}' +
       '.sh-grid th:first-child,.sh-grid td:first-child{text-align:left;position:sticky;left:0;background:var(--bg-card)}' +
+      '.sh-grid th.sh-today{color:var(--primary);font-weight:700}' +
       '.sh-cell{border:0;border-radius:8px;padding:6px 4px;min-width:84px;font-size:11px;cursor:pointer;line-height:1.2;white-space:normal}' +
       '.sh-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}' +
       '.sh-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px}' +
-      '.sh-muted{color:var(--text-2);font-size:12px}';
+      '.sh-muted{color:var(--text-2);font-size:12px}' +
+      '.sh-pack-head{display:none}' +
+      '@media print{' +
+      'body.sh-printing *{visibility:hidden!important}' +
+      'body.sh-printing .sh-pack,body.sh-printing .sh-pack *{visibility:visible!important}' +
+      'body.sh-printing .sh-pack{position:absolute;left:0;top:0;width:100%;background:#fff;color:#000}' +
+      'body.sh-printing .sh-pack-head{display:block;margin-bottom:10px}' +
+      'body.sh-printing .sh-grid th.sh-today{color:#000}' +
+      'body.sh-printing .sh-grid tr{break-inside:avoid}' +
+      '}';
   }
 
   function cellHtml(emp, day) {
@@ -78,9 +88,10 @@
 
   function gridHtml() {
     var ds = days();
+    var todayIso = iso(new Date());
     var labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     var labelsBm = ['Isn', 'Sel', 'Rab', 'Kha', 'Jum', 'Sab', 'Ahd'];
-    var head = ds.map(function (d, i) { return '<th>' + esc(t(labels[i], labelsBm[i])) + '<br>' + d.getDate() + '</th>'; }).join('');
+    var head = ds.map(function (d, i) { return '<th' + (iso(d) === todayIso ? ' class="sh-today"' : '') + '>' + esc(t(labels[i], labelsBm[i])) + '<br>' + d.getDate() + '</th>'; }).join('');
     var body = state.employees.map(function (e) {
       return '<tr><td><b>' + esc(nick(e)) + '</b><div class="sh-muted">' + esc(e.position || '') + '</div></td>' +
         ds.map(function (d) { return '<td>' + cellHtml(e, iso(d)) + '</td>'; }).join('') + '</tr>';
@@ -136,8 +147,79 @@
           ' <input data-sh="' + k.key + '" data-part="end" type="time" value="' + esc(k.end) + '"></label>';
       }).join('') + '<div><button type="button" id="sh-save-hours" class="btn btn-sm btn-primary">' + esc(t('Save hours', 'Simpan jam')) + '</button></div></div>';
   }
-  function legend() {
-    return '<div class="sh-muted">' + KINDS.map(function (k) { return '<span style="display:inline-block;margin-right:10px;color:' + k.fg + '">' + esc(t(k.en, k.bm)) + ' ' + esc(range(k)) + '</span>'; }).join('') + esc(t('Leave', 'Cuti')) + '</div>' + hoursForm();
+  function colorLegend() {
+    return '<div class="sh-muted">' + KINDS.map(function (k) { return '<span style="display:inline-block;margin-right:10px;color:' + k.fg + '">' + esc(t(k.en, k.bm)) + ' ' + esc(range(k)) + '</span>'; }).join('') + esc(t('Leave', 'Cuti')) + '</div>';
+  }
+  function packHeadHtml() {
+    var end = addDays(state.week, 6);
+    return '<div class="sh-pack-head"><b>' + esc((APP.tenant && APP.tenant.name) || '') + '</b> — ' + esc(t('Weekly schedule', 'Jadual minggu')) + '<div class="sh-muted">' + iso(state.week) + ' → ' + iso(end) + '</div></div>';
+  }
+
+  function dayShort(d) {
+    var en = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var bm = ['Isn', 'Sel', 'Rab', 'Kha', 'Jum', 'Sab', 'Ahd'];
+    return (APP.language === 'bm' ? bm : en)[(d.getDay() + 6) % 7] + ' ' + d.getDate();
+  }
+  function dayLabel(emp, day) {
+    if (leaveAt(emp, day)) return t('Leave', 'Cuti');
+    var s = shiftAt(emp, day);
+    if (!s) return t('Off', 'Off');
+    var k = kindOf(s.kind);
+    return k.key === 'off' ? t('Off', 'Off') : t(k.en, k.bm) + ' ' + range(k);
+  }
+  function shareText(mode, oneEmp) {
+    var co = (APP.tenant && APP.tenant.name) || 'M-Core';
+    var end = addDays(state.week, 6);
+    var ds = days();
+    var list = mode === 'one' && oneEmp ? [oneEmp] : state.employees;
+    var out = ['*' + t('Weekly Schedule', 'Jadual Minggu') + ' · ' + co + '*', iso(state.week) + ' – ' + iso(end), ''];
+    list.forEach(function (e) {
+      out.push('*' + nick(e) + '*');
+      var i = 0;
+      while (i < ds.length) {
+        var lbl = dayLabel(e, iso(ds[i]));
+        var j = i;
+        while (j + 1 < ds.length && dayLabel(e, iso(ds[j + 1])) === lbl) j++;
+        out.push((j > i ? dayShort(ds[i]) + '-' + dayShort(ds[j]) : dayShort(ds[i])) + ': ' + lbl);
+        i = j + 1;
+      }
+      out.push('');
+    });
+    out.push('_' + t('Sent via M-Core', 'Dihantar melalui M-Core') + '_');
+    return out.join('\n');
+  }
+  function shareModal() {
+    if (!state.employees.length) { showToast(t('No staff to share', 'Tiada staff untuk dikongsi'), 'error'); return; }
+    var opts = state.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(nick(e)) + '</option>'; }).join('');
+    var html = '<div class="modal-overlay active" id="sh-share-modal"><div class="modal-box" style="max-width:420px">' +
+      '<div class="modal-box-header"><i class="ti ti-brand-whatsapp"></i> ' + esc(t('Share WhatsApp', 'Kongsi WhatsApp')) + '</div>' +
+      '<div class="modal-box-body">' +
+      '<div class="form-group"><label class="form-label">' + esc(t('Send to', 'Hantar kepada')) + '</label>' +
+      '<select class="form-select" id="sh-sm-mode">' +
+      '<option value="all">' + esc(t('Everyone (you pick recipient)', 'Semua (anda pilih penerima)')) + '</option>' +
+      '<option value="one">' + esc(t('One staff (uses their phone number)', 'Seorang staff (guna nombor telefon dia)')) + '</option>' +
+      '</select></div>' +
+      '<div class="form-group" id="sh-sm-emp-wrap" style="display:none"><label class="form-label">' + esc(t('Staff', 'Staff')) + '</label><select class="form-select" id="sh-sm-emp">' + opts + '</select></div>' +
+      '</div><div class="modal-box-footer"><button type="button" class="btn btn-outline" id="sh-sm-cancel">' + esc(t('Cancel', 'Batal')) + '</button>' +
+      '<button type="button" class="btn btn-primary" id="sh-sm-go"><i class="ti ti-brand-whatsapp"></i> ' + esc(t('Open WhatsApp', 'Buka WhatsApp')) + '</button></div></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+    var modal = document.getElementById('sh-share-modal');
+    var modeSel = modal.querySelector('#sh-sm-mode'), empWrap = modal.querySelector('#sh-sm-emp-wrap');
+    modeSel.onchange = function () { empWrap.style.display = modeSel.value === 'one' ? '' : 'none'; };
+    modal.querySelector('#sh-sm-cancel').onclick = function () { modal.remove(); };
+    modal.querySelector('#sh-sm-go').onclick = function () {
+      var mode = modeSel.value, emp = null, phone = '';
+      if (mode === 'one') {
+        emp = state.employees.filter(function (e) { return String(e.id) === modal.querySelector('#sh-sm-emp').value; })[0];
+        if (!emp) { showToast(t('Pick a staff', 'Pilih staff'), 'error'); return; }
+        phone = window.PJW && typeof PJW.phone === 'function' ? PJW.phone(emp.phone) : '';
+        if (!phone) { showToast(t('This staff has no valid phone number', 'Staff ini tiada nombor telefon sah'), 'error'); return; }
+      }
+      var text = shareText(mode, emp);
+      var url = window.PJW && typeof PJW.waUrl === 'function' ? PJW.waUrl(phone, text) : ('https://wa.me/' + phone + '?text=' + encodeURIComponent(text));
+      if (window.PJW && typeof PJW.open === 'function') PJW.open(url); else window.open(url, '_blank', 'noopener');
+      modal.remove();
+    };
   }
 
   function paint() {
@@ -145,11 +227,27 @@
     if (!main) return;
     var end = addDays(state.week, 6);
     main.innerHTML = '<style>' + css() + '</style><div class="sh-wrap"><div class="sh-top"><div><b>' + esc(t('Weekly schedule', 'Jadual minggu')) + '</b><div class="sh-muted">' + iso(state.week) + ' → ' + iso(end) + '</div></div>' +
-      '<div><button type="button" id="sh-prev" class="btn btn-sm btn-outline">‹</button> <button type="button" id="sh-today" class="btn btn-sm btn-outline">' + esc(t('Today', 'Hari ini')) + '</button> <button type="button" id="sh-next" class="btn btn-sm btn-outline">›</button></div></div>' +
-      gridHtml() + legend() + cardsHtml() + '</div>';
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+      '<button type="button" id="sh-prev" class="btn btn-sm btn-outline">‹</button> <button type="button" id="sh-today" class="btn btn-sm btn-outline">' + esc(t('Today', 'Hari ini')) + '</button> <button type="button" id="sh-next" class="btn btn-sm btn-outline">›</button>' +
+      '<span style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></span>' +
+      '<button type="button" id="sh-print" class="btn btn-sm btn-outline"><i class="ti ti-printer"></i> ' + esc(t('Print', 'Cetak')) + '</button>' +
+      '<button type="button" id="sh-share" class="btn btn-sm btn-outline"><i class="ti ti-brand-whatsapp"></i> ' + esc(t('Share WhatsApp', 'Kongsi WhatsApp')) + '</button>' +
+      '</div></div>' +
+      '<div class="sh-pack">' + packHeadHtml() + gridHtml() + colorLegend() + '</div>' + hoursForm() + cardsHtml() + '</div>';
     document.getElementById('sh-prev').onclick = function () { state.week = addDays(state.week, -7); refresh(); };
     document.getElementById('sh-next').onclick = function () { state.week = addDays(state.week, 7); refresh(); };
     document.getElementById('sh-today').onclick = function () { state.week = monday(new Date()); refresh(); };
+    document.getElementById('sh-print').onclick = function () {
+      var tname = (APP.tenant && (APP.tenant.code || APP.tenant.name)) || 'MCore';
+      if (typeof _pdocSetPageOrientation === 'function') _pdocSetPageOrientation('landscape', 8);
+      if (typeof _pdocSetPrintFilename === 'function' && typeof _pdocSlug === 'function' && typeof _pdocDateStamp === 'function') {
+        _pdocSetPrintFilename('Shifts_' + _pdocSlug(tname) + '_' + iso(state.week) + '_' + _pdocDateStamp());
+      }
+      document.body.classList.add('sh-printing');
+      window.addEventListener('afterprint', function off() { document.body.classList.remove('sh-printing'); window.removeEventListener('afterprint', off); });
+      window.print();
+    };
+    document.getElementById('sh-share').onclick = shareModal;
     var saveHours = document.getElementById('sh-save-hours');
     if (saveHours) saveHours.onclick = saveShiftHours;
     main.querySelectorAll('.sh-cell[data-emp]').forEach(function (btn) {
