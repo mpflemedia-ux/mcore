@@ -32839,7 +32839,8 @@ async function renderAttendance(params={}) {
     <button class="btn btn-primary btn-sm" style="margin-top:8px" type="button" onclick="_attSubmitOutstation()">${isBm?'Hantar permohonan':'Submit request'}</button>
     <div id="os-list" style="margin-top:10px;font-size:12px;color:var(--text-3);max-height:440px;overflow-y:auto"></div>
   </div>
-  <div id="att-table-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
+  <div id="att-table-wrap" class="att-pack" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
+  ${_attPrintCss()}`
 
   await _attendanceLoadTable(month, year)
   try { await _attLoadOutstationList() } catch(e) { console.warn(e) }
@@ -32905,7 +32906,7 @@ async function _attendanceLoadTable(month, year) {
   const from = `${year}-${String(month).padStart(2,'0')}-01`
   const lastDay = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
-  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,geo_lat,geo_lng,employees(name)')
+  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,geo_lat,geo_lng,employees(name,phone)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
   if(error) {
     console.warn('attendance load embed', error)
@@ -32923,10 +32924,10 @@ async function _attendanceLoadTable(month, year) {
   if(_attendanceRecords.length && !_attendanceRecords[0].employees) {
     const ids = [...new Set(_attendanceRecords.map(r => r.employee_id).filter(Boolean))]
     if(ids.length) {
-      const { data: emps } = await sb.from('employees').select('id,name').in('id', ids).eq('tenant_id', APP.tenant.id)
+      const { data: emps } = await sb.from('employees').select('id,name,phone').in('id', ids).eq('tenant_id', APP.tenant.id)
       const map = {}
-      ;(emps||[]).forEach(e => { map[e.id] = e.name })
-      _attendanceRecords.forEach(r => { r.employees = { name: map[r.employee_id] || '—' } })
+      ;(emps||[]).forEach(e => { map[e.id] = { name: e.name, phone: e.phone } })
+      _attendanceRecords.forEach(r => { r.employees = map[r.employee_id] || { name: '—' } })
     }
   }
   window._attHistFilter = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
@@ -32986,10 +32987,7 @@ function _attendanceRenderHistoryTable(t) {
   const wrap = document.getElementById('att-table-wrap')
   if(!wrap) return
   const f = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
-  let rows = (_attendanceRecords || []).slice()
-  if(f.status && f.status !== 'all') rows = rows.filter(a => String(a.status||'') === f.status)
-  if(f.employee && f.employee !== 'all') rows = rows.filter(a => String(a.employee_id) === f.employee)
-  if(f.mode && f.mode !== 'all') rows = rows.filter(a => String(a.work_mode || 'office') === f.mode)
+  let rows = _attFilteredRows()
   const sort = f.sort || 'date_desc'
   rows.sort((a, b) => {
     if(sort === 'date_asc') return String(a.date).localeCompare(String(b.date)) || String(a.clock_in||'').localeCompare(String(b.clock_in||''))
@@ -33009,7 +33007,7 @@ function _attendanceRenderHistoryTable(t) {
     if(x==='outstation') return isBm?'Outstation':'Outstation'
     return isBm?'Pejabat':'Office'
   }
-  const filters = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
+  const filters = `<div class="att-noprint" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
     <select id="att-hist-status" class="form-select" style="width:auto;min-width:110px;padding:6px 8px;font-size:12px" onchange="window._attHistFilter.status=this.value;_attendanceRenderHistoryTable()">
       <option value="all"${f.status==='all'?' selected':''}>${isBm?'Semua status':'All status'}</option>
       <option value="present"${f.status==='present'?' selected':''}>${t.present}</option>
@@ -33035,16 +33033,20 @@ function _attendanceRenderHistoryTable(t) {
       <option value="in_asc"${sort==='in_asc'?' selected':''}>${isBm?'Masuk ↑':'In ↑'}</option>
       <option value="in_desc"${sort==='in_desc'?' selected':''}>${isBm?'Masuk ↓':'In ↓'}</option>
     </select>
+    ${canManageHR() ? `<span style="margin-left:auto;display:flex;gap:6px">
+      <button type="button" class="btn btn-sm btn-outline" onclick="_attPrint()"><i class="ti ti-printer"></i> ${isBm?'Cetak':'Print'}</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="_attShareModal()"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi WhatsApp':'Share WhatsApp'}</button>
+    </span>` : ''}
   </div>`
   if(!(_attendanceRecords||[]).length) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
     return
   }
   if(!rows.length) {
-    wrap.innerHTML = filters + `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod untuk penapis ini':'No rows for this filter'}</p></div>`
+    wrap.innerHTML = _attPackHeadHtml(isBm) + filters + `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod untuk penapis ini':'No rows for this filter'}</p></div>`
     return
   }
-  wrap.innerHTML = filters + `<div class="db-table-scroll" style="max-height:280px;overflow-y:auto"><table class="db-mini-table" style="width:100%"><thead><tr>
+  wrap.innerHTML = _attPackHeadHtml(isBm) + filters + `<div class="db-table-scroll" style="max-height:280px;overflow-y:auto"><table class="db-mini-table" style="width:100%"><thead><tr>
     <th>${t.date}</th>
     <th>${isBm?'Masuk':'In'}</th>
     <th>${isBm?'Keluar':'Out'}</th>
@@ -33053,12 +33055,12 @@ function _attendanceRenderHistoryTable(t) {
     <th>${isBm?'Mod':'Mode'}</th>
     <th>GPS</th>
     <th>${t.notes}</th>
-    <th></th>
+    <th class="att-noprint"></th>
   </tr></thead>
   <tbody>${rows.map(a=>{
     const hasGeo = a.geo_lat != null && a.geo_lng != null && !isNaN(Number(a.geo_lat)) && !isNaN(Number(a.geo_lng))
     const geoCell = hasGeo
-      ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px;color:#38bdf8;border-color:#38bdf855" onclick="_attOpenGeoMap(${Number(a.geo_lat)},${Number(a.geo_lng)},'${_aiEscapeHtml(a.employees?.name||'').replace(/'/g,"\\'")}')" title="Maps"><i class="ti ti-map-pin"></i> GPS</button>`
+      ? `<button type="button" class="btn btn-outline btn-sm att-noprint" style="padding:2px 8px;font-size:11px;color:#38bdf8;border-color:#38bdf855" onclick="_attOpenGeoMap(${Number(a.geo_lat)},${Number(a.geo_lng)},'${_aiEscapeHtml(a.employees?.name||'').replace(/'/g,"\\'")}')" title="Maps"><i class="ti ti-map-pin"></i> GPS</button><a class="att-print-only" href="https://www.google.com/maps?q=${Number(a.geo_lat)},${Number(a.geo_lng)}" target="_blank" rel="noopener" style="display:none;font-size:10px">${Number(a.geo_lat).toFixed(5)}, ${Number(a.geo_lng).toFixed(5)}</a>`
       : `<span style="font-size:11px;color:var(--text-3)">—</span>`
     return `<tr>
     <td style="white-space:nowrap">${formatDate(a.date)}</td>
@@ -33068,12 +33070,165 @@ function _attendanceRenderHistoryTable(t) {
     <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
     <td style="font-size:12px;color:var(--text-3)">${modeLabel(a.work_mode)}</td>
     <td>${geoCell}</td>
-    <td style="color:var(--text-2);max-width:140px;overflow:hidden;text-overflow:ellipsis">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
-    <td style="white-space:nowrap">
+    <td class="att-notes-cell" style="color:var(--text-2);max-width:140px;overflow:hidden;text-overflow:ellipsis">${a.notes?_aiEscapeHtml(a.notes):'-'}</td>
+    <td class="att-noprint" style="white-space:nowrap">
       ${canManageHR()?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_attendanceEdit('${a.id}')"><i class="ti ti-edit"></i></button>
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)" onclick="_attendanceDelete('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
     </td>
   </tr>`}).join('')}</tbody></table></div>`
+}
+
+function _attFilteredRows() {
+  const f = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
+  let rows = (_attendanceRecords || []).slice()
+  if(f.status && f.status !== 'all') rows = rows.filter(a => String(a.status||'') === f.status)
+  if(f.employee && f.employee !== 'all') rows = rows.filter(a => String(a.employee_id) === f.employee)
+  if(f.mode && f.mode !== 'all') rows = rows.filter(a => String(a.work_mode || 'office') === f.mode)
+  return rows
+}
+
+function _attFilterLabel(f, isBm) {
+  f = f || {}
+  const parts = []
+  if(f.status && f.status !== 'all') {
+    const map = { present: isBm?'Hadir':'Present', absent: isBm?'Tidak Hadir':'Absent', late: isBm?'Lewat':'Late', half_day: isBm?'Setengah Hari':'Half Day', on_leave: isBm?'Bercuti':'On Leave' }
+    parts.push((isBm?'Status: ':'Status: ') + (map[f.status] || f.status))
+  }
+  if(f.employee && f.employee !== 'all') {
+    const row = (_attendanceRecords||[]).find(r => String(r.employee_id) === String(f.employee))
+    parts.push((isBm?'Pekerja: ':'Employee: ') + (row && row.employees ? (row.employees.name||f.employee) : f.employee))
+  }
+  if(f.mode && f.mode !== 'all') {
+    const map = { office: isBm?'Pejabat':'Office', field: 'Field', outstation: 'Outstation' }
+    parts.push((isBm?'Mod: ':'Mode: ') + (map[f.mode] || f.mode))
+  }
+  return parts.join(' · ')
+}
+
+function _attPackHeadHtml(isBm) {
+  const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('att-year')?.value) || new Date().getFullYear()
+  const monthLabel = (isBm?MONTH_NAMES_BM:MONTH_NAMES_EN)[month-1] + ' ' + year
+  const filterLabel = _attFilterLabel(window._attHistFilter, isBm)
+  return `<div class="att-pack-head" style="display:none">
+    <b>${_aiEscapeHtml((APP.tenant&&APP.tenant.name)||'')}</b> — ${isBm?'Log Kehadiran':'Attendance Log'}
+    <div style="font-size:12px;color:#555">${_aiEscapeHtml(monthLabel)}${filterLabel ? ' · ' + _aiEscapeHtml(filterLabel) : ''}</div>
+  </div>`
+}
+
+function _attPrintCss() {
+  return `<style id="att-print-css">
+    .att-pack-head{display:none}
+    body.att-printing *{visibility:hidden!important}
+    body.att-printing .att-pack,body.att-printing .att-pack *{visibility:visible!important}
+    body.att-printing .att-pack{position:absolute;left:0;top:0;width:100%;background:#fff;color:#000}
+    body.att-printing .att-pack .att-noprint{display:none!important}
+    body.att-printing .att-pack-head{display:block;margin-bottom:10px}
+    body.att-printing .att-print-only{display:inline!important}
+    body.att-printing .att-notes-cell{max-width:none!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important}
+    body.att-printing table tr{break-inside:avoid}
+  </style>`
+}
+
+function _attPrint() {
+  if(!canManageHR()) { showToast(APP.language==='bm'?'Tiada kebenaran':'Not permitted','error'); return }
+  const isBm = APP.language==='bm'
+  const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('att-year')?.value) || new Date().getFullYear()
+  const tname = (APP.tenant && (APP.tenant.code || APP.tenant.name)) || 'MCore'
+  if(typeof _pdocSetPageOrientation === 'function') _pdocSetPageOrientation('landscape', 8)
+  if(typeof _pdocSetPrintFilename === 'function' && typeof _pdocSlug === 'function' && typeof _pdocDateStamp === 'function' && typeof _pdocTimeStamp === 'function') {
+    _pdocSetPrintFilename(`Attendance_${_pdocSlug(tname)}_${String(month).padStart(2,'0')}-${year}_${_pdocDateStamp()}_${_pdocTimeStamp()}`)
+  }
+  document.body.classList.add('att-printing')
+  window.addEventListener('afterprint', function off(){ document.body.classList.remove('att-printing'); window.removeEventListener('afterprint', off) })
+  window.print()
+}
+
+function _attShareSummaries(rows) {
+  const by = {}
+  rows.forEach(r => {
+    const id = r.employee_id
+    const b = by[id] || (by[id] = { name: (r.employees && r.employees.name) || '—', total: 0, present: 0, late: 0, absent: 0, half: 0, leave: 0 })
+    b.total++
+    if(r.status === 'present') b.present++
+    else if(r.status === 'late') b.late++
+    else if(r.status === 'absent') b.absent++
+    else if(r.status === 'half_day') b.half++
+    else if(r.status === 'on_leave') b.leave++
+  })
+  return Object.values(by).sort((a,b) => String(a.name).localeCompare(String(b.name)))
+}
+
+function _attShareText(summaries, filterLabel) {
+  const isBm = APP.language==='bm'
+  const co = (APP.tenant && APP.tenant.name) || 'M-Core'
+  const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('att-year')?.value) || new Date().getFullYear()
+  const monthLabel = (isBm?MONTH_NAMES_BM:MONTH_NAMES_EN)[month-1] + ' ' + year
+  const lines = ['*' + (isBm?'Ringkasan Kehadiran':'Attendance Summary') + ' · ' + co + '*', monthLabel]
+  if(filterLabel) lines.push((isBm?'Tapisan: ':'Filter: ') + filterLabel)
+  lines.push('')
+  summaries.forEach(s => {
+    const rate = s.total ? Math.round((s.present + s.late + s.half) / s.total * 100) : 0
+    lines.push('*' + s.name + '*')
+    lines.push((isBm?'Hadir ':'Present ') + s.present + ' · ' + (isBm?'Lewat ':'Late ') + s.late + ' · ' + (isBm?'Tidak Hadir ':'Absent ') + s.absent + ' · ' + (isBm?'Setengah Hari ':'Half-day ') + s.half + ' · ' + (isBm?'Cuti ':'Leave ') + s.leave)
+    lines.push((isBm?'Kehadiran: ':'Attendance rate: ') + rate + '%')
+    lines.push('')
+  })
+  lines.push('_' + (isBm?'Dihantar melalui M-Core':'Sent via M-Core') + '_')
+  return lines.join('\n')
+}
+
+function _attShareModal() {
+  if(!canManageHR()) { showToast(APP.language==='bm'?'Tiada kebenaran':'Not permitted','error'); return }
+  const isBm = APP.language==='bm'
+  const rows = _attFilteredRows()
+  if(!rows.length) { showToast(isBm?'Tiada rekod untuk dikongsi':'No records to share','error'); return }
+  const f = window._attHistFilter || {}
+  const empOpts = [...new Map(rows.map(a => [a.employee_id, (a.employees && a.employees.name) || a.employee_id])).entries()]
+    .sort((x,y) => String(x[1]).localeCompare(String(y[1])))
+  const preselect = (f.employee && f.employee !== 'all') ? f.employee : ''
+  const opts = empOpts.map(([id,name]) => `<option value="${id}"${String(id)===String(preselect)?' selected':''}>${_aiEscapeHtml(name||id)}</option>`).join('')
+  const html = `<div class="modal-overlay active" id="att-share-modal"><div class="modal-box" style="max-width:420px">
+    <div class="modal-box-header"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi WhatsApp':'Share WhatsApp'}</div>
+    <div class="modal-box-body">
+      <div class="form-group"><label class="form-label">${isBm?'Hantar kepada':'Send to'}</label>
+        <select class="form-select" id="att-sm-mode">
+          <option value="all">${isBm?'Semua (anda pilih penerima)':'Everyone (you pick recipient)'}</option>
+          <option value="one"${preselect?' selected':''}>${isBm?'Seorang staff (guna nombor telefon dia)':'One staff (uses their phone number)'}</option>
+        </select>
+      </div>
+      <div class="form-group" id="att-sm-emp-wrap" style="display:${preselect?'':'none'}"><label class="form-label">${isBm?'Staff':'Staff'}</label><select class="form-select" id="att-sm-emp">${opts}</select></div>
+    </div>
+    <div class="modal-box-footer"><button type="button" class="btn btn-outline" id="att-sm-cancel">${isBm?'Batal':'Cancel'}</button>
+    <button type="button" class="btn btn-primary" id="att-sm-go"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Buka WhatsApp':'Open WhatsApp'}</button></div>
+  </div></div>`
+  document.body.insertAdjacentHTML('beforeend', html)
+  const modal = document.getElementById('att-share-modal')
+  const modeSel = modal.querySelector('#att-sm-mode'), empWrap = modal.querySelector('#att-sm-emp-wrap')
+  modeSel.onchange = () => { empWrap.style.display = modeSel.value==='one' ? '' : 'none' }
+  modal.querySelector('#att-sm-cancel').onclick = () => modal.remove()
+  modal.querySelector('#att-sm-go').onclick = () => {
+    const mode = modeSel.value
+    let scopedRows = rows, filterLabel = _attFilterLabel(f, isBm), phone = ''
+    if(mode === 'one') {
+      const empId = modal.querySelector('#att-sm-emp').value
+      if(!empId) { showToast(isBm?'Pilih staff':'Pick a staff','error'); return }
+      scopedRows = rows.filter(r => String(r.employee_id) === String(empId))
+      if(!scopedRows.length) { showToast(isBm?'Tiada rekod staff ini dalam tapisan semasa':'No records for this staff in the current filter','error'); return }
+      const empRow = scopedRows[0]
+      phone = window.PJW && typeof PJW.phone === 'function' ? PJW.phone(empRow.employees && empRow.employees.phone) : ''
+      if(!phone) { showToast(isBm?'Staff ini tiada nombor telefon sah':'This staff has no valid phone number','error'); return }
+      const nonEmpLabel = _attFilterLabel(Object.assign({}, f, { employee: 'all' }), isBm)
+      filterLabel = [(isBm?'Pekerja: ':'Employee: ') + ((empRow.employees && empRow.employees.name) || empId)].concat(nonEmpLabel ? [nonEmpLabel] : []).join(' · ')
+    }
+    const summaries = _attShareSummaries(scopedRows)
+    const text = _attShareText(summaries, filterLabel)
+    const url = window.PJW && typeof PJW.waUrl === 'function' ? PJW.waUrl(phone, text) : ('https://wa.me/' + phone + '?text=' + encodeURIComponent(text))
+    if(window.PJW && typeof PJW.open === 'function') PJW.open(url); else window.open(url, '_blank', 'noopener')
+    modal.remove()
+  }
 }
 
 function _attendanceEdit(id) {
