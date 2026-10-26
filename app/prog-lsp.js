@@ -38,8 +38,19 @@
   var TD = 'padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;font-size:13px';
   function table(cols, rows) {
     if (!rows.length) return '<div class="empty-state" style="padding:32px;color:var(--text-3)">' + esc(T('none')) + '</div>';
-    return '<div style="overflow-x:auto"><table>' + th(cols) + '<tbody>' + rows.join('') + '</tbody></table></div>';
+    // data-label per cell: on phones each row stacks into one column (label above value), see STACK_CSS
+    var body = rows.map(function (r) { var i = 0; return /colspan=/.test(r) ? r : r.replace(/<td(?=[\s>])/g, function () { return '<td data-label="' + esc(cols[i++] || '') + '"'; }); }).join('');
+    return '<div style="overflow-x:auto"><table class="pl-tbl">' + th(cols) + '<tbody>' + body + '</tbody></table></div>';
   }
+  var STACK_CSS = '<style>@media (max-width:768px){' +
+    '#pl-root .pl-tbl,#pl-root .pl-tbl tbody,#pl-root .pl-tbl tr,#pl-root .pl-tbl td{display:block;width:100%;box-sizing:border-box}' +
+    '#pl-root .pl-tbl thead{display:none}' +
+    '#pl-root .pl-tbl tr{border-bottom:1px solid var(--border);padding:6px 0}' +
+    '#pl-root .pl-tbl td{border-bottom:none!important;padding:6px 16px!important;white-space:normal!important;word-break:break-word}' +
+    '#pl-root .pl-tbl td[data-label]::before{content:attr(data-label);display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin-bottom:2px}' +
+    '#pl-root .pl-tbl td .form-input,#pl-root .pl-tbl td .form-select{width:100%;min-width:0!important;box-sizing:border-box}' +
+    '#pl-root .pl-tbl tr[data-detail] td{padding:12px 16px!important}' +
+    '}</style>';
   function btn(act, label, extra, cls) { return '<button type="button" class="btn btn-sm ' + (cls || 'btn-outline') + '" data-pl="' + act + '" ' + (extra || '') + '>' + esc(label) + '</button>'; }
   function field(id, label, value, type, hint, attrs) {
     return '<div class="form-group"><label class="form-label" for="' + id + '">' + esc(label) + '</label>' +
@@ -103,7 +114,7 @@
   function rerender() { return window.renderProgrammes({}); }
 
   function shell(right, inner) {
-    return '<div id="pl-root"><div class="page-header"><div><div class="page-title">' + esc(T('title')) + '</div>' +
+    return '<div id="pl-root">' + STACK_CSS + '<div class="page-header"><div><div class="page-title">' + esc(T('title')) + '</div>' +
       '<div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" data-pl="back">← ' + esc(T('back')) + '</div></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + right + '</div></div>' + inner + '</div>';
   }
