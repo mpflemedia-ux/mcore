@@ -2,6 +2,51 @@
 -- WRITE-ONLY: run in Supabase SQL Editor. Rerun-safe (IF NOT EXISTS / CREATE OR REPLACE / DROP POLICY IF EXISTS).
 -- Tables: prog_programmes, prog_leads. RPC: create_public_lead (anon).
 
+-- 0) permission helpers (self-contained: work whether or not the RBAC helpers has_module / is_platform_admin are installed)
+create or replace function public.prog__is_pa()
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $fn$
+declare ok boolean;
+begin
+  begin
+    execute 'select public.is_platform_admin()' into ok;
+    return coalesce(ok, false);
+  exception when undefined_function then
+    return exists (select 1 from public.user_profiles where id = auth.uid() and lower(coalesce(role, '')) = 'platform_admin');
+  end;
+end;
+$fn$;
+revoke all on function public.prog__is_pa() from public;
+grant execute on function public.prog__is_pa() to authenticated;
+
+-- module check: owner/admin always; otherwise has_module() when installed, else denied (least privilege)
+create or replace function public.prog__can(p_module text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $fn$
+declare ok boolean;
+begin
+  if exists (select 1 from public.user_profiles where id = auth.uid() and lower(coalesce(role, '')) in ('owner', 'admin')) then
+    return true;
+  end if;
+  begin
+    execute 'select public.has_module($1)' into ok using p_module;
+    return coalesce(ok, false);
+  exception when undefined_function then
+    return false;
+  end;
+end;
+$fn$;
+revoke all on function public.prog__can(text) from public;
+grant execute on function public.prog__can(text) to authenticated;
+
 -- 1) Programmes (one row per programme, owned by the selling tenant)
 create table if not exists public.prog_programmes (
   id uuid primary key default gen_random_uuid(),
@@ -68,28 +113,28 @@ create policy prog_programmes_select on public.prog_programmes for select to aut
   using (tenant_id = public.get_my_tenant_id());
 drop policy if exists prog_programmes_insert on public.prog_programmes;
 create policy prog_programmes_insert on public.prog_programmes for insert to authenticated
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('crm'));
+  with check (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'));
 drop policy if exists prog_programmes_update on public.prog_programmes;
 create policy prog_programmes_update on public.prog_programmes for update to authenticated
-  using (tenant_id = public.get_my_tenant_id() and public.has_module('crm'))
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('crm'));
+  using (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'))
+  with check (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'));
 drop policy if exists platform_admin_all on public.prog_programmes;
 create policy platform_admin_all on public.prog_programmes for all to authenticated
-  using (public.is_platform_admin()) with check (public.is_platform_admin());
+  using (public.prog__is_pa()) with check (public.prog__is_pa());
 
 drop policy if exists prog_leads_select on public.prog_leads;
 create policy prog_leads_select on public.prog_leads for select to authenticated
   using (tenant_id = public.get_my_tenant_id());
 drop policy if exists prog_leads_insert on public.prog_leads;
 create policy prog_leads_insert on public.prog_leads for insert to authenticated
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('crm'));
+  with check (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'));
 drop policy if exists prog_leads_update on public.prog_leads;
 create policy prog_leads_update on public.prog_leads for update to authenticated
-  using (tenant_id = public.get_my_tenant_id() and public.has_module('crm'))
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('crm'));
+  using (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'))
+  with check (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'));
 drop policy if exists platform_admin_all on public.prog_leads;
 create policy platform_admin_all on public.prog_leads for all to authenticated
-  using (public.is_platform_admin()) with check (public.is_platform_admin());
+  using (public.prog__is_pa()) with check (public.prog__is_pa());
 
 -- 4) Public RPC: save the lead first, return LD-xxxx (landing page then opens WhatsApp)
 create or replace function public.create_public_lead(p_token text, p_payload jsonb)

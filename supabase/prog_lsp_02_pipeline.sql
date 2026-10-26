@@ -11,9 +11,9 @@ security definer
 set search_path = public
 as $fn$
 begin
-  if public.is_platform_admin() then return; end if;
+  if public.prog__is_pa() then return; end if;
   if p_tenant is null or p_tenant is distinct from public.get_my_tenant_id() then raise exception 'not allowed'; end if;
-  if not public.has_module(p_module) then raise exception 'not allowed'; end if;
+  if not public.prog__can(p_module) then raise exception 'not allowed'; end if;
 end;
 $fn$;
 revoke all on function public.prog__guard(uuid, text) from public;
@@ -40,14 +40,14 @@ create policy prog_lead_activities_select on public.prog_lead_activities for sel
   using (tenant_id = public.get_my_tenant_id());
 drop policy if exists prog_lead_activities_insert on public.prog_lead_activities;
 create policy prog_lead_activities_insert on public.prog_lead_activities for insert to authenticated
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('crm'));
+  with check (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'));
 drop policy if exists prog_lead_activities_update on public.prog_lead_activities;
 create policy prog_lead_activities_update on public.prog_lead_activities for update to authenticated
-  using (tenant_id = public.get_my_tenant_id() and public.has_module('crm'))
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('crm'));
+  using (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'))
+  with check (tenant_id = public.get_my_tenant_id() and public.prog__can('crm'));
 drop policy if exists platform_admin_all on public.prog_lead_activities;
 create policy platform_admin_all on public.prog_lead_activities for all to authenticated
-  using (public.is_platform_admin()) with check (public.is_platform_admin());
+  using (public.prog__is_pa()) with check (public.prog__is_pa());
 
 -- stage change + history in one step. 'won' is set only by enrolment creation (phase 3); 'lost' needs a reason.
 create or replace function public.prog_lead_set_stage(p_lead uuid, p_stage text, p_reason text default null)

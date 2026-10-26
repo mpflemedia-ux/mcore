@@ -107,7 +107,7 @@ begin
     execute format('drop policy if exists %I on public.%I', t || '_select', t);
     execute format('create policy %I on public.%I for select to authenticated using (tenant_id = public.get_my_tenant_id())', t || '_select', t);
     execute format('drop policy if exists platform_admin_all on public.%I', t);
-    execute format('create policy platform_admin_all on public.%I for all to authenticated using (public.is_platform_admin()) with check (public.is_platform_admin())', t);
+    execute format('create policy platform_admin_all on public.%I for all to authenticated using (public.prog__is_pa()) with check (public.prog__is_pa())', t);
   end loop;
 end $pol$;
 -- writes only through prog_settle (no insert/update policy for normal users)
