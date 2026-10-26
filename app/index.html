@@ -593,6 +593,16 @@ thead th{text-align:left;padding:10px 12px;font-size:11px;font-weight:600;letter
 tbody td{padding:12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--bg)}
+/* ─── Data table utilities (Align/Cells/Sticky/Actions principles) — opt-in, reused across tables ─── */
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.num.neg{color:var(--danger)}
+.tcell{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.tbl-sticky-h thead th{position:sticky;top:0;z-index:2;background:var(--bg-card)}
+.tbl-sticky-c tbody td:first-child,.tbl-sticky-c thead th:first-child{position:sticky;left:0;z-index:1;background:var(--bg-card)}
+.tbl-sticky-c tbody tr:hover td:first-child{background:var(--bg)}
+.tbl-row-acts{opacity:0;transition:opacity .12s}
+tr:hover .tbl-row-acts,tr:focus-within .tbl-row-acts{opacity:1}
+@media (hover:none){.tbl-row-acts{opacity:1}}
 
 /* ─── INTRO VIDEO ─────────────────────────────────────────────────────────── */
 #intro-screen {
@@ -12755,21 +12765,21 @@ function _adminReferralRenderTable() {
   } : {
     name:'Name', contact:'Contact', registered:'Registered', converted:'Converted', commission:'Total Commission', created:'Created', noMatch:'No matching partners.'
   }
-  const th = (key,label) => `<th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="_adminReferralSort('${key}')">${label}${_adminReferralSortMark(key)}</th>`
+  const th = (key,label,num) => `<th class="${num?'num':''}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="_adminReferralSort('${key}')">${label}${_adminReferralSortMark(key)}</th>`
   const rows = _adminReferralFiltered()
   if(!rows.length) {
     host.innerHTML = `<div class="empty-state" style="padding:40px"><p>${t.noMatch}</p></div>`
     return
   }
   host.innerHTML = `<table><thead><tr>
-    ${th('name', t.name)}<th>${t.contact}</th>${th('registered', t.registered)}${th('converted', t.converted)}${th('commission', t.commission)}${th('created', t.created)}
+    ${th('name', t.name)}<th>${t.contact}</th>${th('registered', t.registered, true)}${th('converted', t.converted, true)}${th('commission', t.commission, true)}${th('created', t.created)}
   </tr></thead><tbody>
   ${rows.map(p => `<tr style="cursor:pointer" onclick="openPage('admin',{view:'referral-detail',id:'${p.id}'})">
-    <td style="white-space:nowrap">${_aiEscapeHtml(p.full_name||'—')}<div style="font-size:11px;color:var(--text-3)">${_aiEscapeHtml(p.referral_code||'')}</div></td>
-    <td style="font-size:12px;white-space:nowrap">${_aiEscapeHtml(p.phone||'')}<br>${_aiEscapeHtml(p.email||'')}</td>
-    <td>${p.registered}</td>
-    <td>${p.converted}</td>
-    <td>${formatRM(p.totalCommission)}</td>
+    <td><span class="tcell" title="${_aiEscapeHtml(p.full_name||'—')}">${_aiEscapeHtml(p.full_name||'—')}</span><div style="font-size:11px;color:var(--text-3)">${_aiEscapeHtml(p.referral_code||'')}</div></td>
+    <td style="font-size:12px"><span class="tcell" style="max-width:160px" title="${_aiEscapeHtml(p.phone||'—')}">${_aiEscapeHtml(p.phone||'—')}</span><br><span class="tcell" style="max-width:160px" title="${_aiEscapeHtml(p.email||'—')}">${_aiEscapeHtml(p.email||'—')}</span></td>
+    <td class="num">${p.registered}</td>
+    <td class="num">${p.converted}</td>
+    <td class="num">${formatRM(p.totalCommission)}</td>
     <td style="font-size:12px;color:var(--text-3);white-space:nowrap">${p.created_at?formatDate(p.created_at):'—'}</td>
   </tr>`).join('')}
   </tbody></table>`
@@ -24824,21 +24834,24 @@ function _invRenderListTable(t) {
   const today = new Date().toISOString().slice(0,10)
   const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--text-3)':'var(--danger)'
   const statusLabel = s => s==='paid'?t.paidFull:s==='partial'?t.partial:s==='cancelled'?(t.cancelled||'Cancelled'):t.unpaid
-  wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th style="text-align:right">${t.total}</th><th style="text-align:right">${t.paid}</th><th>${t.status}</th><th></th></tr></thead>
+  wrap.innerHTML = `<table><thead><tr><th>${t.invNo}</th><th>${t.customer}</th><th>${t.date}</th><th>${t.due}</th><th class="num">${t.total}</th><th class="num">${t.paid}</th><th>${t.status}</th><th></th></tr></thead>
   <tbody>${rows.map(i=>{
     const overdue = i.status!=='paid' && i.status!=='cancelled' && i.due_date && i.due_date < today
+    const custName = i.customer_name || '—'
     return `<tr onclick="if(canAccess('sales'))openPage('sales',{view:'inv-detail',id:'${i.id}'});else showToast(APP.language==='bm'?'Akses ditolak.':'Access denied.','warning')" style="cursor:pointer">
-    <td style="white-space:nowrap"><strong>${i.ref_no||'-'}</strong></td><td>${i.customer_name||'-'}</td>
+    <td style="white-space:nowrap"><strong>${i.ref_no||'—'}</strong></td><td><span class="tcell" title="${_aiEscapeHtml(custName)}">${_aiEscapeHtml(custName)}</span></td>
     <td style="white-space:nowrap">${formatDate(i.issue_date)}</td><td style="white-space:nowrap">${formatDate(i.due_date)}</td>
-    <td style="text-align:right">${formatRM(i.total)}</td>
-    <td style="text-align:right">${formatRM(i.paid_amt)}</td>
+    <td class="num">${formatRM(i.total)}</td>
+    <td class="num">${formatRM(i.paid_amt)}</td>
     <td style="white-space:nowrap"><span style="color:${statusColor(i.status)};font-weight:600">${statusLabel(i.status)}</span></td>
     <td style="white-space:nowrap" onclick="event.stopPropagation()">
+      <span class="tbl-row-acts">
       ${overdue?`<button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="_invDraftReminder('${i.id}')"><i class="ti ti-mail"></i></button>`:''}
       ${(typeof canDelete==='function'&&canDelete('sales'))?`<button type="button" class="btn btn-outline btn-sm" style="padding:4px 8px;color:var(--danger);border-color:var(--danger)"
         onclick="_invoiceDelete('${i.id}','${(i.ref_no||'').replace(/'/g,"\\'")}',${Number(i.paid_amt||0)})" title="${t.del||'Delete'}">
         <i class="ti ti-trash"></i>
       </button>`:''}
+      </span>
     </td>
   </tr>`
   }).join('')}</tbody></table>`
