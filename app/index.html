@@ -24951,10 +24951,9 @@ async function renderInvForm(id=null) {
     <div id="inv-form-err" class="auth-error" style="margin:16px 16px 0;display:none"></div>
     <div style="padding:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px">
       <div class="form-group"><label class="form-label">${t.customer}</label>
-        <select id="if-customer" class="form-select">
-          <option value="">-- ${APP.language==='bm'?'Pilih':'Select'} --</option>
-          ${customers.map(c=>`<option value="${c.id}" ${inv.customer_id===c.id?'selected':''}>${c.name}</option>`).join('')}
-        </select>
+        <input id="if-customer-q" class="form-input" list="if-customer-dl" autocomplete="off" placeholder="${APP.language==='bm'?'Taip untuk cari...':'Type to search...'}" value="${_aiEscapeHtml((customers.find(c=>c.id===inv.customer_id)||{}).name||'')}">
+        <datalist id="if-customer-dl">${customers.map(c=>`<option value="${_aiEscapeHtml(c.name)}">`).join('')}</datalist>
+        <input type="hidden" id="if-customer" value="${inv.customer_id||''}" data-name="${_aiEscapeHtml((customers.find(c=>c.id===inv.customer_id)||{}).name||'')}">
       </div>
       <div class="form-group"><label class="form-label">${t.date}</label><input id="if-date" type="date" class="form-input" value="${inv.issue_date||''}"></div>
       <div class="form-group"><label class="form-label">${t.due}</label><input id="if-due" type="date" class="form-input" value="${inv.due_date||''}"></div>
@@ -25022,6 +25021,13 @@ async function renderInvForm(id=null) {
     }
   }
   _slRenderItems()
+  const custQ = document.getElementById('if-customer-q')
+  if(custQ) custQ.addEventListener('input', function(){
+    const match = customers.find(c=>c.name===this.value.trim())
+    const hidden = document.getElementById('if-customer')
+    hidden.value = match ? match.id : ''
+    hidden.dataset.name = match ? match.name : ''
+  })
 }
 
 
@@ -25074,7 +25080,7 @@ async function _invSave(id) {
   const taxAmt = Math.round(subtotal * rate * 100) / 100
   const total = Math.round((subtotal + taxAmt) * 100) / 100
 
-  const customerName = document.getElementById('if-customer').selectedOptions[0]?.textContent || ''
+  const customerName = document.getElementById('if-customer').dataset.name || ''
   const status = document.getElementById('if-status')?.value || 'unpaid'
   const issueDate = document.getElementById('if-date').value
   if(issueDate && !assertNotPeriodLocked(issueDate)) return
