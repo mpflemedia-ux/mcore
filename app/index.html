@@ -30712,7 +30712,7 @@ async function _payrollRunExecute() {
   const checks = Array.from(document.querySelectorAll('.payroll-emp-check:checked'))
   const result = document.getElementById('payroll-run-result')
   if(checks.length===0) { showToast(isBm?'Tiada pekerja dipilih':'No employees selected', 'error'); return }
-  let okCount = 0, errCount = 0
+  let okCount = 0, errCount = 0, otTotal = 0, otDiag = []
   for(const chk of checks) {
     const empId = chk.value
     const {data: emp} = await sb.from('employees').select('basic_salary,ic_no').eq('id',empId).eq('tenant_id',APP.tenant.id).single()
@@ -30728,6 +30728,8 @@ async function _payrollRunExecute() {
     // only, so if we only looked for payroll_record_id IS NULL, a claim this exact row already
     // claimed would no longer match and its amount would vanish from net_pay on re-save. Also
     // re-include claims already attached to THIS row, not just brand-new (unattached) ones.
+    // Two separate queries (not .or()) — avoids any PostgREST filter-string edge case so this
+    // is easy to trust under debugging.
     let existingPrId = null
     try {
       const { data: existingPr } = await sb.from('payroll_records').select('id')
@@ -30736,15 +30738,24 @@ async function _payrollRunExecute() {
     } catch(e) { console.warn('existing payroll_records lookup', e) }
     let otRows = []
     try {
-      let q = sb.from('ot_claims').select('id,amount,approved_amount')
+      const { data: freshRows, error: freshErr } = await sb.from('ot_claims').select('id,amount,approved_amount')
         .eq('tenant_id', APP.tenant.id).eq('employee_id', empId).eq('status', 'approved')
-        .is('deleted_at', null).gte('claim_date', monthStart).lte('claim_date', monthEnd)
-      q = existingPrId ? q.or(`payroll_record_id.is.null,payroll_record_id.eq.${existingPrId}`) : q.is('payroll_record_id', null)
-      const { data } = await q
-      otRows = data || []
-    } catch(e) { console.warn('ot_claims lookup for payroll', e) }
+        .is('payroll_record_id', null).is('deleted_at', null)
+        .gte('claim_date', monthStart).lte('claim_date', monthEnd)
+      if(freshErr) console.error('ot_claims (unattached) lookup error', freshErr)
+      otRows = otRows.concat(freshRows || [])
+      if(existingPrId) {
+        const { data: attachedRows, error: attErr } = await sb.from('ot_claims').select('id,amount,approved_amount')
+          .eq('tenant_id', APP.tenant.id).eq('employee_id', empId).eq('status', 'approved')
+          .eq('payroll_record_id', existingPrId).is('deleted_at', null)
+          .gte('claim_date', monthStart).lte('claim_date', monthEnd)
+        if(attErr) console.error('ot_claims (already-attached) lookup error', attErr)
+        otRows = otRows.concat(attachedRows || [])
+      }
+    } catch(e) { console.error('ot_claims lookup for payroll', e) }
     const otAmount = Math.round(otRows.reduce((s,c) => s + Number(c.approved_amount != null ? c.approved_amount : c.amount || 0), 0) * 100) / 100
-    if(otAmount > 0) { calc.ot_amount = otAmount; calc.net_pay = Math.round((calc.net_pay + otAmount) * 100) / 100 }
+    if(otAmount > 0) { calc.ot_amount = otAmount; calc.net_pay = Math.round((calc.net_pay + otAmount) * 100) / 100; otTotal += otAmount }
+    otDiag.push(emp && empId ? (empId.slice(0,8) + ':' + otRows.length + ' claim(s)/RM' + otAmount) : '')
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
     let prRow=null, error=null
     ;({data: prRow, error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
@@ -30753,17 +30764,22 @@ async function _payrollRunExecute() {
       ;({data: prRow, error} = await sb.from('payroll_records').upsert(rest, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
     }
     if(error && /ot_amount/i.test(error.message||'')) {
+      console.error('payroll_records.ot_amount column missing — run supabase/hr_ot_payroll_integration_01.sql, then Settings/Database may need a schema cache reload', error)
       const {ot_amount, ...rest} = payload
       ;({data: prRow, error} = await sb.from('payroll_records').upsert(rest, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
     }
-    if(error) errCount++; else {
+    if(error) { errCount++; console.error('payroll_records upsert failed for employee '+empId, error) } else {
       okCount++; auditLog('create','payroll_records', empId)
-      if(otRows.length) { try { await sb.from('ot_claims').update({ payroll_record_id: prRow.id }).in('id', otRows.map(c=>c.id)) } catch(e) { console.warn('ot_claims mark paid', e) } }
+      if(otRows.length) {
+        const { error: markErr } = await sb.from('ot_claims').update({ payroll_record_id: prRow.id }).in('id', otRows.map(c=>c.id))
+        if(markErr) console.error('ot_claims mark paid failed', markErr)
+      }
       try { await _postPayrollJournal(calc, month, year, prRow?.id) } catch(e) { console.error('Payroll journal post failed for employee '+empId+':', e) }
     }
   }
-  result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
-  showToast(isBm?'Payroll selesai dijalankan':'Payroll run complete', 'success')
+  console.log('[payroll run] OT diag:', otDiag.filter(Boolean).join(' | '))
+  result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} slip gaji dijana`:`${okCount} payslip(s) generated`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'') + (otTotal>0?`, <span style="color:var(--text-2)">OT ${formatRM(otTotal)}</span>`:'')
+  showToast((isBm?'Payroll selesai dijalankan':'Payroll run complete') + (otTotal>0?(' · OT '+formatRM(otTotal)):(isBm?' · Tiada OT ditemui':' · No OT found')), 'success')
 }
 async function _payslipShareEmail(id) {
   const isBm = APP.language==='bm'
