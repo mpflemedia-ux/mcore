@@ -1,10 +1,10 @@
-/* M-Core Salary Disbursement — public "Approve & sign" upload (sd_approvals + doc-files/.../sd-approvals/). v1 */
+/* M-Core Salary Disbursement — public "Approve & sign" upload (sd_approvals + doc-files/.../sd-approvals/). File upload or draw-to-sign (canvas -> PNG, same upload path). v2 */
 (function () {
   var tok = window.__sdToken;
   if (!tok || window.__sdApprovePub) return; window.__sdApprovePub = 1;
   var bm = new URLSearchParams(location.search).get('lang') === 'bm', done = false, MAX = 10485760;
-  var T = bm ? { h: 'Luluskan & Tandatangan', d: 'Muat naik salinan dokumen ini yang telah ditandatangani.', open: 'Hantar dokumen bertandatangan', name: 'Nama anda', file: 'Fail (gambar atau PDF, maks 10 MB)', cam: 'Kamera', pick: 'Pilih fail', send: 'Hantar', cancel: 'Batal', wait: 'Menghantar…', need: 'Sila isi nama dan lampirkan satu fail.', big: 'Fail terlalu besar (maks 10 MB)', type: 'Jenis fail tidak disokong', ok: 'Terima kasih! Dokumen anda telah dihantar untuk disemak.', pend: 'Dihantar pada {d} · menunggu semakan', appr: 'Diluluskan', rej: 'Ditolak: {r}', fail: 'Tidak berjaya menghantar. Sila cuba lagi.' }
-    : { h: 'Approve & Sign', d: 'Upload a signed copy of this document.', open: 'Send signed document', name: 'Your name', file: 'File (photo or PDF, max 10 MB)', cam: 'Camera', pick: 'Choose file', send: 'Send', cancel: 'Cancel', wait: 'Sending…', need: 'Please enter your name and attach a file.', big: 'File too large (max 10 MB)', type: 'Unsupported file type', ok: 'Thank you! Your document has been sent for review.', pend: 'Sent on {d} · waiting for review', appr: 'Approved', rej: 'Rejected: {r}', fail: 'Could not send. Please try again.' };
+  var T = bm ? { h: 'Luluskan & Tandatangan', d: 'Muat naik salinan dokumen ini yang telah ditandatangani.', open: 'Hantar dokumen bertandatangan', name: 'Nama anda', file: 'Fail (gambar atau PDF, maks 10 MB)', cam: 'Kamera', pick: 'Pilih fail', send: 'Hantar', cancel: 'Batal', wait: 'Menghantar…', need: 'Sila isi nama dan lampirkan satu fail.', big: 'Fail terlalu besar (maks 10 MB)', type: 'Jenis fail tidak disokong', ok: 'Terima kasih! Dokumen anda telah dihantar untuk disemak.', pend: 'Dihantar pada {d} · menunggu semakan', appr: 'Diluluskan', rej: 'Ditolak: {r}', fail: 'Tidak berjaya menghantar. Sila cuba lagi.', sigOpt: 'Lukis Tandatangan', sigClear: 'Padam', sigBack: 'Kembali', sigUse: 'Guna Tandatangan Ini', sigEmpty: 'Sila lukis tandatangan dahulu.', sigFile: 'Tandatangan (lukisan tangan)' }
+    : { h: 'Approve & Sign', d: 'Upload a signed copy of this document.', open: 'Send signed document', name: 'Your name', file: 'File (photo or PDF, max 10 MB)', cam: 'Camera', pick: 'Choose file', send: 'Send', cancel: 'Cancel', wait: 'Sending…', need: 'Please enter your name and attach a file.', big: 'File too large (max 10 MB)', type: 'Unsupported file type', ok: 'Thank you! Your document has been sent for review.', pend: 'Sent on {d} · waiting for review', appr: 'Approved', rej: 'Rejected: {r}', fail: 'Could not send. Please try again.', sigOpt: 'Draw Signature', sigClear: 'Clear', sigBack: 'Back', sigUse: 'Use This Signature', sigEmpty: 'Please draw your signature first.', sigFile: 'Signature (hand-drawn)' };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function sha(b) { return crypto.subtle.digest('SHA-256', b).then(function (x) { return Array.prototype.map.call(new Uint8Array(x), function (v) { return ('0' + v.toString(16)).slice(-2); }).join(''); }); }
   function fmt(v) { return new Date(v).toLocaleDateString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }); }
@@ -26,6 +26,24 @@
       im.onerror = function () { URL.revokeObjectURL(u); res(f); }; im.src = u;
     });
   }
+  function clearPad(cv) {
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    delete cv.dataset.drawn;
+  }
+  function initPad(cv) {
+    if (cv.dataset.inited) return; cv.dataset.inited = '1';
+    var rect = cv.getBoundingClientRect();
+    cv.width = Math.round(rect.width) || 600; cv.height = Math.round(rect.height) || 160;
+    clearPad(cv);
+    var ctx = cv.getContext('2d'), drawing = false, last = null;
+    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    function pos(e) { var r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; }
+    cv.addEventListener('pointerdown', function (e) { drawing = true; last = pos(e); try { cv.setPointerCapture(e.pointerId); } catch (x) {} e.preventDefault(); });
+    cv.addEventListener('pointermove', function (e) { if (!drawing) return; var p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; cv.dataset.drawn = '1'; e.preventDefault(); });
+    cv.addEventListener('pointerup', function () { drawing = false; });
+    cv.addEventListener('pointerleave', function () { drawing = false; });
+  }
   function box(root, html) {
     var d = document.createElement('div'); d.id = 'sd-approve'; d.className = 'no-print';
     d.style.cssText = 'margin-top:18px;padding:16px 14px;border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc;color:#0f172a;text-align:left';
@@ -36,17 +54,38 @@
     var d = box(root, '<div style="font-weight:800;font-size:16px">' + T.h + '</div><div style="font-size:14px;color:#334155;margin:4px 0 12px">' + T.d + '</div>' +
       '<button type="button" data-o style="' + BTN + 'border:1px solid #0E7490;background:#fff;color:#0E7490;width:100%">✍️ ' + T.open + '</button><div data-f style="display:none">' +
       '<label style="' + LB + '">' + T.name + '<input data-nm maxlength="120" data-no-titlecase="1" style="' + IN + '"></label>' +
-      '<div style="' + LB + '">' + T.file + '</div><div style="display:flex;gap:8px;margin:6px 0"><label style="' + BTN + 'flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #94a3b8;background:#fff;color:#0f172a">📷 ' + T.cam + '<input type="file" accept="image/*" capture="environment" hidden></label>' +
-      '<label style="' + BTN + 'flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #94a3b8;background:#fff;color:#0f172a">📄 ' + T.pick + '<input type="file" accept="image/*,application/pdf,.heic,.heif" hidden></label></div>' +
+      '<div style="' + LB + '">' + T.file + '</div><div data-picks style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0">' +
+        '<label style="' + BTN + 'flex:1 1 30%;min-width:108px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #94a3b8;background:#fff;color:#0f172a">📷 ' + T.cam + '<input type="file" accept="image/*" capture="environment" hidden></label>' +
+        '<label style="' + BTN + 'flex:1 1 30%;min-width:108px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #94a3b8;background:#fff;color:#0f172a">📄 ' + T.pick + '<input type="file" accept="image/*,application/pdf,.heic,.heif" hidden></label>' +
+        '<button type="button" data-sigopen style="' + BTN + 'flex:1 1 30%;min-width:108px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #94a3b8;background:#fff;color:#0f172a">✍️ ' + T.sigOpt + '</button></div>' +
+      '<div data-sig style="display:none;margin:6px 0">' +
+        '<canvas data-sigcv width="600" height="180" style="width:100%;height:160px;touch-action:none;border:1px solid #94a3b8;border-radius:8px;background:#fff;display:block"></canvas>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' +
+          '<button type="button" data-sigclear style="' + BTN + 'flex:1 1 30%;min-width:90px;white-space:nowrap;border:1px solid #94a3b8;background:#fff;color:#0f172a">' + T.sigClear + '</button>' +
+          '<button type="button" data-sigback style="' + BTN + 'flex:1 1 30%;min-width:90px;white-space:nowrap;border:1px solid #94a3b8;background:#fff;color:#0f172a">' + T.sigBack + '</button>' +
+          '<button type="button" data-sigok style="' + BTN + 'flex:1.4 1 40%;min-width:140px;white-space:nowrap;border:0;background:#0E7490;color:#fff">' + T.sigUse + '</button></div></div>' +
       '<div data-l style="font-size:14px;color:#0f172a"></div><div data-e role="alert" style="display:none;color:#991b1b;font-size:14px;font-weight:600;margin:8px 0"></div>' +
       '<div style="display:flex;gap:10px;margin-top:10px"><button type="button" data-c style="' + BTN + 'flex:1;border:1px solid #94a3b8;background:#fff;color:#0f172a">' + T.cancel + '</button><button type="button" data-s style="' + BTN + 'flex:1.4;border:0;background:#0E7490;color:#fff">' + T.send + '</button></div></div>');
     var F = d.querySelector('[data-f]'), O = d.querySelector('[data-o]'), L = d.querySelector('[data-l]'), E = d.querySelector('[data-e]'), S = d.querySelector('[data-s]');
+    var picks = d.querySelector('[data-picks]'), sig = d.querySelector('[data-sig]'), cv = d.querySelector('[data-sigcv]');
     function err(m) { E.textContent = m; E.style.display = m ? 'block' : 'none'; }
     d.querySelectorAll('input[type=file]').forEach(function (inp) { inp.onchange = function () {
       var f = (inp.files || [])[0]; inp.value = ''; err(''); if (!f) return;
       if (!(OKT.test(f.type) || EXT.test(f.name))) return err(T.type); if (f.size > MAX) return err(T.big);
       file = f; L.textContent = f.name;
     }; });
+    d.querySelector('[data-sigopen]').onclick = function () { picks.style.display = 'none'; sig.style.display = 'block'; initPad(cv); };
+    d.querySelector('[data-sigback]').onclick = function () { sig.style.display = 'none'; picks.style.display = 'flex'; };
+    d.querySelector('[data-sigclear]').onclick = function () { clearPad(cv); };
+    d.querySelector('[data-sigok]').onclick = function () {
+      if (!cv.dataset.drawn) return err(T.sigEmpty);
+      cv.toBlob(function (blob) {
+        if (!blob) return err(T.sigEmpty);
+        file = new File([blob], 'tandatangan-' + Date.now() + '.png', { type: 'image/png' });
+        L.textContent = T.sigFile; err('');
+        sig.style.display = 'none'; picks.style.display = 'flex';
+      }, 'image/png');
+    };
     O.onclick = function () { F.style.display = 'block'; O.style.display = 'none'; };
     d.querySelector('[data-c]').onclick = function () { F.style.display = 'none'; O.style.display = 'block'; err(''); };
     S.onclick = function () {
