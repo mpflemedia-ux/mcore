@@ -8,7 +8,7 @@
   function L(x) { return x ? '\n' + x : ''; }
   window.__WAD_T = {
     en: {
-      inv_send: function (c) { return 'Hi ' + c.name + ', here is ' + c.what + ', due ' + c.due + '.' + L(c.link ? 'View & pay: ' + c.link : '') + '\nThank you. – ' + c.co; },
+      inv_send: function (c) { return 'Hi ' + c.name + ', here is the ' + c.what + ', due ' + c.due + '.' + L(c.link ? 'View & pay: ' + c.link : '') + '\nThank you. – ' + c.co; },
       reminder_friendly: function (c) { return 'Hi ' + c.name + ', friendly reminder: ' + c.what + (c.pl ? ' were' : ' was') + ' due on ' + c.due + ' (' + c.n + ' days).' + L(c.link ? 'View & pay here: ' + c.link : '') + '\nThank you. – ' + c.co; },
       reminder_firm: function (c) { return 'Hi ' + c.name + ', ' + c.what + (c.pl ? ' are' : ' is') + ' now ' + c.n + ' days overdue. Please settle by ' + c.by + '.' + L(c.link ? 'Pay here: ' + c.link : '') + '\nThank you. – ' + c.co; },
       reminder_final: function (c) { return 'Hi ' + c.name + ', final reminder: ' + c.what + (c.pl ? ' are ' : ' is ') + c.n + ' days overdue. Please contact us today to settle.' + L(c.link) + '\n– ' + c.co; },
