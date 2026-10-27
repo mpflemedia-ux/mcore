@@ -33,7 +33,7 @@
     var rows = q.data || [];
     if (!rows.length) { list.innerHTML = '<div style="font-size:12px;color:var(--text-3)">' + (isBm ? 'Belum ada servis.' : 'No services yet.') + '</div>'; return; }
     list.innerHTML = rows.map(function (r) {
-      return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>' +
+      return '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1 1 160px;min-width:120px">' +
         esc(r.name) + ' · ' + esc(r.kind) + ' · RM ' + Number(r.price || 0).toFixed(2) +
         (r.is_active ? '' : ' · off') + '</span>' +
         (r.is_active ? '<button type="button" class="btn btn-outline btn-sm bk-svc-off" data-id="' + esc(r.id) + '">' + (isBm ? 'Nyahaktif' : 'Deactivate') + '</button>' : '') +
