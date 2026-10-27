@@ -3857,7 +3857,8 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
     if(Number(amt) > 0) earnRows.push({ label: _sdTypeLabel(SD_ALLOWANCE_TYPES, type), amount: amt, positive: true })
   })
   if(Number(rec.commission) > 0) earnRows.push({ label: isBm?'Komisen Jualan':'Sales Commission', amount: rec.commission, positive: true })
-  const totalEarnings = Number(rec.basic_salary||0) + Number(rec.allowance_1||0) + Number(rec.allowance_2||0) + Number(rec.allowance_3||0) + Number(rec.commission||0)
+  if(Number(rec.ot_amount) > 0) earnRows.push({ label: isBm?'Lebih Masa (OT)':'Overtime (OT)', amount: rec.ot_amount, positive: true })
+  const totalEarnings = Number(rec.basic_salary||0) + Number(rec.allowance_1||0) + Number(rec.allowance_2||0) + Number(rec.allowance_3||0) + Number(rec.commission||0) + Number(rec.ot_amount||0)
 
   const dedRows = []
   if(Number(rec.epf_employee) > 0) dedRows.push({ label: isBm?'KWSP (Pekerja)':'KWSP (Employee)', amount: rec.epf_employee })
