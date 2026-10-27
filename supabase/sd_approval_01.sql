@@ -135,8 +135,11 @@ CREATE TRIGGER sd_approvals_pending_review_trg AFTER INSERT ON public.sd_approva
 -- 'inv'/'quo'/'booking'/'pos' untouched, no regression to existing WA-doc flows) ----------
 alter table public.doc_public_links drop constraint if exists doc_public_links_doc_type_check;
 alter table public.doc_public_links add constraint doc_public_links_doc_type_check check (doc_type in ('inv', 'quo', 'sd'));
+-- bo_support_03.sql already widened this to also allow 'project'/'splan' (Board Pack /
+-- Strategic Plan doc shares) — keep that superset, just add 'sd', or this ALTER fails
+-- against any tenant that already has a 'project'/'splan' row (23514).
 alter table public.doc_shares drop constraint if exists doc_shares_doc_type_check;
-alter table public.doc_shares add constraint doc_shares_doc_type_check check (doc_type in ('inv', 'quo', 'booking', 'pos', 'sd'));
+alter table public.doc_shares add constraint doc_shares_doc_type_check check (doc_type in ('inv', 'quo', 'booking', 'pos', 'project', 'splan', 'sd'));
 
 -- ---------- 4) storage: signed-file upload into doc-files/{tenant}/sd-approvals/{token}/{file}
 -- while that token is a live 'sd' link of that tenant (same shape as doc_files_claim_ins) ----------
