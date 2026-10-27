@@ -12,8 +12,9 @@ reset role;
 --   - A delegate (tenants.config.ot_delegates, a jsonb array of user_profiles.id) has the
 --     SAME full approval power as owner, but scoped to OT only, and CANNOT approve their own
 --     claim (separation of duties) — enforced here at the RLS level too, not just the UI,
---     by matching the claim's employee email against the delegate's own user_profiles email
---     (same linkage _hrResolveSelfEmployee() uses client-side).
+--     by matching the claim's employee email against auth.email() (the delegate's own login
+--     email — user_profiles has no email column, same linkage _hrResolveSelfEmployee() uses
+--     client-side via Supabase Auth).
 --   - manager/hr can create/update PENDING claims for any employee (e.g. editing someone
 --     else's attendance) but cannot move a claim to approved/rejected — only owner/delegate
 --     can change status away from pending.
@@ -118,11 +119,12 @@ CREATE POLICY ot_claims_write_approver ON public.ot_claims
           WHERE t.id = ot_claims.tenant_id AND t.config->'ot_delegates' @> to_jsonb(auth.uid()::text)
         )
         AND NOT EXISTS (
+          -- Delegate's own email comes from auth.email() (the JWT claim for the logged-in
+          -- user) — user_profiles has no email column, that lives in Supabase Auth only.
           SELECT 1 FROM public.employees e
-          JOIN public.user_profiles up2 ON up2.id = auth.uid()
           WHERE e.id = ot_claims.employee_id
-            AND e.email IS NOT NULL AND up2.email IS NOT NULL
-            AND lower(trim(e.email)) = lower(trim(up2.email))
+            AND e.email IS NOT NULL AND auth.email() IS NOT NULL
+            AND lower(trim(e.email)) = lower(trim(auth.email()))
         )
       )
     )
@@ -141,10 +143,9 @@ CREATE POLICY ot_claims_write_approver ON public.ot_claims
         )
         AND NOT EXISTS (
           SELECT 1 FROM public.employees e
-          JOIN public.user_profiles up2 ON up2.id = auth.uid()
           WHERE e.id = ot_claims.employee_id
-            AND e.email IS NOT NULL AND up2.email IS NOT NULL
-            AND lower(trim(e.email)) = lower(trim(up2.email))
+            AND e.email IS NOT NULL AND auth.email() IS NOT NULL
+            AND lower(trim(e.email)) = lower(trim(auth.email()))
         )
       )
     )
