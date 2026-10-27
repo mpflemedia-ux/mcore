@@ -32794,6 +32794,11 @@ async function renderAttendance(params={}) {
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Kod pejabat hari ini':'Office code today'}</label><input type="text" id="att-set-code" class="form-input" placeholder="e.g. 4821"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="att-set-code-on"> ${isBm?'Wajib kod pejabat (mod Office)':'Require office code (Office mode)'}</label>
+    <div style="margin:4px 0 8px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Hari bekerja seminggu':'Working days of week'}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      ${[0,1,2,3,4,5,6].map(d => `<label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" class="att-set-workday" value="${d}"> ${[isBm?'Ahd':'Sun',isBm?'Isn':'Mon',isBm?'Sel':'Tue',isBm?'Rab':'Wed',isBm?'Kha':'Thu',isBm?'Jum':'Fri',isBm?'Sab':'Sat'][d]}</label>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">${isBm?'Dipakai untuk kira Attendance Rate (Share WhatsApp) — bukan hari kalendar, hari cuti umum/bukan hari bekerja tak dikira.':'Used to calculate Attendance Rate (Share WhatsApp) — not raw calendar days; public holidays/non-working days are excluded.'}</div>
     <div style="margin:12px 0 8px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Presence Ring · Geofence pejabat':'Presence Ring · Office geofence'}</div>
     <div class="form-group" style="margin:0 0 8px">
       <label class="form-label">${isBm?'Alamat / Plus Code':'Address / Plus Code'}</label>
@@ -32873,6 +32878,8 @@ async function _attendanceLoadTable(month, year) {
     const olat = document.getElementById('att-set-lat'); if(olat && p.office_lat != null) olat.value = p.office_lat
     const olng = document.getElementById('att-set-lng'); if(olng && p.office_lng != null) olng.value = p.office_lng
     const genf = document.getElementById('att-set-geo-enforce'); if(genf) genf.checked = !!p.geo_enforce
+    const wd = Array.isArray(p.work_days) ? p.work_days : [1,2,3,4,5]
+    document.querySelectorAll('.att-set-workday').forEach(cb => { cb.checked = wd.indexOf(Number(cb.value)) !== -1 })
     _attLoadOutstationList()
   } catch(e) {}
   try {
@@ -33145,51 +33152,106 @@ function _attPrint() {
   window.print()
 }
 
-function _attShareSummaries(rows) {
-  const by = {}
-  rows.forEach(r => {
-    const id = r.employee_id
-    const b = by[id] || (by[id] = { name: (r.employees && r.employees.name) || '—', total: 0, present: 0, late: 0, absent: 0, half: 0, leave: 0 })
-    b.total++
-    if(r.status === 'present') b.present++
-    else if(r.status === 'late') b.late++
-    else if(r.status === 'absent') b.absent++
-    else if(r.status === 'half_day') b.half++
-    else if(r.status === 'on_leave') b.leave++
-  })
-  return Object.values(by).sort((a,b) => String(a.name).localeCompare(String(b.name)))
+function _attHolidaySet(from, to) {
+  return sb.from('public_holidays').select('holiday_date,tenant_id')
+    .or(`tenant_id.is.null,tenant_id.eq.${APP.tenant.id}`)
+    .is('deleted_at', null).gte('holiday_date', from).lte('holiday_date', to)
+    .then(r => new Set((r.data||[]).map(h => String(h.holiday_date).slice(0,10))), () => new Set())
 }
 
-function _attShareText(summaries, filterLabel) {
+function _attLeaveRanges(from, to) {
+  return sb.from('leave_requests').select('employee_id,start_date,end_date')
+    .eq('tenant_id', APP.tenant.id).eq('status', 'approved').is('deleted_at', null)
+    .lte('start_date', to).gte('end_date', from)
+    .then(r => r.data || [], () => [])
+}
+
+function _attAllEmployees() {
+  return sb.from('employees').select('id,name,phone,join_date')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('name')
+    .then(r => r.data || [], () => [])
+}
+
+function _attExpectedDays(from, to, workDays, holidaySet, joinDate) {
+  const days = []
+  const d = new Date(from + 'T00:00:00')
+  const end = new Date(to + 'T00:00:00')
+  const joinD = joinDate ? new Date(String(joinDate).slice(0,10) + 'T00:00:00') : null
+  while(d <= end) {
+    const iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+    if((!joinD || d >= joinD) && workDays.indexOf(d.getDay()) !== -1 && !holidaySet.has(iso)) days.push(iso)
+    d.setDate(d.getDate()+1)
+  }
+  return days
+}
+
+/* Per-employee attendance summary against expected working days (not raw logged rows) —
+   leave excluded from denominator, half-day = 0.5 credit, is_late reclassifies a stray
+   'present' row to 'late' (no double count), unlogged expected days count as Absent. */
+function _attEmployeeSummary(emp, from, to, workDays, holidaySet, leaveRanges, attByKey) {
+  const expected = _attExpectedDays(from, to, workDays, holidaySet, emp.join_date)
+  const leaveForEmp = leaveRanges.filter(l => String(l.employee_id) === String(emp.id))
+  let present = 0, late = 0, half = 0, explicitAbsent = 0, leave = 0
+  expected.forEach(day => {
+    if(leaveForEmp.some(l => l.start_date <= day && l.end_date >= day)) { leave++; return }
+    const rec = attByKey[emp.id + '|' + day]
+    if(!rec) return
+    let st = rec.status
+    if(st === 'present' && rec.is_late) st = 'late'
+    if(st === 'present') present++
+    else if(st === 'late') late++
+    else if(st === 'half_day') half++
+    else if(st === 'absent') explicitAbsent++
+    else if(st === 'on_leave') leave++
+  })
+  const counted = expected.length - leave
+  const missing = counted - (present + late + half + explicitAbsent)
+  const absent = explicitAbsent + Math.max(0, missing)
+  const rate = counted > 0 ? Math.round((present + late + half*0.5) / counted * 100) : null
+  return { name: emp.name || '—', expected: expected.length, counted, present, late, half, absent, leave, rate }
+}
+
+function _attShareText(summaries, scopeLabel) {
   const isBm = APP.language==='bm'
   const co = (APP.tenant && APP.tenant.name) || 'M-Core'
   const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
   const year = Number(document.getElementById('att-year')?.value) || new Date().getFullYear()
   const monthLabel = (isBm?MONTH_NAMES_BM:MONTH_NAMES_EN)[month-1] + ' ' + year
   const lines = ['*' + (isBm?'Ringkasan Kehadiran':'Attendance Summary') + ' · ' + co + '*', monthLabel]
-  if(filterLabel) lines.push((isBm?'Tapisan: ':'Filter: ') + filterLabel)
+  if(scopeLabel) lines.push((isBm?'Staff: ':'Staff: ') + scopeLabel)
   lines.push('')
-  summaries.forEach(s => {
-    const rate = s.total ? Math.round((s.present + s.late + s.half) / s.total * 100) : 0
+  const CAP = 25
+  const shown = summaries.slice(0, CAP)
+  shown.forEach(s => {
     lines.push('*' + s.name + '*')
-    lines.push((isBm?'Hadir ':'Present ') + s.present + ' · ' + (isBm?'Lewat ':'Late ') + s.late + ' · ' + (isBm?'Tidak Hadir ':'Absent ') + s.absent + ' · ' + (isBm?'Setengah Hari ':'Half-day ') + s.half + ' · ' + (isBm?'Cuti ':'Leave ') + s.leave)
-    lines.push((isBm?'Kehadiran: ':'Attendance rate: ') + rate + '%')
+    if(s.counted === 0) {
+      lines.push(isBm?'Tiada hari bekerja dalam tempoh ini':'No working days in this period')
+    } else {
+      lines.push((isBm?'Hadir ':'Present ') + s.present + ' · ' + (isBm?'Lewat ':'Late ') + s.late + ' · ' + (isBm?'Tidak Hadir ':'Absent ') + s.absent + ' · ' + (isBm?'Setengah Hari ':'Half-day ') + s.half + ' · ' + (isBm?'Cuti ':'Leave ') + s.leave)
+      lines.push((isBm?'Kehadiran: ':'Attendance rate: ') + s.rate + '%')
+    }
     lines.push('')
   })
+  if(summaries.length > CAP) lines.push('+' + (summaries.length - CAP) + (isBm?' staff lagi — guna tapisan Pekerja untuk lihat details':' more staff — use the Employee filter to see details'), '')
   lines.push('_' + (isBm?'Dihantar melalui M-Core':'Sent via M-Core') + '_')
   return lines.join('\n')
 }
 
-function _attShareModal() {
+async function _attShareModal() {
   if(!canManageHR()) { showToast(APP.language==='bm'?'Tiada kebenaran':'Not permitted','error'); return }
   const isBm = APP.language==='bm'
-  const rows = _attFilteredRows()
-  if(!rows.length) { showToast(isBm?'Tiada rekod untuk dikongsi':'No records to share','error'); return }
+  const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('att-year')?.value) || new Date().getFullYear()
+  const from = `${year}-${String(month).padStart(2,'0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
   const f = window._attHistFilter || {}
-  const empOpts = [...new Map(rows.map(a => [a.employee_id, (a.employees && a.employees.name) || a.employee_id])).entries()]
-    .sort((x,y) => String(x[1]).localeCompare(String(y[1])))
+  showToast(isBm?'Menyediakan ringkasan…':'Preparing summary…', 'info')
+  const [employees, holidaySet, leaveRanges] = await Promise.all([_attAllEmployees(), _attHolidaySet(from, to), _attLeaveRanges(from, to)])
+  if(!employees.length) { showToast(isBm?'Tiada staff':'No staff','error'); return }
+  const workDays = Array.isArray(window._attPolicy?.work_days) ? window._attPolicy.work_days : [1,2,3,4,5]
   const preselect = (f.employee && f.employee !== 'all') ? f.employee : ''
-  const opts = empOpts.map(([id,name]) => `<option value="${id}"${String(id)===String(preselect)?' selected':''}>${_aiEscapeHtml(name||id)}</option>`).join('')
+  const opts = employees.map(e => `<option value="${e.id}"${String(e.id)===String(preselect)?' selected':''}>${_aiEscapeHtml(e.name||e.id)}</option>`).join('')
   const html = `<div class="modal-overlay active" id="att-share-modal"><div class="modal-box" style="max-width:420px">
     <div class="modal-box-header"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi WhatsApp':'Share WhatsApp'}</div>
     <div class="modal-box-body">
@@ -33209,22 +33271,23 @@ function _attShareModal() {
   const modeSel = modal.querySelector('#att-sm-mode'), empWrap = modal.querySelector('#att-sm-emp-wrap')
   modeSel.onchange = () => { empWrap.style.display = modeSel.value==='one' ? '' : 'none' }
   modal.querySelector('#att-sm-cancel').onclick = () => modal.remove()
-  modal.querySelector('#att-sm-go').onclick = () => {
+  modal.querySelector('#att-sm-go').onclick = async () => {
     const mode = modeSel.value
-    let scopedRows = rows, filterLabel = _attFilterLabel(f, isBm), phone = ''
+    let scope = employees, scopeLabel = '', phone = ''
     if(mode === 'one') {
       const empId = modal.querySelector('#att-sm-emp').value
-      if(!empId) { showToast(isBm?'Pilih staff':'Pick a staff','error'); return }
-      scopedRows = rows.filter(r => String(r.employee_id) === String(empId))
-      if(!scopedRows.length) { showToast(isBm?'Tiada rekod staff ini dalam tapisan semasa':'No records for this staff in the current filter','error'); return }
-      const empRow = scopedRows[0]
-      phone = window.PJW && typeof PJW.phone === 'function' ? PJW.phone(empRow.employees && empRow.employees.phone) : ''
+      const emp = employees.find(e => String(e.id) === String(empId))
+      if(!emp) { showToast(isBm?'Pilih staff':'Pick a staff','error'); return }
+      phone = window.PJW && typeof PJW.phone === 'function' ? PJW.phone(emp.phone) : ''
       if(!phone) { showToast(isBm?'Staff ini tiada nombor telefon sah':'This staff has no valid phone number','error'); return }
-      const nonEmpLabel = _attFilterLabel(Object.assign({}, f, { employee: 'all' }), isBm)
-      filterLabel = [(isBm?'Pekerja: ':'Employee: ') + ((empRow.employees && empRow.employees.name) || empId)].concat(nonEmpLabel ? [nonEmpLabel] : []).join(' · ')
+      scope = [emp]
+      scopeLabel = emp.name
     }
-    const summaries = _attShareSummaries(scopedRows)
-    const text = _attShareText(summaries, filterLabel)
+    const attByKey = {}
+    ;(_attendanceRecords||[]).forEach(r => { attByKey[r.employee_id + '|' + r.date] = r })
+    const summaries = scope.map(e => _attEmployeeSummary(e, from, to, workDays, holidaySet, leaveRanges, attByKey))
+      .sort((a,b) => String(a.name).localeCompare(String(b.name)))
+    const text = _attShareText(summaries, scopeLabel)
     const url = window.PJW && typeof PJW.waUrl === 'function' ? PJW.waUrl(phone, text) : ('https://wa.me/' + phone + '?text=' + encodeURIComponent(text))
     if(window.PJW && typeof PJW.open === 'function') PJW.open(url); else window.open(url, '_blank', 'noopener')
     modal.remove()
@@ -34122,10 +34185,11 @@ async function _attSavePolicy() {
     office_lat: document.getElementById('att-set-lat')?.value !== '' ? Number(document.getElementById('att-set-lat')?.value) : null,
     office_lng: document.getElementById('att-set-lng')?.value !== '' ? Number(document.getElementById('att-set-lng')?.value) : null,
     geo_enforce: !!document.getElementById('att-set-geo-enforce')?.checked,
+    work_days: Array.from(document.querySelectorAll('.att-set-workday:checked')).map(cb => Number(cb.value)).sort((a,b)=>a-b),
     updated_at: new Date().toISOString()
   }
   let { error } = await sb.from('tenant_attendance_settings').upsert(row, { onConflict: 'tenant_id' })
-  if(error && /office_lat|office_lng|office_radius|office_name|geo_enforce|column/i.test(error.message||'')) {
+  if(error && /office_lat|office_lng|office_radius|office_name|geo_enforce|work_days|column/i.test(error.message||'')) {
     // SQL not applied yet — save core fields only
     const core = { tenant_id: row.tenant_id, work_start: row.work_start, grace_minutes: row.grace_minutes, field_max_days_month: row.field_max_days_month, office_code_enabled: row.office_code_enabled, daily_code: row.daily_code, daily_code_date: row.daily_code_date, updated_at: row.updated_at }
     ;({ error } = await sb.from('tenant_attendance_settings').upsert(core, { onConflict: 'tenant_id' }))
@@ -34361,7 +34425,8 @@ async function _attLoadPolicy() {
     office_lng: null,
     office_radius_m: 500,
     office_name: null,
-    geo_enforce: false
+    geo_enforce: false,
+    work_days: [1,2,3,4,5]
   }
   if(!APP.tenant?.id) {
     window._attPolicy = defaults
