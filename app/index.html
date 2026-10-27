@@ -17468,6 +17468,7 @@ const DEFAULT_ACCOUNT_MAPPING_KEYS = [
   { key:'pcb_payable',       accountType:'liability', en:'PCB Payable',              bm:'PCB Belum Bayar',           required:true  },
   { key:'commission_expense', accountType:'expense',  en:'Commission Expense',       bm:'Perbelanjaan Komisen',      required:false },
   { key:'employee_advance',   accountType:'asset',    en:'Employee Advance',         bm:'Pendahuluan Pekerja',       required:false },
+  { key:'ot_expense',         accountType:'expense',  en:'Overtime Expense',         bm:'Perbelanjaan OT',           required:false },
 ]
 
 /** Free plan gets basic accounting only: Chart of Accounts + Journal Entries.
@@ -29611,8 +29612,11 @@ function renderHR(params={}) {
     if(v === 'attendance' || !v) { renderAttendance(params); return }
     if(v === 'my-payslips' || v === 'payroll-history') { renderMyPayslips(params); return }
     if(v === 'payslip' && params.id) { renderPayslipDetail(params.id); return }
+    if(v === 'ot-approvals') { renderOTApprovals(); return }
     renderAccessDenied(); return
   }
+  if(params.view==='ot-settings') { renderOTSettings(); return }
+  if(params.view==='ot-approvals') { renderOTApprovals(); return }
   if(params.view==='employee-form') { renderEmployeeForm(params.id, params.fromApplicantId); return }
   if(params.view==='payroll-run') { renderPayrollRun(); return }
   if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year); return }
@@ -29647,6 +29651,8 @@ async function renderEmployeeList() {
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.attendance}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.leave}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${isBm?'Pendahuluan':'Advance'}</button>
+      ${_otIsApproverUser() ? `<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'ot-approvals'})"><i class="ti ti-clock-dollar"></i> ${isBm?'Kelulusan OT':'OT Approvals'}</button>` : ''}
+      ${isTenantAdmin() ? `<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'ot-settings'})"><i class="ti ti-settings-dollar"></i> ${isBm?'Tetapan Gaji & OT':'Payroll & OT Settings'}</button>` : ''}
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'employee-form'})"><i class="ti ti-plus"></i> ${t.addEmployee}</button>
     </div>
   </div>
@@ -29792,6 +29798,14 @@ async function renderEmployeeForm(id, fromApplicantId) {
       <div class="form-group"><label class="form-label">${t.salary}</label><input id="emp-salary" type="number" step="0.01" min="0" class="form-input" value="${src.basic_salary??''}"></div>
       <div class="form-group"><label class="form-label">${t.epfNo}</label><input id="emp-epf" class="form-input" value="${emp?.epf_no||''}"></div>
       <div class="form-group"><label class="form-label">${t.socsoNo}</label><input id="emp-socso" class="form-input" value="${emp?.socso_no||''}"></div>
+      <div class="form-group"><label class="form-label">${isBm?'Layak OT':'OT Eligible'}</label>
+        <select id="emp-ot-eligible" class="form-select">
+          <option value="" ${(emp?.ot_eligible==null)?'selected':''}>${isBm?'Auto (ikut gaji & Tetapan OT)':'Auto (by wage & OT Settings)'}</option>
+          <option value="true" ${(emp?.ot_eligible===true)?'selected':''}>${isBm?'Ya':'Yes'}</option>
+          <option value="false" ${(emp?.ot_eligible===false)?'selected':''}>${isBm?'Tidak':'No'}</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px">${isBm?'Auto = layak jika gaji ≤ had OT dalam Tetapan Gaji & OT':'Auto = eligible if salary ≤ the OT threshold in Payroll & OT Settings'}</div>
+      </div>
       <div class="form-group" style="grid-column:1/-1;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-2)">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:8px">
           <input type="checkbox" id="emp-zakat-on" ${(emp?.zakat_enabled)?'checked':''}>
@@ -29927,6 +29941,7 @@ async function _employeeSave(id, fromApplicantId) {
     socso_no: document.getElementById('emp-socso').value.trim() || null,
     zakat_enabled: !!document.getElementById('emp-zakat-on')?.checked,
     zakat_amount: Math.max(0, Number(document.getElementById('emp-zakat-amt')?.value) || 0),
+    ot_eligible: (function(){ const v = document.getElementById('emp-ot-eligible')?.value; return v==='true' ? true : v==='false' ? false : null })(),
     bank_name: document.getElementById('emp-bank-name')?.value.trim() || null,
     bank_account_no: document.getElementById('emp-bank-acc')?.value.trim() || null,
     phone: document.getElementById('emp-phone').value.trim() || null,
@@ -29973,6 +29988,18 @@ async function _employeeSave(id, fromApplicantId) {
       if(data) newId = data.id
     }
     if(!error) showToast(APP.language==='bm'?'Disimpan tanpa PZB — run SQL migration zakat':'Saved without PZB — run zakat SQL migration','info')
+  }
+  // Soft-fail if ot_eligible column not migrated yet
+  if(error && /ot_eligible/i.test(error.message||'')) {
+    delete payload.ot_eligible
+    if(id) {
+      ({error} = await sb.from('employees').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
+    } else {
+      const {data, error: insErr2} = await sb.from('employees').insert(payload).select('id').single()
+      error = insErr2
+      if(data) newId = data.id
+    }
+    if(!error) showToast(APP.language==='bm'?'Disimpan tanpa Layak OT — run SQL migration OT':'Saved without OT Eligible — run OT SQL migration','info')
   }
   if(error) {
     const _scMsg = [error.code, error.message, error.details, error.hint].filter(Boolean).join(' ')
@@ -30634,13 +30661,20 @@ async function _postPayrollJournal(calc, month, year, sourceId, dryRun, entryDat
   // silently posting an unbalanced entry.
   const commission = Number(calc.commission||0)
   const commissionAcc = commission > 0 ? await _getDefaultAccountId('commission_expense') : null
+  // OT (calc.ot_amount, from approved ot_claims — see _payrollRunExecute) is already baked
+  // into calc.net_pay same as commission — same dedicated-account-or-fold-into-Salary-Expense
+  // fallback (OT roadmap Phase 7).
+  const otAmount = Number(calc.ot_amount||0)
+  const otAcc = otAmount > 0 ? await _getDefaultAccountId('ot_expense') : null
   let totalExpense = Number(calc.basic_salary||0) + totalAllowance + Number(calc.epf_employer||0) + Number(calc.socso_employer||0) + Number(calc.eis_employer||0) - totalDeduction
   if(commission > 0 && !commissionAcc) totalExpense += commission
+  if(otAmount > 0 && !otAcc) totalExpense += otAmount
   const epfTotal = Number(calc.epf_employee||0) + Number(calc.epf_employer||0)
   const socsoTotal = Number(calc.socso_employee||0) + Number(calc.socso_employer||0)
   const eisTotal = Number(calc.eis_employee||0) + Number(calc.eis_employer||0)
   const lines = [{ account_id: salaryAcc, debit: totalExpense, credit: 0 }]
   if(commission > 0 && commissionAcc) lines.push({ account_id: commissionAcc, debit: commission, credit: 0 })
+  if(otAmount > 0 && otAcc) lines.push({ account_id: otAcc, debit: otAmount, credit: 0 })
   if(advance > 0 && employeeAdvanceAcc) lines.push({ account_id: employeeAdvanceAcc, debit: 0, credit: advance })
   if(calc.net_pay > 0) lines.push({ account_id: cashAcc, debit: 0, credit: calc.net_pay })
   if(epfTotal > 0) lines.push({ account_id: epfAcc, debit: 0, credit: epfTotal })
@@ -30683,6 +30717,21 @@ async function _payrollRunExecute() {
     const {data: emp} = await sb.from('employees').select('basic_salary,ic_no').eq('id',empId).eq('tenant_id',APP.tenant.id).single()
     if(!emp) { errCount++; continue }
     const calc = _calcPayroll(emp)
+    // OT roadmap Phase 7 — pull APPROVED, not-yet-paid ot_claims for this employee in this
+    // period and add as a gross top-up on net_pay (NOT run through EPF/SOCSO/PCB, which are
+    // hardcoded to basic_salary only — same precedent as allowance/commission in _sdRowValues).
+    const monthStart = year + '-' + String(month).padStart(2,'0') + '-01'
+    const monthEnd = new Date(year, month, 0).toISOString().slice(0,10)
+    let otRows = []
+    try {
+      const { data } = await sb.from('ot_claims').select('id,amount,approved_amount')
+        .eq('tenant_id', APP.tenant.id).eq('employee_id', empId).eq('status', 'approved')
+        .is('payroll_record_id', null).is('deleted_at', null)
+        .gte('claim_date', monthStart).lte('claim_date', monthEnd)
+      otRows = data || []
+    } catch(e) { console.warn('ot_claims lookup for payroll', e) }
+    const otAmount = Math.round(otRows.reduce((s,c) => s + Number(c.approved_amount != null ? c.approved_amount : c.amount || 0), 0) * 100) / 100
+    if(otAmount > 0) { calc.ot_amount = otAmount; calc.net_pay = Math.round((calc.net_pay + otAmount) * 100) / 100 }
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
     let prRow=null, error=null
     ;({data: prRow, error} = await sb.from('payroll_records').upsert(payload, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
@@ -30690,8 +30739,13 @@ async function _payrollRunExecute() {
       const {zakat, ...rest} = payload
       ;({data: prRow, error} = await sb.from('payroll_records').upsert(rest, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
     }
+    if(error && /ot_amount/i.test(error.message||'')) {
+      const {ot_amount, ...rest} = payload
+      ;({data: prRow, error} = await sb.from('payroll_records').upsert(rest, { onConflict: 'tenant_id,employee_id,month,year' }).select('id').single())
+    }
     if(error) errCount++; else {
       okCount++; auditLog('create','payroll_records', empId)
+      if(otRows.length) { try { await sb.from('ot_claims').update({ payroll_record_id: prRow.id }).in('id', otRows.map(c=>c.id)) } catch(e) { console.warn('ot_claims mark paid', e) } }
       try { await _postPayrollJournal(calc, month, year, prRow?.id) } catch(e) { console.error('Payroll journal post failed for employee '+empId+':', e) }
     }
   }
@@ -30719,7 +30773,183 @@ async function _payslipShareEmail(id) {
   window.location.href = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body)
 }
 
+/* Tetapan Gaji & OT (roadmap Phase 4) — tenant_ot_settings row + OT Approvers (delegates,
+   stored in tenants.config.ot_delegates per the additive-jsonb-key pattern already used by
+   shift_hours). Owner/Admin only — payroll-sensitive, stricter than canManageHR(). */
+async function renderOTSettings() {
+  if(!isTenantAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language === 'bm'
+  const s = await _otSettings()
+  const { data: users } = await sb.from('user_profiles').select('id,full_name,email,role').eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+  const delegates = (APP.tenant.config && Array.isArray(APP.tenant.config.ot_delegates)) ? APP.tenant.config.ot_delegates.map(String) : []
+  const t = isBm ? {
+    title: 'Tetapan Gaji & OT', back: 'SDM & Gaji', save: 'Simpan tetapan',
+    legal: '(Default: Akta Kerja 1955 — boleh diubah)',
+    autoDetect: 'Auto-kesan OT dari Attendance (clock-in/out)',
+    threshold: 'Had gaji layak OT (RM/bulan)', normalDay: 'Jam normal sehari', normalWeek: 'Jam normal seminggu',
+    divisor: 'Pembahagi kadar harian', multNormal: 'Kadar OT biasa (x)',
+    restHalf: 'Hari rehat ≤ separuh hari (x gaji harian)', restFull: 'Hari rehat > separuh-sehari (x gaji harian)', restExcess: 'Hari rehat lebihan (x sejam)',
+    holWorked: 'Cuti umum bekerja (x gaji harian)', holExcess: 'Cuti umum lebihan (x sejam)',
+    delegateTitle: 'Pelulus OT (Delegate)', delegateNote: 'Selain Owner, sesiapa disenaraikan di sini boleh luluskan tuntutan OT staf lain (TIDAK boleh luluskan tuntutan sendiri).',
+    saveDelegates: 'Simpan Pelulus'
+  } : {
+    title: 'Payroll & OT Settings', back: 'HR & Payroll', save: 'Save settings',
+    legal: '(Default: Akta Kerja 1955 — editable)',
+    autoDetect: 'Auto-detect OT from Attendance (clock-in/out)',
+    threshold: 'OT-eligible wage threshold (RM/month)', normalDay: 'Normal hours/day', normalWeek: 'Normal hours/week',
+    divisor: 'Daily rate divisor', multNormal: 'Normal OT rate (x)',
+    restHalf: 'Rest day ≤ half day (x daily wage)', restFull: 'Rest day > half-to-full day (x daily wage)', restExcess: 'Rest day excess (x hourly)',
+    holWorked: 'Public holiday worked (x daily wage)', holExcess: 'Public holiday excess (x hourly)',
+    delegateTitle: 'OT Approvers (Delegates)', delegateNote: 'Besides the Owner, anyone listed here can approve OTHER staff\'s OT claims (CANNOT approve their own).',
+    saveDelegates: 'Save Approvers'
+  }
+  const field = (id, label, val, step) => `<div class="form-group" style="margin:0"><label class="form-label">${label}</label><input type="number" step="${step||'0.01'}" min="0" id="${id}" class="form-input" value="${val}"></div>`
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card" style="max-width:700px;padding:20px;margin-bottom:16px">
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">${t.legal}</div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:14px"><input type="checkbox" id="ot-auto-detect" ${s.ot_auto_detect?'checked':''}> ${t.autoDetect}</label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px">
+      ${field('ot-threshold', t.threshold, s.ot_eligible_wage_threshold, '1')}
+      ${field('ot-normal-day', t.normalDay, s.normal_hours_day, '0.5')}
+      ${field('ot-normal-week', t.normalWeek, s.normal_hours_week, '0.5')}
+      ${field('ot-divisor', t.divisor, s.ot_divisor, '1')}
+    </div>
+    <div style="margin:8px 0 6px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Pengganda':'Multipliers'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px">
+      ${field('ot-mult-normal', t.multNormal, s.ot_multiplier_normal, '0.1')}
+      ${field('ot-mult-restday-half', t.restHalf, s.ot_multiplier_restday_half, '0.1')}
+      ${field('ot-mult-restday-full', t.restFull, s.ot_multiplier_restday_full, '0.1')}
+      ${field('ot-mult-restday-excess', t.restExcess, s.ot_multiplier_restday_excess, '0.1')}
+      ${field('ot-mult-holiday-worked', t.holWorked, s.ot_multiplier_holiday_worked, '0.1')}
+      ${field('ot-mult-holiday-excess', t.holExcess, s.ot_multiplier_holiday_excess, '0.1')}
+    </div>
+    <button class="btn btn-primary btn-sm" type="button" onclick="_otSaveSettings()"><i class="ti ti-device-floppy"></i> ${t.save}</button>
+  </div>
+  <div class="card" style="max-width:700px;padding:20px">
+    <div style="font-weight:600;margin-bottom:6px">${t.delegateTitle}</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">${t.delegateNote}</div>
+    <div style="max-height:260px;overflow-y:auto;margin-bottom:12px">
+      ${(users||[]).map(u => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0">
+        <input type="checkbox" class="ot-delegate-check" value="${u.id}" ${delegates.indexOf(String(u.id))!==-1?'checked':''}>
+        ${_aiEscapeHtml(u.full_name||u.email||u.id)} <span style="color:var(--text-3);font-size:11px">(${_aiEscapeHtml(u.role||'')})</span>
+      </label>`).join('') || `<span style="color:var(--text-3);font-size:12px">${isBm?'Tiada pengguna':'No users'}</span>`}
+    </div>
+    <button class="btn btn-outline btn-sm" type="button" onclick="_otSaveDelegates()"><i class="ti ti-device-floppy"></i> ${t.saveDelegates}</button>
+  </div>`
+}
+async function _otSaveSettings() {
+  const isBm = APP.language==='bm'
+  const num = (id, def) => { const v = Number(document.getElementById(id)?.value); return isNaN(v) ? def : v }
+  const payload = {
+    tenant_id: APP.tenant.id,
+    ot_auto_detect: !!document.getElementById('ot-auto-detect')?.checked,
+    ot_eligible_wage_threshold: num('ot-threshold', 4000),
+    normal_hours_day: num('ot-normal-day', 8),
+    normal_hours_week: num('ot-normal-week', 45),
+    ot_divisor: num('ot-divisor', 26),
+    ot_multiplier_normal: num('ot-mult-normal', 1.5),
+    ot_multiplier_restday_half: num('ot-mult-restday-half', 0.5),
+    ot_multiplier_restday_full: num('ot-mult-restday-full', 1.0),
+    ot_multiplier_restday_excess: num('ot-mult-restday-excess', 2.0),
+    ot_multiplier_holiday_worked: num('ot-mult-holiday-worked', 1.0),
+    ot_multiplier_holiday_excess: num('ot-mult-holiday-excess', 3.0)
+  }
+  const { error } = await sb.from('tenant_ot_settings').upsert(payload, { onConflict: 'tenant_id' })
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  _otSettingsClearCache()
+  auditLog('update', 'tenant_ot_settings', APP.tenant.id, null, payload)
+  showToast(isBm?'Tetapan OT disimpan':'OT settings saved', 'success')
+}
+async function _otSaveDelegates() {
+  const isBm = APP.language==='bm'
+  const ids = Array.from(document.querySelectorAll('.ot-delegate-check:checked')).map(c => c.value)
+  try {
+    await _tenantConfigPatch({ ot_delegates: ids })
+    auditLog('update', 'tenants', APP.tenant.id, null, { ot_delegates: ids })
+    showToast(isBm?'Pelulus OT disimpan':'OT approvers saved', 'success')
+  } catch(e) { showToast('Error: '+(e.message||e), 'error') }
+}
 
+/* OT Approval queue (roadmap Phase 5-6) — owner approves anyone; a delegate approves anyone
+   EXCEPT their own claim (separation of duties — safeguard agreed with the tenant owner). */
+async function renderOTApprovals() {
+  if(!_otIsApproverUser()) { renderAccessDenied(); return }
+  const isBm = APP.language === 'bm'
+  const myEmail = String((APP.user && APP.user.email)||'').trim().toLowerCase()
+  const { data: claims } = await sb.from('ot_claims')
+    .select('id,employee_id,claim_date,day_type,hours_worked,ot_hours,amount,status,note,employees(name,email)')
+    .eq('tenant_id', APP.tenant.id).eq('status', 'pending').is('deleted_at', null)
+    .order('claim_date', { ascending: false })
+  const t = isBm ? {
+    title: 'Kelulusan OT', back: 'SDM & Gaji', noData: 'Tiada tuntutan OT belum diluluskan.',
+    name:'Nama', date:'Tarikh', type:'Jenis Hari', hours:'Jam OT', amount:'Jumlah (RM)', action:'Tindakan',
+    approve:'Lulus', reject:'Tolak', ownClaim:'Perlu Owner luluskan tuntutan sendiri',
+    normal:'Biasa', restday:'Hari Rehat', holiday:'Cuti Umum'
+  } : {
+    title: 'OT Approvals', back: 'HR & Payroll', noData: 'No pending OT claims.',
+    name:'Name', date:'Date', type:'Day Type', hours:'OT Hours', amount:'Amount (RM)', action:'Action',
+    approve:'Approve', reject:'Reject', ownClaim:'Needs Owner for own claim',
+    normal:'Normal', restday:'Rest Day', holiday:'Public Holiday'
+  }
+  const isOwner = _otIsOwnerUser()
+  const dayLabel = d => d==='restday' ? t.restday : d==='holiday' ? t.holiday : t.normal
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  <div class="card">
+  ${(!claims || claims.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
+  <table><thead><tr><th>${t.name}</th><th>${t.date}</th><th>${t.type}</th><th style="text-align:right">${t.hours}</th><th style="text-align:right">${t.amount}</th><th>${t.action}</th></tr></thead>
+  <tbody>${claims.map(c => {
+    const isOwn = !isOwner && String(c.employees?.email||'').trim().toLowerCase() === myEmail && myEmail
+    return `<tr>
+      <td>${_aiEscapeHtml(c.employees?.name||'-')}</td>
+      <td>${formatDate(c.claim_date)}</td>
+      <td>${dayLabel(c.day_type)}</td>
+      <td style="text-align:right">${c.ot_hours}</td>
+      <td style="text-align:right">${formatRM(c.amount)}</td>
+      <td>${isOwn ? `<span style="color:var(--warning);font-size:12px">${t.ownClaim}</span>` : `
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" type="button" onclick="_otApproveClaim('${c.id}', ${c.ot_hours})"><i class="ti ti-check"></i> ${t.approve}</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="_otRejectClaim('${c.id}')"><i class="ti ti-x"></i> ${t.reject}</button>
+        </div>`}
+      </td>
+    </tr>`
+  }).join('')}</tbody></table>`}
+  </div>`
+}
+async function _otApproveClaim(id, otHours) {
+  const isBm = APP.language==='bm'
+  let approvedHours = otHours
+  const input = prompt(isBm?'Jam OT diluluskan (boleh laras):':'OT hours to approve (adjustable):', otHours)
+  if(input === null) return
+  approvedHours = Number(input)
+  if(isNaN(approvedHours) || approvedHours < 0) { showToast(isBm?'Jam tidak sah':'Invalid hours', 'error'); return }
+  const { data: claim } = await sb.from('ot_claims').select('ot_hours,amount').eq('id', id).eq('tenant_id', APP.tenant.id).maybeSingle()
+  if(!claim) { showToast('Not found', 'error'); return }
+  const approvedAmount = claim.ot_hours > 0 ? Math.round((claim.amount * (approvedHours / claim.ot_hours)) * 100) / 100 : 0
+  const patch = { status: 'approved', approved_hours: approvedHours, approved_amount: approvedAmount, approved_by: APP.user.id, approved_at: new Date().toISOString() }
+  const { error } = await sb.from('ot_claims').update(patch).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('update', 'ot_claims', id, { status: 'pending' }, patch)
+  showToast(isBm?'Tuntutan OT diluluskan':'OT claim approved', 'success')
+  renderOTApprovals()
+}
+async function _otRejectClaim(id) {
+  const isBm = APP.language==='bm'
+  const reason = prompt(isBm?'Sebab tolak (akan nampak kat staff):':'Reason for rejecting (visible to staff):', '') || ''
+  const patch = { status: 'rejected', note: reason || null, approved_by: APP.user.id, approved_at: new Date().toISOString() }
+  const { error } = await sb.from('ot_claims').update(patch).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('update', 'ot_claims', id, { status: 'pending' }, patch)
+  showToast(isBm?'Tuntutan OT ditolak':'OT claim rejected', 'success')
+  renderOTApprovals()
+}
 
 /** Resolve employees row linked to logged-in user (tenant + email, then name). */
 async function _hrResolveSelfEmployee() {
@@ -31841,12 +32071,21 @@ async function renderSalaryDisbursement(month, year) {
   </div>`
 
   const wrap = document.getElementById('sd-content')
-  const {data, error} = await sb.from('payroll_records')
-    .select(`id,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,zakat,net_pay,
+  let {data, error} = await sb.from('payroll_records')
+    .select(`id,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,zakat,net_pay,ot_amount,
       allowance_type_1,allowance_1,allowance_type_2,allowance_2,allowance_type_3,allowance_3,
       advance,deduction_type_1,deduction_1,deduction_type_2,deduction_2,employee_id,
       employees(name,bank_name,bank_account_no,ic_no,basic_salary,zakat_enabled,zakat_amount)`)
     .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true})
+  if(error && /ot_amount/i.test(error.message||'')) {
+    // OT payroll integration SQL not run yet — fall back without it
+    ;({data, error} = await sb.from('payroll_records')
+      .select(`id,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,zakat,net_pay,
+        allowance_type_1,allowance_1,allowance_type_2,allowance_2,allowance_type_3,allowance_3,
+        advance,deduction_type_1,deduction_1,deduction_type_2,deduction_2,employee_id,
+        employees(name,bank_name,bank_account_no,ic_no,basic_salary,zakat_enabled,zakat_amount)`)
+      .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).order('generated_at',{ascending:true}))
+  }
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p><p style="font-size:12px;color:#64748B">${t.runPayrollFirst}</p></div>`
@@ -31990,7 +32229,8 @@ async function renderSalaryDisbursement(month, year) {
         _a1 ? (_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_1,r.allowance_1)+': <strong>'+_sdPrintAmt(r.allowance_1)+'</strong>') : '',
         _a2 ? (_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_2,r.allowance_2)+': <strong>'+_sdPrintAmt(r.allowance_2)+'</strong>') : '',
         _a3 ? (_sdPrintType(SD_ALLOWANCE_TYPES,r.allowance_type_3,r.allowance_3)+': <strong>'+_sdPrintAmt(r.allowance_3)+'</strong>') : '',
-        Number(r.commission||0) > 0 ? ((isBm?'Komisen':'Commission')+': <strong>'+_sdPrintAmt(r.commission)+'</strong>') : ''
+        Number(r.commission||0) > 0 ? ((isBm?'Komisen':'Commission')+': <strong>'+_sdPrintAmt(r.commission)+'</strong>') : '',
+        Number(r.ot_amount||0) > 0 ? ((isBm?'OT':'OT')+': <strong>'+_sdPrintAmt(r.ot_amount)+'</strong>') : ''
       ].filter(Boolean).join(' · ')
       const _statDense = [
         _epf ? ('EPF <strong>'+_sdPrintAmt(r.epf_employee)+'</strong>') : '',
@@ -32028,6 +32268,7 @@ async function renderSalaryDisbursement(month, year) {
             <input type="number" step="0.01" min="0" class="form-input" id="sd-a3-${r.id}" value="${r.allowance_3||0}" oninput="_sdRecalc()">
           </div>
           ${Number(r.commission||0) > 0 ? `<div class="pdoc-sd-line"><label>${isBm?'Komisen':'Commission'}</label><span style="font-weight:600;color:var(--success,#16A34A)">${formatRM(r.commission)}</span></div>` : ''}
+          ${Number(r.ot_amount||0) > 0 ? `<div class="pdoc-sd-line"><label>OT</label><span style="font-weight:600;color:var(--success,#16A34A)">${formatRM(r.ot_amount)}</span></div>` : ''}
         </div>
         <span class="no-print" id="sd-print-atype1-${r.id}" style="display:none"></span>
         <span class="no-print" id="sd-print-atype2-${r.id}" style="display:none"></span>
@@ -32315,8 +32556,9 @@ function _sdRowValues(r) {
   const totalAllowance = allowance_1 + allowance_2 + allowance_3
   const totalDeduction = advance + deduction_1 + deduction_2
   const commission = Number(r.commission||0) // read-only — not an editable DOM field, unlike allowance_1/2/3
-  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance + commission - epf_employee - socso_employee - eis_employee - pcb - zakat - totalDeduction) * 100) / 100
-  return { epf_employee, socso_employee, eis_employee, pcb, zakat, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, commission, net_pay }
+  const ot_amount = Number(r.ot_amount||0) // read-only — fixed at Payroll Run time from approved ot_claims
+  const net_pay = Math.round((Number(r.basic_salary||0) + totalAllowance + commission + ot_amount - epf_employee - socso_employee - eis_employee - pcb - zakat - totalDeduction) * 100) / 100
+  return { epf_employee, socso_employee, eis_employee, pcb, zakat, allowance_type_1, allowance_1, allowance_type_2, allowance_2, allowance_type_3, allowance_3, advance, deduction_type_1, deduction_1, deduction_type_2, deduction_2, commission, ot_amount, net_pay }
 }
 
 // Picking an advance from the Cash Advance/Panjar dropdown fills the
@@ -32440,10 +32682,10 @@ async function _sdSaveAll() {
   for(const r of _sdRecords) {
     const payload = _sdRowValues(r)
     let {error} = await sb.from('payroll_records').update(payload).eq('id', r.id).eq('tenant_id', APP.tenant.id)
-    if(error && /commission|column/i.test(error.message||'')) {
-      // sales_commission migration not applied yet — retry without the new
-      // field so existing allowance/deduction/statutory saves still work.
-      const {commission, ...rest} = payload
+    if(error && /commission|ot_amount|column/i.test(error.message||'')) {
+      // sales_commission/OT migration not applied yet — retry without the new
+      // fields so existing allowance/deduction/statutory saves still work.
+      const {commission, ot_amount, ...rest} = payload
       ;({error} = await sb.from('payroll_records').update(rest).eq('id', r.id).eq('tenant_id', APP.tenant.id))
     }
     if(error) errCount++; else { okCount++; auditLog('update','payroll_records', r.id) }
@@ -32785,6 +33027,15 @@ async function renderAttendance(params={}) {
       ${[0,1,2,3,4,5,6].map(d => `<label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" class="att-set-workday" value="${d}"> ${[isBm?'Ahd':'Sun',isBm?'Isn':'Mon',isBm?'Sel':'Tue',isBm?'Rab':'Wed',isBm?'Kha':'Thu',isBm?'Jum':'Fri',isBm?'Sab':'Sat'][d]}</label>`).join('')}
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">${isBm?'Dipakai untuk kira Attendance Rate (Share WhatsApp) — bukan hari kalendar, hari cuti umum/bukan hari bekerja tak dikira.':'Used to calculate Attendance Rate (Share WhatsApp) — not raw calendar days; public holidays/non-working days are excluded.'}</div>
+    <div style="margin:12px 0 8px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Cuti umum tambahan (tenant ini)':'Additional public holidays (this tenant)'}</div>
+    <div id="att-holiday-list" style="font-size:12px;color:var(--text-3);margin-bottom:8px">—</div>
+    <div style="display:grid;grid-template-columns:130px 1fr 1fr auto;gap:8px;margin-bottom:4px">
+      <input type="date" id="att-hol-date" class="form-input">
+      <input type="text" id="att-hol-en" class="form-input" placeholder="Title (EN)">
+      <input type="text" id="att-hol-bm" class="form-input" placeholder="Tajuk (BM)">
+      <button type="button" class="btn btn-outline btn-sm" onclick="_attAddHoliday()"><i class="ti ti-plus"></i></button>
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">${isBm?'Cuti umum Malaysia (persekutuan) dah ada secara default. Tambah sini kalau tenant ada cuti negeri/tambahan sendiri — automatik dikira dalam Attendance Rate.':'Malaysia federal public holidays already ship by default. Add here if this tenant has state/extra holidays — automatically counted in the Attendance Rate.'}</div>
     <div style="margin:12px 0 8px;font-size:12px;font-weight:600;color:var(--text-2)">${isBm?'Presence Ring · Geofence pejabat':'Presence Ring · Office geofence'}</div>
     <div class="form-group" style="margin:0 0 8px">
       <label class="form-label">${isBm?'Alamat / Plus Code':'Address / Plus Code'}</label>
@@ -32830,12 +33081,18 @@ async function renderAttendance(params={}) {
     <button class="btn btn-primary btn-sm" style="margin-top:8px" type="button" onclick="_attSubmitOutstation()">${isBm?'Hantar permohonan':'Submit request'}</button>
     <div id="os-list" style="margin-top:10px;font-size:12px;color:var(--text-3);max-height:440px;overflow-y:auto"></div>
   </div>
+  <div class="card" style="padding:14px;margin-bottom:14px" id="ot-my-claims-panel">
+    <div style="font-weight:600;margin-bottom:6px"><i class="ti ti-clock-dollar"></i> ${isBm?'Tuntutan OT saya':'My OT claims'}</div>
+    <div id="ot-my-claims-list" style="font-size:12px;color:var(--text-3)">—</div>
+  </div>
   <div id="att-table-wrap" class="att-pack" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
   ${_attPrintCss()}`
 
   if(params.employee) window._attHistFilter = { status: 'all', employee: String(params.employee), mode: 'all', sort: 'date_desc' }
   await _attendanceLoadTable(month, year)
   try { await _attLoadOutstationList() } catch(e) { console.warn(e) }
+  if(canManageHR()) { try { await _attLoadHolidayList() } catch(e) { console.warn(e) } }
+  try { await _otLoadMyClaims(month, year) } catch(e) { console.warn(e) }
 }
 
 /* Attendance Analytics — ranked "who needs attention" view. Reuses the exact Share WhatsApp
@@ -33022,6 +33279,7 @@ async function _attAutoCloseStale(records, policy) {
     r.clock_out = patch.clock_out
     r.clock_out_auto = true
     closed++
+    try { await _otMaybeCreateClaim(r.employee_id, r.date, r.clock_in, patch.clock_out) } catch(e) { console.warn('OT auto-detect', e) }
   }
   return closed
 }
@@ -33054,9 +33312,161 @@ async function _attConfirmClockOut(id) {
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog('update', 'attendance', id, old ? { clock_out: old.clock_out, clock_out_auto: old.clock_out_auto } : null, patch)
   showToast(isBm?'Disahkan':'Confirmed', 'success')
+  if(old) { try { await _otMaybeCreateClaim(old.employee_id, old.date, old.clock_in, patch.clock_out) } catch(e) { console.warn('OT auto-detect', e) } }
   const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
   const year = Number(document.getElementById('att-year')?.value) || (new Date().getFullYear())
   await _attendanceLoadTable(month, year)
+}
+
+/* OT automation engine (roadmap Phase 5-6) — auto-detects overtime from the hours a clock_in/
+   clock_out pair actually represents (real or auto-closed), using Akta Kerja 1955 defaults that
+   a tenant can override in Tetapan Gaji & OT (tenant_ot_settings). A detected claim is always
+   created as 'pending' — it only affects pay once an owner/delegate approves it (_otApproveClaim)
+   and Payroll Run picks it up (Phase 7). Never recomputes a claim once it's approved/rejected. */
+let _otSettingsCache = null
+async function _otSettings() {
+  if(_otSettingsCache && _otSettingsCache.tenantId === APP.tenant.id) return _otSettingsCache.data
+  const { data } = await sb.from('tenant_ot_settings').select('*').eq('tenant_id', APP.tenant.id).maybeSingle()
+  const d = data || {}
+  const settings = {
+    normal_hours_week: Number(d.normal_hours_week ?? 45),
+    normal_hours_day: Number(d.normal_hours_day ?? 8),
+    ot_divisor: Number(d.ot_divisor ?? 26),
+    ot_multiplier_normal: Number(d.ot_multiplier_normal ?? 1.5),
+    ot_multiplier_restday_half: Number(d.ot_multiplier_restday_half ?? 0.5),
+    ot_multiplier_restday_full: Number(d.ot_multiplier_restday_full ?? 1.0),
+    ot_multiplier_restday_excess: Number(d.ot_multiplier_restday_excess ?? 2.0),
+    ot_multiplier_holiday_worked: Number(d.ot_multiplier_holiday_worked ?? 1.0),
+    ot_multiplier_holiday_excess: Number(d.ot_multiplier_holiday_excess ?? 3.0),
+    ot_eligible_wage_threshold: Number(d.ot_eligible_wage_threshold ?? 4000),
+    ot_auto_detect: d.ot_auto_detect !== false
+  }
+  _otSettingsCache = { tenantId: APP.tenant.id, data: settings }
+  return settings
+}
+function _otSettingsClearCache() { _otSettingsCache = null }
+
+async function _otDayType(employeeId, dateStr) {
+  const holSet = await _attHolidaySet(dateStr, dateStr)
+  if(holSet.has(dateStr)) return 'holiday'
+  let kind = null
+  try {
+    const { data } = await sb.from('shifts').select('kind').eq('tenant_id', APP.tenant.id)
+      .eq('employee_id', employeeId).eq('shift_date', dateStr).is('deleted_at', null).maybeSingle()
+    kind = data ? data.kind : null
+  } catch(e) { console.warn('ot day type shift lookup', e) }
+  if(kind) return kind === 'off' ? 'restday' : 'normal'
+  const p = window._attPolicy || await _attLoadPolicy()
+  const workDays = (Array.isArray(p.work_days) && p.work_days.length) ? p.work_days : [1,2,3,4,5]
+  const dow = new Date(dateStr + 'T12:00:00').getDay()
+  return workDays.indexOf(dow) === -1 ? 'restday' : 'normal'
+}
+
+function _otHoursBetween(clockIn, clockOut) {
+  if(!clockIn || !clockOut) return 0
+  const a = String(clockIn).slice(0,5).split(':').map(Number)
+  const b = String(clockOut).slice(0,5).split(':').map(Number)
+  let mins = (b[0]*60+b[1]) - (a[0]*60+a[1])
+  if(mins < 0) mins += 24*60 // overnight shift (e.g. closing kind crossing midnight)
+  return Math.round((mins/60) * 100) / 100
+}
+
+// Ordinary Rate of Pay per Akta Kerja 1955: daily rate = monthly salary / ot_divisor (26),
+// hourly rate = daily rate / normal_hours_day. Rest-day uses the tiered rule (<=half day
+// worked = 0.5 day wage, >half-to-normal = 1 full day wage, excess = 2x hourly). Public
+// holiday = +1 full day's wage for working it (on top of the holiday pay already in salary),
+// excess over normal hours = 3x hourly. All multipliers are tenant-editable defaults.
+function _otComputeClaim(settings, basicSalary, dayType, hoursWorked) {
+  const r2 = n => Math.round(n * 100) / 100
+  const dailyRate = basicSalary / (settings.ot_divisor || 26)
+  const normalHours = settings.normal_hours_day || 8
+  const hourlyRate = dailyRate / normalHours
+  let otHours = 0, amount = 0
+  if(dayType === 'normal') {
+    otHours = Math.max(0, hoursWorked - normalHours)
+    amount = r2(otHours * hourlyRate * settings.ot_multiplier_normal)
+  } else if(dayType === 'restday') {
+    otHours = hoursWorked
+    if(hoursWorked <= normalHours / 2) amount = r2(dailyRate * settings.ot_multiplier_restday_half)
+    else if(hoursWorked <= normalHours) amount = r2(dailyRate * settings.ot_multiplier_restday_full)
+    else {
+      const excess = hoursWorked - normalHours
+      amount = r2(dailyRate * settings.ot_multiplier_restday_full + excess * hourlyRate * settings.ot_multiplier_restday_excess)
+    }
+  } else if(dayType === 'holiday') {
+    otHours = hoursWorked
+    let base = dailyRate * settings.ot_multiplier_holiday_worked
+    if(hoursWorked > normalHours) base += (hoursWorked - normalHours) * hourlyRate * settings.ot_multiplier_holiday_excess
+    amount = r2(base)
+  }
+  return { ot_hours: r2(otHours), amount, hourly_rate: r2(hourlyRate), daily_rate: r2(dailyRate) }
+}
+
+async function _otMaybeCreateClaim(employeeId, dateStr, clockIn, clockOut) {
+  if(!employeeId || !dateStr || !clockIn || !clockOut) return
+  const settings = await _otSettings()
+  if(!settings.ot_auto_detect) return
+  const { data: emp } = await sb.from('employees').select('basic_salary,ot_eligible')
+    .eq('id', employeeId).eq('tenant_id', APP.tenant.id).maybeSingle()
+  if(!emp) return
+  const basic = Number(emp.basic_salary) || 0
+  const eligible = emp.ot_eligible === true ? true
+    : emp.ot_eligible === false ? false
+    : (basic > 0 && basic <= settings.ot_eligible_wage_threshold)
+  if(!eligible) return
+  const dayType = await _otDayType(employeeId, dateStr)
+  const hoursWorked = _otHoursBetween(clockIn, clockOut)
+  const calc = _otComputeClaim(settings, basic, dayType, hoursWorked)
+  if(calc.ot_hours <= 0 || calc.amount <= 0) return
+  let existing = null
+  try {
+    const { data } = await sb.from('ot_claims').select('id,status').eq('tenant_id', APP.tenant.id)
+      .eq('employee_id', employeeId).eq('claim_date', dateStr).is('deleted_at', null).maybeSingle()
+    existing = data
+  } catch(e) { console.warn('ot_claims lookup', e); return }
+  if(existing && existing.status !== 'pending') return // approved/rejected is final — never silently recomputed
+  const payload = {
+    tenant_id: APP.tenant.id, employee_id: employeeId, claim_date: dateStr, day_type: dayType,
+    hours_worked: hoursWorked, ot_hours: calc.ot_hours, hourly_rate: calc.hourly_rate, daily_rate: calc.daily_rate,
+    amount: calc.amount, status: 'pending'
+  }
+  if(existing) await sb.from('ot_claims').update(payload).eq('id', existing.id)
+  else { await sb.from('ot_claims').insert(payload); auditLog('create', 'ot_claims', employeeId + '|' + dateStr, null, payload) }
+}
+
+/** Owner always approves; a delegate (tenants.config.ot_delegates) can approve anyone EXCEPT
+    their own claim — that one needs the owner (separation of duties, roadmap Phase 5-6). */
+function _otIsOwnerUser() {
+  const r = String((APP.user && APP.user.role) || '').toLowerCase()
+  return r === 'owner' || (typeof isPlatformAdmin === 'function' && isPlatformAdmin())
+}
+function _otIsDelegateUser() {
+  const list = (APP.tenant && APP.tenant.config && Array.isArray(APP.tenant.config.ot_delegates)) ? APP.tenant.config.ot_delegates : []
+  return list.map(String).indexOf(String(APP.user && APP.user.id)) !== -1
+}
+function _otIsApproverUser() { return _otIsOwnerUser() || _otIsDelegateUser() }
+
+/** Staff self-service: own OT claim status for the loaded month, shown on the Attendance page. */
+async function _otLoadMyClaims(month, year) {
+  const wrap = document.getElementById('ot-my-claims-list')
+  if(!wrap) return
+  const isBm = APP.language === 'bm'
+  const emp = await _hrResolveSelfEmployee()
+  if(!emp) { wrap.innerHTML = `<span style="color:var(--text-3)">—</span>`; return }
+  const from = year + '-' + String(month).padStart(2,'0') + '-01'
+  const to = new Date(year, month, 0).toISOString().slice(0,10)
+  const { data } = await sb.from('ot_claims').select('claim_date,day_type,ot_hours,amount,approved_hours,approved_amount,status,note')
+    .eq('tenant_id', APP.tenant.id).eq('employee_id', emp.id).is('deleted_at', null)
+    .gte('claim_date', from).lte('claim_date', to).order('claim_date', { ascending: false })
+  const rows = data || []
+  if(!rows.length) { wrap.innerHTML = `<span style="color:var(--text-3)">${isBm?'Tiada tuntutan OT bulan ini.':'No OT claims this month.'}</span>`; return }
+  const statusLabel = (s, isBm) => s==='approved' ? (isBm?'Diluluskan':'Approved') : s==='rejected' ? (isBm?'Ditolak':'Rejected') : (isBm?'Menunggu':'Pending')
+  const statusColor = s => s==='approved' ? 'var(--success)' : s==='rejected' ? 'var(--danger)' : 'var(--warning)'
+  wrap.innerHTML = rows.map(c => `
+    <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">
+      <span>${formatDate(c.claim_date)} · ${c.ot_hours}h · ${formatRM(c.status==='approved' ? (c.approved_amount!=null?c.approved_amount:c.amount) : c.amount)}</span>
+      <span style="color:${statusColor(c.status)};font-weight:600">${statusLabel(c.status, isBm)}</span>
+    </div>${c.status==='rejected' && c.note ? `<div style="font-size:11px;color:var(--text-3);margin:2px 0 4px">${_aiEscapeHtml(c.note)}</div>` : ''}`).join('')
 }
 
 async function _attendanceLoadTable(month, year) {
@@ -33363,6 +33773,46 @@ function _attLeaveRanges(from, to) {
     .eq('tenant_id', APP.tenant.id).eq('status', 'approved').is('deleted_at', null)
     .lte('start_date', to).gte('end_date', from)
     .then(r => r.data || [], () => [])
+}
+
+/* Tenant-specific public holidays (OT roadmap Phase 3) — _attHolidaySet() above already reads
+   tenant_id = own tenant OR NULL (global defaults), so this only needed the write-side: RLS
+   letting tenant admins manage their own rows, and this list/add/delete UI. */
+async function _attLoadHolidayList() {
+  const wrap = document.getElementById('att-holiday-list')
+  if(!wrap) return
+  const isBm = APP.language === 'bm'
+  const { data } = await sb.from('public_holidays').select('id,holiday_date,title_en,title_bm')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null).order('holiday_date', { ascending: true })
+  const rows = data || []
+  if(!rows.length) { wrap.innerHTML = `<span style="color:var(--text-3)">${isBm?'Tiada cuti tambahan tenant ditetapkan.':'No tenant-specific holidays set.'}</span>`; return }
+  wrap.innerHTML = rows.map(h => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">
+      <span>${formatDate(h.holiday_date)} — ${_aiEscapeHtml(isBm ? h.title_bm : h.title_en)}</span>
+      <button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px" onclick="_attDeleteHoliday('${h.id}')"><i class="ti ti-trash"></i></button>
+    </div>`).join('')
+}
+async function _attAddHoliday() {
+  const d = document.getElementById('att-hol-date').value
+  const en = document.getElementById('att-hol-en').value.trim()
+  const bm = document.getElementById('att-hol-bm').value.trim()
+  const isBm = APP.language === 'bm'
+  if(!d || !en || !bm) { showToast(isBm?'Isi tarikh dan tajuk (EN+BM).':'Fill in date and title (EN+BM).', 'error'); return }
+  const { error } = await sb.from('public_holidays').insert({ tenant_id: APP.tenant.id, holiday_date: d, title_en: en, title_bm: bm })
+  if(error) { showToast(error.message, 'error'); return }
+  auditLog('create', 'public_holidays', d, null, { holiday_date: d, title_en: en, title_bm: bm })
+  document.getElementById('att-hol-date').value = ''
+  document.getElementById('att-hol-en').value = ''
+  document.getElementById('att-hol-bm').value = ''
+  showToast(isBm?'Cuti umum ditambah.':'Public holiday added.', 'success')
+  await _attLoadHolidayList()
+}
+async function _attDeleteHoliday(id) {
+  const isBm = APP.language === 'bm'
+  const { error } = await sb.from('public_holidays').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast(error.message, 'error'); return }
+  auditLog('delete', 'public_holidays', id)
+  await _attLoadHolidayList()
 }
 
 function _attAllEmployees() {
@@ -34886,6 +35336,7 @@ async function _attendanceSave() {
   }
   if(error) { showToast('Error: '+error.message, 'error'); return }
   auditLog(id?'update':'create', 'attendance', id||null, id?oldRow:null, payload)
+  if(payload.clock_in && payload.clock_out) { try { await _otMaybeCreateClaim(employeeId, date, payload.clock_in, payload.clock_out) } catch(e) { console.warn('OT auto-detect', e) } }
   showToast(isBm?'Kehadiran disimpan!':'Attendance saved!', 'success')
   try {
     const empLabel = document.getElementById('att-employee')?.selectedOptions?.[0]?.text
