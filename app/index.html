@@ -32069,6 +32069,7 @@ async function renderSalaryDisbursement(month, year) {
   const accent = _pdocAccentGet('sd')
   _pdocSetPageOrientation('landscape')
   _sdPrintFilenamePrefix = `SalaryDisbursement_${_pdocSlug(tn.name)}_${year}${String(month).padStart(2,'0')}`
+  window._sdCurrentBatch = null
 
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
@@ -32077,6 +32078,8 @@ async function renderSalaryDisbursement(month, year) {
   </div>
     <div style="display:flex;align-items:center;gap:14px">
       ${_pdocColorPickerHtml('sd', accent)}
+      <span id="sd-batch-badge" class="no-print"></span>
+      <button class="btn btn-outline btn-sm no-print" id="sd-share-btn" style="display:none" onclick="_sdShareForApproval(${month},${year})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Share utk Kelulusan':'Share for Approval'}</button>
       <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape', 6); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
@@ -32416,6 +32419,109 @@ async function renderSalaryDisbursement(month, year) {
   _sdRegisterPrintListeners()
   _sdBindSigPersist()
   _sdRefreshSigRow()
+  _sdBatchStatus(month, year)
+}
+
+// Salary Disbursement — Share for Approval (WhatsApp). Needs supabase/sd_approval_01.sql.
+// Fetches/refreshes this month+year's batch row, paints the status badge + Share/Remind
+// button, and — while a signed file is waiting on review — a quick "Review" action.
+// Also the single source of truth _sdSaveAll() checks before allowing a save (lock while
+// shared/pending_review, so what was signed stays in sync with what's in the system).
+async function _sdBatchStatus(month, year) {
+  window._sdCurrentBatch = null
+  const badge = document.getElementById('sd-batch-badge')
+  const shareBtn = document.getElementById('sd-share-btn')
+  if(!badge) return
+  const isBm = APP.language==='bm'
+  const {data, error} = await sb.from('salary_disbursement_batches').select('id,status,shared_at,reviewed_at,reject_reason')
+    .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).is('deleted_at',null).maybeSingle()
+  if(error) { if(shareBtn) shareBtn.style.display = 'none'; return } // sd_approval_01.sql not run yet — feature stays hidden
+  window._sdCurrentBatch = data || null
+  const labels = isBm ? {draft:'Draf',shared:'Dikongsi',pending_review:'Menunggu Semakan',approved:'Diluluskan',rejected:'Ditolak'}
+    : {draft:'Draft',shared:'Shared',pending_review:'Pending Review',approved:'Approved',rejected:'Rejected'}
+  const colors = {draft:'#64748B',shared:'#0E7490',pending_review:'#D97706',approved:'#16A34A',rejected:'#DC2626'}
+  badge.innerHTML = data ? `<span class="badge" style="background:${colors[data.status]||'#64748B'}22;color:${colors[data.status]||'#64748B'};border:1px solid ${colors[data.status]||'#64748B'}">${labels[data.status]||data.status}</span>` : ''
+  if(shareBtn) {
+    const locked = data && ['shared','pending_review'].includes(data.status)
+    shareBtn.style.display = ''
+    shareBtn.innerHTML = locked ? `<i class="ti ti-bell"></i> ${isBm?'Hantar Peringatan':'Send Reminder'}` : `<i class="ti ti-brand-whatsapp"></i> ${isBm?'Share utk Kelulusan':'Share for Approval'}`
+  }
+  if(data && data.status === 'pending_review') {
+    const {data: subs} = await sb.from('sd_approvals').select('id,approver_name').eq('tenant_id',APP.tenant.id).eq('batch_id',data.id).eq('status','pending').is('deleted_at',null).order('created_at',{ascending:false}).limit(1)
+    const sub = (subs||[])[0]
+    if(sub && badge) badge.innerHTML += ` <button class="btn btn-outline btn-sm no-print" onclick="_sdReviewSubmission('${sub.id}')"><i class="ti ti-file-check"></i> ${isBm?'Semak':'Review'} (${_aiEscapeHtml(sub.approver_name||'-')})</button>`
+  }
+}
+
+// Create (or reuse) this period's batch row, then open the standard WhatsApp share sheet
+// (same WAD.open()/ensureLink() used by invoices/quotations/bookings/POS) carrying the
+// public view+upload link. Flips the batch to 'shared' only once the user actually sends
+// (on wad:shared, not just on opening the sheet) so a cancelled share never locks the batch.
+async function _sdShareForApproval(month, year) {
+  const isBm = APP.language==='bm'
+  if(!window.WAD) return
+  if(!_sdRecords || !_sdRecords.length) { showToast(isBm?'Tiada rekod untuk dikongsi.':'No records to share.', 'error'); return }
+  let batch = window._sdCurrentBatch
+  const rows = _sdRecords.map(r => _sdRowValues(r))
+  const totalNet = rows.reduce((s,v) => s + (Number(v.net_pay)||0), 0)
+  const empCount = rows.length
+  if(!batch) {
+    const {data: ins, error: insErr} = await sb.from('salary_disbursement_batches').insert({
+      tenant_id: APP.tenant.id, month, year, status: 'draft', total_net_pay: totalNet, employee_count: empCount
+    }).select('id,status').single()
+    if(insErr) { showToast((isBm?'Gagal: ':'Failed: ')+insErr.message, 'error'); return }
+    batch = ins
+  } else {
+    await sb.from('salary_disbursement_batches').update({ total_net_pay: totalNet, employee_count: empCount }).eq('id', batch.id).eq('tenant_id', APP.tenant.id)
+  }
+  window._sdCurrentBatch = batch
+  const isRemind = ['shared','pending_review'].includes(batch.status)
+  const ref = _pdocMonthYearLabel(month, year, isBm)
+  const batchId = batch.id
+  function onShared(e) {
+    if(!e.detail || e.detail.doc_type !== 'sd' || String(e.detail.doc_id) !== String(batchId)) return
+    document.removeEventListener('wad:shared', onShared)
+    if(!isRemind) sb.from('salary_disbursement_batches').update({ status: 'shared', shared_at: new Date().toISOString() })
+      .eq('id', batchId).eq('tenant_id', APP.tenant.id).then(() => _sdBatchStatus(month, year))
+  }
+  document.addEventListener('wad:shared', onShared)
+  WAD.open({
+    docType: 'sd', docId: batchId, docRef: ref, to: null, phone: '',
+    k: isRemind ? 'sd_remind' : 'sd_send',
+    tpls: [ isRemind ? {k:'sd_remind', label:'sdRemind', desc:'sdRemindD'} : {k:'sd_send', label:'sdShare', desc:'sdShareD'} ],
+    build: (k, lang) => WAD.ensureLink('sd', batchId, lang).then(L => ({
+      text: WAD.tpl(k, lang, { ref, link: L.url, co: WAD.company() }), link_id: L.id, expires_at: L.expires_at
+    }))
+  })
+}
+
+// Staff review of a signed file the approver uploaded back (sd_approvals, see sd-approve-pub.js).
+// Opens the file (signed URL, 10 min), then Approve (unlocks nothing further — stays approved)
+// or Reject (reason -> batch goes back to 'draft' so HR can fix and re-share).
+async function _sdReviewSubmission(id) {
+  const isBm = APP.language==='bm'
+  const {data: sub, error} = await sb.from('sd_approvals').select('id,batch_id,approver_name,storage_path,status').eq('id', id).eq('tenant_id', APP.tenant.id).single()
+  if(error || !sub) { showToast(isBm?'Tidak dijumpai.':'Not found.', 'error'); return }
+  if(sub.status !== 'pending') { showToast(isBm?'Dokumen ini sudah disemak.':'This document was already reviewed.', 'warning'); return }
+  const {data: signed} = await sb.storage.from('doc-files').createSignedUrl(sub.storage_path, 600)
+  if(signed && signed.signedUrl) window.open(signed.signedUrl, '_blank')
+  const ok = confirm(isBm ? `Luluskan dokumen bertandatangan daripada ${sub.approver_name||'-'}?` : `Approve the signed document from ${sub.approver_name||'-'}?`)
+  const now = new Date().toISOString()
+  if(ok) {
+    await sb.from('sd_approvals').update({ status:'approved', reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.id).eq('tenant_id', APP.tenant.id)
+    await sb.from('salary_disbursement_batches').update({ status:'approved', reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.batch_id).eq('tenant_id', APP.tenant.id)
+    auditLog('update','sd_approvals', sub.id)
+    showToast(isBm?'Diluluskan.':'Approved.', 'success')
+  } else {
+    const reason = prompt(isBm?'Sebab ditolak (pilihan):':'Reject reason (optional):', '')
+    if(reason===null) return
+    await sb.from('sd_approvals').update({ status:'rejected', reject_reason: reason||null, reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.id).eq('tenant_id', APP.tenant.id)
+    await sb.from('salary_disbursement_batches').update({ status:'draft', reject_reason: reason||null, reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.batch_id).eq('tenant_id', APP.tenant.id)
+    auditLog('update','sd_approvals', sub.id)
+    showToast(isBm?'Ditolak — boleh edit & share semula.':'Rejected — batch is editable again.', 'success')
+  }
+  const monthSel = document.getElementById('sd-month'), yearSel = document.getElementById('sd-year')
+  if(monthSel && yearSel) _sdBatchStatus(Number(monthSel.value), Number(yearSel.value))
 }
 
 // Hides signature fields the staff never filled in so print/PDF output
@@ -32707,6 +32813,11 @@ function _sdRecalc() {
 async function _sdSaveAll() {
   const isBm = APP.language==='bm'
   const result = document.getElementById('sd-save-result')
+  const lockedBatch = window._sdCurrentBatch
+  if(lockedBatch && ['shared','pending_review'].includes(lockedBatch.status)) {
+    showToast(isBm?'Dikunci — menunggu kelulusan.':'Locked — pending approval.', 'error')
+    return
+  }
   let okCount = 0, errCount = 0
   for(const r of _sdRecords) {
     const payload = _sdRowValues(r)
@@ -39676,8 +39787,8 @@ if('serviceWorker' in navigator){
 <script src="./pa-core.js?v=6"></script>
 <script src="./pa-guard.js?v=1"></script>
 <script src="./pa-misc.js?v=1"></script>
-<script src="./wa-doc-i18n.js?v=2"></script>
-<script src="./wa-doc-core.js?v=2"></script>
+<script src="./wa-doc-i18n.js?v=3"></script>
+<script src="./wa-doc-core.js?v=3"></script>
 <script src="./wa-doc-sheet.js?v=1"></script>
 <script src="./wa-doc-hooks.js?v=4"></script>
 <script src="./wa-doc-remind.js?v=1"></script>

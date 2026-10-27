@@ -56,7 +56,7 @@
     });
   };
   W.base = function () { return (location.origin + location.pathname).replace(/index\.html$/, '').replace(/\/?$/, '/'); };
-  var TBL = { inv: 'invoices', quo: 'quotations' }, PRM = { inv: 'public_inv', quo: 'public_quo' };
+  var TBL = { inv: 'invoices', quo: 'quotations', sd: 'salary_disbursement_batches' }, PRM = { inv: 'public_inv', quo: 'public_quo', sd: 'public_sd' };
   function newTok() { return (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) || (Date.now().toString(36) + Math.random().toString(36).slice(2)); }
   /* ensureLink: reuse the live token, adopt a legacy token (no row yet), or rotate an expired/revoked one */
   W.ensureLink = function (type, id, lang) {
