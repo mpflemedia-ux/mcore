@@ -30904,7 +30904,7 @@ async function renderOTApprovals() {
   </div></div>
   <div class="card">
   ${(!claims || claims.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
-  <table><thead><tr><th>${t.name}</th><th>${t.date}</th><th>${t.type}</th><th style="text-align:right">${t.hours}</th><th style="text-align:right">${t.amount}</th><th>${t.action}</th></tr></thead>
+  <div style="overflow-x:auto"><table style="min-width:640px"><thead><tr><th>${t.name}</th><th>${t.date}</th><th>${t.type}</th><th style="text-align:right">${t.hours}</th><th style="text-align:right">${t.amount}</th><th style="min-width:180px">${t.action}</th></tr></thead>
   <tbody>${claims.map(c => {
     const isOwn = !isOwner && String(c.employees?.email||'').trim().toLowerCase() === myEmail && myEmail
     return `<tr>
@@ -30920,7 +30920,7 @@ async function renderOTApprovals() {
         </div>`}
       </td>
     </tr>`
-  }).join('')}</tbody></table>`}
+  }).join('')}</tbody></table></div>`}
   </div>`
 }
 async function _otApproveClaim(id, otHours) {
