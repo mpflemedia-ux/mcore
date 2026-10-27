@@ -32774,6 +32774,7 @@ async function renderAttendance(params={}) {
     <div style="font-weight:600;margin-bottom:8px"><i class="ti ti-shield-check"></i> ${isBm?'Kawalan kehadiran':'Attendance controls'}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Mula kerja':'Work start'}</label><input type="time" id="att-set-start" class="form-input" value="09:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Tamat kerja':'Work end'}</label><input type="time" id="att-set-end" class="form-input" value="18:00"></div>
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Grace (min)':'Grace (min)'}</label><input type="number" id="att-set-grace" class="form-input" value="15" min="0" max="120"></div>
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Had field/bulan':'Field cap/mo'}</label><input type="number" id="att-set-fieldmax" class="form-input" value="12" min="0" max="31"></div>
       <div class="form-group" style="margin:0"><label class="form-label">${isBm?'Kod pejabat hari ini':'Office code today'}</label><input type="text" id="att-set-code" class="form-input" placeholder="e.g. 4821"></div>
@@ -32901,7 +32902,9 @@ async function renderAttendanceAnalytics(params={}) {
   const workDays = Array.isArray(window._attPolicy?.work_days) ? window._attPolicy.work_days : [1,2,3,4,5]
   const attByKey = {}
   ;(_attendanceRecords||[]).forEach(r => { attByKey[r.employee_id + '|' + r.date] = r })
-  const summaries = employees.map(e => Object.assign({ id: e.id }, _attEmployeeSummary(e, from, to, workDays, holidaySet, leaveRanges, attByKey)))
+  const shiftsByKey = await _attShiftsFor(employees.map(e => e.id), from, to)
+  const shiftTrackedIds = new Set(Object.keys(shiftsByKey).map(k => k.split('|')[0]))
+  const summaries = employees.map(e => Object.assign({ id: e.id }, _attEmployeeSummary(e, from, to, workDays, holidaySet, leaveRanges, attByKey, shiftsByKey, shiftTrackedIds)))
   summaries.sort((a, b) => {
     if(a.rate == null && b.rate == null) return 0
     if(a.rate == null) return 1
@@ -32963,11 +32966,105 @@ function _attendanceResetForm() {
   document.getElementById('att-notes').value = ''
 }
 
+/* Shift-aware helpers — reused by auto clock-out (below) and by the Attendance Rate engine
+   (_attEmployeeSummary). Mirrors shifts.js KINDS defaults so lateness/clock-out thresholds
+   follow the employee's actual shift, not one tenant-wide time, when Shifts is used. */
+const _ATT_SHIFT_TIMES_DEFAULT = {
+  morning: { start: '09:00', end: '17:00' },
+  mid: { start: '12:00', end: '20:00' },
+  closing: { start: '16:00', end: '22:00' }
+}
+function _attShiftTimes(kind) {
+  const cfg = (APP.tenant && APP.tenant.config && APP.tenant.config.shift_hours && APP.tenant.config.shift_hours[kind]) || {}
+  const d = _ATT_SHIFT_TIMES_DEFAULT[kind] || {}
+  return { start: cfg.start || d.start || null, end: cfg.end || d.end || null }
+}
+function _attShiftsFor(employeeIds, from, to) {
+  if(!employeeIds || !employeeIds.length) return Promise.resolve({})
+  return sb.from('shifts').select('employee_id,shift_date,kind')
+    .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
+    .in('employee_id', employeeIds).gte('shift_date', from).lte('shift_date', to)
+    .then(r => {
+      const map = {}
+      ;(r.data || []).forEach(s => { map[s.employee_id + '|' + s.shift_date] = s.kind })
+      return map
+    }, () => ({}))
+}
+
+/* Auto clock-out: when an attendance row has clock_in but no clock_out, and the expected end
+   of work (shift end if Shifts used for that employee+date, else tenant work_end) + 2h buffer
+   has passed, fill clock_out with that expected end time and flag clock_out_auto=true — so
+   hours-worked is never blocked waiting on a clock-out that never came. Lazy: runs whenever
+   the Attendance table is loaded (no background job in this app), scoped to the loaded month. */
+async function _attAutoCloseStale(records, policy) {
+  if(!records || !records.length) return 0
+  const nowIso = new Date().toISOString()
+  const todayLocal = _nowDateLocal()
+  const pastRecs = records.filter(r => r.clock_in && !r.clock_out && !r.clock_out_auto
+    && r.date < todayLocal && ['present','late','half_day'].indexOf(r.status) !== -1)
+  if(!pastRecs.length) return 0
+  const empIds = [...new Set(pastRecs.map(r => r.employee_id))]
+  const from = pastRecs.reduce((m,r) => r.date < m ? r.date : m, pastRecs[0].date)
+  const to = pastRecs.reduce((m,r) => r.date > m ? r.date : m, pastRecs[0].date)
+  const shiftsByKey = await _attShiftsFor(empIds, from, to)
+  let closed = 0
+  for(const r of pastRecs) {
+    const kind = shiftsByKey[r.employee_id + '|' + r.date]
+    let endTime = policy.work_end || '18:00'
+    if(kind && kind !== 'off') { const st = _attShiftTimes(kind); if(st.end) endTime = st.end }
+    const threshold = new Date(r.date + 'T' + endTime + ':00+08:00')
+    threshold.setHours(threshold.getHours() + 2)
+    if(threshold.toISOString() > nowIso) continue
+    const patch = { clock_out: endTime + ':00', clock_out_auto: true }
+    const { error } = await sb.from('attendance').update(patch).eq('id', r.id).eq('tenant_id', APP.tenant.id)
+    if(error) { console.warn('auto clock-out', error); continue }
+    auditLog('update', 'attendance', r.id, { clock_out: r.clock_out, clock_out_auto: r.clock_out_auto }, patch)
+    r.clock_out = patch.clock_out
+    r.clock_out_auto = true
+    closed++
+  }
+  return closed
+}
+
+/* Staff self-correction reminder: any of the CURRENT user's own rows (RLS already scopes a
+   non-admin's _attendanceRecords to their own row) still flagged clock_out_auto — nudge them
+   to confirm/correct the real clock-out time. */
+function _attAutoCloseReminderHtml(records, isBm) {
+  const mine = (records || []).filter(r => r.clock_out_auto)
+  if(!mine.length) return ''
+  const rows = mine.slice(0, 10).map(r => `<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+      <span style="min-width:90px">${_aiEscapeHtml(formatDate ? formatDate(r.date) : r.date)}</span>
+      <input type="time" class="form-input" id="att-aco-${_aiEscapeHtml(r.id)}" value="${_aiEscapeHtml(String(r.clock_out||'').slice(0,5))}" style="width:auto">
+      <button type="button" class="btn btn-sm btn-primary" onclick="_attConfirmClockOut('${_aiEscapeHtml(r.id)}')">${isBm?'Sahkan':'Confirm'}</button>
+    </div>`).join('')
+  return `<div class="card" id="att-aco-banner" style="padding:14px;margin-bottom:14px;border-color:var(--warning)">
+    <div style="font-weight:600;color:var(--warning)"><i class="ti ti-clock-exclamation"></i> ${isBm?'Sila sahkan waktu keluar':'Please confirm clock-out time'}</div>
+    <div class="cob-xs" style="margin-top:4px">${isBm?'Sistem anggarkan waktu keluar untuk tarikh ni (tiada log). Betulkan jika perlu.':'The system estimated the clock-out time for these dates (no log). Correct it if needed.'}</div>
+    ${rows}
+  </div>`
+}
+async function _attConfirmClockOut(id) {
+  const isBm = APP.language==='bm'
+  const input = document.getElementById('att-aco-' + id)
+  const val = input?.value
+  if(!val) { showToast(isBm?'Sila pilih masa':'Please pick a time', 'error'); return }
+  const old = (_attendanceRecords||[]).find(r => String(r.id) === String(id))
+  const patch = { clock_out: val + ':00', clock_out_auto: false }
+  const { error } = await sb.from('attendance').update(patch).eq('id', id).eq('tenant_id', APP.tenant.id)
+  if(error) { showToast('Error: '+error.message, 'error'); return }
+  auditLog('update', 'attendance', id, old ? { clock_out: old.clock_out, clock_out_auto: old.clock_out_auto } : null, patch)
+  showToast(isBm?'Disahkan':'Confirmed', 'success')
+  const month = Number(document.getElementById('att-month')?.value) || (new Date().getMonth()+1)
+  const year = Number(document.getElementById('att-year')?.value) || (new Date().getFullYear())
+  await _attendanceLoadTable(month, year)
+}
+
 async function _attendanceLoadTable(month, year) {
   try {
     await _attLoadPolicy(); _attModeChanged()
     const p = window._attPolicy || {}
     const s = document.getElementById('att-set-start'); if(s && p.work_start) s.value = String(p.work_start).slice(0,5)
+    const we = document.getElementById('att-set-end'); if(we && p.work_end) we.value = String(p.work_end).slice(0,5)
     const g = document.getElementById('att-set-grace'); if(g && p.grace_minutes!=null) g.value = p.grace_minutes
     const f = document.getElementById('att-set-fieldmax'); if(f && p.field_max_days_month!=null) f.value = p.field_max_days_month
     const on = document.getElementById('att-set-code-on'); if(on) on.checked = !!p.office_code_enabled
@@ -33012,7 +33109,7 @@ async function _attendanceLoadTable(month, year) {
   const from = `${year}-${String(month).padStart(2,'0')}-01`
   const lastDay = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
-  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,notes,work_mode,is_late,geo_lat,geo_lng,employees(name,phone)')
+  let {data, error} = await sb.from('attendance').select('id,employee_id,date,status,clock_in,clock_out,clock_out_auto,notes,work_mode,is_late,geo_lat,geo_lng,employees(name,phone)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gte('date',from).lte('date',to).order('date',{ascending:false})
   if(error) {
     console.warn('attendance load embed', error)
@@ -33037,6 +33134,8 @@ async function _attendanceLoadTable(month, year) {
     }
   }
   window._attHistFilter = window._attHistFilter || { status: 'all', employee: 'all', mode: 'all', sort: 'date_desc' }
+  try { await _attAutoCloseStale(_attendanceRecords, window._attPolicy || {}) } catch(e) { console.warn('auto close', e) }
+  window._attAutoCloseBannerHtml = _attAutoCloseReminderHtml(_attendanceRecords, isBm)
   _attendanceRenderHistoryTable(t)
 }
 
@@ -33148,11 +33247,12 @@ function _attendanceRenderHistoryTable(t) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p></div>`
     return
   }
+  const acoBanner = '<div class="att-noprint">' + (window._attAutoCloseBannerHtml || '') + '</div>'
   if(!rows.length) {
-    wrap.innerHTML = _attPackHeadHtml(isBm) + filters + `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod untuk penapis ini':'No rows for this filter'}</p></div>`
+    wrap.innerHTML = acoBanner + _attPackHeadHtml(isBm) + filters + `<div class="empty-state" style="padding:40px"><p>${isBm?'Tiada rekod untuk penapis ini':'No rows for this filter'}</p></div>`
     return
   }
-  wrap.innerHTML = _attPackHeadHtml(isBm) + filters + `<div class="db-table-scroll" style="max-height:280px;overflow-y:auto"><table class="db-mini-table" style="width:100%"><thead><tr>
+  wrap.innerHTML = acoBanner + _attPackHeadHtml(isBm) + filters + `<div class="db-table-scroll" style="max-height:280px;overflow-y:auto"><table class="db-mini-table" style="width:100%"><thead><tr>
     <th>${t.date}</th>
     <th>${isBm?'Masuk':'In'}</th>
     <th>${isBm?'Keluar':'Out'}</th>
@@ -33171,7 +33271,7 @@ function _attendanceRenderHistoryTable(t) {
     return `<tr>
     <td style="white-space:nowrap">${formatDate(a.date)}</td>
     <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_in)}</td>
-    <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_out)}</td>
+    <td style="white-space:nowrap;font-variant-numeric:tabular-nums">${_attFmtClock(a.clock_out)}${a.clock_out_auto?' <span class="att-noprint" style="font-size:10px;color:var(--warning)" title="'+(isBm?'Auto clock-out — tiada log keluar':'Auto clock-out — no log')+'">('+(isBm?'auto':'auto')+')</span>':''}</td>
     <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
     <td><span style="color:${statusColor(a.status)};font-weight:600">${statusLabel(a.status)}</span></td>
     <td style="font-size:12px;color:var(--text-3)">${modeLabel(a.work_mode)}</td>
@@ -33271,14 +33371,27 @@ function _attAllEmployees() {
     .then(r => r.data || [], () => [])
 }
 
-function _attExpectedDays(from, to, workDays, holidaySet, joinDate) {
+/* Expected working days for one employee. Shift-aware: if the employee has ANY shifts.js
+   roster rows in the period, the roster is authoritative per day (kind!=='off' => expected,
+   regardless of tenant work_days/holidays — the roster already reflects business reality,
+   e.g. a retail shift scheduled on a public holiday); a day with no roster row for a
+   shift-tracked employee means explicitly not scheduled (not expected). Only employees with
+   ZERO shift rows in the whole period fall back to the tenant-wide work_days+holiday pattern. */
+function _attExpectedDays(employeeId, from, to, workDays, holidaySet, joinDate, shiftsByKey, shiftTracked) {
   const days = []
   const d = new Date(from + 'T00:00:00')
   const end = new Date(to + 'T00:00:00')
   const joinD = joinDate ? new Date(String(joinDate).slice(0,10) + 'T00:00:00') : null
   while(d <= end) {
     const iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
-    if((!joinD || d >= joinD) && workDays.indexOf(d.getDay()) !== -1 && !holidaySet.has(iso)) days.push(iso)
+    if(!joinD || d >= joinD) {
+      const kind = shiftsByKey ? shiftsByKey[employeeId + '|' + iso] : null
+      if(kind) {
+        if(kind !== 'off') days.push(iso)
+      } else if(!shiftTracked && workDays.indexOf(d.getDay()) !== -1 && !holidaySet.has(iso)) {
+        days.push(iso)
+      }
+    }
     d.setDate(d.getDate()+1)
   }
   return days
@@ -33287,8 +33400,9 @@ function _attExpectedDays(from, to, workDays, holidaySet, joinDate) {
 /* Per-employee attendance summary against expected working days (not raw logged rows) —
    leave excluded from denominator, half-day = 0.5 credit, is_late reclassifies a stray
    'present' row to 'late' (no double count), unlogged expected days count as Absent. */
-function _attEmployeeSummary(emp, from, to, workDays, holidaySet, leaveRanges, attByKey) {
-  const expected = _attExpectedDays(from, to, workDays, holidaySet, emp.join_date)
+function _attEmployeeSummary(emp, from, to, workDays, holidaySet, leaveRanges, attByKey, shiftsByKey, shiftTrackedIds) {
+  const shiftTracked = !!(shiftTrackedIds && shiftTrackedIds.has(String(emp.id)))
+  const expected = _attExpectedDays(emp.id, from, to, workDays, holidaySet, emp.join_date, shiftsByKey, shiftTracked)
   const leaveForEmp = leaveRanges.filter(l => String(l.employee_id) === String(emp.id))
   let present = 0, late = 0, half = 0, explicitAbsent = 0, leave = 0
   expected.forEach(day => {
@@ -33349,6 +33463,8 @@ async function _attShareModal() {
   const [employees, holidaySet, leaveRanges] = await Promise.all([_attAllEmployees(), _attHolidaySet(from, to), _attLeaveRanges(from, to)])
   if(!employees.length) { showToast(isBm?'Tiada staff':'No staff','error'); return }
   const workDays = Array.isArray(window._attPolicy?.work_days) ? window._attPolicy.work_days : [1,2,3,4,5]
+  const shiftsByKey = await _attShiftsFor(employees.map(e => e.id), from, to)
+  const shiftTrackedIds = new Set(Object.keys(shiftsByKey).map(k => k.split('|')[0]))
   const preselect = (f.employee && f.employee !== 'all') ? f.employee : ''
   const opts = employees.map(e => `<option value="${e.id}"${String(e.id)===String(preselect)?' selected':''}>${_aiEscapeHtml(e.name||e.id)}</option>`).join('')
   const html = `<div class="modal-overlay active" id="att-share-modal"><div class="modal-box" style="max-width:420px">
@@ -33384,7 +33500,7 @@ async function _attShareModal() {
     }
     const attByKey = {}
     ;(_attendanceRecords||[]).forEach(r => { attByKey[r.employee_id + '|' + r.date] = r })
-    const summaries = scope.map(e => _attEmployeeSummary(e, from, to, workDays, holidaySet, leaveRanges, attByKey))
+    const summaries = scope.map(e => _attEmployeeSummary(e, from, to, workDays, holidaySet, leaveRanges, attByKey, shiftsByKey, shiftTrackedIds))
       .sort((a,b) => String(a.name).localeCompare(String(b.name)))
     const text = _attShareText(summaries, scopeLabel)
     const url = window.PJW && typeof PJW.waUrl === 'function' ? PJW.waUrl(phone, text) : ('https://wa.me/' + phone + '?text=' + encodeURIComponent(text))
@@ -34279,6 +34395,7 @@ async function _attSavePolicy() {
   const row = {
     tenant_id: APP.tenant.id,
     work_start: document.getElementById('att-set-start')?.value || '09:00',
+    work_end: document.getElementById('att-set-end')?.value || '18:00',
     grace_minutes: Number(document.getElementById('att-set-grace')?.value || 15),
     field_max_days_month: Number(document.getElementById('att-set-fieldmax')?.value || 12),
     office_code_enabled: !!document.getElementById('att-set-code-on')?.checked,
@@ -34295,7 +34412,7 @@ async function _attSavePolicy() {
   let { error } = await sb.from('tenant_attendance_settings').upsert(row, { onConflict: 'tenant_id' })
   if(error && /office_lat|office_lng|office_radius|office_name|geo_enforce|work_days|column/i.test(error.message||'')) {
     // SQL not applied yet — save core fields only
-    const core = { tenant_id: row.tenant_id, work_start: row.work_start, grace_minutes: row.grace_minutes, field_max_days_month: row.field_max_days_month, office_code_enabled: row.office_code_enabled, daily_code: row.daily_code, daily_code_date: row.daily_code_date, updated_at: row.updated_at }
+    const core = { tenant_id: row.tenant_id, work_start: row.work_start, work_end: row.work_end, grace_minutes: row.grace_minutes, field_max_days_month: row.field_max_days_month, office_code_enabled: row.office_code_enabled, daily_code: row.daily_code, daily_code_date: row.daily_code_date, updated_at: row.updated_at }
     ;({ error } = await sb.from('tenant_attendance_settings').upsert(core, { onConflict: 'tenant_id' }))
     if(!error) showToast(isBm?'Polisi asas disimpan — jalankan SQL Presence Ring untuk geofence':'Core policy saved — run Presence Ring SQL for geofence', 'warning')
   }
@@ -34530,7 +34647,8 @@ async function _attLoadPolicy() {
     office_radius_m: 500,
     office_name: null,
     geo_enforce: false,
-    work_days: [1,2,3,4,5]
+    work_days: [1,2,3,4,5],
+    work_end: '18:00'
   }
   if(!APP.tenant?.id) {
     window._attPolicy = defaults
@@ -34557,10 +34675,10 @@ async function _attLoadPolicy() {
 }
 
 /** True if clock-in is after work_start + grace (office mode only). */
-function _attComputeLate(clockIn, policy, workMode) {
+function _attComputeLate(clockIn, policy, workMode, startOverride) {
   if(!clockIn || workMode === 'field' || workMode === 'outstation') return false
   const p = policy || window._attPolicy || {}
-  const start = String(p.work_start || '09:00').slice(0, 5)
+  const start = String(startOverride || p.work_start || '09:00').slice(0, 5)
   const grace = Number(p.grace_minutes != null ? p.grace_minutes : 15)
   const m = String(clockIn).match(/^(\d{1,2}):(\d{2})/)
   if(!m) return false
@@ -34678,7 +34796,13 @@ async function _attendanceSave() {
     }
   }
   let status = statusEl ? statusEl.value : 'present'
-  let isLate = _attComputeLate(clockIn, policy, workMode)
+  let shiftStartOverride = null
+  try {
+    const { data: shiftRow } = await sb.from('shifts').select('kind').eq('tenant_id', APP.tenant.id)
+      .eq('employee_id', employeeId).eq('shift_date', date).is('deleted_at', null).maybeSingle()
+    if(shiftRow && shiftRow.kind && shiftRow.kind !== 'off') shiftStartOverride = _attShiftTimes(shiftRow.kind).start
+  } catch(e) { console.warn('shift lookup for late calc', e) }
+  let isLate = _attComputeLate(clockIn, policy, workMode, shiftStartOverride)
   if(isLate && status === 'present') status = 'late'
   if(clockIn && clockIn.length === 5) clockIn = clockIn + ':00'
   if(clockOut && clockOut.length === 5) clockOut = clockOut + ':00'
@@ -34727,6 +34851,7 @@ async function _attendanceSave() {
     status,
     clock_in: clockIn || null,
     clock_out: clockOut || null,
+    clock_out_auto: false,
     notes: notes || null,
     work_mode: workMode,
     is_late: !!isLate,
@@ -34753,7 +34878,7 @@ async function _attendanceSave() {
   } else {
     ({error} = await sb.from('attendance').insert(payload))
   }
-  if(error && /work_mode|is_late|office_code|geo_lat|geo_lng|schema cache/i.test(String(error.message||''))) {
+  if(error && /work_mode|is_late|office_code|geo_lat|geo_lng|clock_out_auto|schema cache/i.test(String(error.message||''))) {
     const fallback = { tenant_id: payload.tenant_id, employee_id: payload.employee_id, date: payload.date, status: payload.status, clock_in: payload.clock_in, clock_out: payload.clock_out, notes: payload.notes }
     if(id) ({error} = await sb.from('attendance').update(fallback).eq('id',id).eq('tenant_id',APP.tenant.id))
     else ({error} = await sb.from('attendance').insert(fallback))
