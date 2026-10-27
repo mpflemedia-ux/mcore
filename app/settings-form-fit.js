@@ -1,4 +1,4 @@
-/* settings-form-fit v3 — Settings cards ONLY (do not touch Sales/Invoice/Quo/PO) */
+/* settings-form-fit v4 — Settings cards ONLY (do not touch Sales/Invoice/Quo/PO) */
 (function () {
   var old = document.getElementById('settings-form-fit-css');
   if (old) old.remove();
@@ -9,6 +9,11 @@
     '[id^="stg-"] .form-label{white-space:nowrap!important;}' +
     '[id^="stg-"] .form-input,[id^="stg-"] .form-select{' +
       'min-width:240px!important;width:100%!important;max-width:100%!important;box-sizing:border-box;' +
+    '}' +
+    /* Booking service row's inline Deposit (%) widget (booking-pay-dep.js) is meant to
+       stay small next to the service name, not stretch full-width like a normal form field */
+    '[id^="stg-"] .bkd-dep .form-input{' +
+      'min-width:0!important;width:72px!important;max-width:90px!important;' +
     '}' +
     '[id^="stg-"]{' +
       'overflow-x:auto!important;-webkit-overflow-scrolling:touch;' +
