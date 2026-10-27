@@ -7163,9 +7163,7 @@ async function loadDashboardData() {
       .eq('tenant_id', APP.tenant.id).is('deleted_at', null).limit(50)
     const _aEmpList = _aEmp || []
     if(_aEmpList.length) {
-      const { data: _aRows } = await sb.from('attendance').select('employee_id,status')
-        .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
-        .gte('date', _aFrom).lte('date', _aTo)
+      const { data: _aRows } = await sb.rpc('attendance_team_status', { p_from: _aFrom, p_to: _aTo })
       const _weights = { present:100, outstation:100, on_leave:95, late:70, half_day:55, absent:0 }
       const _empName = {}
       _aEmpList.forEach(e => { _empName[e.id] = e.name })
@@ -7775,18 +7773,9 @@ async function _dbLoadPeople() {
     }
 
     // 2) Today's attendance (one row per employee — latest)
-    let res = await sb.from('attendance')
-      .select('id, status, clock_in, clock_out, employee_id, date, created_at')
-      .eq('tenant_id', APP.tenant.id)
-      .eq('date', today)
-      .limit(200)
+    let res = await sb.rpc('attendance_team_status', { p_from: today, p_to: today })
     if(res.error) {
       console.warn('_dbLoadPeople att', res.error)
-      res = await sb.from('attendance')
-        .select('id, status, clock_in, clock_out, employee_id, date, created_at')
-        .eq('tenant_id', APP.tenant.id)
-        .gte('date', today).lte('date', today)
-        .limit(200)
     }
     const byEmp = {}
     ;(res.data || []).forEach(a => {
@@ -7977,18 +7966,7 @@ async function _dbLoadAttTracker() {
     }
     let att = []
     {
-      let ar = await sb.from('attendance')
-        .select('employee_id, date, status')
-        .eq('tenant_id', APP.tenant.id)
-        .is('deleted_at', null)
-        .gte('date', from).lte('date', to)
-      if(ar.error) {
-        console.warn('tracker att', ar.error)
-        ar = await sb.from('attendance')
-          .select('employee_id, date, status')
-          .eq('tenant_id', APP.tenant.id)
-          .gte('date', from).lte('date', to)
-      }
+      const ar = await sb.rpc('attendance_team_status', { p_from: from, p_to: to })
       if(ar.error) throw ar.error
       att = ar.data || []
     }
