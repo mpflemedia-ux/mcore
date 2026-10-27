@@ -3929,7 +3929,12 @@ function showToast(msg,type='info') {
   setTimeout(()=>{ t.classList.add('removing'); setTimeout(()=>t.remove(),300) },3500)
 }
 
-function auditLog(action,table,id) { sb.rpc('log_audit',{p_action:action,p_table_name:table,p_record_id:String(id)}).then(()=>{}, ()=>{}) }
+function auditLog(action,table,id,oldData,newData) {
+  const params = {p_action:action,p_table_name:table,p_record_id:String(id)}
+  if(oldData !== undefined) params.p_old_data = oldData
+  if(newData !== undefined) params.p_new_data = newData
+  sb.rpc('log_audit',params).then(()=>{}, ()=>{})
+}
 
 // ---------- Barcode Scanner (shared across POS + Inventory) ----------
 let _scannerHtml5Qrcode = null
@@ -34288,6 +34293,11 @@ async function _attUseMyLocationAsOffice() {
 async function _attSavePolicy() {
   if(!canManageHR()) return
   const isBm = APP.language==='bm'
+  const workDays = Array.from(document.querySelectorAll('.att-set-workday:checked')).map(cb => Number(cb.value)).sort((a,b)=>a-b)
+  if(workDays.length >= 7) {
+    showToast(isBm?'Mesti ada sekurang-kurangnya 1 hari rehat seminggu (Akta Kerja 1955)':'At least 1 rest day per week is required (Employment Act 1955)', 'error')
+    return
+  }
   const row = {
     tenant_id: APP.tenant.id,
     work_start: document.getElementById('att-set-start')?.value || '09:00',
@@ -34301,7 +34311,7 @@ async function _attSavePolicy() {
     office_lat: document.getElementById('att-set-lat')?.value !== '' ? Number(document.getElementById('att-set-lat')?.value) : null,
     office_lng: document.getElementById('att-set-lng')?.value !== '' ? Number(document.getElementById('att-set-lng')?.value) : null,
     geo_enforce: !!document.getElementById('att-set-geo-enforce')?.checked,
-    work_days: Array.from(document.querySelectorAll('.att-set-workday:checked')).map(cb => Number(cb.value)).sort((a,b)=>a-b),
+    work_days: workDays,
     updated_at: new Date().toISOString()
   }
   let { error } = await sb.from('tenant_attendance_settings').upsert(row, { onConflict: 'tenant_id' })
@@ -34755,6 +34765,10 @@ async function _attendanceSave() {
       if(existing && existing.id) id = existing.id
     } catch(e) { console.warn('att existing lookup', e) }
   }
+  let oldRow = null
+  if(id) {
+    try { const {data} = await sb.from('attendance').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).maybeSingle(); oldRow = data } catch(e) { console.warn('att old row', e) }
+  }
   let error
   if(id) {
     ({error} = await sb.from('attendance').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
@@ -34768,7 +34782,7 @@ async function _attendanceSave() {
     if(!error) showToast(APP.language==='bm'?'Disimpan (jalankan SQL attendance controls untuk mod penuh)':'Saved (run attendance controls SQL for full modes)', 'info')
   }
   if(error) { showToast('Error: '+error.message, 'error'); return }
-  auditLog(id?'update':'create', 'attendance', id||null)
+  auditLog(id?'update':'create', 'attendance', id||null, id?oldRow:null, payload)
   showToast(isBm?'Kehadiran disimpan!':'Attendance saved!', 'success')
   try {
     const empLabel = document.getElementById('att-employee')?.selectedOptions?.[0]?.text
@@ -34798,9 +34812,12 @@ async function _attendanceDelete(id) {
 
   const isBm = APP.language==='bm'
   if(!confirm(isBm?'Padam rekod kehadiran ini?':'Delete this attendance record?')) return
-  const {error} = await sb.from('attendance').update({deleted_at:new Date().toISOString()}).eq('id',id).eq('tenant_id',APP.tenant.id)
+  let oldRow = null
+  try { const {data} = await sb.from('attendance').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).maybeSingle(); oldRow = data } catch(e) { console.warn('att old row', e) }
+  const patch = {deleted_at:new Date().toISOString()}
+  const {error} = await sb.from('attendance').update(patch).eq('id',id).eq('tenant_id',APP.tenant.id)
   if(error) { showToast('Error: '+error.message, 'error'); return }
-  auditLog('delete', 'attendance', id)
+  auditLog('delete', 'attendance', id, oldRow, patch)
   showToast(isBm?'Rekod kehadiran dipadam.':'Attendance record deleted.', 'success')
   const month = Number(document.getElementById('att-month').value)
   const year = Number(document.getElementById('att-year').value)
