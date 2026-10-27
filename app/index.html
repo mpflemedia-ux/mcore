@@ -29637,6 +29637,7 @@ function renderHR(params={}) {
   if(params.view==='payslip' && params.id) { renderPayslipDetail(params.id); return }
   if(params.view==='my-payslips' || params.view==='payroll-history') { renderMyPayslips(params); return }
   if(params.view==='attendance') { renderAttendance(params); return }
+  if(params.view==='attendance-analytics') { renderAttendanceAnalytics(params); return }
   if(params.view==='leave') { renderLeave(params); return }
   if(params.view==='advance') { renderAdvance(params); return }
   renderEmployeeList()
@@ -32719,6 +32720,7 @@ async function renderAttendance(params={}) {
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${t.title}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${APP.language==='bm'?'Cuti':'Leave'}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${APP.language==='bm'?'Pendahuluan':'Advance'}</button>
+      ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance-analytics'})"><i class="ti ti-chart-bar"></i> ${APP.language==='bm'?'Analisis':'Analytics'}</button>`:''}
       ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Slip Gaji Saya':'My Payslips'}</button>`:''}
       ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
     </div>`
@@ -32847,8 +32849,122 @@ async function renderAttendance(params={}) {
   <div id="att-table-wrap" class="att-pack" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>
   ${_attPrintCss()}`
 
+  if(params.employee) window._attHistFilter = { status: 'all', employee: String(params.employee), mode: 'all', sort: 'date_desc' }
   await _attendanceLoadTable(month, year)
   try { await _attLoadOutstationList() } catch(e) { console.warn(e) }
+}
+
+/* Attendance Analytics — ranked "who needs attention" view. Reuses the exact Share WhatsApp
+   calculation engine (_attAllEmployees/_attHolidaySet/_attLeaveRanges/_attEmployeeSummary) so
+   the numbers here never drift from what admins already see in the WhatsApp summary. */
+function _attAnalyticsRateColor(rate) {
+  if(rate == null) return 'var(--text-3)'
+  if(rate < 70) return 'var(--danger)'
+  if(rate < 85) return 'var(--warning)'
+  return 'var(--success)'
+}
+async function renderAttendanceAnalytics(params={}) {
+  if(!canManageHR()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Analisis Kehadiran', back:'SDM & Gaji', month:'Bulan', year:'Tahun',
+    avgRate:'Purata Kehadiran', totalAbsent:'Jumlah Tidak Hadir', totalLate:'Jumlah Lewat',
+    noData:'Tiada staff', noWork:'Tiada hari bekerja'
+  } : {
+    title:'Attendance Analytics', back:'HR & Payroll', month:'Month', year:'Year',
+    avgRate:'Avg Attendance Rate', totalAbsent:'Total Absent Days', totalLate:'Total Late',
+    noData:'No staff', noWork:'No working days'
+  }
+  const now = new Date()
+  const month = Number(params.month) || now.getMonth()+1
+  const year = Number(params.year) || now.getFullYear()
+  const reload = "openPage('hr',{view:'attendance-analytics',month:Number(document.getElementById('aa-month').value),year:Number(document.getElementById('aa-year').value)})"
+
+  const attLeaveTabs = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${isBm?'Kehadiran':'Attendance'}</button>
+      <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'attendance-analytics'})"><i class="ti ti-chart-bar"></i> ${isBm?'Analisis':'Analytics'}</button>
+      <button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>
+    </div>`
+
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
+  </div></div>
+  ${attLeaveTabs}
+  <div class="card" style="max-width:320px;padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:16px">
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">${t.month}</label>
+        <select id="aa-month" class="form-select" onchange="${reload}">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===month?'selected':''}>${i+1}</option>`).join('')}</select>
+      </div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">${t.year}</label>
+        <input id="aa-year" type="number" class="form-input" style="width:100px" value="${year}" onchange="${reload}">
+      </div>
+    </div>
+  </div>
+  <div id="aa-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
+
+  await _attLoadPolicy()
+  await _attendanceLoadTable(month, year)
+  const from = `${year}-${String(month).padStart(2,'0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const to = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
+  const [employees, holidaySet, leaveRanges] = await Promise.all([_attAllEmployees(), _attHolidaySet(from, to), _attLeaveRanges(from, to)])
+  const wrap = document.getElementById('aa-wrap')
+  if(!wrap) return
+  if(!employees.length) { wrap.innerHTML = `<div class="card"><div class="empty-state" style="padding:48px"><p>${t.noData}</p></div></div>`; return }
+
+  const workDays = Array.isArray(window._attPolicy?.work_days) ? window._attPolicy.work_days : [1,2,3,4,5]
+  const attByKey = {}
+  ;(_attendanceRecords||[]).forEach(r => { attByKey[r.employee_id + '|' + r.date] = r })
+  const summaries = employees.map(e => Object.assign({ id: e.id }, _attEmployeeSummary(e, from, to, workDays, holidaySet, leaveRanges, attByKey)))
+  summaries.sort((a, b) => {
+    if(a.rate == null && b.rate == null) return 0
+    if(a.rate == null) return 1
+    if(b.rate == null) return -1
+    return a.rate - b.rate
+  })
+
+  const rated = summaries.filter(s => s.rate != null)
+  const avgRate = rated.length ? Math.round(rated.reduce((n,s) => n + s.rate, 0) / rated.length) : null
+  const totalAbsent = summaries.reduce((n,s) => n + s.absent, 0)
+  const totalLate = summaries.reduce((n,s) => n + s.late, 0)
+
+  const statsHtml = `<div class="aa-stats">
+    <div class="aa-stat"><div class="aa-stat-l">${t.avgRate}</div><div class="aa-stat-v" style="color:${_attAnalyticsRateColor(avgRate)}">${avgRate==null?'—':avgRate+'%'}</div></div>
+    <div class="aa-stat"><div class="aa-stat-l">${t.totalAbsent}</div><div class="aa-stat-v">${totalAbsent}</div></div>
+    <div class="aa-stat"><div class="aa-stat-l">${t.totalLate}</div><div class="aa-stat-v">${totalLate}</div></div>
+  </div>`
+
+  const rowsHtml = summaries.map(s => {
+    const color = _attAnalyticsRateColor(s.rate)
+    const barPct = s.rate == null ? 0 : s.rate
+    const rateLabel = s.rate == null ? t.noWork : s.rate + '%'
+    const counts = s.rate == null ? '' :
+      (isBm?'Hadir ':'Present ') + s.present + ' · ' + (isBm?'Lewat ':'Late ') + s.late + ' · ' + (isBm?'Tidak Hadir ':'Absent ') + s.absent + ' · ' + (isBm?'1/2 Hari ':'Half-day ') + s.half + ' · ' + (isBm?'Cuti ':'Leave ') + s.leave
+    return `<div class="aa-row" onclick="openPage('hr',{view:'attendance',month:${month},year:${year},employee:'${_aiEscapeHtml(String(s.id))}'})">
+      <div class="aa-name">${_aiEscapeHtml(s.name)}</div>
+      <div class="aa-bar-wrap"><div class="aa-bar" style="width:${barPct}%;background:${color}"></div></div>
+      <div class="aa-rate" style="color:${color}">${rateLabel}</div>
+      ${counts ? '<div class="aa-counts">' + counts + '</div>' : ''}
+    </div>`
+  }).join('')
+
+  wrap.innerHTML = `<style>
+    .aa-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+    .aa-stat{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px}
+    .aa-stat-l{font-size:12px;color:var(--text-3)}
+    .aa-stat-v{font-size:24px;font-weight:700;margin-top:4px}
+    .aa-row{display:grid;grid-template-columns:140px 1fr 56px;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border);cursor:pointer}
+    .aa-row:last-child{border-bottom:none}
+    .aa-row:hover{background:var(--bg)}
+    .aa-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .aa-bar-wrap{background:var(--bg);border-radius:6px;height:10px;overflow:hidden}
+    .aa-bar{height:100%;border-radius:6px}
+    .aa-rate{font-size:13px;font-weight:700;text-align:right}
+    .aa-counts{grid-column:1/-1;font-size:11px;color:var(--text-3)}
+  </style>${statsHtml}<div class="card" style="padding:12px 16px">${rowsHtml}</div>`
 }
 
 function _attendanceResetForm() {
@@ -34729,6 +34845,7 @@ async function renderLeave(params={}) {
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance'})"><i class="ti ti-calendar-check"></i> ${APP.language==='bm'?'Kehadiran':'Attendance'}</button>
       <button class="btn btn-primary btn-sm" onclick="openPage('hr',{view:'leave'})"><i class="ti ti-plane-departure"></i> ${t.title}</button>
       <button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'advance'})"><i class="ti ti-cash-banknote"></i> ${APP.language==='bm'?'Pendahuluan':'Advance'}</button>
+      ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'attendance-analytics'})"><i class="ti ti-chart-bar"></i> ${APP.language==='bm'?'Analisis':'Analytics'}</button>`:''}
       ${!canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{view:'my-payslips'})"><i class="ti ti-file-invoice"></i> ${APP.language==='bm'?'Slip Gaji Saya':'My Payslips'}</button>`:''}
       ${canManageHR()?`<button class="btn btn-outline btn-sm" onclick="openPage('hr',{})"><i class="ti ti-users"></i> ${t.back}</button>`:''}
     </div>`
