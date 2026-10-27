@@ -30723,12 +30723,24 @@ async function _payrollRunExecute() {
     // hardcoded to basic_salary only — same precedent as allowance/commission in _sdRowValues).
     const monthStart = year + '-' + String(month).padStart(2,'0') + '-01'
     const monthEnd = new Date(year, month, 0).toISOString().slice(0,10)
+    // Regenerating an "already generated" period (the checkbox for it) must not silently drop
+    // OT it already consumed on a prior run — _calcPayroll() rebuilds net_pay from basic_salary
+    // only, so if we only looked for payroll_record_id IS NULL, a claim this exact row already
+    // claimed would no longer match and its amount would vanish from net_pay on re-save. Also
+    // re-include claims already attached to THIS row, not just brand-new (unattached) ones.
+    let existingPrId = null
+    try {
+      const { data: existingPr } = await sb.from('payroll_records').select('id')
+        .eq('tenant_id', APP.tenant.id).eq('employee_id', empId).eq('month', month).eq('year', year).maybeSingle()
+      existingPrId = existingPr?.id || null
+    } catch(e) { console.warn('existing payroll_records lookup', e) }
     let otRows = []
     try {
-      const { data } = await sb.from('ot_claims').select('id,amount,approved_amount')
+      let q = sb.from('ot_claims').select('id,amount,approved_amount')
         .eq('tenant_id', APP.tenant.id).eq('employee_id', empId).eq('status', 'approved')
-        .is('payroll_record_id', null).is('deleted_at', null)
-        .gte('claim_date', monthStart).lte('claim_date', monthEnd)
+        .is('deleted_at', null).gte('claim_date', monthStart).lte('claim_date', monthEnd)
+      q = existingPrId ? q.or(`payroll_record_id.is.null,payroll_record_id.eq.${existingPrId}`) : q.is('payroll_record_id', null)
+      const { data } = await q
       otRows = data || []
     } catch(e) { console.warn('ot_claims lookup for payroll', e) }
     const otAmount = Math.round(otRows.reduce((s,c) => s + Number(c.approved_amount != null ? c.approved_amount : c.amount || 0), 0) * 100) / 100
