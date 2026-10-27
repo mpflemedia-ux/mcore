@@ -73,7 +73,10 @@
         .then(function (h) { return sb.from('doc_public_links').insert({ tenant_id: tid, doc_type: type, doc_id: id, token_hash: h, expires_at: new Date(Date.now() + 30 * 864e5).toISOString(), created_by: W.uid() }).select('id,expires_at,revoked_at').single(); })
         .then(function (i) { if (i.error) throw i.error; return i.data; });
     }).then(function (row) {
-      return { id: row.id, expires_at: row.expires_at, token: tok, url: W.base() + '?' + PRM[type] + '=' + encodeURIComponent(tok) + (lang === 'bm' ? '&lang=bm' : '') };
+      var q = PRM[type] + '=' + encodeURIComponent(tok) + (lang === 'bm' ? '&lang=bm' : '');
+      /* salary public page is standalone (no login). inv/quo keep index.html handlers. */
+      var url = type === 'sd' ? (W.base() + 'public-sd.html?' + q) : (W.base() + '?' + q);
+      return { id: row.id, expires_at: row.expires_at, token: tok, url: url };
     });
   };
   W.revoke = function (type, id) {

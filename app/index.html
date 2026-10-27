@@ -5686,6 +5686,9 @@ try {
     setTimeout(async ()=>{ try { await _tryShowPublicInvoice() } catch(e) { console.error(e) } }, 100)
   } else if(_qs.get('public_quo')) {
     setTimeout(async ()=>{ try { await _tryShowPublicQuotation() } catch(e) { console.error(e) } }, 100)
+  } else if(_qs.get('public_sd')) {
+    // Safety net for older WA links that pointed at index/?public_sd= — standalone page needs no login
+    location.replace('./public-sd.html?' + _qs.toString())
   }
 } catch(e) {}
 setTimeout(() => {
@@ -32076,11 +32079,12 @@ async function renderSalaryDisbursement(month, year) {
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('hr',{})">← ${t.back}</div>
   </div>
-    <div style="display:flex;align-items:center;gap:14px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       ${_pdocColorPickerHtml('sd', accent)}
-      <span id="sd-batch-badge" class="no-print"></span>
-      <button class="btn btn-outline btn-sm no-print" id="sd-share-btn" style="display:none" onclick="_sdShareForApproval(${month},${year})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Share utk Kelulusan':'Share for Approval'}</button>
-      <button class="btn btn-outline" onclick="_pdocSetPageOrientation('landscape', 6); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <span id="sd-batch-badge" class="no-print" style="display:inline-flex;align-items:center"></span>
+      <span id="sd-review-slot" class="no-print" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"></span>
+      <button class="btn btn-outline btn-sm no-print" id="sd-share-btn" style="display:none;white-space:nowrap" onclick="_sdShareForApproval(${month},${year})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi WhatsApp':'Share WhatsApp'}</button>
+      <button class="btn btn-outline" style="white-space:nowrap" onclick="_pdocSetPageOrientation('landscape', 6); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
@@ -32444,12 +32448,18 @@ async function _sdBatchStatus(month, year) {
   if(shareBtn) {
     const locked = data && ['shared','pending_review'].includes(data.status)
     shareBtn.style.display = ''
-    shareBtn.innerHTML = locked ? `<i class="ti ti-bell"></i> ${isBm?'Hantar Peringatan':'Send Reminder'}` : `<i class="ti ti-brand-whatsapp"></i> ${isBm?'Share utk Kelulusan':'Share for Approval'}`
+    shareBtn.innerHTML = locked
+      ? `<i class="ti ti-bell"></i> ${isBm?'Hantar Peringatan':'Send Reminder'}`
+      : `<i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi WhatsApp':'Share WhatsApp'}`
   }
+  const reviewSlot = document.getElementById('sd-review-slot')
+  if(reviewSlot) reviewSlot.innerHTML = ''
   if(data && data.status === 'pending_review') {
     const {data: subs} = await sb.from('sd_approvals').select('id,approver_name').eq('tenant_id',APP.tenant.id).eq('batch_id',data.id).eq('status','pending').is('deleted_at',null).order('created_at',{ascending:false}).limit(1)
     const sub = (subs||[])[0]
-    if(sub && badge) badge.innerHTML += ` <button class="btn btn-outline btn-sm no-print" onclick="_sdReviewSubmission('${sub.id}')"><i class="ti ti-file-check"></i> ${isBm?'Semak':'Review'} (${_aiEscapeHtml(sub.approver_name||'-')})</button>`
+    if(sub && reviewSlot) {
+      reviewSlot.innerHTML = `<button class="btn btn-outline btn-sm no-print" style="white-space:nowrap" onclick="_sdReviewSubmission('${sub.id}')"><i class="ti ti-file-check"></i> ${isBm?'Semak':'Review'} (${_aiEscapeHtml(sub.approver_name||'-')})</button>`
+    }
   }
 }
 
@@ -32488,7 +32498,10 @@ async function _sdShareForApproval(month, year) {
   WAD.open({
     docType: 'sd', docId: batchId, docRef: ref, to: null, phone: '',
     k: isRemind ? 'sd_remind' : 'sd_send',
-    tpls: [ isRemind ? {k:'sd_remind', label:'sdRemind', desc:'sdRemindD'} : {k:'sd_send', label:'sdShare', desc:'sdShareD'} ],
+    tpls: [
+      {k:'sd_send', label:'sdShare', desc:'sdShareD'},
+      {k:'sd_remind', label:'sdRemind', desc:'sdRemindD'}
+    ],
     build: (k, lang) => WAD.ensureLink('sd', batchId, lang).then(L => ({
       text: WAD.tpl(k, lang, { ref, link: L.url, co: WAD.company() }), link_id: L.id, expires_at: L.expires_at
     }))
@@ -32496,32 +32509,69 @@ async function _sdShareForApproval(month, year) {
 }
 
 // Staff review of a signed file the approver uploaded back (sd_approvals, see sd-approve-pub.js).
-// Opens the file (signed URL, 10 min), then Approve (unlocks nothing further — stays approved)
-// or Reject (reason -> batch goes back to 'draft' so HR can fix and re-share).
-async function _sdReviewSubmission(id) {
+// Opens a review card (existing modal-box pattern) — Approve keeps status approved;
+// Reject (optional reason) returns the batch to draft so HR can fix and re-share.
+function _sdCloseReviewModal() {
+  const el = document.getElementById('sd-review-modal')
+  if(el) el.remove()
+}
+async function _sdReviewApply(id, action) {
   const isBm = APP.language==='bm'
   const {data: sub, error} = await sb.from('sd_approvals').select('id,batch_id,approver_name,storage_path,status').eq('id', id).eq('tenant_id', APP.tenant.id).single()
   if(error || !sub) { showToast(isBm?'Tidak dijumpai.':'Not found.', 'error'); return }
-  if(sub.status !== 'pending') { showToast(isBm?'Dokumen ini sudah disemak.':'This document was already reviewed.', 'warning'); return }
-  const {data: signed} = await sb.storage.from('doc-files').createSignedUrl(sub.storage_path, 600)
-  if(signed && signed.signedUrl) window.open(signed.signedUrl, '_blank')
-  const ok = confirm(isBm ? `Luluskan dokumen bertandatangan daripada ${sub.approver_name||'-'}?` : `Approve the signed document from ${sub.approver_name||'-'}?`)
+  if(sub.status !== 'pending') { showToast(isBm?'Dokumen ini sudah disemak.':'This document was already reviewed.', 'warning'); _sdCloseReviewModal(); return }
   const now = new Date().toISOString()
-  if(ok) {
+  if(action === 'approve') {
     await sb.from('sd_approvals').update({ status:'approved', reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.id).eq('tenant_id', APP.tenant.id)
     await sb.from('salary_disbursement_batches').update({ status:'approved', reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.batch_id).eq('tenant_id', APP.tenant.id)
     auditLog('update','sd_approvals', sub.id)
     showToast(isBm?'Diluluskan.':'Approved.', 'success')
   } else {
-    const reason = prompt(isBm?'Sebab ditolak (pilihan):':'Reject reason (optional):', '')
-    if(reason===null) return
+    const reasonEl = document.getElementById('sd-review-reason')
+    const reason = reasonEl ? String(reasonEl.value||'').trim() : ''
     await sb.from('sd_approvals').update({ status:'rejected', reject_reason: reason||null, reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.id).eq('tenant_id', APP.tenant.id)
     await sb.from('salary_disbursement_batches').update({ status:'draft', reject_reason: reason||null, reviewed_by: APP.user.id, reviewed_at: now }).eq('id', sub.batch_id).eq('tenant_id', APP.tenant.id)
     auditLog('update','sd_approvals', sub.id)
     showToast(isBm?'Ditolak — boleh edit & share semula.':'Rejected — batch is editable again.', 'success')
   }
+  _sdCloseReviewModal()
   const monthSel = document.getElementById('sd-month'), yearSel = document.getElementById('sd-year')
   if(monthSel && yearSel) _sdBatchStatus(Number(monthSel.value), Number(yearSel.value))
+}
+async function _sdReviewSubmission(id) {
+  const isBm = APP.language==='bm'
+  const {data: sub, error} = await sb.from('sd_approvals').select('id,batch_id,approver_name,storage_path,status').eq('id', id).eq('tenant_id', APP.tenant.id).single()
+  if(error || !sub) { showToast(isBm?'Tidak dijumpai.':'Not found.', 'error'); return }
+  if(sub.status !== 'pending') { showToast(isBm?'Dokumen ini sudah disemak.':'This document was already reviewed.', 'warning'); return }
+  let fileUrl = ''
+  try {
+    const {data: signed} = await sb.storage.from('doc-files').createSignedUrl(sub.storage_path, 600)
+    if(signed && signed.signedUrl) fileUrl = signed.signedUrl
+  } catch(e) {}
+  _sdCloseReviewModal()
+  const name = _aiEscapeHtml(sub.approver_name||'-')
+  const ov = document.createElement('div')
+  ov.id = 'sd-review-modal'
+  ov.className = 'modal-overlay active'
+  ov.innerHTML = `
+    <div class="modal-box" style="max-width:440px" role="dialog" aria-modal="true">
+      <div class="modal-box-header"><i class="ti ti-file-check"></i> ${isBm?'Semak tandatangan':'Review signature'}</div>
+      <div class="modal-box-body">
+        <div style="font-size:13px;color:var(--text-2)">${isBm?'Dokumen bertandatangan daripada':'Signed document from'} <b style="color:var(--text)">${name}</b></div>
+        ${fileUrl ? `<a class="btn btn-outline btn-sm" style="white-space:nowrap;align-self:flex-start" href="${fileUrl}" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> ${isBm?'Buka fail':'Open file'}</a>` : `<div style="font-size:12px;color:var(--danger)">${isBm?'Fail tidak dijumpai.':'File not found.'}</div>`}
+        <div class="form-group" style="margin:0">
+          <label class="form-label" for="sd-review-reason">${isBm?'Sebab ditolak (pilihan)':'Reject reason (optional)'}</label>
+          <textarea id="sd-review-reason" class="form-input" rows="2" placeholder="${isBm?'cth. jumlah salah / nama hilang':'e.g. amount wrong / name missing'}"></textarea>
+        </div>
+      </div>
+      <div class="modal-box-footer" style="flex-wrap:wrap">
+        <button type="button" class="btn btn-outline" style="white-space:nowrap" onclick="_sdCloseReviewModal()">${isBm?'Batal':'Cancel'}</button>
+        <button type="button" class="btn btn-outline" style="white-space:nowrap;color:var(--danger);border-color:var(--danger)" onclick="_sdReviewApply('${sub.id}','reject')"><i class="ti ti-x"></i> ${isBm?'Tolak':'Reject'}</button>
+        <button type="button" class="btn btn-primary" style="white-space:nowrap" onclick="_sdReviewApply('${sub.id}','approve')"><i class="ti ti-check"></i> ${isBm?'Lulus':'Approve'}</button>
+      </div>
+    </div>`
+  ov.addEventListener('click', (e)=>{ if(e.target===ov) _sdCloseReviewModal() })
+  document.body.appendChild(ov)
 }
 
 // Hides signature fields the staff never filled in so print/PDF output
