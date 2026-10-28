@@ -68,6 +68,30 @@
         });
       });
     }));
+    /* OT claims pending — live Action (Leave/SD pattern). No inline Approve (hours prompt lives on OT Approvals page). */
+    if (typeof _otIsApproverUser === 'function' && _otIsApproverUser()) jobs.push(self.then(function (me) {
+      var isOwner = typeof _otIsOwnerUser === 'function' && _otIsOwnerUser();
+      return q(sb.from('ot_claims').select('id,employee_id,claim_date,day_type,ot_hours,amount,created_at').eq('tenant_id', tid).eq('status', 'pending').is('deleted_at', null).order('claim_date', { ascending: false }).limit(20)).then(function (a) {
+        if (!isOwner && me) a = a.filter(function (x) { return !NT.same(x.employee_id, me.id); });
+        return emps(a.map(function (x) { return x.employee_id; })).then(function (m) {
+          var DT = { normal: ['Normal', 'Biasa'], restday: ['Rest day', 'Hari rehat'], holiday: ['Public holiday', 'Cuti umum'] };
+          a.forEach(function (x) {
+            var dt = DT[x.day_type] || [x.day_type || '', x.day_type || ''];
+            out.push(esc24({
+              key: 'ot:' + x.id,
+              kind: 'action',
+              cat: 'approval',
+              icon: 'ti-clock-dollar',
+              color: 'var(--warning)',
+              ts: x.created_at || x.claim_date,
+              title: L('OT approval · ', 'Kelulusan OT · ') + (m[x.employee_id] || '—') + ' · ' + rm(x.amount),
+              meta: dd(x.claim_date) + ' · ' + L(dt[0], dt[1]) + (x.ot_hours != null ? ' · ' + x.ot_hours + L(' hrs', ' jam') : '') + ' · ' + L('awaiting your approval', 'menunggu kelulusan kau'),
+              go: ['hr', { view: 'ot-approvals' }]
+            }, x.created_at || x.claim_date));
+          });
+        });
+      });
+    }));
     if (adm) jobs.push(q(sb.from('invoices').select('id,ref_no,customer_name,total,paid_amt,due_date').eq('tenant_id', tid).is('deleted_at', null).neq('status', 'paid').neq('status', 'cancelled').lt('due_date', today).order('due_date', { ascending: true }).limit(50)).then(function (a) {
       if (!a.length) return; var tot = 0, cs = [];
       a.forEach(function (x) { tot += Number(x.total || 0) - Number(x.paid_amt || 0); if (cs.indexOf(x.customer_name) < 0) cs.push(x.customer_name); });
