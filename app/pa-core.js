@@ -82,8 +82,8 @@
     if (!inS() || busy) return;
     if (!(APP.tenant && String(APP.tenant.code) === 'DEMO')) return;
     if (!window.confirm(L(
-      'Reset ALL demo tenant data to a fresh demo? This permanently deletes every customer, invoice, product, notification, payment claim, WhatsApp/share history, and public link for the DEMO tenant, then repopulates original sample data with today\'s date. This cannot be undone.',
-      'Reset SEMUA data demo tenant ke demo baharu? Ni akan padam kekal semua customer, invois, produk, notifikasi, tuntutan bayaran, sejarah WhatsApp/kongsi dan pautan awam untuk tenant DEMO, lepas tu isi semula data sample asal ikut tarikh hari ini. Tindakan ni tak boleh undo.'
+      'Reset ALL demo tenant data to a fresh demo? This permanently deletes every customer, invoice, product, notification, payment claim, WhatsApp/share history, public link, and salary disbursement batch/approval for the DEMO tenant, then repopulates original sample data with today\'s date. This cannot be undone.',
+      'Reset SEMUA data demo tenant ke demo baharu? Ni akan padam kekal semua customer, invois, produk, notifikasi, tuntutan bayaran, sejarah WhatsApp/kongsi, pautan awam dan batch/kelulusan salary disbursement untuk tenant DEMO, lepas tu isi semula data sample asal ikut tarikh hari ini. Tindakan ni tak boleh undo.'
     ))) return;
     busy = true;
     toast(L('Resetting and repopulating demo data…', 'Sedang reset dan isi semula data demo…'), 'warning');
@@ -91,8 +91,8 @@
       var rpc = await sb.rpc('reset_demo_tenant');
       if (rpc.error) { toast(rpc.error.message || L('Reset failed', 'Reset gagal'), 'error'); return; }
       toast(L(
-        'Demo reset complete — fresh sample data loaded. Notifications, payment claims, WhatsApp/share history, and public links cleared.',
-        'Reset demo selesai — data sample baharu dimuat. Notifikasi, tuntutan bayaran, sejarah WhatsApp/kongsi dan pautan awam dikosongkan.'
+        'Demo reset complete — fresh sample data loaded. Notifications, payment claims, WhatsApp/share history, public links, and salary disbursement batches/approvals cleared.',
+        'Reset demo selesai — data sample baharu dimuat. Notifikasi, tuntutan bayaran, sejarah WhatsApp/kongsi, pautan awam dan batch/kelulusan salary disbursement dikosongkan.'
       ), 'success');
       if (typeof openPage === 'function') openPage('dashboard');
     } catch (e) {
