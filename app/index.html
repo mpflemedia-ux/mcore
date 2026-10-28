@@ -29623,7 +29623,7 @@ function renderHR(params={}) {
   if(params.view==='ot-approvals') { renderOTApprovals(); return }
   if(params.view==='employee-form') { renderEmployeeForm(params.id, params.fromApplicantId); return }
   if(params.view==='payroll-run') { renderPayrollRun(); return }
-  if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year); return }
+  if(params.view==='salary-disbursement') { renderSalaryDisbursement(params.month, params.year, params.review || params.sdApproval); return }
   if(params.view==='payslips-print' && params.month && params.year) { renderPayslipsPrint(params.month, params.year); return }
   if(params.view==='payslip' && params.id) { renderPayslipDetail(params.id); return }
   if(params.view==='my-payslips' || params.view==='payroll-history') { renderMyPayslips(params); return }
@@ -32039,7 +32039,7 @@ function _sdBreakdownRows(rec, t) {
   return rows
 }
 
-async function renderSalaryDisbursement(month, year) {
+async function renderSalaryDisbursement(month, year, reviewId) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
     title:'Penyaluran Gaji', back:'SDM & Gaji', month:'Bulan', year:'Tahun', print:'Cetak', save:'Simpan',
@@ -32125,6 +32125,7 @@ async function renderSalaryDisbursement(month, year) {
   if(error) { wrap.innerHTML = `<div class="empty-state" style="padding:40px"><p style="color:var(--danger)">Error: ${error.message}</p></div>`; return }
   if(!data || data.length===0) {
     wrap.innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.noData}</p><p style="font-size:12px;color:#64748B">${t.runPayrollFirst}</p></div>`
+    if(reviewId) setTimeout(function(){ try{ _sdReviewSubmission(String(reviewId)) }catch(e){} }, 350)
     return
   }
   // Cash Advance / Panjar picker source: approved advances still owed, for
@@ -32424,6 +32425,7 @@ async function renderSalaryDisbursement(month, year) {
   _sdBindSigPersist()
   _sdRefreshSigRow()
   _sdBatchStatus(month, year)
+  if(reviewId) setTimeout(function(){ try{ _sdReviewSubmission(String(reviewId)) }catch(e){} }, 350)
 }
 
 // Salary Disbursement — Share for Approval (WhatsApp). Needs supabase/sd_approval_01.sql.
@@ -39815,7 +39817,7 @@ if('serviceWorker' in navigator){
 <script src="./sd-multi-extra.js?v=1"></script>
 <script src="./notif-css.js?v=1"></script>
 <script src="./notif-core.js?v=3"></script>
-<script src="./notif-live.js?v=3"></script>
+<script src="./notif-live.js?v=4"></script>
 <script src="./notif-items.js?v=4"></script>
 <script src="./notif-bell.js?v=3"></script>
 <script src="./notif-page.js?v=2"></script>

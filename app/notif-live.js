@@ -41,6 +41,33 @@
     if (adm) jobs.push(q(sb.from('expense_claims').select('id,ref_no,total_amount,description,claimed_by,created_at').eq('tenant_id', tid).eq('status', 'pending').is('deleted_at', null).limit(20)).then(function (a) {
       a.filter(function (x) { return !NT.same(x.claimed_by, NT.uid()); }).forEach(function (x) { out.push(esc24({ key: 'claim:' + x.id, kind: 'action', cat: 'approval', icon: 'ti-receipt-2', color: 'var(--primary)', ts: x.created_at, title: L('Expense claim ', 'Tuntutan ') + (x.ref_no || '') + ' · ' + rm(x.total_amount), meta: String(x.description || '').slice(0, 80), go: ['accounting', { view: 'exp-form', id: x.id }], acts: [['approve', 'claim', x.id], ['reject', 'claim', x.id]] }, x.created_at)); });
     }));
+    /* Salary Disbursement signed return — live Action (Leave pattern). No inline Approve; must open file via Review modal. */
+    if (hr) jobs.push(q(sb.from('sd_approvals').select('id,approver_name,created_at,batch_id').eq('tenant_id', tid).eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false }).limit(20)).then(function (a) {
+      if (!a.length) return;
+      var bids = [];
+      a.forEach(function (x) { if (x.batch_id && bids.indexOf(x.batch_id) < 0) bids.push(x.batch_id); });
+      return q(sb.from('salary_disbursement_batches').select('id,month,year').eq('tenant_id', tid).in('id', bids)).then(function (bs) {
+        var bm = {}; (bs || []).forEach(function (b) { bm[b.id] = b; });
+        var enM = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var bmM = ['Jan','Feb','Mac','Apr','Mei','Jun','Jul','Ogos','Sep','Okt','Nov','Dis'];
+        a.forEach(function (x) {
+          var b = bm[x.batch_id] || {};
+          var mi = Math.max(0, Math.min(11, (Number(b.month) || 1) - 1));
+          var period = L(enM[mi], bmM[mi]) + (b.year ? ' ' + b.year : '');
+          out.push(esc24({
+            key: 'sdsig:' + x.id,
+            kind: 'action',
+            cat: 'approval',
+            icon: 'ti-signature',
+            color: 'var(--warning)',
+            ts: x.created_at,
+            title: L('Salary signature · ', 'Tandatangan gaji · ') + (x.approver_name || '—') + (period ? ' · ' + period : ''),
+            meta: L('awaiting your review', 'menunggu semakan kau'),
+            go: ['hr', { view: 'salary-disbursement', month: b.month, year: b.year, review: x.id }]
+          }, x.created_at));
+        });
+      });
+    }));
     if (adm) jobs.push(q(sb.from('invoices').select('id,ref_no,customer_name,total,paid_amt,due_date').eq('tenant_id', tid).is('deleted_at', null).neq('status', 'paid').neq('status', 'cancelled').lt('due_date', today).order('due_date', { ascending: true }).limit(50)).then(function (a) {
       if (!a.length) return; var tot = 0, cs = [];
       a.forEach(function (x) { tot += Number(x.total || 0) - Number(x.paid_amt || 0); if (cs.indexOf(x.customer_name) < 0) cs.push(x.customer_name); });
