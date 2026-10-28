@@ -3,24 +3,86 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
 <title>Salary Disbursement</title>
 <style>
-  html,body{margin:0;min-height:100%;background:#F1F5F9;color:#0f172a;font-family:Inter,system-ui,sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .wrap{max-width:720px;margin:12px auto 96px;padding:20px 16px 48px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.06);box-sizing:border-box;overflow:hidden}
-  .muted{color:#334155;font-weight:700;font-size:12px}
-  .name{font-weight:800;font-size:18px;color:#0E7490}
-  .ref{font-weight:800;font-size:20px;color:#0E7490}
-  /* Match in-app .pdoc-sd-scroll — wide table + swipe on ~380px (Mike rejected card-stack) */
+  :root{
+    --psd-bg:#F1F5F9;
+    --psd-surface:#fff;
+    --psd-border:#e2e8f0;
+    --psd-text:#0f172a;
+    --psd-muted:#334155;
+    --psd-muted-2:#475569;
+    --psd-primary:#0E7490;
+    --psd-conf-bg:#fef3c7;
+    --psd-conf-border:#d97706;
+    --psd-conf-text:#78350f;
+    --psd-shadow:0 4px 20px rgba(0,0,0,.06);
+    --psd-card-bg:#fff;
+    --psd-row-border:#e2e8f0;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --psd-bg:#0b1220;
+      --psd-surface:#111827;
+      --psd-border:#1f2937;
+      --psd-text:#f1f5f9;
+      --psd-muted:#94a3b8;
+      --psd-muted-2:#94a3b8;
+      --psd-primary:#2dd4bf;
+      --psd-conf-bg:#fbbf24;
+      --psd-conf-border:#d97706;
+      --psd-conf-text:#111827;
+      --psd-shadow:0 4px 20px rgba(0,0,0,.35);
+      --psd-card-bg:#1e293b;
+      --psd-row-border:#334155;
+    }
+  }
+  html,body{margin:0;min-height:100%;background:var(--psd-bg);color:var(--psd-text);font-family:Inter,system-ui,sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .wrap{max-width:720px;margin:12px auto 96px;padding:20px 16px 48px;background:var(--psd-surface);border:1px solid var(--psd-border);border-radius:14px;box-shadow:var(--psd-shadow);box-sizing:border-box;overflow:hidden}
+  .muted{color:var(--psd-muted);font-weight:700;font-size:12px}
+  .name{font-weight:800;font-size:18px;color:var(--psd-primary)}
+  .ref{font-weight:800;font-size:20px;color:var(--psd-primary)}
+  .psd-head{display:flex;justify-content:space-between;gap:12px;margin:16px 0 4px;align-items:baseline}
+  /* Desktop ≥768: classic wide table (may swipe if needed) */
   .psd-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;margin-top:12px}
-  table{width:max-content;min-width:100%;border-collapse:collapse;font-size:12px;margin-top:0}
-  th{text-align:left;color:#334155;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e2e8f0;padding:6px 8px;white-space:nowrap}
-  td{padding:8px 8px;border-bottom:1px solid #e2e8f0;color:#0f172a;white-space:nowrap}
-  td.num,th.num{text-align:right}
-  .conf{margin-top:14px;padding:8px 12px;background:#fef3c7;border:1px solid #d97706;border-radius:8px;font-size:11px;color:#78350f;text-align:center;font-weight:700}
-  .err{max-width:560px;margin:60px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;color:#0f172a}
-  @media(max-width:640px){.wrap{margin:8px 8px 88px;border-radius:12px}table{font-size:11px}}
-  @media print{.psd-scroll{overflow:visible!important}}
+  .psd-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:12px;margin-top:0}
+  .psd-table th{text-align:left;color:var(--psd-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--psd-border);padding:6px 8px;white-space:nowrap}
+  .psd-table td{padding:8px 8px;border-bottom:1px solid var(--psd-border);color:var(--psd-text);white-space:nowrap}
+  .psd-table td.num,.psd-table th.num{text-align:right}
+  .psd-table .psd-net{font-weight:800;color:var(--psd-primary)}
+  .psd-table tfoot td{font-weight:800;padding-top:10px;border-top:2px solid var(--psd-text)}
+  /* Mobile cards — hidden on desktop */
+  .psd-cards{display:none;flex-direction:column;gap:12px;margin-top:12px}
+  .psd-card{background:var(--psd-card-bg);border:1px solid var(--psd-border);border-radius:12px;padding:14px 14px 10px;box-sizing:border-box}
+  .psd-card-name{font-weight:800;font-size:15px;color:var(--psd-text);margin:0 0 10px;line-height:1.3;word-break:break-word}
+  .psd-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid var(--psd-row-border);font-size:13px}
+  .psd-row:last-child{border-bottom:none}
+  .psd-row .k{color:var(--psd-muted);font-weight:600;flex:0 1 auto}
+  .psd-row .v{color:var(--psd-text);font-weight:700;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .psd-row.psd-net-row{margin-top:4px;padding-top:8px;border-top:1px solid var(--psd-border);border-bottom:none}
+  .psd-row.psd-net-row .k{font-weight:800;color:var(--psd-text);font-size:14px}
+  .psd-row.psd-net-row .v{font-weight:800;font-size:16px;color:var(--psd-primary)}
+  .psd-grand{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:4px;padding:12px 14px;background:var(--psd-card-bg);border:1px solid var(--psd-border);border-radius:12px;font-weight:800}
+  .psd-grand .k{font-size:13px;color:var(--psd-text)}
+  .psd-grand .v{font-size:16px;color:var(--psd-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .psd-empty{padding:16px;text-align:center;color:var(--psd-muted);font-size:13px;border:1px dashed var(--psd-border);border-radius:12px}
+  .conf{margin-top:14px;padding:8px 12px;background:var(--psd-conf-bg);border:1px solid var(--psd-conf-border);border-radius:8px;font-size:11px;color:var(--psd-conf-text);text-align:center;font-weight:700}
+  .view-only{margin-top:20px;font-size:11px;color:var(--psd-muted-2);text-align:center}
+  .err{max-width:560px;margin:60px auto;padding:24px;background:var(--psd-surface);border-radius:12px;border:1px solid var(--psd-border);color:var(--psd-text)}
+  @media (max-width:767px){
+    .wrap{margin:8px 8px 88px;border-radius:12px;overflow:visible}
+    .psd-scroll{display:none!important}
+    .psd-cards{display:flex}
+  }
+  @media (min-width:768px){
+    .psd-cards{display:none!important}
+    .psd-scroll{display:block}
+  }
+  @media print{
+    .psd-scroll{display:block!important;overflow:visible!important}
+    .psd-cards{display:none!important}
+  }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -32,29 +94,66 @@ const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
 function rm(n){return 'RM'+Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}
-const MONTHS=['','January','February','March','April','May','June','July','August','September','October','November','December']
+const bm=new URLSearchParams(location.search).get('lang')==='bm'
+const MONTHS_EN=['','January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTHS_BM=['','Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember']
+const MONTHS=bm?MONTHS_BM:MONTHS_EN
+const L=bm?{
+  title:'Penyaluran Gaji',
+  name:'Nama',basic:'Asas',allow:'Elaun',deduct:'Potongan',epf:'EPF',socso:'SOCSO',eis:'EIS',pcb:'PCB',ot:'OT',net:'Gaji Bersih',
+  grand:'Jumlah Besar',conf:'SULIT — Untuk kelulusan dalaman',view:'Paparan sahaja',
+  none:'Tiada rekod',unavailable:'Pautan tidak tersedia',missing:'Token tiada.',notFound:'Tidak dijumpai',loading:'Memuatkan…'
+}:{
+  title:'Salary Disbursement',
+  name:'Name',basic:'Basic',allow:'Allowance',deduct:'Deductions',epf:'EPF',socso:'SOCSO',eis:'EIS',pcb:'PCB',ot:'OT',net:'Net Pay',
+  grand:'Grand Total',conf:'CONFIDENTIAL — For internal approval',view:'View-only',
+  none:'No records',unavailable:'Link unavailable',missing:'Missing token.',notFound:'Not found',loading:'Loading…'
+}
+document.documentElement.lang=bm?'ms':'en'
 window.__sdToken=new URLSearchParams(location.search).get('public_sd')
+function deductCombined(r){
+  return Number(r.epf_employee||0)+Number(r.socso_employee||0)+Number(r.eis_employee||0)+Number(r.pcb||0)+Number(r.deduction_total||0)
+}
+function rowLine(k,v,extraClass){
+  return '<div class="psd-row'+(extraClass?' '+extraClass:'')+'"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'
+}
+function cardHtml(r){
+  return '<article class="psd-card">'
+    +'<div class="psd-card-name">'+esc(r.name)+'</div>'
+    +rowLine(L.basic,rm(r.basic_salary))
+    +rowLine(L.allow,rm(r.allowance_total))
+    +rowLine(L.deduct,rm(r.deduction_total))
+    +rowLine(L.epf,rm(r.epf_employee))
+    +rowLine(L.socso,rm(r.socso_employee))
+    +rowLine(L.eis,rm(r.eis_employee))
+    +rowLine(L.pcb,rm(r.pcb))
+    +rowLine(L.ot,rm(r.ot_amount))
+    +rowLine(L.net,rm(r.net_pay),'psd-net-row')
+    +'</article>'
+}
 ;(async function(){
   const root=document.getElementById('root')
   const token=window.__sdToken
-  if(!token){ root.innerHTML='<div class="err"><h2>Link unavailable</h2><p>Missing token.</p></div>'; return }
+  if(!token){ root.innerHTML='<div class="err"><h2>'+esc(L.unavailable)+'</h2><p>'+esc(L.missing)+'</p></div>'; return }
   const {data:b,error}=await sb.rpc('get_public_salary_batch',{p_token:token})
-  if(error||!b){ root.innerHTML='<div class="err"><h2>Link unavailable</h2><p>'+esc(error&&error.message||'Not found')+'</p></div>'; return }
-  document.title='Salary Disbursement - '+(b.tenant_name||'')
+  if(error||!b){ root.innerHTML='<div class="err"><h2>'+esc(L.unavailable)+'</h2><p>'+esc(error&&error.message||L.notFound)+'</p></div>'; return }
+  document.title=L.title+' - '+(b.tenant_name||'')
   window.__sdBatch=b
   const rows=b.rows||[]
-  const lines=rows.length?rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td class="num">'+rm(r.basic_salary)+'</td><td class="num">'+rm(r.allowance_total)+'</td><td class="num">'+rm((r.epf_employee||0)+(r.socso_employee||0)+(r.eis_employee||0)+(r.pcb||0)+(r.deduction_total||0))+'</td><td class="num">'+rm(r.ot_amount)+'</td><td class="num" style="font-weight:800">'+rm(r.net_pay)+'</td></tr>').join(''):'<tr><td colspan="6">No records</td></tr>'
+  const tableBody=rows.length?rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td class="num">'+rm(r.basic_salary)+'</td><td class="num">'+rm(r.allowance_total)+'</td><td class="num">'+rm(deductCombined(r))+'</td><td class="num">'+rm(r.ot_amount)+'</td><td class="num psd-net">'+rm(r.net_pay)+'</td></tr>').join(''):'<tr><td colspan="6">'+esc(L.none)+'</td></tr>'
+  const cards=rows.length?rows.map(cardHtml).join('')+'<div class="psd-grand"><span class="k">'+esc(L.grand)+'</span><span class="v">'+rm(b.grand_total_net_pay)+'</span></div>':'<div class="psd-empty">'+esc(L.none)+'</div>'
   root.innerHTML='<div class="wrap" id="public-sd-root">'
     +(b.logo_url?'<img src="'+esc(b.logo_url)+'" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:#fff;margin-bottom:8px">':'')
     +'<div class="name">'+esc(b.tenant_name)+'</div>'
     +(b.address?'<div class="muted" style="font-weight:500">'+esc(b.address)+'</div>':'')
-    +'<div style="display:flex;justify-content:space-between;gap:12px;margin:16px 0 4px"><div class="muted">Salary Disbursement</div><div class="ref">'+esc(MONTHS[b.month]||b.month)+' '+esc(b.year)+'</div></div>'
-    +'<div class="psd-scroll"><table><thead><tr><th>Name</th><th class="num">Basic</th><th class="num">Allowance</th><th class="num">Deductions</th><th class="num">OT</th><th class="num">Net Pay</th></tr></thead><tbody>'+lines+'</tbody>'
-    +'<tfoot><tr><td colspan="5" style="font-weight:800;text-align:right;padding-top:10px;border-top:2px solid #0f172a">Grand Total</td><td class="num" style="font-weight:800;font-size:14px;padding-top:10px;border-top:2px solid #0f172a">'+rm(b.grand_total_net_pay)+'</td></tr></tfoot></table></div>'
-    +'<div class="conf">CONFIDENTIAL — For internal approval</div>'
-    +'<p style="margin-top:20px;font-size:11px;color:#475569;text-align:center">View-only</p></div>'
+    +'<div class="psd-head"><div class="muted">'+esc(L.title)+'</div><div class="ref">'+esc(MONTHS[b.month]||b.month)+' '+esc(b.year)+'</div></div>'
+    +'<div class="psd-scroll"><table class="psd-table"><thead><tr><th>'+esc(L.name)+'</th><th class="num">'+esc(L.basic)+'</th><th class="num">'+esc(L.allow)+'</th><th class="num">'+esc(L.deduct)+'</th><th class="num">'+esc(L.ot)+'</th><th class="num">'+esc(L.net)+'</th></tr></thead><tbody>'+tableBody+'</tbody>'
+    +'<tfoot><tr><td colspan="5" style="text-align:right">'+esc(L.grand)+'</td><td class="num psd-net" style="font-size:14px">'+rm(b.grand_total_net_pay)+'</td></tr></tfoot></table></div>'
+    +'<div class="psd-cards">'+cards+'</div>'
+    +'<div class="conf">'+esc(L.conf)+'</div>'
+    +'<p class="view-only">'+esc(L.view)+'</p></div>'
 })()
 </script>
-<script src="./sd-approve-pub.js?v=3"></script>
+<script src="./sd-approve-pub.js?v=4"></script>
 </body>
 </html>
