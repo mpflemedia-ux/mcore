@@ -11013,6 +11013,7 @@ function renderAdmin(params={}) {
   if(params.view==='referrals' && isPlatformAdmin()) { renderAdminReferrals(); return }
   if(params.view==='referral-detail' && params.id && isPlatformAdmin()) { renderAdminReferralDetail(params.id); return }
   if(params.view==='devroadmap' && isPlatformAdmin()) { renderAdminDevRoadmap(); return }
+  if(params.view==='prompt-collections' && isPlatformAdmin()) { renderAdminPromptCollections(); return }
   if(params.view==='content-planner' && isPlatformAdmin()) { renderAdminContentPlanner(); return }
   if(params.view==='progress' && isPlatformAdmin()) { renderAdminProgress(); return }
   if(params.view==='planner') { renderPlanner(); return }
@@ -11029,6 +11030,7 @@ function _adminTabs(active) {
     ${platform ? `<button class="btn btn-sm ${active==='announcements'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'announcements'})"><i class="ti ti-speakerphone"></i> ${isBm?'Pengumuman':'Announcements'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='referrals'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'referrals'})"><i class="ti ti-gift"></i> ${isBm?'Program Referral':'Referral Program'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='devroadmap'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'devroadmap'})"><i class="ti ti-rocket"></i> ${isBm?'Pembangunan Sistem':'System Development'}</button>` : ''}
+    ${platform ? `<button class="btn btn-sm ${active==='prompt-collections'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'prompt-collections'})"><i class="ti ti-notes"></i> ${isBm?'Koleksi Prompt':'Prompt Collections'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='content-planner'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'content-planner'})"><i class="ti ti-brand-tiktok"></i> ${isBm?'Perancang Kandungan':'Content Planner'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='progress'?'btn-primary':'btn-outline'}" onclick="openPage('admin',{view:'progress'})"><i class="ti ti-chart-donut-3"></i> ${isBm?'Progress Projek':'Project Progress'}</button>` : ''}
     ${platform ? `<button class="btn btn-sm ${active==='planner'?'btn-primary':'btn-outline'}" onclick="openPage('planner')"><i class="ti ti-calendar-event"></i> ${isBm?'Perancang':'Planner'}</button>` : ''}
@@ -13434,6 +13436,206 @@ async function doDeleteDevRoadmapItem(itemId) {
   const overlay = document.getElementById('admin-devroadmap-modal-overlay')
   if(overlay) overlay.classList.remove('active')
   await renderAdminDevRoadmap()
+}
+
+// ─── Prompt Collections (Platform Admin) — Mike's reusable Claude Code
+// prompts (Standing/Build/Discuss/Bug/UI-Mock/SQL/Notif/Comms/Test): search,
+// filter, copy-to-clipboard, add/edit in-app. Platform-level content, no
+// tenant_id. Needs supabase/prompt_collections_01.sql.
+let _promptCollData = []
+let _promptCollState = { search: '', category: 'all' }
+const _PROMPTCOLL_CATEGORIES = ['standing','build','discuss','bug','ui_mock','sql','notif','comms','test']
+
+function _promptCollCategoryMeta() {
+  const isBm = APP.language==='bm'
+  return {
+    standing: { label: isBm?'Kekal':'Standing', icon:'ti-shield-check' },
+    build:    { label: isBm?'Bina':'Build', icon:'ti-hammer' },
+    discuss:  { label: isBm?'Bincang':'Discuss', icon:'ti-message-circle' },
+    bug:      { label: isBm?'Pepijat':'Bug', icon:'ti-bug' },
+    ui_mock:  { label: 'UI/Mock', icon:'ti-device-mobile' },
+    sql:      { label: 'SQL', icon:'ti-database' },
+    notif:    { label: isBm?'Notifikasi':'Notif', icon:'ti-bell' },
+    comms:    { label: isBm?'Komunikasi':'Comms', icon:'ti-send' },
+    test:     { label: isBm?'Ujian':'Test', icon:'ti-clipboard-check' }
+  }
+}
+
+async function renderAdminPromptCollections() {
+  if(!isPlatformAdmin()) { renderAccessDenied(); return }
+  const isBm = APP.language==='bm'
+  const t = isBm ? {
+    title:'Koleksi Prompt', sub:'Prompt Claude Code yang pernah digunakan — cari, salin, sunting',
+    close:'Tutup', save:'Simpan', add:'+ Tambah Prompt'
+  } : {
+    title:'Prompt Collections', sub:'Claude Code prompts you’ve used before — search, copy, edit',
+    close:'Close', save:'Save', add:'+ Add Prompt'
+  }
+  document.getElementById('main').innerHTML = `
+  <div class="page-header"><div>
+    <div class="page-title">${t.title}</div>
+    <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
+  </div></div>
+  ${_adminTabs('prompt-collections')}
+  <div id="admin-promptcoll-wrap"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>
+  <div class="modal-overlay" id="admin-promptcoll-modal-overlay">
+    <div class="modal-box" style="max-width:560px">
+      <div class="modal-box-header"><i class="ti ti-notes"></i> <span id="admin-promptcoll-modal-title">${t.add}</span></div>
+      <div class="modal-box-body" id="admin-promptcoll-modal-body"></div>
+      <div class="modal-box-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('admin-promptcoll-modal-overlay').classList.remove('active')">${t.close}</button>
+        <button type="button" class="btn btn-primary" onclick="doSavePromptCollItem()">${t.save}</button>
+      </div>
+    </div>
+  </div>`
+
+  const wrap = document.getElementById('admin-promptcoll-wrap')
+  const {data, error} = await sb.from('prompt_collections').select('*').is('deleted_at', null).order('created_at', {ascending:false})
+  if(error) {
+    wrap.innerHTML = `<div class="card" style="padding:24px">
+      <p style="color:var(--danger);margin-bottom:12px"><strong>Error:</strong> ${_aiEscapeHtml(error.message)}</p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.6">${isBm
+        ? 'Pastikan jadual prompt_collections dan RLS platform_admin dah disediakan.'
+        : 'Make sure prompt_collections table and platform_admin RLS are set up.'}</p>
+    </div>`
+    return
+  }
+  _promptCollData = data || []
+  _promptCollRenderAll()
+}
+
+function _promptCollFiltered() {
+  const st = _promptCollState
+  let rows = _promptCollData.slice()
+  if(st.category !== 'all') rows = rows.filter(p => p.category === st.category)
+  const q = (st.search||'').trim().toLowerCase()
+  if(q) rows = rows.filter(p => (p.title||'').toLowerCase().includes(q) || (p.description||'').toLowerCase().includes(q) || (p.body||'').toLowerCase().includes(q))
+  return rows
+}
+
+function _promptCollSearchChanged(val) {
+  _promptCollState.search = val
+  clearTimeout(window._promptCollSearchTm)
+  window._promptCollSearchTm = setTimeout(_promptCollRenderList, 250)
+}
+
+function _promptCollSetCategory(cat) {
+  _promptCollState.category = cat
+  _promptCollRenderList()
+}
+
+function _promptCollRenderAll() {
+  const wrap = document.getElementById('admin-promptcoll-wrap')
+  if(!wrap) return
+  const isBm = APP.language==='bm'
+  const cats = _promptCollCategoryMeta()
+  wrap.innerHTML = `
+    <div class="card" style="padding:14px;margin-bottom:12px">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        <button type="button" class="btn btn-sm ${_promptCollState.category==='all'?'btn-primary':'btn-outline'}" onclick="_promptCollSetCategory('all')"><i class="ti ti-apps"></i> ${isBm?'Semua':'All'}</button>
+        ${_PROMPTCOLL_CATEGORIES.map(c => `<button type="button" class="btn btn-sm ${_promptCollState.category===c?'btn-primary':'btn-outline'}" onclick="_promptCollSetCategory('${c}')"><i class="ti ${cats[c].icon}"></i> ${_aiEscapeHtml(cats[c].label)}</button>`).join('')}
+      </div>
+      <div class="input-group"><i class="ti ti-search input-icon"></i>
+        <input id="promptcoll-search" type="text" class="form-input" placeholder="${isBm?'Cari koleksi prompt...':'Search prompt collection...'}" value="${_aiEscapeHtml(_promptCollState.search)}" oninput="_promptCollSearchChanged(this.value)">
+      </div>
+    </div>
+    <div id="promptcoll-list-host"></div>`
+  _promptCollRenderList()
+}
+
+function _promptCollRenderList() {
+  const host = document.getElementById('promptcoll-list-host')
+  if(!host) return
+  const isBm = APP.language==='bm'
+  const cats = _promptCollCategoryMeta()
+  const rows = _promptCollFiltered()
+  const addLabel = isBm ? '+ Tambah Prompt' : '+ Add Prompt'
+  const noItems = isBm ? 'Tiada prompt.' : 'No prompts.'
+  const rowHtml = (item) => {
+    const meta = cats[item.category] || { label: item.category, icon:'ti-file-text' }
+    return `<div class="card" style="padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px;cursor:pointer" onclick="openPromptCollModal('${item.id}')">
+          <div style="font-weight:600;font-size:13px">${_aiEscapeHtml(item.title||'—')}</div>
+          ${item.description ? `<div style="font-size:12px;color:var(--text-2);margin-top:2px">${_aiEscapeHtml(item.description)}</div>` : ''}
+        </div>
+        <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;color:var(--primary);background:var(--primary-light)"><i class="ti ${meta.icon}"></i> ${_aiEscapeHtml(meta.label)}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+        <button type="button" class="btn btn-outline btn-sm" onclick="_promptCollCopy('${item.id}')"><i class="ti ti-copy"></i> ${isBm?'Salin':'Copy'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openPromptCollModal('${item.id}')"><i class="ti ti-edit"></i> ${isBm?'Sunting':'Edit'}</button>
+      </div>
+    </div>`
+  }
+  host.innerHTML = `<div class="card" style="padding:0">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap">
+      <div style="font-weight:600;font-size:14px">${isBm?'Senarai Prompt':'Prompt List'} (${rows.length})</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="openPromptCollModal(null)">${addLabel}</button>
+    </div>
+    <div style="padding:14px">
+      ${rows.length ? rows.map(rowHtml).join('') : `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 0">${noItems}</div>`}
+    </div>
+  </div>`
+}
+
+function _promptCollCopy(id) {
+  const isBm = APP.language==='bm'
+  const item = _promptCollData.find(i => String(i.id)===String(id))
+  if(!item || !navigator.clipboard || !navigator.clipboard.writeText) { showToast(isBm?'Gagal salin.':'Copy failed.', 'error'); return }
+  navigator.clipboard.writeText(item.body || '')
+    .then(() => showToast(isBm?'Disalin.':'Copied.', 'success'))
+    .catch(() => showToast(isBm?'Gagal salin.':'Copy failed.', 'error'))
+}
+
+function openPromptCollModal(itemId) {
+  const isBm = APP.language==='bm'
+  const cats = _promptCollCategoryMeta()
+  const item = itemId ? _promptCollData.find(i => String(i.id)===String(itemId)) : null
+  const overlay = document.getElementById('admin-promptcoll-modal-overlay')
+  overlay.dataset.itemId = item ? item.id : ''
+  document.getElementById('admin-promptcoll-modal-title').textContent = item ? (isBm?'Sunting Prompt':'Edit Prompt') : (isBm?'Tambah Prompt':'Add Prompt')
+  document.getElementById('admin-promptcoll-modal-body').innerHTML = `
+    <div class="form-group"><label class="form-label">${isBm?'Tajuk':'Title'}</label><input type="text" id="promptcoll-title" class="form-input" value="${_aiEscapeHtml(item?.title||'')}"></div>
+    <div class="form-group"><label class="form-label">${isBm?'Keterangan':'Description'}</label><textarea id="promptcoll-desc" class="form-input" rows="2">${_aiEscapeHtml(item?.description||'')}</textarea></div>
+    <div class="form-group"><label class="form-label">${isBm?'Kategori':'Category'}</label>
+      <select id="promptcoll-cat" class="form-select">
+        ${_PROMPTCOLL_CATEGORIES.map(c => `<option value="${c}" ${(item?.category||'discuss')===c?'selected':''}>${_aiEscapeHtml(cats[c].label)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">${isBm?'Isi Prompt':'Prompt Body'}</label><textarea id="promptcoll-body" class="form-input" rows="10" data-no-titlecase="1">${_aiEscapeHtml(item?.body||'')}</textarea></div>
+    ${item ? `<button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="doDeletePromptCollItem('${item.id}')">${isBm?'Padam Prompt Ini':'Delete This Prompt'}</button>` : ''}`
+  overlay.classList.add('active')
+}
+
+async function doSavePromptCollItem() {
+  const isBm = APP.language==='bm'
+  const overlay = document.getElementById('admin-promptcoll-modal-overlay')
+  const itemId = overlay.dataset.itemId || null
+  const title = document.getElementById('promptcoll-title').value.trim()
+  const description = document.getElementById('promptcoll-desc').value.trim()
+  const category = document.getElementById('promptcoll-cat').value
+  const body = document.getElementById('promptcoll-body').value.trim()
+  if(!title) { showToast(isBm?'Tajuk diperlukan.':'Title is required.', 'error'); return }
+  if(!body) { showToast(isBm?'Isi prompt diperlukan.':'Prompt body is required.', 'error'); return }
+  const payload = { title, description: description || null, category, body, updated_at: new Date().toISOString() }
+  const { error } = itemId
+    ? await sb.from('prompt_collections').update(payload).eq('id', itemId)
+    : await sb.from('prompt_collections').insert(payload)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Prompt disimpan.':'Prompt saved.', 'success')
+  overlay.classList.remove('active')
+  await renderAdminPromptCollections()
+}
+
+async function doDeletePromptCollItem(itemId) {
+  const isBm = APP.language==='bm'
+  if(!confirm(isBm?'Padam prompt ini? Tindakan ni TIDAK BOLEH DIUNDUR.':'Delete this prompt? This CANNOT be undone.')) return
+  const { error } = await sb.from('prompt_collections').update({ deleted_at: new Date().toISOString() }).eq('id', itemId)
+  if(error) { showToast(error.message, 'error'); return }
+  showToast(isBm?'Prompt dipadam.':'Prompt deleted.', 'success')
+  const overlay = document.getElementById('admin-promptcoll-modal-overlay')
+  if(overlay) overlay.classList.remove('active')
+  await renderAdminPromptCollections()
 }
 
 // ─── Content Planner (Platform Admin) — TikTok/social content performance ──
