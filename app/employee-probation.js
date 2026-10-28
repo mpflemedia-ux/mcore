@@ -75,98 +75,133 @@
     }).join('');
   }
 
+  var _prbInjectLock = false;
+  var _prbInjectAgain = false;
+
+  function cleanupDupPrbBoxes() {
+    var boxes = document.querySelectorAll('#prb-box');
+    if (boxes.length <= 1) return boxes[0] || null;
+    for (var i = 1; i < boxes.length; i++) {
+      try { boxes[i].remove(); } catch (e) {}
+    }
+    return boxes[0];
+  }
+
   async function injectForm() {
     if (!document.getElementById('emp-name')) return;
-    if (document.getElementById('prb-box')) return;
-    var params = {};
-    try { params = (typeof _pageParams === 'function') ? _pageParams() : (APP.pageParams || {}); } catch (e) {}
-    var id = params.id || (location.hash.match(/id=([0-9a-f-]{36})/i) || [])[1];
-    var emp = {};
-    if (id && window.sb) {
-      var q = await sb.from('employees').select('*').eq('id', id).eq('tenant_id', APP.tenant.id).maybeSingle();
-      emp = q.data || {};
+    if (cleanupDupPrbBoxes()) return;
+    if (_prbInjectLock) {
+      _prbInjectAgain = true;
+      return;
     }
-    var status = emp.employment_status || 'probation';
-    var box = document.createElement('div');
-    box.id = 'prb-box';
-    box.className = 'form-group';
-    box.style.gridColumn = '1 / -1';
-    var badge = status === 'permanent'
-      ? (isBm() ? 'Tetap (disahkan ' + dmy(emp.confirmed_at) + ')' : 'Permanent (confirmed ' + dmy(emp.confirmed_at) + ')')
-      : (isBm() ? 'Percubaan (tamat ' + dmy(endDate(emp)) + ', lanjutan ' + (emp.probation_extension_count || 0) + 'x)' : 'Probation (ends ' + dmy(endDate(emp)) + ', extended ' + (emp.probation_extension_count || 0) + 'x)');
-    box.innerHTML =
-      '<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px">' +
-      '<strong>' + (isBm() ? 'Status Pekerjaan' : 'Employment Status') + '</strong>' +
-      '<div id="prb-badge" style="margin:6px 0;font-size:13px">' + badge + '</div>' +
-      '<label style="font-size:12px">' + (isBm() ? 'Bulan percubaan' : 'Probation months') + '</label>' +
-      '<input id="prb-months" class="form-input" type="number" min="1" value="' + (emp.probation_months || 6) + '" style="width:100px;margin:4px 8px 8px 0">' +
-      '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-al" ' + (emp.allow_leave_during_probation ? 'checked' : '') + '> Allow annual leave during probation</label>' +
-      '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-am" ' + (emp.allow_medical_claim_during_probation ? 'checked' : '') + '> Allow medical/hospitalisation claim during probation</label>' +
-      '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-ac" ' + (emp.allow_sales_commission_during_probation ? 'checked' : '') + '> Allow sales commission eligibility during probation</label>' +
-      '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-af" ' + (emp.allow_full_access_during_probation ? 'checked' : '') + '> Allow full module/system access during probation</label>' +
-      (status === 'probation' && id
-        ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
-          '<button type="button" class="btn btn-primary btn-sm" id="prb-confirm">' + (isBm() ? 'Sahkan tetap' : 'Confirm as Permanent') + '</button>' +
-          '<button type="button" class="btn btn-outline btn-sm" id="prb-extend">' + (isBm() ? 'Lanjut percubaan' : 'Extend Probation') + '</button></div>'
-        : '') +
-      '<div style="font-size:12px;font-weight:600;margin:12px 0 4px">' + (isBm() ? 'Rekod tindakan' : 'Action log') + '</div>' +
-      '<div id="prb-log"></div></div>';
-    var anchor = document.getElementById('emp-position');
-    var host = anchor ? anchor.closest('.form-group') : document.getElementById('emp-name').closest('div');
-    if (host && host.parentNode) host.parentNode.insertBefore(box, host.nextSibling);
-    if (id) loadLog(id, document.getElementById('prb-log'));
+    _prbInjectLock = true;
+    try {
+      if (cleanupDupPrbBoxes()) return;
+      var params = {};
+      try { params = (typeof _pageParams === 'function') ? _pageParams() : (APP.pageParams || {}); } catch (e) {}
+      var id = params.id || (location.hash.match(/id=([0-9a-f-]{36})/i) || [])[1];
+      var emp = {};
+      if (id && window.sb) {
+        var q = await sb.from('employees').select('*').eq('id', id).eq('tenant_id', APP.tenant.id).maybeSingle();
+        emp = q.data || {};
+      }
+      // Race: another inject may have finished while we awaited
+      if (cleanupDupPrbBoxes()) return;
+      if (!document.getElementById('emp-name')) return;
+      var status = emp.employment_status || 'probation';
+      var box = document.createElement('div');
+      box.id = 'prb-box';
+      box.className = 'form-group';
+      box.style.gridColumn = '1 / -1';
+      if (id) box.setAttribute('data-emp-id', id);
+      var badge = status === 'permanent'
+        ? (isBm() ? 'Tetap (disahkan ' + dmy(emp.confirmed_at) + ')' : 'Permanent (confirmed ' + dmy(emp.confirmed_at) + ')')
+        : (isBm() ? 'Percubaan (tamat ' + dmy(endDate(emp)) + ', lanjutan ' + (emp.probation_extension_count || 0) + 'x)' : 'Probation (ends ' + dmy(endDate(emp)) + ', extended ' + (emp.probation_extension_count || 0) + 'x)');
+      box.innerHTML =
+        '<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px">' +
+        '<strong>' + (isBm() ? 'Status Pekerjaan' : 'Employment Status') + '</strong>' +
+        '<div id="prb-badge" style="margin:6px 0;font-size:13px">' + badge + '</div>' +
+        '<label style="font-size:12px">' + (isBm() ? 'Bulan percubaan' : 'Probation months') + '</label>' +
+        '<input id="prb-months" class="form-input" type="number" min="1" value="' + (emp.probation_months || 6) + '" style="width:100px;margin:4px 8px 8px 0">' +
+        '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-al" ' + (emp.allow_leave_during_probation ? 'checked' : '') + '> Allow annual leave during probation</label>' +
+        '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-am" ' + (emp.allow_medical_claim_during_probation ? 'checked' : '') + '> Allow medical/hospitalisation claim during probation</label>' +
+        '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-ac" ' + (emp.allow_sales_commission_during_probation ? 'checked' : '') + '> Allow sales commission eligibility during probation</label>' +
+        '<label style="display:block;font-size:13px;margin:4px 0"><input type="checkbox" id="prb-af" ' + (emp.allow_full_access_during_probation ? 'checked' : '') + '> Allow full module/system access during probation</label>' +
+        (status === 'probation' && id
+          ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+            '<button type="button" class="btn btn-primary btn-sm" id="prb-confirm" style="white-space:nowrap">' + (isBm() ? 'Sahkan tetap' : 'Confirm as Permanent') + '</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" id="prb-extend" style="white-space:nowrap">' + (isBm() ? 'Lanjut percubaan' : 'Extend Probation') + '</button></div>'
+          : '') +
+        '<div style="font-size:12px;font-weight:600;margin:12px 0 4px">' + (isBm() ? 'Rekod tindakan' : 'Action log') + '</div>' +
+        '<div id="prb-log"></div></div>';
+      var anchor = document.getElementById('emp-position');
+      var host = anchor ? anchor.closest('.form-group') : document.getElementById('emp-name').closest('div');
+      if (cleanupDupPrbBoxes()) return;
+      if (host && host.parentNode) host.parentNode.insertBefore(box, host.nextSibling);
+      if (id) loadLog(id, document.getElementById('prb-log'));
 
-    var origSave = window._employeeSave;
-    if (typeof origSave === 'function' && !origSave._prb) {
-      window._employeeSave = async function () {
-        var r = await origSave.apply(this, arguments);
-        var eid = id || arguments[0];
-        if (eid && window.sb) {
-          await sb.from('employees').update({
-            probation_months: Number(document.getElementById('prb-months') && document.getElementById('prb-months').value || 6),
-            allow_leave_during_probation: !!(document.getElementById('prb-al') && document.getElementById('prb-al').checked),
-            allow_medical_claim_during_probation: !!(document.getElementById('prb-am') && document.getElementById('prb-am').checked),
-            allow_sales_commission_during_probation: !!(document.getElementById('prb-ac') && document.getElementById('prb-ac').checked),
-            allow_full_access_during_probation: !!(document.getElementById('prb-af') && document.getElementById('prb-af').checked)
-          }).eq('id', eid).eq('tenant_id', APP.tenant.id);
-        }
-        return r;
+      var origSave = window._employeeSave;
+      if (typeof origSave === 'function' && !origSave._prb) {
+        window._employeeSave = async function () {
+          var r = await origSave.apply(this, arguments);
+          var eid = id || arguments[0];
+          if (eid && window.sb) {
+            await sb.from('employees').update({
+              probation_months: Number(document.getElementById('prb-months') && document.getElementById('prb-months').value || 6),
+              allow_leave_during_probation: !!(document.getElementById('prb-al') && document.getElementById('prb-al').checked),
+              allow_medical_claim_during_probation: !!(document.getElementById('prb-am') && document.getElementById('prb-am').checked),
+              allow_sales_commission_during_probation: !!(document.getElementById('prb-ac') && document.getElementById('prb-ac').checked),
+              allow_full_access_during_probation: !!(document.getElementById('prb-af') && document.getElementById('prb-af').checked)
+            }).eq('id', eid).eq('tenant_id', APP.tenant.id);
+          }
+          return r;
+        };
+        window._employeeSave._prb = true;
+      }
+
+      var cbtn = document.getElementById('prb-confirm');
+      if (cbtn) cbtn.onclick = function () {
+        reasonDialog(isBm() ? 'Sahkan sebagai tetap' : 'Confirm as Permanent', async function (reason, wrap) {
+          var now = new Date().toISOString();
+          var prev = emp.probation_months;
+          var up = await sb.from('employees').update({ employment_status: 'permanent', confirmed_at: now }).eq('id', id).eq('tenant_id', APP.tenant.id);
+          if (up.error) { showToast(up.error.message, 'error'); return; }
+          await sb.from('employee_probation_log').insert({ tenant_id: APP.tenant.id, employee_id: id, action: 'confirmed', reason: reason, previous_months: prev, new_months: prev, acted_by: APP.user && APP.user.id });
+          wrap.remove();
+          showToast(isBm() ? 'Disahkan tetap' : 'Confirmed permanent', 'success');
+          printLetter('confirm', emp, { effective: now });
+          if (typeof renderEmployeeForm === 'function') renderEmployeeForm(id);
+        });
       };
-      window._employeeSave._prb = true;
+      var ebtn = document.getElementById('prb-extend');
+      if (ebtn) ebtn.onclick = function () {
+        var dlg = reasonDialog(isBm() ? 'Lanjut percubaan' : 'Extend Probation', async function (reason, wrap) {
+          var extra = wrap.querySelector('#prb-new-months');
+          var neu = Number(extra && extra.value || emp.probation_months || 6);
+          var cap = Number(emp.probation_max_months_cap || 12);
+          if (neu > cap) { showToast((isBm() ? 'Melebihi had ' : 'Exceeds cap of ') + cap + ' months', 'error'); return; }
+          var up = await sb.from('employees').update({ probation_months: neu, probation_extension_count: Number(emp.probation_extension_count || 0) + 1 }).eq('id', id).eq('tenant_id', APP.tenant.id);
+          if (up.error) { showToast(up.error.message, 'error'); return; }
+          await sb.from('employee_probation_log').insert({ tenant_id: APP.tenant.id, employee_id: id, action: 'extended', reason: reason, previous_months: emp.probation_months, new_months: neu, acted_by: APP.user && APP.user.id });
+          wrap.remove();
+          showToast(isBm() ? 'Percubaan dilanjut' : 'Probation extended', 'success');
+          var fresh = Object.assign({}, emp, { probation_months: neu });
+          printLetter('extend', emp, { prevEnd: endDate(emp), newEnd: endDate(fresh), reason: reason });
+          if (typeof renderEmployeeForm === 'function') renderEmployeeForm(id);
+        });
+        dlg.querySelector('#prb-extra').innerHTML = '<label style="font-size:12px;display:block;margin-top:8px">' + (isBm() ? 'Bulan baru' : 'New months') + '</label><input id="prb-new-months" class="form-input" type="number" min="1" value="' + (Number(emp.probation_months || 6) + 1) + '">';
+      };
+    } finally {
+      _prbInjectLock = false;
+      if (_prbInjectAgain) {
+        _prbInjectAgain = false;
+        if (!document.getElementById('prb-box') && document.getElementById('emp-name')) {
+          injectForm();
+        } else {
+          cleanupDupPrbBoxes();
+        }
+      }
     }
-
-    var cbtn = document.getElementById('prb-confirm');
-    if (cbtn) cbtn.onclick = function () {
-      reasonDialog(isBm() ? 'Sahkan sebagai tetap' : 'Confirm as Permanent', async function (reason, wrap) {
-        var now = new Date().toISOString();
-        var prev = emp.probation_months;
-        var up = await sb.from('employees').update({ employment_status: 'permanent', confirmed_at: now }).eq('id', id).eq('tenant_id', APP.tenant.id);
-        if (up.error) { showToast(up.error.message, 'error'); return; }
-        await sb.from('employee_probation_log').insert({ tenant_id: APP.tenant.id, employee_id: id, action: 'confirmed', reason: reason, previous_months: prev, new_months: prev, acted_by: APP.user && APP.user.id });
-        wrap.remove();
-        showToast(isBm() ? 'Disahkan tetap' : 'Confirmed permanent', 'success');
-        printLetter('confirm', emp, { effective: now });
-        if (typeof renderEmployeeForm === 'function') renderEmployeeForm(id);
-      });
-    };
-    var ebtn = document.getElementById('prb-extend');
-    if (ebtn) ebtn.onclick = function () {
-      var dlg = reasonDialog(isBm() ? 'Lanjut percubaan' : 'Extend Probation', async function (reason, wrap) {
-        var extra = wrap.querySelector('#prb-new-months');
-        var neu = Number(extra && extra.value || emp.probation_months || 6);
-        var cap = Number(emp.probation_max_months_cap || 12);
-        if (neu > cap) { showToast((isBm() ? 'Melebihi had ' : 'Exceeds cap of ') + cap + ' months', 'error'); return; }
-        var up = await sb.from('employees').update({ probation_months: neu, probation_extension_count: Number(emp.probation_extension_count || 0) + 1 }).eq('id', id).eq('tenant_id', APP.tenant.id);
-        if (up.error) { showToast(up.error.message, 'error'); return; }
-        await sb.from('employee_probation_log').insert({ tenant_id: APP.tenant.id, employee_id: id, action: 'extended', reason: reason, previous_months: emp.probation_months, new_months: neu, acted_by: APP.user && APP.user.id });
-        wrap.remove();
-        showToast(isBm() ? 'Percubaan dilanjut' : 'Probation extended', 'success');
-        var fresh = Object.assign({}, emp, { probation_months: neu });
-        printLetter('extend', emp, { prevEnd: endDate(emp), newEnd: endDate(fresh), reason: reason });
-        if (typeof renderEmployeeForm === 'function') renderEmployeeForm(id);
-      });
-      dlg.querySelector('#prb-extra').innerHTML = '<label style="font-size:12px;display:block;margin-top:8px">' + (isBm() ? 'Bulan baru' : 'New months') + '</label><input id="prb-new-months" class="form-input" type="number" min="1" value="' + (Number(emp.probation_months || 6) + 1) + '">';
-    };
   }
 
   function wrapLeave() {
@@ -263,14 +298,16 @@
   if (typeof origForm === 'function' && !origForm._prb) {
     window.renderEmployeeForm = async function () {
       var r = await origForm.apply(this, arguments);
+      // Single delayed inject — race lock inside injectForm prevents duplicate #prb-box
       setTimeout(injectForm, 50);
-      setTimeout(injectForm, 400);
       return r;
     };
     window.renderEmployeeForm._prb = true;
   }
   function boot() {
-    wrapLeave(); wrapExp(); wrapAccess(); wrapCommission(); settingsBox(); injectForm();
+    wrapLeave(); wrapExp(); wrapAccess(); wrapCommission(); settingsBox();
+    cleanupDupPrbBoxes();
+    injectForm();
   }
   setInterval(boot, 1500);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
