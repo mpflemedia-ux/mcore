@@ -1,13 +1,21 @@
-/* M-Core Salary Disbursement — public "Approve & sign" upload (sd_approvals + doc-files/.../sd-approvals/). File upload or draw-to-sign (canvas -> PNG, same upload path). v2 */
+/* M-Core Salary Disbursement — public "Approve & sign" upload (sd_approvals + doc-files/.../sd-approvals/). File upload or draw-to-sign (canvas -> PNG, same upload path). v3 */
 (function () {
   var tok = window.__sdToken;
   if (!tok || window.__sdApprovePub) return; window.__sdApprovePub = 1;
   var bm = new URLSearchParams(location.search).get('lang') === 'bm', done = false, MAX = 10485760;
-  var T = bm ? { h: 'Luluskan & Tandatangan', d: 'Muat naik salinan dokumen ini yang telah ditandatangani.', open: 'Hantar dokumen bertandatangan', name: 'Nama anda', file: 'Fail (gambar atau PDF, maks 10 MB)', cam: 'Kamera', pick: 'Pilih fail', send: 'Hantar', cancel: 'Batal', wait: 'Menghantar…', need: 'Sila isi nama dan lampirkan satu fail.', big: 'Fail terlalu besar (maks 10 MB)', type: 'Jenis fail tidak disokong', ok: 'Terima kasih! Dokumen anda telah dihantar untuk disemak.', pend: 'Dihantar pada {d} · menunggu semakan', appr: 'Diluluskan', rej: 'Ditolak: {r}', fail: 'Tidak berjaya menghantar. Sila cuba lagi.', sigOpt: 'Lukis Tandatangan', sigClear: 'Padam', sigBack: 'Kembali', sigUse: 'Guna Tandatangan Ini', sigEmpty: 'Sila lukis tandatangan dahulu.', sigFile: 'Tandatangan (lukisan tangan)' }
-    : { h: 'Approve & Sign', d: 'Upload a signed copy of this document.', open: 'Send signed document', name: 'Your name', file: 'File (photo or PDF, max 10 MB)', cam: 'Camera', pick: 'Choose file', send: 'Send', cancel: 'Cancel', wait: 'Sending…', need: 'Please enter your name and attach a file.', big: 'File too large (max 10 MB)', type: 'Unsupported file type', ok: 'Thank you! Your document has been sent for review.', pend: 'Sent on {d} · waiting for review', appr: 'Approved', rej: 'Rejected: {r}', fail: 'Could not send. Please try again.', sigOpt: 'Draw Signature', sigClear: 'Clear', sigBack: 'Back', sigUse: 'Use This Signature', sigEmpty: 'Please draw your signature first.', sigFile: 'Signature (hand-drawn)' };
+  var T = bm ? { h: 'Luluskan & Tandatangan', d: 'Muat naik salinan dokumen ini yang telah ditandatangani.', open: 'Hantar dokumen bertandatangan', name: 'Nama anda', file: 'Fail (gambar atau PDF, maks 10 MB)', cam: 'Kamera', pick: 'Pilih fail', send: 'Hantar', cancel: 'Batal', wait: 'Menghantar…', need: 'Sila isi nama dan lampirkan satu fail.', big: 'Fail terlalu besar (maks 10 MB)', type: 'Jenis fail tidak disokong', ok: 'Terima kasih! Dokumen anda telah dihantar untuk disemak.', pend: 'Dihantar pada {d} · menunggu semakan', appr: 'Diluluskan', rej: 'Ditolak: {r}', fail: 'Tidak berjaya menghantar. Sila cuba lagi.', failRls: 'Tidak dapat muat naik. Pautan mungkin tamat — minta HR kongsi semula.', failRate: 'Terlalu banyak percubaan. Tunggu beberapa minit, kemudian cuba lagi.', failNet: 'Ralat rangkaian. Semak sambungan dan cuba lagi.', sigOpt: 'Lukis Tandatangan', sigClear: 'Padam', sigBack: 'Kembali', sigUse: 'Guna Tandatangan Ini', sigEmpty: 'Sila lukis tandatangan dahulu.', sigFile: 'Tandatangan (lukisan tangan)' }
+    : { h: 'Approve & Sign', d: 'Upload a signed copy of this document.', open: 'Send signed document', name: 'Your name', file: 'File (photo or PDF, max 10 MB)', cam: 'Camera', pick: 'Choose file', send: 'Send', cancel: 'Cancel', wait: 'Sending…', need: 'Please enter your name and attach a file.', big: 'File too large (max 10 MB)', type: 'Unsupported file type', ok: 'Thank you! Your document has been sent for review.', pend: 'Sent on {d} · waiting for review', appr: 'Approved', rej: 'Rejected: {r}', fail: 'Could not send. Please try again.', failRls: 'Could not upload. Link may be expired — ask HR for a new share.', failRate: 'Too many attempts. Wait a few minutes, then try again.', failNet: 'Network error. Check connection and try again.', sigOpt: 'Draw Signature', sigClear: 'Clear', sigBack: 'Back', sigUse: 'Use This Signature', sigEmpty: 'Please draw your signature first.', sigFile: 'Signature (hand-drawn)' };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function sha(b) { return crypto.subtle.digest('SHA-256', b).then(function (x) { return Array.prototype.map.call(new Uint8Array(x), function (v) { return ('0' + v.toString(16)).slice(-2); }).join(''); }); }
   function fmt(v) { return new Date(v).toLocaleDateString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }); }
+  function mapFail(e) {
+    var m = String((e && (e.message || e.error || e.error_description || e.statusCode || e)) || '').toLowerCase();
+    var st = String((e && (e.statusCode || e.status || e.code)) || '');
+    if (/rate|too many|3 submission|429/.test(m) || st === '429') return T.failRate;
+    if (/row-level security|rls|42501|permission|policy|access.?denied|jwt|unauthorized|403|401/.test(m) || st === '403' || st === '401' || st === '42501') return T.failRls;
+    if (/network|failed to fetch|timeout|offline|load failed/.test(m)) return T.failNet;
+    return T.fail;
+  }
   var OKT = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/i, EXT = /\.(jpe?g|png|webp|heic|heif|pdf)$/i;
   function mimeOf(f) {
     var t = (f && f.type) || ''; if (OKT.test(t)) return t;
@@ -106,7 +114,7 @@
       }).then(function (r) {
         if (r.error) throw r.error;
         d.innerHTML = '<div role="status" style="font-size:15px;font-weight:700;color:#166534">✓ ' + T.ok + '</div>';
-      }).catch(function (e) { try { console.error('[sd-approve-pub]', e && (e.message || e)); } catch (x) {} err(T.fail); S.disabled = false; S.textContent = T.send; });
+      }).catch(function (e) { try { console.error('[sd-approve-pub]', e && (e.message || e)); } catch (x) {} err(mapFail(e)); S.disabled = false; S.textContent = T.send; });
     };
   }
   function apply() {
@@ -115,7 +123,8 @@
       var b = window.__sdBatch, root = document.getElementById('public-sd-root');
       if (!b || !root) { setTimeout(check, 150); return; }
       done = true;
-      sb.from('sd_approvals').select('id,status,created_at,reject_reason').eq('link_id', b.link_id).order('created_at', { ascending: false }).limit(1).then(function (c) {
+      /* anon grant: id, link_id, status, created_at, deleted_at only — no reject_reason */
+      sb.from('sd_approvals').select('id,link_id,status,created_at,deleted_at').eq('link_id', b.link_id).order('created_at', { ascending: false }).limit(1).then(function (c) {
         if (c.error) return; /* sd_approval_01.sql not run */
         var last = (c.data || [])[0];
         if (last && last.status === 'pending') return box(root, '<div role="status" style="font-size:15px;font-weight:700;color:#0E7490">⏳ ' + esc(T.pend.replace('{d}', fmt(last.created_at))) + '</div>');

@@ -7,17 +7,20 @@
 <title>Salary Disbursement</title>
 <style>
   html,body{margin:0;min-height:100%;background:#F1F5F9;color:#0f172a;font-family:Inter,system-ui,sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .wrap{max-width:720px;margin:12px auto 96px;padding:20px 16px 48px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.06);box-sizing:border-box}
+  .wrap{max-width:720px;margin:12px auto 96px;padding:20px 16px 48px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.06);box-sizing:border-box;overflow:hidden}
   .muted{color:#334155;font-weight:700;font-size:12px}
   .name{font-weight:800;font-size:18px;color:#0E7490}
   .ref{font-weight:800;font-size:20px;color:#0E7490}
-  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
-  th{text-align:left;color:#334155;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e2e8f0;padding:6px 4px}
-  td{padding:8px 4px;border-bottom:1px solid #e2e8f0;color:#0f172a}
+  /* Match in-app .pdoc-sd-scroll — wide table + swipe on ~380px (Mike rejected card-stack) */
+  .psd-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;margin-top:12px}
+  table{width:max-content;min-width:100%;border-collapse:collapse;font-size:12px;margin-top:0}
+  th{text-align:left;color:#334155;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e2e8f0;padding:6px 8px;white-space:nowrap}
+  td{padding:8px 8px;border-bottom:1px solid #e2e8f0;color:#0f172a;white-space:nowrap}
   td.num,th.num{text-align:right}
   .conf{margin-top:14px;padding:8px 12px;background:#fef3c7;border:1px solid #d97706;border-radius:8px;font-size:11px;color:#78350f;text-align:center;font-weight:700}
   .err{max-width:560px;margin:60px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;color:#0f172a}
   @media(max-width:640px){.wrap{margin:8px 8px 88px;border-radius:12px}table{font-size:11px}}
+  @media print{.psd-scroll{overflow:visible!important}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -26,7 +29,7 @@
 <script>
 const SUPABASE_URL='https://wjqhhnjlgoigoagsnsen.supabase.co'
 const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw'
-const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON)
+const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
 function rm(n){return 'RM'+Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}
 const MONTHS=['','January','February','March','April','May','June','July','August','September','October','November','December']
@@ -46,12 +49,12 @@ window.__sdToken=new URLSearchParams(location.search).get('public_sd')
     +'<div class="name">'+esc(b.tenant_name)+'</div>'
     +(b.address?'<div class="muted" style="font-weight:500">'+esc(b.address)+'</div>':'')
     +'<div style="display:flex;justify-content:space-between;gap:12px;margin:16px 0 4px"><div class="muted">Salary Disbursement</div><div class="ref">'+esc(MONTHS[b.month]||b.month)+' '+esc(b.year)+'</div></div>'
-    +'<table><thead><tr><th>Name</th><th class="num">Basic</th><th class="num">Allowance</th><th class="num">Deductions</th><th class="num">OT</th><th class="num">Net Pay</th></tr></thead><tbody>'+lines+'</tbody>'
-    +'<tfoot><tr><td colspan="5" style="font-weight:800;text-align:right;padding-top:10px;border-top:2px solid #0f172a">Grand Total</td><td class="num" style="font-weight:800;font-size:14px;padding-top:10px;border-top:2px solid #0f172a">'+rm(b.grand_total_net_pay)+'</td></tr></tfoot></table>'
+    +'<div class="psd-scroll"><table><thead><tr><th>Name</th><th class="num">Basic</th><th class="num">Allowance</th><th class="num">Deductions</th><th class="num">OT</th><th class="num">Net Pay</th></tr></thead><tbody>'+lines+'</tbody>'
+    +'<tfoot><tr><td colspan="5" style="font-weight:800;text-align:right;padding-top:10px;border-top:2px solid #0f172a">Grand Total</td><td class="num" style="font-weight:800;font-size:14px;padding-top:10px;border-top:2px solid #0f172a">'+rm(b.grand_total_net_pay)+'</td></tr></tfoot></table></div>'
     +'<div class="conf">CONFIDENTIAL — For internal approval</div>'
     +'<p style="margin-top:20px;font-size:11px;color:#475569;text-align:center">View-only</p></div>'
 })()
 </script>
-<script src="./sd-approve-pub.js?v=2"></script>
+<script src="./sd-approve-pub.js?v=3"></script>
 </body>
 </html>
