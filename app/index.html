@@ -30725,7 +30725,7 @@ async function _payrollRunExecute() {
     // period and add as a gross top-up on net_pay (NOT run through EPF/SOCSO/PCB, which are
     // hardcoded to basic_salary only — same precedent as allowance/commission in _sdRowValues).
     const monthStart = year + '-' + String(month).padStart(2,'0') + '-01'
-    const monthEnd = new Date(year, month, 0).toISOString().slice(0,10)
+    const monthEnd = (typeof _dbFmtYMD === 'function') ? _dbFmtYMD(new Date(year, month, 0)) : (year + '-' + String(month).padStart(2,'0') + '-' + String(new Date(year, month, 0).getDate()).padStart(2,'0'))
     // Regenerating an "already generated" period (the checkbox for it) must not silently drop
     // OT it already consumed on a prior run — _calcPayroll() rebuilds net_pay from basic_salary
     // only, so if we only looked for payroll_record_id IS NULL, a claim this exact row already
@@ -30757,7 +30757,7 @@ async function _payrollRunExecute() {
       }
     } catch(e) { console.error('ot_claims lookup for payroll', e) }
     const otAmount = Math.round(otRows.reduce((s,c) => s + Number(c.approved_amount != null ? c.approved_amount : c.amount || 0), 0) * 100) / 100
-    if(otAmount > 0) { calc.ot_amount = otAmount; calc.net_pay = Math.round((calc.net_pay + otAmount) * 100) / 100; otTotal += otAmount }
+    calc.ot_amount = otAmount; if(otAmount > 0) { calc.net_pay = Math.round((calc.net_pay + otAmount) * 100) / 100; otTotal += otAmount }
     otDiag.push(emp && empId ? (empId.slice(0,8) + ':' + otRows.length + ' claim(s)/RM' + otAmount) : '')
     const payload = { tenant_id: APP.tenant.id, employee_id: empId, month, year, ...calc }
     let prRow=null, error=null
@@ -32203,7 +32203,7 @@ async function renderSalaryDisbursement(month, year, reviewId) {
   const grandTotal = data.reduce((s,r) => {
     const totalAllowance = Number(r.allowance_1||0)+Number(r.allowance_2||0)+Number(r.allowance_3||0)
     const totalDeduction = Number(r.advance||0)+Number(r.deduction_1||0)+Number(r.deduction_2||0)
-    return s + Number(r.basic_salary||0) + totalAllowance + Number(r.commission||0) - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - Number(r.zakat||0) - totalDeduction
+    return s + Number(r.basic_salary||0) + totalAllowance + Number(r.commission||0) + Number(r.ot_amount||0) - Number(r.epf_employee||0) - Number(r.socso_employee||0) - Number(r.eis_employee||0) - Number(r.pcb||0) - Number(r.zakat||0) - totalDeduction
   }, 0)
   // Company cost = gross earnings (basic+allow+commission) + employer statutory contributions
   const companyCost = sumSalary + sumAllow + sumCommission + sumEmployer
@@ -39759,6 +39759,7 @@ if('serviceWorker' in navigator){
 <script src="./payslip-statutory-partial-b.js?v=2"></script>
 <script src="./payslip-statutory-partial.js?v=2"></script>
 <script src="./payslip-pay-date.js?v=1"></script>
+<script src="./ot-payroll-resync.js?v=1"></script>
 <script src="./payslip-accum-outstanding.js?v=1"></script>
 <script src="./booking-free-confirm.js?v=2"></script>
 <script src="./settings-form-fit.js?v=4"></script>
