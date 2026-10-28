@@ -1,3 +1,5 @@
+-- SUPERSEDED 2026-10-29 — use nurbella_empire_writeoff_import_2026-10-29.sql (write-off + Excel SKUs).
+-- Keep for history only. Do not re-run this NBE-xxxx seed.
 -- Nurbella Empire stock. No DO block. Combo and box excluded.
 INSERT INTO public.products (tenant_id, code, name_en, name_bm, category, unit, unit_price, unit_cost, stock_qty, reorder_point)
 SELECT t.id, v.code, v.name_en, v.name_en, v.category, 'pcs', v.unit_price, 0, v.stock_qty, 5
