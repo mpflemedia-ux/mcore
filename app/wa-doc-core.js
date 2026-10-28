@@ -1,4 +1,4 @@
-/* WhatsApp document share (Phase 1) - core helpers. Needs supabase/wa_doc_01.sql; hides itself until then. v1 */
+/* WhatsApp document share (Phase 1) - core helpers. Needs supabase/wa_doc_01.sql; hides itself until then. v2 — SD share URL appends theme= from app data-theme */
 (function () {
   if (window.WAD) return;
   var W = window.WAD = {}, ready = null;
@@ -56,6 +56,14 @@
     });
   };
   W.base = function () { return (location.origin + location.pathname).replace(/index\.html$/, '').replace(/\/?$/, '/'); };
+  /* Current app display mode (user toggle) — for public-sd URL theme lock */
+  W.theme = function () {
+    try {
+      var t = document.documentElement.getAttribute('data-theme') || localStorage.getItem('mcore_theme');
+      if (t === 'light' || t === 'dark') return t;
+    } catch (e) {}
+    return null;
+  };
   var TBL = { inv: 'invoices', quo: 'quotations', sd: 'salary_disbursement_batches' }, PRM = { inv: 'public_inv', quo: 'public_quo', sd: 'public_sd' };
   function newTok() { return (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) || (Date.now().toString(36) + Math.random().toString(36).slice(2)); }
   /* ensureLink: reuse the live token, adopt a legacy token (no row yet), or rotate an expired/revoked one */
@@ -74,6 +82,8 @@
         .then(function (i) { if (i.error) throw i.error; return i.data; });
     }).then(function (row) {
       var q = PRM[type] + '=' + encodeURIComponent(tok) + (lang === 'bm' ? '&lang=bm' : '');
+      /* SD public page locks to sharer's current app theme (light|dark); old links without theme fall back to OS. */
+      if (type === 'sd') { var th = W.theme(); if (th) q += '&theme=' + th; }
       /* salary public page is standalone (no login). inv/quo keep index.html handlers. */
       var url = type === 'sd' ? (W.base() + 'public-sd.html?' + q) : (W.base() + '?' + q);
       return { id: row.id, expires_at: row.expires_at, token: tok, url: url };
