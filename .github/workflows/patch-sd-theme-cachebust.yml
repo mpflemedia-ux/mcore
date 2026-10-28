@@ -1,0 +1,26 @@
+name: patch-sd-theme-cachebust
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/patch_sd_theme_cachebust.py'
+      - '.github/workflows/patch-sd-theme-cachebust.yml'
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Bump wa-doc-core cache
+        run: python3 scripts/patch_sd_theme_cachebust.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -m "chore(hr): cache-bust wa-doc-core.js?v=4 (public-sd theme=)"
+          git push origin HEAD:main

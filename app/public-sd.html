@@ -3,8 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light dark" id="psd-color-scheme">
 <title>Salary Disbursement</title>
+<script>
+/* Lock to ?theme=light|dark from Share URL (sharer's app data-theme). Else OS prefers-color-scheme. */
+(function(){
+  try{
+    var t=new URLSearchParams(location.search).get('theme');
+    if(t!=='light'&&t!=='dark') return;
+    document.documentElement.setAttribute('data-theme',t);
+    var m=document.getElementById('psd-color-scheme'); if(m) m.setAttribute('content',t);
+    try{document.documentElement.style.colorScheme=t}catch(e){}
+  }catch(e){}
+})();
+</script>
 <style>
   :root{
     --psd-bg:#F1F5F9;
@@ -20,9 +32,15 @@
     --psd-shadow:0 4px 20px rgba(0,0,0,.06);
     --psd-card-bg:#fff;
     --psd-row-border:#e2e8f0;
+    --psd-input-bg:#fff;
+    --psd-btn-bg:#fff;
+    --psd-danger:#991b1b;
+    --psd-ok:#166534;
+    --psd-on-primary:#fff;
   }
+  /* OS dark only when theme not locked via ?theme= */
   @media (prefers-color-scheme: dark){
-    :root{
+    :root:not([data-theme]){
       --psd-bg:#0b1220;
       --psd-surface:#111827;
       --psd-border:#1f2937;
@@ -36,8 +54,68 @@
       --psd-shadow:0 4px 20px rgba(0,0,0,.35);
       --psd-card-bg:#1e293b;
       --psd-row-border:#334155;
+      --psd-input-bg:#0f172a;
+      --psd-btn-bg:#1e293b;
+      --psd-danger:#fca5a5;
+      --psd-ok:#86efac;
+      --psd-on-primary:#0b1220;
     }
   }
+  html[data-theme="dark"]{
+    color-scheme:dark;
+    --psd-bg:#0b1220;
+    --psd-surface:#111827;
+    --psd-border:#1f2937;
+    --psd-text:#f1f5f9;
+    --psd-muted:#94a3b8;
+    --psd-muted-2:#94a3b8;
+    --psd-primary:#2dd4bf;
+    --psd-conf-bg:#fbbf24;
+    --psd-conf-border:#d97706;
+    --psd-conf-text:#111827;
+    --psd-shadow:0 4px 20px rgba(0,0,0,.35);
+    --psd-card-bg:#1e293b;
+    --psd-row-border:#334155;
+    --psd-input-bg:#0f172a;
+    --psd-btn-bg:#1e293b;
+    --psd-danger:#fca5a5;
+    --psd-ok:#86efac;
+    --psd-on-primary:#0b1220;
+  }
+  html[data-theme="light"]{
+    color-scheme:light;
+    --psd-bg:#F1F5F9;
+    --psd-surface:#fff;
+    --psd-border:#e2e8f0;
+    --psd-text:#0f172a;
+    --psd-muted:#334155;
+    --psd-muted-2:#475569;
+    --psd-primary:#0E7490;
+    --psd-conf-bg:#fef3c7;
+    --psd-conf-border:#d97706;
+    --psd-conf-text:#78350f;
+    --psd-shadow:0 4px 20px rgba(0,0,0,.06);
+    --psd-card-bg:#fff;
+    --psd-row-border:#e2e8f0;
+    --psd-input-bg:#fff;
+    --psd-btn-bg:#fff;
+    --psd-danger:#991b1b;
+    --psd-ok:#166534;
+    --psd-on-primary:#fff;
+  }
+  /* Approve & Sign panel — follows --psd-* (fixes white card on dark) */
+  #sd-approve{margin-top:18px;padding:16px 14px;border:1px solid var(--psd-border);border-radius:12px;background:var(--psd-card-bg);color:var(--psd-text);text-align:left;box-sizing:border-box}
+  #sd-approve .psd-ap-sub{font-size:14px;color:var(--psd-muted);margin:4px 0 12px}
+  #sd-approve .psd-ap-lb{font-size:13px;font-weight:700;color:var(--psd-muted)}
+  #sd-approve .psd-ap-in{display:block;width:100%;box-sizing:border-box;margin:4px 0 10px;padding:10px;border:1px solid var(--psd-border);border-radius:8px;font:inherit;font-size:15px;color:var(--psd-text);background:var(--psd-input-bg)}
+  #sd-approve .psd-ap-btn{min-height:44px;padding:10px 16px;border-radius:10px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;box-sizing:border-box}
+  #sd-approve .psd-ap-btn-outline{border:1px solid var(--psd-border);background:var(--psd-btn-bg);color:var(--psd-text)}
+  #sd-approve .psd-ap-btn-primary{border:0;background:var(--psd-primary);color:var(--psd-on-primary)}
+  #sd-approve .psd-ap-btn-teal{border:1px solid var(--psd-primary);background:var(--psd-btn-bg);color:var(--psd-primary);width:100%}
+  #sd-approve canvas[data-sigcv]{width:100%;height:160px;touch-action:none;border:1px solid var(--psd-border);border-radius:8px;background:#fff;display:block}
+  #sd-approve .psd-ap-err{display:none;color:var(--psd-danger);font-size:14px;font-weight:600;margin:8px 0}
+  #sd-approve .psd-ap-ok{font-size:15px;font-weight:700;color:var(--psd-ok)}
+  #sd-approve .psd-ap-pend{font-size:15px;font-weight:700;color:var(--psd-primary)}
   html,body{margin:0;min-height:100%;background:var(--psd-bg);color:var(--psd-text);font-family:Inter,system-ui,sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .wrap{max-width:720px;margin:12px auto 96px;padding:20px 16px 48px;background:var(--psd-surface);border:1px solid var(--psd-border);border-radius:14px;box-shadow:var(--psd-shadow);box-sizing:border-box;overflow:hidden}
   .muted{color:var(--psd-muted);font-weight:700;font-size:12px}
@@ -154,6 +232,6 @@ function cardHtml(r){
     +'<p class="view-only">'+esc(L.view)+'</p></div>'
 })()
 </script>
-<script src="./sd-approve-pub.js?v=4"></script>
+<script src="./sd-approve-pub.js?v=5"></script>
 </body>
 </html>
