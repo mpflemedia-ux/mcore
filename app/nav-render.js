@@ -171,7 +171,7 @@
     NV.wrapFn('openPage', 'r', function (o) {
       return function (page) {
         var r = o.apply(this, arguments);
-        try { NV.cur = page; NV.syncAt = Date.now(); if (NV.findItem(page)) NV.touch(page); NV.quick(); NV.badges(); NV.status(); } catch (e) {}
+        try { NV.cur = NV.curOf ? NV.curOf(page, arguments[1]) : page; NV.syncAt = Date.now(); if (NV.findItem(page)) NV.touch(page); NV.quick(); NV.badges(); NV.status(); } catch (e) {}
         return r;
       };
     });
