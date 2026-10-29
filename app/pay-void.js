@@ -88,7 +88,7 @@
     try {
       if (!(await P.has('payment_voids'))) { ok[P.tid()] = false; V._legacy = 1; return _billPayVoid(billId, paymentId, amount); }
       var tid = P.tid(), amt = Number(amount || 0);
-      var bill = (await q(sb.from('supplier_bills').select('id,total,paid_amt,status,bill_no,ref_no').eq('id', billId).eq('tenant_id', tid).single())).data;
+      var bill = (await q(sb.from('supplier_bills').select('id,total,paid_amt,status,bill_no,supplier_id,suppliers(name)').eq('id', billId).eq('tenant_id', tid).single())).data;
       if (!bill) return P.toast(P.bm() ? 'Bil tidak dijumpai.' : 'Bill not found.', 'error');
       var pay = (await q(sb.from('supplier_payments').select('*').eq('id', paymentId).eq('tenant_id', tid).maybeSingle())).data;
       if (!canVoid(pay && pay.payment_date)) return;
