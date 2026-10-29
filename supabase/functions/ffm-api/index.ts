@@ -4,7 +4,7 @@ import {
   applyShipment, CORS, credentialAlert, FfmError, ffmCall, hasModule, isAdminRole, json, loadAccount, markAccount,
   notify, nowIso, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin, tenantEnabled,
 } from '../_shared/ffm-core.ts';
-import { CANCELLABLE, maskMch, normState, orderSnFor, Row, same, toMinor, feeFromDetail, validateConsignee } from '../_shared/ffm-logic.ts';
+import { barcodeOk, CANCELLABLE, ean13Ok, maskMch, normState, orderSnFor, pcsToUnits, ppuOf, Row, same, toMinor, feeFromDetail, validateConsignee } from '../_shared/ffm-logic.ts';
 
 const SAFE_FIELDS = ['label', 'base_url', 'api_prefix', 'sign_mode', 'warehouse_id', 'store_code', 'order_source_platform', 'pay_mode', 'amount_multiplier', 'accept_language', 'source_from',
   'auto_approve', 'low_stock_enabled', 'is_funded', 'sales_plan_id', 'fee_source', 'tracking_url_template', 'is_active'];
@@ -14,7 +14,8 @@ const ACCT_COLS = 'id,tenant_id,label,base_url,api_prefix,sign_mode,mch_id_maske
 class HttpErr extends Error { status: number; constructor(s: number, m: string) { super(m); this.status = s; } }
 const need = (c: unknown, m: string, s = 400) => { if (!c) throw new HttpErr(s, m); };
 
-interface Ctx { sb: SB; user: Row; tenantId: string; roles: Row }
+interface Ctx { sb: SB; user: Row; tenantId: string; roles: Row; lang: string }
+const tl = (c: Ctx, en: string, bm: string) => (c.lang === 'bm' ? bm : en);
 
 async function auth(req: Request, body: Row): Promise<Ctx> {
   const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
@@ -29,7 +30,7 @@ async function auth(req: Request, body: Row): Promise<Ctx> {
   need(tenantId, 'No tenant', 403);
   need(pa || (await tenantEnabled(sb, tenantId)), 'Flash Fulfillment is not enabled for this company', 403);
   const { data: ten } = await sb.from('tenants').select('config').eq('id', tenantId).maybeSingle();
-  return { sb, user: prof, tenantId, roles: (ten?.config && ten.config.roles) || {} };
+  return { sb, user: prof, tenantId, roles: (ten?.config && ten.config.roles) || {}, lang: String(body.lang || prof.language || '') === 'bm' ? 'bm' : 'en' };
 }
 const requireAdmin = (c: Ctx) => need(isAdminRole(c.user.role), 'Owner/admin only', 403);
 const requireMod = (c: Ctx, mods: string[]) => need(hasModule(c.user, c.roles, mods), 'No access', 403);
@@ -109,11 +110,14 @@ async function syncProducts(c: Ctx, b: Row) {
   let q = c.sb.from('products').select('id,code,name_en,name_bm,unit_price,barcode,image_url').eq('tenant_id', c.tenantId).is('deleted_at', null);
   if (Array.isArray(b.product_ids) && b.product_ids.length) q = q.in('id', b.product_ids.slice(0, 100).map(String));
   const { data: prods } = await q.limit(500);
-  const withBc = (prods || []).filter((p: Row) => String(p.barcode || '').trim());
+  const { data: lks } = await c.sb.from('ffm_product_links').select('product_id,barcode').eq('account_id', acct.id).is('deleted_at', null);
+  const lbc = new Map<string, string>((lks || []).map((l: Row) => [String(l.product_id), String(l.barcode || '').trim()] as [string, string]));
+  const bcOf = (p: Row) => lbc.get(String(p.id)) || String(p.barcode || '').trim(); // per-account link barcode, else products.barcode
+  const withBc = (prods || []).filter((p: Row) => bcOf(p));
   const skipped = (prods || []).length - withBc.length, todo = withBc.slice(0, 100), failed: Row[] = [];
   let ok = 0;
   for (const p of todo) {
-    const bc = String(p.barcode).trim(), body: Row = { barCode: bc, name: String(p.name_en || p.name_bm || p.code || bc).slice(0, 100), price: toMinor(p.unit_price, acct.amount_multiplier) };
+    const bc = bcOf(p), body: Row = { barCode: bc, name: String(p.name_en || p.name_bm || p.code || bc).slice(0, 100), price: toMinor(p.unit_price, acct.amount_multiplier) };
     if (p.code) body.goodsCode = String(p.code);
     if (p.image_url && /^https?:\/\//.test(p.image_url)) body.image = p.image_url;
     let err = '';
@@ -129,6 +133,36 @@ async function syncProducts(c: Ctx, b: Row) {
   return { ok, failed, skipped_no_barcode: skipped, remaining: Math.max(0, withBc.length - todo.length) };
 }
 
+/** Per-account FFM barcode + pcs per FFM unit for one product. Barcode change => needs re-sync; stale FFM stock row for the old barcode is soft-deleted. */
+async function saveLink(c: Ctx, b: Row) {
+  requireMod(c, ['logistics', 'inventory']);
+  const { acct } = await acctOf(c, b.account_id);
+  need(b.product_id, 'product_id required');
+  const pid = String(b.product_id), bc = String(b.barcode ?? '').trim(), ppu = Number(b.pcs_per_unit ?? 1);
+  need(barcodeOk(bc), tl(c, 'Barcode: letters and digits only (max 40).', 'Barkod: huruf dan digit sahaja (maks 40).'));
+  need(Number.isInteger(ppu) && ppu >= 1 && ppu <= 100000, tl(c, 'Pcs per unit must be a whole number of 1 or more.', 'Pcs seunit mesti nombor bulat 1 atau lebih.'));
+  const { data: prod } = await c.sb.from('products').select('id,name_en').eq('id', pid).eq('tenant_id', c.tenantId).is('deleted_at', null).maybeSingle();
+  need(prod, 'Product not found', 404);
+  const { data: lks } = await c.sb.from('ffm_product_links').select('product_id,barcode').eq('account_id', acct.id).is('deleted_at', null);
+  const mine = (lks || []).find((l: Row) => same(l.product_id, pid));
+  let clash = (lks || []).find((l: Row) => !same(l.product_id, pid) && String(l.barcode).trim() === bc)?.product_id;
+  if (!clash) { // products without a link on this account fall back to products.barcode
+    const { data: ps } = await c.sb.from('products').select('id').eq('tenant_id', c.tenantId).is('deleted_at', null).eq('barcode', bc).neq('id', pid);
+    clash = (ps || []).find((p: Row) => !(lks || []).some((l: Row) => same(l.product_id, p.id)))?.id;
+  }
+  if (clash) {
+    const { data: o } = await c.sb.from('products').select('name_en').eq('id', clash).maybeSingle();
+    need(false, tl(c, 'Barcode ' + bc + ' is already used on ' + acct.label + ' by "' + (o?.name_en || 'another product') + '".', 'Barkod ' + bc + ' sudah digunakan di ' + acct.label + ' oleh "' + (o?.name_en || 'produk lain') + '".'), 409);
+  }
+  const changed = !mine || String(mine.barcode).trim() !== bc;
+  const row: Row = { tenant_id: c.tenantId, account_id: acct.id, product_id: pid, barcode: bc, pcs_per_unit: ppu, updated_at: nowIso(), deleted_at: null };
+  if (changed) { row.synced_ok = false; row.last_error = null; }
+  const { error } = await c.sb.from('ffm_product_links').upsert(row, { onConflict: 'account_id,product_id' });
+  need(!error, error?.message?.includes('ffm_product_links_bc_uidx') ? tl(c, 'Barcode already used on this account.', 'Barkod sudah digunakan di akaun ini.') : (error?.message || 'save failed'), error?.message?.includes('bc_uidx') ? 409 : 400);
+  if (changed && mine) await c.sb.from('ffm_stock').update({ deleted_at: nowIso() }).eq('account_id', acct.id).eq('product_id', pid).neq('barcode', bc).is('deleted_at', null);
+  return { ok: true, resync: changed, ean13_warning: !ean13Ok(bc) };
+}
+
 // ---------- DO -> addOrder ----------
 async function doGoods(c: Ctx, doRow: Row, acctId: string) {
   need(doRow.invoice_id, 'DO has no linked invoice — FFM needs items');
@@ -137,18 +171,24 @@ async function doGoods(c: Ctx, doRow: Row, acctId: string) {
   need(pids.length, 'Invoice has no product lines');
   const [{ data: prods }, { data: links }] = await Promise.all([
     c.sb.from('products').select('id,name_en,barcode').eq('tenant_id', c.tenantId).in('id', pids),
-    c.sb.from('ffm_product_links').select('product_id,synced_ok').eq('account_id', acctId).is('deleted_at', null).in('product_id', pids),
+    c.sb.from('ffm_product_links').select('product_id,barcode,pcs_per_unit,synced_ok').eq('account_id', acctId).is('deleted_at', null).in('product_id', pids),
   ]);
   const pm = new Map<string, Row>((prods || []).map((p: Row) => [String(p.id), p] as [string, Row])), lm = new Map<string, Row>((links || []).map((l: Row) => [String(l.product_id), l] as [string, Row]));
   const goods = new Map<string, Row>(), problems: string[] = [];
   let total = 0;
   for (const it of items || []) {
     if (!it.product_id) continue;
-    const p: Row | undefined = pm.get(String(it.product_id)), bc = String(p?.barcode || '').trim();
+    const p: Row | undefined = pm.get(String(it.product_id)), l = lm.get(String(it.product_id)), bc = String(l?.barcode || p?.barcode || '').trim();
     if (!bc) { problems.push((p?.name_en || it.description || 'item') + ': no barcode'); continue; }
-    if (!lm.get(String(it.product_id))?.synced_ok) { problems.push((p?.name_en || bc) + ': not synced to this FFM account'); continue; }
-    const g = goods.get(bc) || { barCode: bc, num: 0, amount: 0, name: p?.name_en || it.description || bc };
-    g.num += Number(it.qty || 0); g.amount += Number(it.line_total ?? (Number(it.qty || 0) * Number(it.unit_price || 0))); goods.set(bc, g);
+    if (!l?.synced_ok) { problems.push((p?.name_en || bc) + ': not synced to this FFM account'); continue; }
+    const g = goods.get(bc) || { barCode: bc, pcs: 0, amount: 0, ppu: ppuOf(l.pcs_per_unit), name: p?.name_en || it.description || bc };
+    g.pcs += Number(it.qty || 0); g.amount += Number(it.line_total ?? (Number(it.qty || 0) * Number(it.unit_price || 0))); goods.set(bc, g); // invoice qty = M-Core pcs
+  }
+  for (const g of goods.values()) { // pcs -> FFM units ONCE here; never rounded
+    const u = pcsToUnits(g.pcs, g.ppu);
+    if (!u.ok) problems.push(tl(c, g.name + ': ' + g.pcs + ' pcs is not a whole number of FFM units (1 unit = ' + g.ppu + ' pcs). Change the quantity to a multiple of ' + g.ppu + '.',
+      g.name + ': ' + g.pcs + ' pcs bukan bilangan unit FFM yang bulat (1 unit = ' + g.ppu + ' pcs). Tukar kuantiti kepada gandaan ' + g.ppu + '.'));
+    g.num = u.units;
   }
   total = Array.from(goods.values()).reduce((a, g) => a + g.amount, 0);
   return { goods: Array.from(goods.values()).filter((g) => g.num > 0), problems, total };
@@ -172,8 +212,9 @@ async function sendOrder(c: Ctx, b: Row) {
   need(!(prior || []).some((s: Row) => !['failed', 'cancelled'].includes(String(s.status))), 'This DO already has a live FFM order');
   const orderSn = orderSnFor(doRow.do_no || doRow.id, (prior || []).length);
   const payMode = String(b.pay_mode || acct.pay_mode || '2'), mult = acct.amount_multiplier || 100;
-  const ffmGoods = goods.map((g) => ({ barCode: g.barCode, num: String(g.num), price: toMinor(g.num ? g.amount / g.num : 0, mult), discountPrice: '0', externalName: String(g.name).slice(0, 100) }));
-  const { data: ship, error: insErr } = await c.sb.from('ffm_shipments').insert({ tenant_id: c.tenantId, account_id: acct.id, delivery_order_id: doRow.id, invoice_id: doRow.invoice_id, order_sn: orderSn, status: 'sending', consignee: cons, goods: ffmGoods, total_amount: total, created_by: c.user.id }).select('*').single();
+  const ffmGoods = goods.map((g) => ({ barCode: g.barCode, num: String(g.num), price: toMinor(g.num ? g.amount / g.num : 0, mult), discountPrice: '0', externalName: String(g.name).slice(0, 100) })); // num = FFM units, price per FFM unit
+  const keptGoods = goods.map((g, i) => ({ ...ffmGoods[i], pcs_per_unit: g.ppu, pcs: g.pcs })); // stored copy for display (units + pcs); FFM body stays clean
+  const { data: ship, error: insErr } = await c.sb.from('ffm_shipments').insert({ tenant_id: c.tenantId, account_id: acct.id, delivery_order_id: doRow.id, invoice_id: doRow.invoice_id, order_sn: orderSn, status: 'sending', consignee: cons, goods: keptGoods, total_amount: total, created_by: c.user.id }).select('*').single();
   need(!insErr, insErr?.message?.includes('uidx') ? 'This DO already has a live FFM order' : (insErr?.message || 'insert failed'), 409);
   const body: Row = {
     storeCode: String(acct.store_code), orderSn, orderSourceCode: orderSn, orderSourcePlatform: acct.order_source_platform || 'Line',
@@ -252,16 +293,19 @@ async function createAsn(c: Ctx, b: Row) {
   need(pids.length, 'PO has no product lines');
   const [{ data: prods }, { data: links }] = await Promise.all([
     c.sb.from('products').select('id,name_en,barcode').eq('tenant_id', c.tenantId).in('id', pids),
-    c.sb.from('ffm_product_links').select('product_id,synced_ok').eq('account_id', acct.id).is('deleted_at', null).in('product_id', pids),
+    c.sb.from('ffm_product_links').select('product_id,barcode,pcs_per_unit,synced_ok').eq('account_id', acct.id).is('deleted_at', null).in('product_id', pids),
   ]);
   const pm = new Map<string, Row>((prods || []).map((p: Row) => [String(p.id), p] as [string, Row])), lm = new Map<string, Row>((links || []).map((l: Row) => [String(l.product_id), l] as [string, Row]));
   const problems: string[] = [], goods: Row[] = [];
   for (const it of items || []) {
     if (!it.product_id) continue;
-    const p: Row | undefined = pm.get(String(it.product_id)), bc = String(p?.barcode || '').trim();
+    const p: Row | undefined = pm.get(String(it.product_id)), l = lm.get(String(it.product_id)), bc = String(l?.barcode || p?.barcode || '').trim();
     if (!bc) { problems.push((p?.name_en || it.description || 'item') + ': no barcode'); continue; }
-    if (!lm.get(String(it.product_id))?.synced_ok) { problems.push((p?.name_en || bc) + ': not synced to this FFM account'); continue; }
-    if (Number(it.qty) > 0) goods.push({ i: String(goods.length + 1), barCode: bc, num: String(Number(it.qty)), price: toMinor(it.unit_cost, acct.amount_multiplier) });
+    if (!l?.synced_ok) { problems.push((p?.name_en || bc) + ': not synced to this FFM account'); continue; }
+    if (!(Number(it.qty) > 0)) continue;
+    const k = ppuOf(l.pcs_per_unit), u = pcsToUnits(Number(it.qty), k); // PO qty = M-Core pcs -> FFM units, no rounding
+    if (!u.ok) { problems.push(tl(c, (p?.name_en || bc) + ': ' + Number(it.qty) + ' pcs is not a whole number of FFM units (1 unit = ' + k + ' pcs).', (p?.name_en || bc) + ': ' + Number(it.qty) + ' pcs bukan bilangan unit FFM yang bulat (1 unit = ' + k + ' pcs).')); continue; }
+    goods.push({ i: String(goods.length + 1), barCode: bc, num: String(u.units), price: toMinor(Number(it.unit_cost || 0) * k, acct.amount_multiplier) });
   }
   if (problems.length || !goods.length) return { ok: false, problems: problems.length ? problems : ['No goods'] };
   const { data: prior } = await c.sb.from('ffm_asn').select('id,status,last_error,ffm_order_id').eq('purchase_order_id', po.id).eq('account_id', acct.id).is('deleted_at', null);
@@ -308,7 +352,7 @@ async function recon(c: Ctx) { requireMod(c, ['logistics', 'inventory']); return
 
 const ACTIONS: Record<string, (c: Ctx, b: Row) => Promise<Row>> = {
   save_account: saveAccount, delete_account: deleteAccount, test: testAccount, sync_products: syncProducts, send_order: sendOrder, cancel: cancelOrder,
-  label, tracking, fee, create_asn: createAsn, refresh_asn: refreshAsn, sync_stock: syncStock, recon,
+  save_link: saveLink, label, tracking, fee, create_asn: createAsn, refresh_asn: refreshAsn, sync_stock: syncStock, recon,
 };
 
 Deno.serve(async (req) => {

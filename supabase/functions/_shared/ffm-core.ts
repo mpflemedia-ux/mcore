@@ -1,7 +1,7 @@
 // M-Core FFM connector — server I/O shared by ffm-api / ffm-webhook / ffm-cron (service role only).
 // Keys are read here from ffm_account_secrets and never returned to any client.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { doStatusFor, nextStatus, NOTIFY_STATUS, nonce, POLL_STATE, Row, same, signAlg1, signAlg2, TERMINAL } from './ffm-logic.ts';
+import { doStatusFor, nextStatus, NOTIFY_STATUS, nonce, POLL_STATE, ppuOf, Row, same, signAlg1, signAlg2, TERMINAL, unitsToPcs } from './ffm-logic.ts';
 
 export const DEFAULT_BASE = 'https://open.flashfulfillment.my';
 export const env = (k: string) => Deno.env.get(k) || '';
@@ -211,21 +211,30 @@ async function lowStock(sb: SB, acct: Row): Promise<number> {
   if (!st?.length) return 0;
   const { data: ps } = await sb.from('products').select('id,name_en,name_bm,reorder_point').eq('tenant_id', acct.tenant_id).is('deleted_at', null).in('id', st.map((x: Row) => x.product_id));
   const pm = new Map<string, Row>((ps || []).map((p: Row) => [String(p.id), p] as [string, Row]));
+  const { data: lk } = await sb.from('ffm_product_links').select('product_id,pcs_per_unit').eq('account_id', acct.id).is('deleted_at', null);
+  const ppu = new Map<string, number>((lk || []).map((l: Row) => [String(l.product_id), ppuOf(l.pcs_per_unit)] as [string, number]));
   let n = 0;
   for (const s of st) {
     const p: Row | undefined = pm.get(String(s.product_id)); if (!p) continue;
     const rp = p.reorder_point == null ? 5 : Number(p.reorder_point);
-    if (Number(s.available_qty) > rp) continue;
+    const k = ppu.get(String(s.product_id)) || 1, pcs = unitsToPcs(s.available_qty, k); // reorder_point is in M-Core pcs
+    if (pcs > rp) continue;
     const day = mytDay();
     if (!(await claim(sb, { tenant_id: acct.tenant_id, account_id: acct.id, source: 'cron', method: 'low_stock', dedupe_key: 'low:' + acct.id + ':' + p.id + ':' + day }))) continue;
     n++;
     const nm = p.name_en || s.barcode, nb = p.name_bm || nm;
     await notify(sb, { tenantId: acct.tenant_id, ev: 'low_stock', ref: acct.id + ':' + p.id + ':' + day, prio: 0,
       title: ['FFM low stock (' + acct.label + '): ' + nm, 'Stok FFM rendah (' + acct.label + '): ' + nb],
-      body: ['Available ' + s.available_qty + ' ≤ reorder point ' + rp, 'Tersedia ' + s.available_qty + ' ≤ paras pesanan semula ' + rp],
+      body: ['Available ' + qtyTxt(s.available_qty, k, 'en') + ' ≤ reorder point ' + rp + ' pcs', 'Tersedia ' + qtyTxt(s.available_qty, k, 'bm') + ' ≤ paras pesanan semula ' + rp + ' pcs'],
       link: { page: 'logistics', params: { view: 'ffm', tab: 'stock' }, icon: 'ti-box' }, refTable: 'products', refId: p.id, mods: ['logistics', 'inventory'] });
   }
   return n;
+}
+
+/** '36 ctn (864 pcs)' / '36 ktn (864 pcs)'; 'unit' when pcs_per_unit = 1. */
+export function qtyTxt(units: unknown, ppu: unknown, lg: string): string {
+  const k = ppuOf(ppu), u = Number(units || 0);
+  return u + ' ' + (k > 1 ? (lg === 'bm' ? 'ktn' : 'ctn') : 'unit') + ' (' + unitsToPcs(u, k) + ' pcs)';
 }
 
 // ---------- ASN ----------
@@ -253,17 +262,20 @@ export async function applyAsn(sb: SB, acct: Row, sec: Row | null, asn: Row, sta
 
 export const isLive = (s: string) => !TERMINAL.includes(String(s)) && s !== 'sending';
 
-// ---------- daily reconciliation: products.stock_qty (M-Core) vs SUM(ffm_stock.total_qty) across the tenant's FFM accounts ----------
+// ---------- daily reconciliation: products.stock_qty (M-Core) vs SUM(ffm_stock.total_qty × link.pcs_per_unit) in pcs across the tenant's FFM accounts ----------
 export async function reconTenant(sb: SB, tenantId: string, actorId: string | null = null): Promise<Row> {
   const day = mytDay();
   const { data: accts } = await sb.from('ffm_accounts').select('id,label').eq('tenant_id', tenantId).is('deleted_at', null).eq('is_active', true);
   const ids = (accts || []).map((a: Row) => a.id);
   if (!ids.length) return { run_date: day, product_count: 0, diff_count: 0 };
   const { data: st } = await sb.from('ffm_stock').select('account_id,product_id,total_qty,available_qty').in('account_id', ids).is('deleted_at', null).not('product_id', 'is', null);
+  const { data: lk } = await sb.from('ffm_product_links').select('account_id,product_id,pcs_per_unit').in('account_id', ids).is('deleted_at', null);
+  const ppu = new Map<string, number>((lk || []).map((l: Row) => [l.account_id + ':' + l.product_id, ppuOf(l.pcs_per_unit)] as [string, number]));
   const agg = new Map<string, Row>();
-  for (const s of st || []) {
-    const k = String(s.product_id), a = agg.get(k) || { total: 0, available: 0, by: {} as Row };
-    a.total += Number(s.total_qty || 0); a.available += Number(s.available_qty || 0); a.by[String(s.account_id)] = Number(s.total_qty || 0); agg.set(k, a);
+  for (const s of st || []) { // FFM qty is in FFM units -> pcs (× pcs_per_unit of that account's link); M-Core stock_qty is pcs
+    const k = String(s.product_id), a = agg.get(k) || { total: 0, available: 0, by: {} as Row, units: {} as Row }, f = ppu.get(s.account_id + ':' + s.product_id) || 1;
+    const tp = unitsToPcs(s.total_qty, f);
+    a.total += tp; a.available += unitsToPcs(s.available_qty, f); a.by[String(s.account_id)] = tp; a.units[String(s.account_id)] = { units: Number(s.total_qty || 0), ppu: f }; agg.set(k, a);
   }
   const pids = Array.from(agg.keys());
   const { data: ps } = pids.length ? await sb.from('products').select('id,code,name_en,name_bm,stock_qty').eq('tenant_id', tenantId).is('deleted_at', null).in('id', pids) : { data: [] };
@@ -271,7 +283,7 @@ export async function reconTenant(sb: SB, tenantId: string, actorId: string | nu
   for (const p of ps || []) {
     const a = agg.get(String(p.id)); if (!a) continue;
     const m = Number(p.stock_qty || 0), diff = Math.round((m - a.total) * 1000) / 1000;
-    rows.push({ product_id: p.id, code: p.code || '', name_en: p.name_en || '', name_bm: p.name_bm || '', mcore_qty: m, ffm_total: a.total, ffm_available: a.available, by_account: a.by, diff });
+    rows.push({ product_id: p.id, code: p.code || '', name_en: p.name_en || '', name_bm: p.name_bm || '', mcore_qty: m, ffm_total: a.total, ffm_available: a.available, by_account: a.by, by_account_units: a.units, diff });
   }
   rows.sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff));
   const diffCount = rows.filter((r) => r.diff !== 0).length;

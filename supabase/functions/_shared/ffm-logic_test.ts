@@ -1,6 +1,6 @@
 // deno test supabase/functions/_shared/ffm-logic_test.ts
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { alg1String, alg2String, dedupeKey, feeFromDetail, hmacOk, hmacSign, nextStatus, orderSnFor, sha256Upper, signAlg1, signAlg2, toMinor, validateConsignee } from './ffm-logic.ts';
+import { barcodeOk, ean13Ok, pcsToUnits, ppuOf, unitsToPcs, alg1String, alg2String, dedupeKey, feeFromDetail, hmacOk, hmacSign, nextStatus, orderSnFor, sha256Upper, signAlg1, signAlg2, toMinor, validateConsignee } from './ffm-logic.ts';
 
 const KEY = 'dd807a8e18b40153888e5a9864e70080';
 Deno.test('Algorithm 1 — FFM doc vector', async () => {
@@ -51,4 +51,16 @@ Deno.test('validation, amounts, keys', () => {
   assertEquals(orderSnFor('DO-0001', 2), 'DO-0001-R3');
   assertEquals(dedupeKey({ method: 'deliveryOrder', orderId: 'DO1', state: '1014', opTime: 5 }), 'wh:deliveryOrder:DO1:1014:5');
   assertEquals(feeFromDetail({ orderFee: [{ shippingOriginalFee: 1000, shippingPlatformDiscount: 200, shippingBuyerPaid: 300 }] }), 5);
+});
+
+Deno.test('pack size: pcs <-> FFM units, no rounding', () => {
+  assertEquals(pcsToUnits(864, 24), { ok: true, units: 36 });
+  assertEquals(pcsToUnits(50, 24).ok, false);
+  assertEquals(pcsToUnits(7, 1), { ok: true, units: 7 });
+  assertEquals(unitsToPcs(36, 24), 864);
+  assertEquals(ppuOf(0), 1); assertEquals(ppuOf('24'), 24); assertEquals(ppuOf(1.5), 1);
+});
+Deno.test('barcode validation + EAN-13 checksum (KeraVive real codes)', () => {
+  assert(barcodeOk('9555277201519')); assert(barcodeOk('AB12')); assert(!barcodeOk('')); assert(!barcodeOk('95-55')); assert(!barcodeOk('9555 277'));
+  assert(ean13Ok('9555277201519')); assert(ean13Ok('9555277201526')); assert(!ean13Ok('9555277201510')); assert(ean13Ok('12345'));
 });

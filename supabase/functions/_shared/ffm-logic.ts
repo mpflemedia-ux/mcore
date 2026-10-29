@@ -117,3 +117,22 @@ export function dedupeKey(p: Row): string {
 }
 /** Order SN for a DO attempt: DO no, then DO-R2, DO-R3 ... after failed/cancelled attempts. */
 export function orderSnFor(doNo: string, priorAttempts: number): string { const base = String(doNo || '').trim().replace(/[^\w-]/g, ''); return priorAttempts > 0 ? base + '-R' + (priorAttempts + 1) : base; }
+
+// ---------- pack size (pcs per FFM unit) + per-account barcode ----------
+/** pcs_per_unit as a positive integer (default 1). */
+export const ppuOf = (v: unknown): number => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : 1; };
+/** M-Core pcs -> FFM units. Never rounds: ok=false when pcs is not a whole multiple of ppu. */
+export function pcsToUnits(pcs: number, ppu: unknown): { ok: boolean; units: number } {
+  const p = ppuOf(ppu), q = Number(pcs || 0), u = q / p;
+  return { ok: Number.isInteger(u), units: u };
+}
+/** FFM units -> M-Core pcs. */
+export const unitsToPcs = (units: unknown, ppu: unknown): number => Number(units || 0) * ppuOf(ppu);
+/** Barcode rule: 1–40 letters/digits only. */
+export const barcodeOk = (bc: unknown): boolean => /^[A-Za-z0-9]{1,40}$/.test(String(bc ?? '').trim());
+/** EAN-13 check digit (warning only). Non-13-digit codes are not EAN-13 → true. */
+export function ean13Ok(bc: unknown): boolean {
+  const s = String(bc ?? '').trim(); if (!/^\d{13}$/.test(s)) return true;
+  let sum = 0; for (let i = 0; i < 12; i++) sum += Number(s[i]) * (i % 2 ? 3 : 1);
+  return (10 - (sum % 10)) % 10 === Number(s[12]);
+}
