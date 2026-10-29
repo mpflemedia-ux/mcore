@@ -1520,6 +1520,14 @@ html[data-skip-intro="1"] #intro-skip {
   }
 }
 
+/* Payment Voucher form — nowrap buttons with wrap; single column on phones */
+.pv-form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.pv-form-actions .btn,.pv-detail-actions .btn{white-space:nowrap}
+@media (max-width:480px){
+  #pv-form-grid{grid-template-columns:1fr!important}
+  #pv-form-grid > .form-group{grid-column:auto!important}
+}
+
 /* mobile polish — filter chips wrap, tables scroll, primary actions reachable */
 @media (max-width: 640px) {
   #inv-status-filters, #quo-status-filters, #bill-status-filters, #po-status-filters,
@@ -16780,11 +16788,14 @@ async function _backfillHistoricalJournals(cutoffDate, dryRun) {
   }
 
   // 4) Supplier bills with paid_amt > 0 — same one-entry-per-bill simplification as invoices
-  const {data: bills} = await sb.from('supplier_bills').select('id,ref_no,total,paid_amt,bill_date')
+  const {data: bills} = await sb.from('supplier_bills').select('id,bill_no,supplier_id,total,paid_amt,bill_date,suppliers(name)')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).gt('paid_amt',0).lt('bill_date',cutoffDate)
   report.bills.candidates = (bills||[]).length
   for(const bill of (bills||[])) {
     if(await _journalAlreadyPosted('supplier_bills', bill.id)) { report.bills.skippedExisting++; continue }
+    // Payments already journaled per-payment (Record Payment / PV) → don't post again
+    if(await _billHasPaymentJournals(bill.id)) { report.bills.skippedExisting++; continue }
+    bill.ref_no = bill.bill_no || bill.ref_no || String(bill.id).slice(0,8)
     const apAcc = await _getDefaultAccountId('accounts_payable')
     const cashAcc = await _getDefaultAccountId('cash')
     if(!apAcc || !cashAcc) { report.bills.skippedNoMapping++; continue }
@@ -28045,7 +28056,7 @@ async function _billSave(id) {
     due_date: document.getElementById('bf-due-date').value||null,
     total: Number(total),
   }
-  let error
+  let error, insRow = null
   if(id) {
     ({error} = await sb.from('supplier_bills').update(payload).eq('id',id).eq('tenant_id',APP.tenant.id))
   } else {
@@ -28053,11 +28064,15 @@ async function _billSave(id) {
     payload.bill_no = refData || await _genFallbackRefNo('supplier_bills','bill_no','BILL')
     payload.status = 'unpaid'
     payload.paid_amt = 0
-    ;({error} = await sb.from('supplier_bills').insert(payload))
+    ;({data: insRow, error} = await sb.from('supplier_bills').insert(payload).select('id').single())
   }
   if(error) { errEl.textContent='Error: '+error.message; errEl.style.display='block'; return }
-  auditLog(id?'update':'create','supplier_bills', id||null)
+  auditLog(id?'update':'create','supplier_bills', id||insRow?.id||null)
   showToast(isBm?'Bil disimpan!':'Bill saved!', 'success')
+  if(!id && insRow?.id) {
+    const supSel = document.getElementById('bf-supplier')
+    _pvbNotify('bill_created', { id: insRow.id, bill_no: payload.bill_no, supplier: supSel && supSel.selectedIndex>=0 ? supSel.options[supSel.selectedIndex].text : '', total: payload.total, due_date: payload.due_date })
+  }
   openPage('purchasing',{view:'bills'})
 }
 
@@ -28184,6 +28199,27 @@ async function _billPayClearJournals(paymentId, billId) {
   return cleared
 }
 
+// Bill already has per-payment journals (Record Payment → supplier_payments, or PV → payment_vouchers)?
+// Conservative: on any lookup error, report true so backfill never double-posts.
+async function _billHasPaymentJournals(billId) {
+  try {
+    const tid = APP.tenant.id
+    const [spRes, pvRes] = await Promise.all([
+      sb.from('supplier_payments').select('id').eq('tenant_id',tid).eq('bill_id',billId).limit(200),
+      sb.from('payment_vouchers').select('id').eq('tenant_id',tid).eq('bill_id',billId).limit(200)
+    ])
+    if(spRes.error || pvRes.error) return true
+    const checks = [['supplier_payments',(spRes.data||[]).map(r=>r.id)],['payment_vouchers',(pvRes.data||[]).map(r=>r.id)]]
+    for(const [tbl, ids] of checks) {
+      if(!ids.length) continue
+      const {data, error} = await sb.from('journal_entries').select('id').eq('tenant_id',tid).eq('source_table',tbl).in('source_id',ids).limit(1)
+      if(error) return true
+      if(data && data.length) return true
+    }
+    return false
+  } catch(e) { console.warn('_billHasPaymentJournals', e); return true }
+}
+
 async function _billPayVoid(billId, paymentId, amount) {
   const isBm = APP.language==='bm'
   if(window.PAYV&&PAYV.on&&PAYV.on()) return PAYV.bill(billId, paymentId, amount)
@@ -28214,8 +28250,8 @@ async function _billPaySave(billId, balance) {
   errEl.style.display = 'none'
   if(amount<=0 || amount>balance+0.005) { errEl.textContent = isBm?'Jumlah bayaran tidak sah.':'Invalid payment amount.'; errEl.style.display='block'; return }
 
-  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt,ref_no,bill_no').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
-  if(!bill) { errEl.textContent='Bill not found.'; errEl.style.display='block'; return }
+  const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt,bill_no,supplier_id,suppliers(name)').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
+  if(!bill) { errEl.textContent=isBm?'Bil tidak dijumpai.':'Bill not found.'; errEl.style.display='block'; return }
   if(window.PAYX&&PAYX.before&&!(await PAYX.before('bill'))) return
 
   const payDate = document.getElementById('bill-pay-date').value
@@ -28255,7 +28291,7 @@ async function _billPaySave(billId, balance) {
   try { if(window.PAYX&&PAYX.after) await PAYX.after('bill', payRow?.id, billId) } catch(e) { console.warn('PAYX.after', e) }
   auditLog('create','supplier_payments', payRow?.id || billId)
   showToast(isBm?'Bayaran direkod!':'Payment recorded!', 'success')
-  try { _tgActivity('sales', isBm?'M-Core · Bayaran direkod':'M-Core · Payment recorded') } catch(e) {}
+  try { _tgActivity('purchasing', isBm?'M-Core · Bayaran bil pembekal direkod':'M-Core · Supplier bill payment recorded') } catch(e) {}
   renderSupplierBillDetail(billId)
 }
 
@@ -28648,7 +28684,7 @@ async function _pvSoftDelete(id) {
   if(!id) return
   if(!confirm(isBm ? 'Padam baucar ini? Ia akan disembunyikan, bukan dipadam kekal.' : 'Delete this voucher? It will be hidden, not removed permanently.')) return
   const {error} = await sb.from('payment_vouchers').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', APP.tenant.id)
-  if(error) { showToast('Error: '+error.message, 'error'); return }
+  if(error) { showToast((isBm?'Ralat: ':'Error: ')+error.message, 'error'); return }
   showToast(isBm?'Baucar dipadam.':'Voucher deleted.', 'success')
   openPage('vouchers', {})
 }
@@ -28673,41 +28709,83 @@ async function _pvVoidFromList(id, refNo, status) {
 async function renderPVForm(id, billId) {
   const isBm = APP.language==='bm'
   const t = isBm
-    ? { titleAdd:'Baucar Bayaran Baru', titleEdit:'Edit Baucar', back:'Baucar Bayaran', date:'Tarikh', payee:'Nama Penerima *', amount:'Jumlah (RM) *', method:'Kaedah Bayaran', bank:'Bank', cheque:'No. Cek / Rujukan', desc:'Keterangan / Tujuan', bill:'Link Bil Pembekal', none:'— Tiada —', save:'Simpan Draf', cancel:'Batal', supplier:'Pembekal' }
-    : { titleAdd:'New Payment Voucher', titleEdit:'Edit Voucher', back:'Payment Vouchers', date:'Date', payee:'Payee Name *', amount:'Amount (RM) *', method:'Payment Method', bank:'Bank', cheque:'Cheque / Ref No.', desc:'Description / Purpose', bill:'Link Supplier Bill', none:'— None —', save:'Save Draft', cancel:'Cancel', supplier:'Supplier' }
+    ? { titleAdd:'Baucar Bayaran Baru', titleEdit:'Edit Baucar', back:'Baucar Bayaran', date:'Tarikh', payee:'Nama Penerima *', amount:'Jumlah (RM) *', method:'Kaedah Bayaran', bank:'Bank', cheque:'No. Cek / Rujukan', desc:'Keterangan / Tujuan', bill:'Link Bil Pembekal', none:'— Tiada —', save:'Simpan Draf', cancel:'Batal', supplier:'Pembekal', notFound:'Baucar tidak dijumpai.', loadErr:'Senarai bil pembekal gagal dimuat. Link bil sedia ada dikekalkan semasa simpan.', keepLinked:'(Kekalkan bil yang dilink)', paidTag:'Dibayar' }
+    : { titleAdd:'New Payment Voucher', titleEdit:'Edit Voucher', back:'Payment Vouchers', date:'Date', payee:'Payee Name *', amount:'Amount (RM) *', method:'Payment Method', bank:'Bank', cheque:'Cheque / Ref No.', desc:'Description / Purpose', bill:'Link Supplier Bill', none:'— None —', save:'Save Draft', cancel:'Cancel', supplier:'Supplier', notFound:'Voucher not found.', loadErr:'Could not load supplier bills. The existing bill link is kept on save.', keepLinked:'(Keep linked bill)', paidTag:'Paid' }
   let v = null
   if(id) {
-    const {data} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    const {data, error: vErr} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(vErr || !data) {
+      document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`
+      showToast(t.notFound,'error')
+      return
+    }
     v = data
   }
-  const [{data: bills}, {data: suppliers}] = await Promise.all([
-    sb.from('supplier_bills').select('id,ref_no,total,paid_amt,status,supplier_name').eq('tenant_id',APP.tenant.id).in('status',['unpaid','partial','pending','approved']).is('deleted_at',null).order('bill_date',{ascending:false}).limit(100),
-    sb.from('suppliers').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name').limit(200)
+  // supplier_bills has bill_no + supplier_id (no ref_no / supplier_name) — a missing
+  // column makes PostgREST fail the whole query, which used to leave this dropdown
+  // empty and made Save wipe the linked bill_id.
+  const BILL_COLS = 'id,bill_no,supplier_id,total,paid_amt,status,bill_date,suppliers(name)'
+  const linkedId = (v && v.bill_id) || billId || ''
+  const [billsRes, suppliersRes, linkedRes] = await Promise.all([
+    sb.from('supplier_bills').select(BILL_COLS).eq('tenant_id',APP.tenant.id).in('status',['unpaid','partial','pending','approved']).is('deleted_at',null).order('bill_date',{ascending:false}).limit(100),
+    sb.from('suppliers').select('id,name').eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name').limit(500),
+    linkedId ? sb.from('supplier_bills').select(BILL_COLS).eq('id',linkedId).eq('tenant_id',APP.tenant.id).maybeSingle() : Promise.resolve({data:null, error:null})
   ])
-  // Prefill from bill
-  let prefill = { payee_name:'', amount:'', bill_id: billId||'', supplier_id:'' }
-  if(billId && !v) {
-    const {data: b} = await sb.from('supplier_bills').select('*').eq('id',billId).eq('tenant_id',APP.tenant.id).single()
-    if(b) {
-      prefill.payee_name = b.supplier_name || ''
-      prefill.amount = Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
-      prefill.bill_id = b.id
-      prefill.supplier_id = b.supplier_id || ''
-    }
+  const billLoadFailed = !!(billsRes.error || linkedRes.error)
+  if(billLoadFailed) {
+    console.warn('PV form: supplier bills load failed', billsRes.error || linkedRes.error)
+    showToast(t.loadErr,'error')
+  }
+  const bills = (billsRes.data||[]).slice()
+  // Always include the linked bill (even when already paid) so it stays preselected
+  if(linkedRes.data && !bills.some(b=>String(b.id)===String(linkedRes.data.id))) bills.unshift(linkedRes.data)
+  const supName = b => (b && b.suppliers && b.suppliers.name) || ''
+  const billNo = b => (b && (b.bill_no || b.ref_no)) || (b && b.id ? String(b.id).slice(0,8) : '')
+  const billBal = b => Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
+  // Prefill from bill (opened from Bill detail → Payment Voucher)
+  let prefill = { payee_name:'', amount:'', bill_id: billId||'', supplier_id:'', payee_type:'' }
+  if(billId && !v && linkedRes.data) {
+    const b = linkedRes.data
+    prefill.payee_name = supName(b)
+    prefill.amount = billBal(b)
+    prefill.bill_id = b.id
+    prefill.supplier_id = b.supplier_id || ''
+    prefill.payee_type = 'supplier'
   }
   const src = v || prefill
+  window._pvFormState = {
+    id: id || '',
+    origBillId: (v && v.bill_id) || '',
+    origSupplierId: (v && v.supplier_id) || '',
+    origPayeeType: (v && v.payee_type) || '',
+    origPayee: (v && v.payee_name) || '',
+    origStatus: (v && v.status) || '',
+    billLoadFailed,
+    bills: bills.map(b=>({ id: b.id, supplier_id: b.supplier_id || '', supplier: supName(b) })),
+    suppliers: suppliersRes.data || []
+  }
   const today = new Date().toISOString().slice(0,10)
+  const methods = [['Bank Transfer','Pindahan Bank'],['Cheque','Cek'],['Cash','Tunai'],['Online Banking','Perbankan Dalam Talian'],['Other','Lain-lain']]
+  const curMethod = src.payment_method || 'Bank Transfer'
+  if(!methods.some(m=>m[0]===curMethod)) methods.push([curMethod, curMethod])
+  const billOptions = billLoadFailed
+    ? `<option value="${_aiEscapeHtml(src.bill_id||'')}" selected>${src.bill_id ? t.keepLinked : t.none}</option>`
+    : `<option value="">${t.none}</option>` + bills.map(b=>{
+        const bal = billBal(b)
+        const paidTag = String(b.status||'').toLowerCase()==='paid' ? ' · '+t.paidTag : ''
+        return `<option value="${b.id}" data-payee="${_aiEscapeHtml(supName(b))}" data-bal="${bal}" ${(String(src.bill_id||'')===String(b.id))?'selected':''}>${_aiEscapeHtml(billNo(b))} — ${_aiEscapeHtml(supName(b))} (${formatRM(bal)})${paidTag}</option>`
+      }).join('')
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div>
     <div class="page-title">${id?t.titleEdit:t.titleAdd}</div>
-    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{})">← ${t.back}</div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;white-space:nowrap" onclick="openPage('vouchers',{})"><i class="ti ti-arrow-left"></i> ${t.back}</button>
   </div></div>
   <div class="card" style="max-width:720px;padding:20px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div id="pv-form-grid" class="form-row" style="gap:14px">
       <div class="form-group"><label class="form-label">${t.date}</label><input id="pv-date" type="date" class="form-input" value="${src.voucher_date||today}"></div>
       <div class="form-group"><label class="form-label">${t.method}</label>
         <select id="pv-method" class="form-select">
-          ${['Bank Transfer','Cheque','Cash','Online Banking','Other'].map(m=>`<option ${((src.payment_method||'Bank Transfer')===m)?'selected':''}>${m}</option>`).join('')}
+          ${methods.map(m=>`<option value="${_aiEscapeHtml(m[0])}" ${(curMethod===m[0])?'selected':''}>${_aiEscapeHtml(isBm?m[1]:m[0])}</option>`).join('')}
         </select>
       </div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.payee}</label><input id="pv-payee" class="form-input" value="${_aiEscapeHtml(src.payee_name||'')}"></div>
@@ -28715,18 +28793,15 @@ async function renderPVForm(id, billId) {
       <div class="form-group"><label class="form-label">${t.bank}</label><input id="pv-bank" class="form-input" value="${_aiEscapeHtml(src.bank_name||'')}"></div>
       <div class="form-group"><label class="form-label">${t.cheque}</label><input id="pv-cheque" class="form-input" value="${_aiEscapeHtml(src.cheque_no||'')}"></div>
       <div class="form-group"><label class="form-label">${t.bill}</label>
-        <select id="pv-bill" class="form-select" onchange="_pvOnBillChange()">
-          <option value="">${t.none}</option>
-          ${(bills||[]).map(b=>{
-            const bal = Number(b.total||0)-Number(b.paid_amt||0)
-            return `<option value="${b.id}" data-payee="${_aiEscapeHtml(b.supplier_name||'')}" data-bal="${bal}" ${(src.bill_id===b.id)?'selected':''}>${_aiEscapeHtml(b.ref_no||b.id.slice(0,8))} — ${_aiEscapeHtml(b.supplier_name||'')} (${formatRM(bal)})</option>`
-          }).join('')}
+        <select id="pv-bill" class="form-select" onchange="_pvOnBillChange()" ${billLoadFailed?'disabled':''}>
+          ${billOptions}
         </select>
+        ${billLoadFailed?`<div style="font-size:12px;color:var(--danger);margin-top:4px">${t.loadErr}</div>`:''}
       </div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">${t.desc}</label><textarea id="pv-desc" class="form-input" rows="3">${_aiEscapeHtml(src.description||'')}</textarea></div>
     </div>
     <div id="pv-form-err" style="display:none;color:var(--danger);font-size:13px;margin-top:10px"></div>
-    <div style="display:flex;gap:8px;margin-top:16px">
+    <div class="pv-form-actions">
       <button class="btn btn-primary" onclick="_pvSave('${id||''}')"><i class="ti ti-check"></i> ${t.save}</button>
       <button class="btn btn-outline" onclick="openPage('vouchers',{})">${t.cancel}</button>
     </div>
@@ -28741,7 +28816,8 @@ function _pvOnBillChange() {
   const bal = opt.getAttribute('data-bal') || ''
   const pe = document.getElementById('pv-payee')
   const am = document.getElementById('pv-amount')
-  if(pe && payee && !pe.value.trim()) pe.value = payee
+  // Auto-fill payee from the bill's supplier (only when empty or still the previous auto-fill)
+  if(pe && payee && (!pe.value.trim() || pe.dataset.autoPayee === pe.value)) { pe.value = payee; pe.dataset.autoPayee = payee }
   if(am && bal && (!am.value || Number(am.value)===0)) am.value = Number(bal).toFixed(2)
 }
 
@@ -28753,16 +28829,33 @@ async function _pvSave(id) {
   const amount = Number(document.getElementById('pv-amount').value||0)
   if(!payee) { err.textContent = isBm?'Nama penerima diperlukan.':'Payee name is required.'; err.style.display='block'; return }
   if(amount<=0) { err.textContent = isBm?'Jumlah mesti lebih daripada 0.':'Amount must be greater than 0.'; err.style.display='block'; return }
+  const st0 = window._pvFormState
+  const st = (st0 && String(st0.id||'')===String(id||'')) ? st0 : {}
+  const sel = document.getElementById('pv-bill')
+  // Bill list failed to load → never send null; keep the voucher's existing bill_id
+  const billId = st.billLoadFailed ? (st.origBillId || null) : ((sel && sel.value) || null)
+  const pick = billId ? (st.bills||[]).find(b=>String(b.id)===String(billId)) : null
+  const norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'')
+  let supplierId = null, payeeType = (st.origPayeeType && st.origPayeeType!=='supplier') ? st.origPayeeType : 'other'
+  if(pick && pick.supplier_id) { supplierId = pick.supplier_id; payeeType = 'supplier' }
+  else if(billId && st.origSupplierId) { supplierId = st.origSupplierId; payeeType = 'supplier' }
+  else {
+    const m = (st.suppliers||[]).find(s=>norm(s.name) && norm(s.name)===norm(payee))
+    if(m) { supplierId = m.id; payeeType = 'supplier' }
+    else if(st.origSupplierId && norm(payee)===norm(st.origPayee)) { supplierId = st.origSupplierId; payeeType = 'supplier' }
+  }
   const payload = {
     tenant_id: APP.tenant.id,
     voucher_date: document.getElementById('pv-date').value || new Date().toISOString().slice(0,10),
     payee_name: payee,
+    payee_type: payeeType,
+    supplier_id: supplierId,
     amount,
     payment_method: document.getElementById('pv-method').value,
     bank_name: document.getElementById('pv-bank').value.trim() || null,
     cheque_no: document.getElementById('pv-cheque').value.trim() || null,
     description: document.getElementById('pv-desc').value.trim() || null,
-    bill_id: document.getElementById('pv-bill').value || null,
+    bill_id: billId,
     status: 'draft',
     updated_at: new Date().toISOString()
   }
@@ -28773,13 +28866,18 @@ async function _pvSave(id) {
   } else {
     payload.ref_no = await _genFallbackRefNo('payment_vouchers','ref_no','PV')
     payload.created_at = new Date().toISOString()
+    payload.prepared_by = APP.user.name || APP.user.email || null
     const res = await sb.from('payment_vouchers').insert(payload).select('id').single()
     error = res.error
     newId = res.data?.id
   }
-  if(error) { err.textContent = 'Error: '+error.message; err.style.display='block'; return }
+  if(error) { err.textContent = (isBm?'Ralat: ':'Error: ')+error.message; err.style.display='block'; return }
   auditLog(id?'update':'create','payment_vouchers', newId)
   showToast(isBm?'Baucar disimpan.':'Voucher saved.', 'success')
+  // New PV, or an approved PV edited back to draft → needs (re)approval
+  if(newId && (!id || (st.origStatus && st.origStatus!=='draft'))) {
+    _pvbNotify('pv_submitted', { id:newId, ref_no: payload.ref_no || null, payee, amount })
+  }
   openPage('vouchers',{view:'pv-detail',id:newId})
 }
 
@@ -28794,13 +28892,15 @@ async function renderPVDetail(id) {
   const accent = _pdocAccentGet('pv')
   _pdocSetPageOrientation('portrait')
   const printFn = `PV_${_pdocSlug(v.ref_no)}_${_pdocSlug(v.payee_name)}_${_pdocDateStamp(v.voucher_date)}`.replace(/'/g,"\\'")
-  const stColor = v.status==='paid'?'var(--success)':v.status==='approved'?'#3B82F6':v.status==='void'?'var(--danger)':'var(--warning)'
+  const stColor = v.status==='paid'?'var(--success)':v.status==='approved'?'var(--info)':v.status==='void'?'var(--danger)':'var(--warning)'
+  const pvRole = String(APP.user?.role||'').toLowerCase()
+  const canVoidPaid = ['owner','admin','finance','accountant'].includes(pvRole) || (typeof isPlatformAdmin==='function' && !!isPlatformAdmin())
   document.getElementById('main').innerHTML = `
   <div class="page-header no-print"><div>
     <div class="page-title">${_aiEscapeHtml(v.ref_no||'PV')}</div>
-    <div style="font-size:13px;color:var(--text-3);margin-top:2px;cursor:pointer" onclick="openPage('vouchers',{})">← ${t.back}</div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;white-space:nowrap" onclick="openPage('vouchers',{})"><i class="ti ti-arrow-left"></i> ${t.back}</button>
   </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div class="pv-detail-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       ${_pdocColorPickerHtml('pv', accent)}
       <button class="btn btn-outline" onclick="_pdocSetPageOrientation('portrait');_pdocSetPrintFilename('${printFn}_'+_pdocTimeStamp());window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
       <button class="btn btn-outline" onclick="_pvShareEmail('${id}')"><i class="ti ti-mail"></i> Email</button>
@@ -28808,13 +28908,13 @@ async function renderPVDetail(id) {
       ${(v.status==='draft'||v.status==='approved')?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_pvSoftDelete('${id}')"><i class="ti ti-trash"></i> ${isBm?'Padam':'Delete'}</button>`:''}
       ${v.status==='draft'?`<button class="btn btn-primary btn-sm" onclick="_pvSetStatus('${id}','approved')"><i class="ti ti-check"></i> ${t.approve}</button>`:''}
       ${v.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="_pvMarkPaid('${id}')"><i class="ti ti-cash"></i> ${t.markPaid}</button>`:''}
-      ${v.status!=='void'&&v.status!=='paid'?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_pvSetStatus('${id}','void')">${t.void}</button>`:''}
+      ${(v.status!=='void'&&v.status!=='paid') || (v.status==='paid'&&canVoidPaid)?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="_pvSetStatus('${id}','void')">${t.void}</button>`:''}
     </div>
   </div>
   ${_pvDocHtml(v, tn, isBm, accent)}
   <div class="no-print" style="max-width:720px;margin:12px auto 0;font-size:12px;color:var(--text-3)">
     Status: <strong style="color:${stColor}">${t[v.status]==null?v.status:t[v.status==='void'?'voided':v.status]}</strong>
-    ${v.bill_id?` · Bill linked` : ''}
+    ${v.bill_id?` · <a href="javascript:void(0)" style="color:var(--primary)" onclick="openPage('purchasing',{view:'bill-detail',id:'${v.bill_id}'})">${isBm?'Bil pembekal dilink':'Supplier bill linked'}</a>` : ''}
   </div>`
 }
 
@@ -28869,14 +28969,120 @@ function _pvDocHtml(v, tn, isBm, accent) {
   </div>`
 }
 
+// ─── PV / Supplier Bill notifications — NT.notify only (bell + push), actor excluded by NT ───
+// evt: pv_submitted | pv_approved | pv_paid | pv_void | bill_created
+async function _pvbNotify(evt, o) {
+  try {
+    if(!window.NT || typeof NT.notify!=='function' || !APP.tenant?.id) return 0
+    o = o || {}
+    const tid = APP.tenant.id
+    const L = NT.L
+    let roles = [], people = [], title = '', body = '', link = null, refTable = 'payment_vouchers', refId = o.id
+    if(evt === 'bill_created') {
+      roles = ['owner','admin','finance']
+      refTable = 'supplier_bills'
+      title = L('New supplier bill: ','Bil pembekal baru: ') + (o.bill_no||'')
+      body = [o.supplier||'', formatRM(Number(o.total||0)), o.due_date ? L('Due ','Tamat ')+formatDate(o.due_date) : ''].filter(Boolean).join(' · ')
+      link = { page:'purchasing', params:{ view:'bill-detail', id:o.id } }
+    } else {
+      const {data: pv} = await sb.from('payment_vouchers').select('id,ref_no,payee_name,amount,prepared_by').eq('id',o.id).eq('tenant_id',tid).maybeSingle()
+      if(!pv) return 0
+      const ref = pv.ref_no || o.ref_no || ''
+      const head = {
+        pv_submitted: L('Payment voucher awaiting approval: ','Baucar bayaran menunggu kelulusan: '),
+        pv_approved:  L('Payment voucher approved: ','Baucar bayaran diluluskan: '),
+        pv_paid:      L('Payment voucher paid: ','Baucar bayaran dibayar: '),
+        pv_void:      L('Payment voucher voided: ','Baucar bayaran dibatalkan: ')
+      }[evt]
+      if(!head) return 0
+      title = head + ref
+      body = [pv.payee_name||'', formatRM(Number(pv.amount||0))].filter(Boolean).join(' · ')
+      link = { page:'vouchers', params:{ view:'pv-detail', id:pv.id } }
+      if(evt === 'pv_submitted') roles = ['owner','admin','finance','accountant']
+      else if(evt === 'pv_approved') people = [pv.prepared_by]
+      else { roles = ['owner','admin']; people = [pv.prepared_by] }
+    }
+    // Resolve recipients inside THIS tenant only (roles ∪ preparer by name/email), one id each
+    const {data: ups} = await sb.from('user_profiles').select('id,role,full_name,email').eq('tenant_id',tid)
+    const want = people.map(s=>String(s||'').trim().toLowerCase()).filter(Boolean)
+    const ids = []
+    ;(ups||[]).forEach(u=>{
+      const r = String(u.role||'').toLowerCase()
+      const hit = roles.indexOf(r)>=0 || (want.length && (want.indexOf(String(u.full_name||'').trim().toLowerCase())>=0 || want.indexOf(String(u.email||'').trim().toLowerCase())>=0))
+      if(hit && ids.indexOf(u.id)<0) ids.push(u.id)
+    })
+    if(!ids.length) return 0
+    return await NT.notify({
+      type: 'approval.'+evt, category: 'approval', kind: 'for_you',
+      title, body, link, ref_table: refTable, ref_id: refId,
+      users: ids, tenant_id: tid, group_key: refTable+':'+refId+':'+evt
+    })
+  } catch(e) { console.warn('_pvbNotify', evt, e); return 0 }
+}
+
+// Void of a PAID voucher linked to a bill: remove the bill payment it created
+// (archived to payment_voids when available — same as pay-void.js), reverse the
+// bill's paid_amt/status, and remove the cashbook `payments` row.
+async function _pvReverseBillPayment(v) {
+  const tid = APP.tenant.id
+  const amt = Math.round(Number(v.amount||0)*100)/100
+  const ref = v.ref_no || ''
+  const out = { sp:0, pay:0, bill:false, warn:[] }
+  if(v.bill_id) {
+    let sp = null
+    const r1 = await sb.from('supplier_payments').select('*').eq('tenant_id',tid).eq('bill_id',v.bill_id).eq('memo','PV '+ref).limit(1)
+    if(!r1.error && r1.data && r1.data.length) sp = r1.data[0]
+    if(!sp && v.paid_at) {
+      // Older rows (no memo column): same bill + amount, created within ±10 min of PV paid_at
+      const t0 = new Date(new Date(v.paid_at).getTime() - 600000).toISOString()
+      const t1 = new Date(new Date(v.paid_at).getTime() + 600000).toISOString()
+      const r2 = await sb.from('supplier_payments').select('*').eq('tenant_id',tid).eq('bill_id',v.bill_id).eq('amount',amt).gte('created_at',t0).lte('created_at',t1).order('created_at',{ascending:false}).limit(1)
+      if(!r2.error && r2.data && r2.data.length) sp = r2.data[0]
+    }
+    if(sp) {
+      try {
+        if(window.PAYX && typeof PAYX.has==='function' && await PAYX.has('payment_voids')) {
+          await sb.from('payment_voids').insert({
+            tenant_id: tid, kind:'supplier_payment', payment_id: sp.id, bill_id: v.bill_id, ref_no: ref || null,
+            payment_date: sp.payment_date || null, payment_method: sp.method || null, amount: Number(sp.amount||0),
+            reason: 'PV void '+ref, snapshot: { payment: sp, payment_voucher_id: v.id },
+            voided_by: (typeof PAYX.isPA==='function' && PAYX.isPA()) ? null : (APP.user && APP.user.id) || null
+          })
+        }
+      } catch(e) { console.warn('PV void archive', e) }
+      const {error: dErr} = await sb.from('supplier_payments').delete().eq('id',sp.id).eq('tenant_id',tid)
+      if(dErr) out.warn.push(dErr.message); else out.sp = 1
+    }
+    const {data: bill} = await sb.from('supplier_bills').select('id,total,paid_amt').eq('id',v.bill_id).eq('tenant_id',tid).maybeSingle()
+    if(bill) {
+      const newPaid = Math.max(0, Math.round((Number(bill.paid_amt||0) - amt)*100)/100)
+      const total = Number(bill.total||0)
+      const newStatus = newPaid <= 0.005 ? 'unpaid' : (newPaid >= total - 0.005 ? 'paid' : 'partial')
+      const {error: bErr} = await sb.from('supplier_bills').update({ paid_amt:newPaid, status:newStatus }).eq('id',bill.id).eq('tenant_id',tid)
+      if(bErr) out.warn.push(bErr.message); else out.bill = true
+    }
+  }
+  // Cashbook row written by _pvMarkPaid (bill-linked or not)
+  try {
+    const {data: pays} = await sb.from('payments').select('id,amount,notes').eq('tenant_id',tid).eq('ref_no',ref).eq('payment_type','payment')
+    const mine = (pays||[]).filter(p=>String(p.notes||'').indexOf('Payment Voucher '+ref)===0 && Math.abs(Number(p.amount||0)-amt)<0.005)
+    if(mine.length) {
+      const {error: pErr} = await sb.from('payments').delete().in('id', mine.map(p=>p.id)).eq('tenant_id',tid)
+      if(pErr) out.warn.push(pErr.message); else out.pay = mine.length
+    }
+  } catch(e) { out.warn.push(String(e && e.message || e)) }
+  return out
+}
+
 async function _pvSetStatus(id, status) {
   const isBm = APP.language==='bm'
+  let cur = null
   if(status === 'void') {
-    const {data: cur} = await sb.from('payment_vouchers').select('status,ref_no').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    ;({data: cur} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single())
     if(cur && String(cur.status||'').toLowerCase() === 'paid') {
       if(!confirm(isBm
-        ? `Baucar ${cur.ref_no||''} sudah dibayar. Batalkan dan bersihkan jurnal?`
-        : `Voucher ${cur.ref_no||''} is paid. Void and clear related journals?`)) return
+        ? `Baucar ${cur.ref_no||''} sudah dibayar. Batalkan, pulihkan baki bil, buang rekod bayaran dan bersihkan jurnal?`
+        : `Voucher ${cur.ref_no||''} is paid. Void it, restore the bill balance, remove the payment records and clear related journals?`)) return
     } else if(cur && String(cur.status||'').toLowerCase() === 'void') {
       showToast(isBm?'Sudah dibatalkan.':'Already void.','info'); return
     } else if(!confirm(isBm ? 'Batalkan baucar ini?' : 'Void this voucher?')) return
@@ -28885,14 +29091,22 @@ async function _pvSetStatus(id, status) {
   if(status==='approved') patch.approved_by = APP.user.name || APP.user.email
   if(status==='draft') { /* noop */ }
   const {error} = await sb.from('payment_vouchers').update(patch).eq('id',id).eq('tenant_id',APP.tenant.id)
-  if(error) { showToast('Error: '+error.message,'error'); return }
-  // When voiding, reverse / clear auto-posted journals for this PV
+  if(error) { showToast((isBm?'Ralat: ':'Error: ')+error.message,'error'); return }
+  // When voiding: reverse bill payment + cashbook row (paid PVs), then clear auto-posted journals
   if(status === 'void') {
+    if(cur && String(cur.status||'').toLowerCase() === 'paid') {
+      try {
+        const r = await _pvReverseBillPayment(cur)
+        if(r.warn.length) showToast((isBm?'Amaran: ':'Warning: ')+r.warn.join('; '),'error')
+      } catch(e) { console.warn('PV void reverse', e) }
+    }
     const n = await _pvClearJournals(id)
     if(n) console.info('PV void cleared journals:', n)
   }
   auditLog('update','payment_vouchers', id)
   showToast(isBm ? (status==='void'?'Baucar dibatalkan.':'Status dikemaskini.') : (status==='void'?'Voucher voided.':'Status updated.'), 'success')
+  if(status==='approved') _pvbNotify('pv_approved', { id })
+  else if(status==='void') _pvbNotify('pv_void', { id })
   if(document.getElementById('pv-list-wrap')) renderPVList()
   else renderPVDetail(id)
 }
@@ -28900,8 +29114,9 @@ async function _pvSetStatus(id, status) {
 async function _pvMarkPaid(id) {
   const isBm = APP.language==='bm'
   const {data: v} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
-  if(!v) { showToast('Not found','error'); return }
+  if(!v) { showToast(isBm?'Baucar tidak dijumpai.':'Voucher not found.','error'); return }
   if(v.status==='paid') { showToast(isBm?'Sudah dibayar.':'Already paid.','error'); return }
+  if(v.status==='void') { showToast(isBm?'Baucar ini telah dibatalkan.':'This voucher is void.','error'); return }
   const voucherDate = v.voucher_date || new Date().toISOString().slice(0,10)
   // Checked up front, before any write — step 3 below inserts into
   // `payments`, which the period-lock DB trigger now also guards. Without
@@ -28911,34 +29126,58 @@ async function _pvMarkPaid(id) {
   // failures) — leaving the voucher marked paid with no actual payment or
   // journal entry behind it, and no error shown to the user.
   if(!assertNotPeriodLocked(voucherDate)) return
+  const amt = Math.round(Number(v.amount||0)*100)/100
+  const memo = 'PV '+(v.ref_no||'')
 
-  // 1) Update PV
+  // 0) Linked bill: validate before any write (exists, no duplicate, amount ≤ balance)
+  let bill = null
+  if(v.bill_id) {
+    const {data: b, error: be} = await sb.from('supplier_bills').select('id,bill_no,total,paid_amt,status').eq('id',v.bill_id).eq('tenant_id',APP.tenant.id).maybeSingle()
+    if(be || !b) { showToast(isBm?'Bil pembekal yang dilink tidak dijumpai.':'Linked supplier bill not found.','error'); return }
+    bill = b
+    const dup = await sb.from('supplier_payments').select('id').eq('tenant_id',APP.tenant.id).eq('bill_id',b.id).eq('memo',memo).limit(1)
+    if(!dup.error && dup.data && dup.data.length) { showToast(isBm?`Bayaran ${memo} sudah direkod pada bil ini.`:`Payment ${memo} is already recorded on this bill.`,'error'); return }
+    const bal = Math.max(0, Math.round((Number(b.total||0) - Number(b.paid_amt||0))*100)/100)
+    if(amt > bal + 0.005) {
+      showToast(isBm
+        ? `Jumlah baucar (${formatRM(amt)}) melebihi baki bil ${b.bill_no||''} (${formatRM(bal)}).`
+        : `Voucher amount (${formatRM(amt)}) exceeds bill ${b.bill_no||''} balance (${formatRM(bal)}).`,'error')
+      return
+    }
+    const same = await sb.from('supplier_payments').select('id').eq('tenant_id',APP.tenant.id).eq('bill_id',b.id).eq('amount',amt).eq('payment_date',voucherDate).limit(1)
+    if(!same.error && same.data && same.data.length && !confirm(isBm
+      ? 'Bil ini sudah ada bayaran dengan jumlah dan tarikh yang sama. Teruskan juga?'
+      : 'This bill already has a payment with the same amount and date. Continue anyway?')) return
+  }
+
+  // 1) Bill payment row first — the bill is only touched if this insert succeeds
+  let spId = null
+  if(bill) {
+    const base = { tenant_id: APP.tenant.id, bill_id: bill.id, payment_date: voucherDate, amount: amt, method: v.payment_method || 'Bank Transfer' }
+    let ins = await sb.from('supplier_payments').insert(Object.assign({ memo }, base)).select('id').single()
+    if(ins.error && /memo/i.test(ins.error.message||'')) ins = await sb.from('supplier_payments').insert(base).select('id').single()
+    if(ins.error) { showToast((isBm?'Ralat: ':'Error: ')+ins.error.message,'error'); return }
+    spId = ins.data && ins.data.id
+  }
+
+  // 2) Update PV
   const {error: e1} = await sb.from('payment_vouchers').update({
     status: 'paid',
     paid_at: new Date().toISOString(),
     approved_by: v.approved_by || APP.user.name || APP.user.email,
     updated_at: new Date().toISOString()
   }).eq('id',id).eq('tenant_id',APP.tenant.id)
-  if(e1) { showToast('Error: '+e1.message,'error'); return }
+  if(e1) {
+    if(spId) await sb.from('supplier_payments').delete().eq('id',spId).eq('tenant_id',APP.tenant.id)
+    showToast((isBm?'Ralat: ':'Error: ')+e1.message,'error'); return
+  }
 
-  // 2) Reflect on supplier bill if linked
-  if(v.bill_id) {
-    try {
-      const {data: bill} = await sb.from('supplier_bills').select('total,paid_amt').eq('id',v.bill_id).eq('tenant_id',APP.tenant.id).single()
-      if(bill) {
-        await sb.from('supplier_payments').insert({
-          tenant_id: APP.tenant.id,
-          bill_id: v.bill_id,
-          payment_date: voucherDate,
-          amount: Number(v.amount||0),
-          method: v.payment_method || 'Bank Transfer',
-          notes: 'PV '+ (v.ref_no||'')
-        })
-        const newPaid = Number(bill.paid_amt||0) + Number(v.amount||0)
-        const newStatus = newPaid >= Number(bill.total) - 0.005 ? 'paid' : 'partial'
-        await sb.from('supplier_bills').update({ paid_amt: newPaid, status: newStatus }).eq('id',v.bill_id).eq('tenant_id',APP.tenant.id)
-      }
-    } catch(e) { console.warn('PV bill reflect', e) }
+  // 2b) Reflect on supplier bill (payment row exists)
+  if(bill) {
+    const newPaid = Math.round((Number(bill.paid_amt||0) + amt)*100)/100
+    const newStatus = newPaid >= Number(bill.total||0) - 0.005 ? 'paid' : 'partial'
+    const {error: e2} = await sb.from('supplier_bills').update({ paid_amt: newPaid, status: newStatus }).eq('id',bill.id).eq('tenant_id',APP.tenant.id)
+    if(e2) { console.warn('PV bill reflect', e2); showToast((isBm?'Amaran: baki bil tidak dikemaskini — ':'Warning: bill balance not updated — ')+e2.message,'error') }
   }
 
   // 3) Optional outflow payment row (cashbook-ish)
@@ -28982,6 +29221,7 @@ async function _pvMarkPaid(id) {
 
   auditLog('update','payment_vouchers', id)
   showToast(isBm?'Baucar ditanda dibayar. Kewangan dikemaskini.':'Voucher marked paid. Financials updated.','success')
+  _pvbNotify('pv_paid', { id })
   renderPVDetail(id)
 }
 
@@ -40069,7 +40309,7 @@ if('serviceWorker' in navigator){
 <script src="./pay-core.js?v=1"></script>
 <script src="./pay-ui.js?v=1"></script>
 <script src="./pay-sheet.js?v=3"></script>
-<script src="./pay-void.js?v=1"></script>
+<script src="./pay-void.js?v=2"></script>
 <script src="./pay-vlist.js?v=1"></script>
 <script src="./pay-claim.js?v=3"></script>
 <script src="./pay-rcpt.js?v=1"></script>
