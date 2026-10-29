@@ -2,7 +2,7 @@
 // Credentials are WRITE-ONLY: save_account stores mchId/key server-side; nothing secret is ever returned.
 import {
   applyShipment, CORS, credentialAlert, FfmError, ffmCall, hasModule, isAdminRole, json, loadAccount, markAccount,
-  notify, nowIso, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin,
+  notify, nowIso, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin, tenantEnabled,
 } from '../_shared/ffm-core.ts';
 import { CANCELLABLE, maskMch, normState, orderSnFor, Row, same, toMinor, feeFromDetail, validateConsignee } from '../_shared/ffm-logic.ts';
 
@@ -27,6 +27,7 @@ async function auth(req: Request, body: Row): Promise<Ctx> {
   const pa = String(prof.role || '').toLowerCase() === 'platform_admin';
   const tenantId = pa && body.tenant_id ? String(body.tenant_id) : String(prof.tenant_id || '');
   need(tenantId, 'No tenant', 403);
+  need(pa || (await tenantEnabled(sb, tenantId)), 'Flash Fulfillment is not enabled for this company', 403);
   const { data: ten } = await sb.from('tenants').select('config').eq('id', tenantId).maybeSingle();
   return { sb, user: prof, tenantId, roles: (ten?.config && ten.config.roles) || {} };
 }

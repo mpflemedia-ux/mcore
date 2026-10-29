@@ -1,7 +1,7 @@
 // ffm-webhook — FFM push endpoint (verify_jwt = false). URL: https://<project>.supabase.co/functions/v1/ffm-webhook
 // Auth: Authorization = HMAC-SHA256(appSecret, appKey + rawJson) per FFM docs. Idempotent via ffm_events.dedupe_key.
 // If the matched account has NO webhook secret yet, the push is only a trigger: state is re-fetched from the FFM API (never trusted).
-import { applyAsn, applyShipment, claim, CORS, credentialAlert, nowIso, pollAsn, pollShipment, pullStock, SB, sbAdmin } from '../_shared/ffm-core.ts';
+import { applyAsn, applyShipment, claim, CORS, credentialAlert, nowIso, tenantEnabled, pollAsn, pollShipment, pullStock, SB, sbAdmin } from '../_shared/ffm-core.ts';
 import { dedupeKey, hmacOk, RETURN_STATE, Row, WEBHOOK_STATE } from '../_shared/ffm-logic.ts';
 
 const ok = () => new Response(JSON.stringify({ code: 1, msg: 'success' }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -100,6 +100,7 @@ Deno.serve(async (req) => {
     return fail(401, 'signature');
   }
   const { acct, sec } = hit;
+  if (!(await tenantEnabled(sb, String(acct.tenant_id)))) return ok(); // tenant not FFM-enabled: ack, no updates/notifications
   const key = acct.id + ':' + dedupeKey(p);
   if (!(await claim(sb, { tenant_id: acct.tenant_id, account_id: acct.id, method: String(p.method), dedupe_key: key, verified, payload: p }))) return ok(); // duplicate
   try {

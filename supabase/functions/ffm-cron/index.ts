@@ -1,7 +1,7 @@
 // ffm-cron — pg_cron entry (verify_jwt = false; x-push-secret must equal PUSH_CRON_SECRET, same as pj-auto).
 // tick (every 30 min): FFM stock pull -> ffm_stock (NEVER products.stock_qty) + low-stock alerts; poll live shipments; poll pending ASNs.
 // recon (daily 07:15 MYT): M-Core stock_qty vs FFM per tenant -> ffm_recon_runs + notification when diffs.
-import { credentialAlert, env, FfmError, isLive, json, CORS, markAccount, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin } from '../_shared/ffm-core.ts';
+import { credentialAlert, enabledTenants, env, FfmError, isLive, json, CORS, markAccount, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin } from '../_shared/ffm-core.ts';
 import { Row, secretOk } from '../_shared/ffm-logic.ts';
 
 const msg = (e: unknown) => String((e as Error)?.message || e);
@@ -29,7 +29,9 @@ Deno.serve(async (req) => {
   if (!secretOk(req.headers.get('x-push-secret'), env('PUSH_CRON_SECRET'))) return json({ error: 'unauthorized' }, 401);
   let b: Row = {}; try { b = await req.json(); } catch { b = {}; }
   const sb = sbAdmin(), t0 = Date.now();
-  const { data: accts } = await sb.from('ffm_accounts').select('*').is('deleted_at', null).eq('is_active', true).eq('has_api_key', true);
+  const { data: all } = await sb.from('ffm_accounts').select('*').is('deleted_at', null).eq('is_active', true).eq('has_api_key', true);
+  const on = await enabledTenants(sb);
+  const accts = (all || []).filter((a: Row) => on.has(String(a.tenant_id))); // FFM-enabled tenants only
   if (b.action === 'recon') {
     const tenants = Array.from(new Set<string>((accts || []).map((a: Row) => String(a.tenant_id))));
     const res: Row[] = [];

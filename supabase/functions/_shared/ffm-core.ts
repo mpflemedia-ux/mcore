@@ -71,6 +71,16 @@ const DEFAULT_ROLE_MODULES: Row = {
   manager: ['crm', 'sales', 'pos', 'sales_commission', 'sales_academy', 'inventory', 'logistics', 'purchasing', 'production', 'hr_attendance', 'hr_employees', 'hr_payroll', 'hr_recruit', 'accounting', 'vouchers', 'reports'],
   accountant: ['accounting', 'vouchers', 'reports', 'purchasing', 'sales', 'crm', 'sales_academy'], cashier: ['pos', 'sales'], staff: ['hr_attendance', 'sales_academy'],
 };
+// Tenant gate (platform-managed ffm_tenant_access). Platform admin bypass is applied by callers.
+export async function tenantEnabled(sb: SB, tenantId: string): Promise<boolean> {
+  if (!tenantId) return false;
+  const { data, error } = await sb.from('ffm_tenant_access').select('enabled').eq('tenant_id', tenantId).is('deleted_at', null).maybeSingle();
+  return !error && !!data && data.enabled === true;
+}
+export async function enabledTenants(sb: SB): Promise<Set<string>> {
+  const { data } = await sb.from('ffm_tenant_access').select('tenant_id').eq('enabled', true).is('deleted_at', null);
+  return new Set<string>((data || []).map((r: Row) => String(r.tenant_id)));
+}
 export function isAdminRole(role: unknown): boolean { const r = String(role || '').toLowerCase().trim(); return r === 'owner' || r === 'admin' || r === 'platform_admin'; }
 export function userMods(u: Row, roles: Row): string[] {
   if (Array.isArray(u.module_override)) return u.module_override.map(String);
