@@ -163,25 +163,33 @@
 
     function acctPicker(accts, cur) { return '<select class="form-select" id="ffm-acct-pick" style="max-width:260px">' + accts.map(function (a) { return '<option value="' + esc(a.id) + '"' + (F.same(a.id, cur) ? ' selected' : '') + '>' + esc(a.label + (a.is_funded ? ' · ' + t('Funded', 'Dibiayai') : '')) + '</option>'; }).join('') + '</select>'; }
 
-    /* ---------- Products ---------- */
+    /* ---------- Products (per-account FFM barcode + pcs per FFM unit) ---------- */
     async function productsTab(body, accts, accountId) {
       var acct = accts.find(function (a) { return F.same(a.id, accountId); }) || accts[0];
       var rs = await Promise.all([
         sb.from('products').select('id,code,name_en,name_bm,barcode').eq('tenant_id', F.tid()).is('deleted_at', null).order('name_en').limit(1000),
-        sb.from('ffm_product_links').select('product_id,synced_ok,last_synced_at,last_error').eq('account_id', acct.id).is('deleted_at', null)
+        sb.from('ffm_product_links').select('product_id,barcode,pcs_per_unit,synced_ok,last_synced_at,last_error').eq('account_id', acct.id).is('deleted_at', null)
       ]);
       var prods = rs[0].data || [], links = {}; (rs[1].data || []).forEach(function (l) { links[String(l.product_id)] = l; });
-      var withBc = prods.filter(function (p) { return String(p.barcode || '').trim(); }), noBc = prods.length - withBc.length;
+      var bcOf = function (p) { var l = links[String(p.id)]; return String((l && l.barcode) || p.barcode || '').trim(); };
+      var nBc = prods.filter(bcOf).length, noBc = prods.length - nBc;
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px">' + acctPicker(accts, acct.id) +
-        '<button type="button" class="btn btn-primary btn-sm" id="ffm-sync"' + (withBc.length ? '' : ' disabled') + '><i class="ti ti-refresh"></i> ' + esc(t('Sync products with barcode', 'Segerak produk berbarkod')) + ' (' + withBc.length + ')</button>' +
+        '<button type="button" class="btn btn-primary btn-sm" id="ffm-sync"' + (nBc ? '' : ' disabled') + '><i class="ti ti-refresh"></i> ' + esc(t('Sync products with barcode', 'Segerak produk berbarkod')) + ' (' + nBc + ')</button>' +
         (noBc ? '<span class="ffm-muted">' + esc(t(noBc + ' product(s) without barcode are skipped', noBc + ' produk tanpa barkod dilangkau')) + '</span>' : '') + '</div>' +
-        (withBc.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('Barcode', 'Barkod')) + '</th><th>' + esc(t('FFM', 'FFM')) + '</th></tr></thead><tbody>' +
-          withBc.map(function (p) {
-            var l = links[String(p.id)], s = !l ? '<span class="badge badge-gray">' + esc(t('Not synced', 'Belum segerak')) + '</span>' : l.synced_ok ? '<span class="badge badge-green">' + esc(t('Synced', 'Disegerak')) + '</span> <span class="ffm-muted">' + esc(F.dt(l.last_synced_at)) + '</span>' : '<span class="badge badge-red">' + esc(t('Error', 'Ralat')) + '</span><div class="ffm-err">' + esc(l.last_error || '') + '</div>';
-            return '<tr><td>' + esc(typeof prodName === 'function' ? prodName(p) : (p.name_en || p.code)) + '</td><td>' + esc(p.barcode) + '</td><td>' + s + '</td></tr>';
+        '<p class="ffm-muted" style="margin:0 0 10px">' + esc(t('Barcode and pcs per unit are set per FFM account. M-Core quantities are pcs; FFM counts units (e.g. 1 carton = 24 pcs).', 'Barkod dan pcs seunit ditetapkan ikut akaun FFM. Kuantiti M-Core dalam pcs; FFM kira unit (cth. 1 karton = 24 pcs).')) + '</p>' +
+        (prods.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('FFM barcode', 'Barkod FFM')) + '</th><th>' + esc(t('Pcs / unit', 'Pcs / unit')) + '</th><th>' + esc(t('FFM', 'FFM')) + '</th><th></th></tr></thead><tbody>' +
+          prods.map(function (p) {
+            var l = links[String(p.id)], bc = bcOf(p);
+            var s = !bc ? '<span class="badge badge-gray">' + esc(t('No barcode', 'Tiada barkod')) + '</span>' : !l || (!l.synced_ok && !l.last_error) ? '<span class="badge badge-gray">' + esc(t('Not synced', 'Belum segerak')) + '</span>' : l.synced_ok ? '<span class="badge badge-green">' + esc(t('Synced', 'Disegerak')) + '</span> <span class="ffm-muted">' + esc(F.dt(l.last_synced_at)) + '</span>' : '<span class="badge badge-red">' + esc(t('Error', 'Ralat')) + '</span><div class="ffm-err">' + esc(l.last_error || '') + '</div>';
+            var inv = l && p.barcode && String(p.barcode).trim() !== bc ? '<div class="ffm-muted">' + esc(t('Inventory: ', 'Inventori: ') + p.barcode) + '</div>' : '';
+            return '<tr><td>' + esc(typeof prodName === 'function' ? prodName(p) : (p.name_en || p.code)) + '</td><td>' + (bc ? esc(bc) : '<span class="ffm-muted">-</span>') + inv + '</td><td>' + esc(F.ppu(l && l.pcs_per_unit)) + '</td><td>' + s + '</td>' +
+              '<td><div class="ffm-actions"><button type="button" class="btn btn-outline btn-sm" data-edit="' + esc(p.id) + '"><i class="ti ti-pencil"></i> ' + esc(t('Edit', 'Ubah')) + '</button></div></td></tr>';
           }).join('') + '</tbody></table></div>'
-          : '<div class="empty-state" style="padding:30px"><i class="ti ti-barcode"></i><h3>' + esc(t('No products with barcode', 'Tiada produk berbarkod')) + '</h3><p>' + esc(t('Add barcodes in Inventory first — FFM matches goods by barcode.', 'Tambah barkod di Inventori dahulu — FFM padankan barang ikut barkod.')) + '</p></div>') + '</div>';
+          : '<div class="empty-state" style="padding:30px"><i class="ti ti-barcode"></i><h3>' + esc(t('No products yet', 'Belum ada produk')) + '</h3><p>' + esc(t('Add products in Inventory first — FFM matches goods by barcode.', 'Tambah produk di Inventori dahulu — FFM padankan barang ikut barkod.')) + '</p></div>') + '</div>';
       document.getElementById('ffm-acct-pick').onchange = function () { reload('products', { account: this.value }); };
+      body.querySelectorAll('[data-edit]').forEach(function (b) {
+        b.onclick = function () { var p = prods.find(function (x) { return F.same(x.id, b.getAttribute('data-edit')); }); if (p) linkModal(acct, p, links[String(p.id)], bcOf(p)); };
+      });
       var sbtn = document.getElementById('ffm-sync');
       sbtn.onclick = async function () {
         F.busy(sbtn, true, t('Syncing…', 'Menyegerak…'));
@@ -193,9 +201,35 @@
       };
     }
 
+    function linkModal(acct, p, l, bc) {
+      var ppu = F.ppu(l && l.pcs_per_unit), warned = '';
+      var html = '<div class="ffm-muted" style="margin-bottom:10px">' + esc((typeof prodName === 'function' ? prodName(p) : p.name_en) + ' · ' + acct.label) + '</div>' +
+        '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="characters"') +
+        inp('fl-ppu', t('Pcs per FFM unit', 'Pcs seunit FFM'), String(ppu), 'type="number" min="1" step="1" inputmode="numeric"') + '</div>' +
+        '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-warn" role="status"></div>';
+      var ov = F.modal(t('FFM barcode & pack size', 'Barkod FFM & saiz pek'), html, t('Save', 'Simpan'), async function (ov, btn) {
+        var nb = ov.querySelector('#fl-bc').value.trim(), np = Number(ov.querySelector('#fl-ppu').value);
+        if (!F.barcodeOk(nb)) return F.modalErr(t('Barcode: letters and digits only (max 40).', 'Barkod: huruf dan digit sahaja (maks 40).'));
+        if (!(np >= 1 && Math.floor(np) === np)) return F.modalErr(t('Pcs per unit must be a whole number of 1 or more.', 'Pcs seunit mesti nombor bulat 1 atau lebih.'));
+        F.modalErr('');
+        if (!F.ean13Ok(nb) && warned !== nb) { warned = nb; ov.querySelector('#fl-warn').textContent = t('Warning: ' + nb + ' fails the EAN-13 check digit. Check the barcode, or press Save again to keep it.', 'Amaran: ' + nb + ' gagal semakan digit EAN-13. Semak barkod, atau tekan Simpan sekali lagi untuk kekalkan.'); return; }
+        F.busy(btn, true, t('Saving…', 'Menyimpan…'));
+        try {
+          var r = await F.api('save_link', { account_id: acct.id, product_id: p.id, barcode: nb, pcs_per_unit: np });
+          F.closeModal();
+          showToast(r.resync ? t('Saved — sync products to send the new barcode to FFM', 'Disimpan — segerak produk untuk hantar barkod baharu ke FFM') : t('Saved', 'Disimpan'), r.resync ? 'warning' : 'success');
+          reload('products', { account: acct.id });
+        } catch (e) { F.busy(btn, false); F.modalErr(e.message); }
+      });
+      var hint = function () { var n = Number(ov.querySelector('#fl-ppu').value); ov.querySelector('#fl-hint').textContent = n >= 1 && Math.floor(n) === n ? t('1 FFM unit = ' + n + ' pcs. Example: 36 units = ' + (36 * n) + ' pcs.', '1 unit FFM = ' + n + ' pcs. Contoh: 36 unit = ' + (36 * n) + ' pcs.') : ''; };
+      ov.querySelector('#fl-ppu').oninput = hint; ov.querySelector('#fl-bc').oninput = function () { ov.querySelector('#fl-warn').textContent = ''; warned = ''; }; hint();
+    }
+
     /* ---------- Stock (FFM only; M-Core stock shown for reference, never overwritten) ---------- */
     async function stockTab(body, accts) {
       var rs = await sb.from('ffm_stock').select('account_id,product_id,barcode,available_qty,total_qty,synced_at').eq('tenant_id', F.tid()).is('deleted_at', null);
+      var lk = await sb.from('ffm_product_links').select('account_id,product_id,pcs_per_unit').eq('tenant_id', F.tid()).is('deleted_at', null);
+      var ppu = {}; (lk.data || []).forEach(function (l) { ppu[l.account_id + ':' + l.product_id] = F.ppu(l.pcs_per_unit); });
       var st = rs.data || [], pids = Array.from(new Set(st.map(function (s) { return s.product_id; }).filter(Boolean)));
       var pr = pids.length ? await sb.from('products').select('id,code,name_en,name_bm,stock_qty,reorder_point').in('id', pids).eq('tenant_id', F.tid()) : { data: [] };
       var pm = {}; (pr.data || []).forEach(function (p) { pm[String(p.id)] = p; });
@@ -208,9 +242,9 @@
             var r = rows[k], p = r.p, rp = p && p.reorder_point != null ? Number(p.reorder_point) : 5;
             return '<tr><td>' + esc(p ? (typeof prodName === 'function' ? prodName(p) : p.name_en) : r.bc) + '<div class="ffm-muted">' + esc(r.bc) + '</div></td>' + accts.map(function (a) {
               var s = r.by[String(a.id)]; if (!s) return '<td class="ffm-muted">-</td>';
-              var low = Number(s.available_qty) <= rp;
-              return '<td><strong>' + esc(s.available_qty) + '</strong> / ' + esc(s.total_qty) + (low ? ' <span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '<div class="ffm-muted">' + esc(F.dt(s.synced_at)) + '</div></td>';
-            }).join('') + '<td>' + esc(p ? p.stock_qty : '-') + '</td></tr>';
+              var k = ppu[a.id + ':' + s.product_id] || 1, low = Number(s.available_qty) * k <= rp; // reorder point is pcs
+              return '<td><strong>' + esc(F.qty(s.available_qty, k)) + '</strong><div>/ ' + esc(F.qty(s.total_qty, k)) + '</div>' + (low ? ' <span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '<div class="ffm-muted">' + esc(F.dt(s.synced_at)) + '</div></td>';
+            }).join('') + '<td>' + esc(p ? p.stock_qty + ' pcs' : '-') + '</td></tr>';
           }).join('') + '</tbody></table></div>'
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-box"></i><h3>' + esc(t('No FFM stock yet', 'Belum ada stok FFM')) + '</h3><p>' + esc(t('Sync products first, then refresh.', 'Segerak produk dahulu, kemudian muat semula.')) + '</p></div>') + '</div>';
       var b = document.getElementById('ffm-pull');
@@ -223,6 +257,7 @@
 
     /* ---------- Reconciliation ---------- */
     async function reconTab(body) {
+      var al = {}; (await F.loadAccounts().catch(function () { return []; })).forEach(function (a) { al[String(a.id)] = a.label; });
       var r = await sb.from('ffm_recon_runs').select('*').eq('tenant_id', F.tid()).is('deleted_at', null).order('run_date', { ascending: false }).limit(1);
       var run = (r.data || [])[0], diffs = run ? (run.rows || []).filter(function (x) { return Number(x.diff) !== 0; }) : [];
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px"><button type="button" class="btn btn-primary btn-sm" id="ffm-recon"><i class="ti ti-scale"></i> ' + esc(t('Run now', 'Jalankan sekarang')) + '</button>' +
@@ -230,8 +265,9 @@
         (!run ? '<div class="empty-state" style="padding:30px"><i class="ti ti-scale"></i><h3>' + esc(t('No report yet', 'Belum ada laporan')) + '</h3></div>'
           : !diffs.length ? '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-check"></i><h3>' + esc(t('All matched', 'Semua sepadan')) + '</h3></div>'
           : '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('M-Core', 'M-Core')) + '</th><th>' + esc(t('FFM total', 'Jumlah FFM')) + '</th><th>' + esc(t('Difference', 'Perbezaan')) + '</th></tr></thead><tbody>' +
-            diffs.map(function (x) { return '<tr><td>' + esc(APP.language === 'bm' ? (x.name_bm || x.name_en) : x.name_en) + '<div class="ffm-muted">' + esc(x.code || '') + '</div></td><td>' + esc(x.mcore_qty) + '</td><td>' + esc(x.ffm_total) + '</td><td style="font-weight:600;color:var(' + (x.diff > 0 ? '--warning' : '--danger') + ')">' + (x.diff > 0 ? '+' : '') + esc(x.diff) + '</td></tr>'; }).join('') + '</tbody></table></div>') +
+            diffs.map(function (x) { return '<tr><td>' + esc(APP.language === 'bm' ? (x.name_bm || x.name_en) : x.name_en) + '<div class="ffm-muted">' + esc(x.code || '') + '</div></td><td>' + esc(x.mcore_qty) + ' pcs</td><td>' + esc(x.ffm_total) + ' pcs' + byAcct(x) + '</td><td style="font-weight:600;color:var(' + (x.diff > 0 ? '--warning' : '--danger') + ')">' + (x.diff > 0 ? '+' : '') + esc(x.diff) + ' pcs</td></tr>'; }).join('') + '</tbody></table></div>') +
         '<p class="ffm-muted" style="margin:12px 0 0">' + esc(t('Report only — nothing is adjusted automatically.', 'Laporan sahaja — tiada pelarasan automatik.')) + '</p></div>';
+      function byAcct(x) { var u = x.by_account_units || {}; return Object.keys(u).map(function (id) { return '<div class="ffm-muted">' + esc((al[id] || 'FFM') + ': ' + F.qty(u[id].units, u[id].ppu)) + '</div>'; }).join(''); }
       var b = document.getElementById('ffm-recon');
       b.onclick = async function () { F.busy(b, true); try { await F.api('recon', {}); reload('recon'); } catch (e) { F.busy(b, false); F.err(e); } };
     }
@@ -245,14 +281,14 @@
       body.innerHTML = funded.map(function (a) {
         var m = {};
         ships.filter(function (s) { return F.same(s.account_id, a.id); }).forEach(function (s) {
-          var k = String(s.shipped_at).slice(0, 7), sign = s.status === 'returned' ? 0 : 1, units = (s.goods || []).reduce(function (n, g) { return n + Number(g.num || 0); }, 0);
+          var k = String(s.shipped_at).slice(0, 7), sign = s.status === 'returned' ? 0 : 1, units = (s.goods || []).reduce(function (n, g) { return n + (g.pcs != null ? Number(g.pcs) : Number(g.num || 0)); }, 0); // pcs (older rows: num was pcs)
           var x = m[k] = m[k] || { units: 0, value: 0, ret: 0 };
           if (sign) { x.units += units; x.value += Number(s.total_amount || 0); } else x.ret += units;
         });
         var ks = Object.keys(m).sort().reverse();
         return '<div class="card" style="padding:16px;margin-bottom:12px"><div class="ffm-actions" style="justify-content:space-between;margin-bottom:10px"><strong>' + esc(a.label) + '</strong>' +
           (a.sales_plan_id && (typeof canAccess !== 'function' || canAccess('sales_plan')) ? '<button type="button" class="btn btn-outline btn-sm" data-sp="' + esc(a.sales_plan_id) + '"><i class="ti ti-external-link"></i> ' + esc(t('Open Sales Plan → Stock & Financing', 'Buka Pelan Jualan → Stok & Pembiayaan')) + '</button>' : '') + '</div>' +
-          (ks.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Month', 'Bulan')) + '</th><th>' + esc(t('Units shipped (net)', 'Unit dihantar (bersih)')) + '</th><th>' + esc(t('Returned', 'Dipulangkan')) + '</th><th>' + esc(t('Sales value', 'Nilai jualan')) + '</th></tr></thead><tbody>' +
+          (ks.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Month', 'Bulan')) + '</th><th>' + esc(t('Shipped (net, pcs)', 'Dihantar (bersih, pcs)')) + '</th><th>' + esc(t('Returned (pcs)', 'Dipulangkan (pcs)')) + '</th><th>' + esc(t('Sales value', 'Nilai jualan')) + '</th></tr></thead><tbody>' +
             ks.map(function (k) { return '<tr><td>' + esc(k) + '</td><td>' + esc(m[k].units) + '</td><td>' + esc(m[k].ret) + '</td><td>' + esc(F.rm(m[k].value)) + '</td></tr>'; }).join('') + '</tbody></table></div>'
             : '<div class="ffm-muted">' + esc(t('No shipped funded orders yet.', 'Belum ada pesanan dibiayai dihantar.')) + '</div>') +
           '<p class="ffm-muted" style="margin:10px 0 0">' + esc(t('Read-only. Record repayments in the Sales Plan — no journal is posted here, so nothing is counted twice.', 'Baca sahaja. Rekod bayaran balik di Pelan Jualan — tiada jurnal di sini, jadi tiada kiraan berganda.')) + '</p></div>';

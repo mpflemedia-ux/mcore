@@ -39,9 +39,19 @@
   FFM.dt = function (v) { if (!v) return '-'; try { return new Date(v).toLocaleString(APP.language === 'bm' ? 'ms-MY' : 'en-MY', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return String(v); } };
   FFM.rm = function (n) { return typeof formatRM === 'function' ? formatRM(Number(n || 0)) : 'RM ' + Number(n || 0).toFixed(2); };
 
+  /* Pack size: FFM qty is in FFM units; M-Core qty is pcs. 1 FFM unit = pcs_per_unit pcs (per account link). */
+  FFM.ppu = function (v) { var n = Number(v); return n > 0 && Math.floor(n) === n ? n : 1; };
+  FFM.qty = function (units, ppu) { var k = FFM.ppu(ppu), u = Number(units || 0); return u + ' ' + (k > 1 ? t('ctn', 'ktn') : 'unit') + ' (' + (u * k) + ' pcs)'; };
+  FFM.barcodeOk = function (bc) { return /^[A-Za-z0-9]{1,40}$/.test(String(bc == null ? '' : bc).trim()); };
+  FFM.ean13Ok = function (bc) {
+    var s = String(bc == null ? '' : bc).trim(); if (!/^\d{13}$/.test(s)) return true;
+    var sum = 0; for (var i = 0; i < 12; i++) sum += Number(s[i]) * (i % 2 ? 3 : 1);
+    return (10 - (sum % 10)) % 10 === Number(s[12]);
+  };
+
   /* Edge call — returns parsed JSON or throws Error(message from server). */
   FFM.api = async function (action, body) {
-    var payload = Object.assign({ action: action }, body || {});
+    var payload = Object.assign({ action: action, lang: APP.language === 'bm' ? 'bm' : 'en' }, body || {});
     var res = await sb.functions.invoke('ffm-api', { body: payload });
     if (res.error) {
       var msg = res.error.message || 'FFM error';
@@ -113,6 +123,7 @@
       '.ffm-spin{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-2px}',
       '.ffm-mh{display:flex;align-items:center;justify-content:space-between;gap:8px}',
       '.ffm-merr{color:var(--danger);font-size:13px}.ffm-merr:empty{display:none}',
+      '.ffm-warn{color:var(--warning);font-size:13px}.ffm-warn:empty{display:none}',
       '.ffm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}',
       '.ffm-k{color:var(--text-3);font-size:12px}.ffm-v{font-weight:600;word-break:break-word}',
       '.ffm-muted{color:var(--text-3);font-size:12px}',

@@ -51,6 +51,7 @@
         html += '<div class="ffm-grid" style="margin-bottom:12px">' + kv(t('Account', 'Akaun'), acct.label || '-') + kv(t('FFM order', 'Pesanan FFM'), live.ffm_order_id || live.order_sn) +
           kv(t('Tracking no.', 'No. jejak'), pno || t('Pending', 'Menunggu')) + kv(t('Latest', 'Terkini'), (live.state_text || F.stLabel(live.status)) + ' · ' + F.dt(live.updated_at)) +
           (live.fee_amount != null ? kv(t('FFM fee', 'Yuran FFM'), F.rm(live.fee_amount)) : '') + '</div>' +
+          goodsList(live) +
           (live.last_error ? '<div class="ffm-err" style="margin-bottom:10px">' + esc(live.last_error) + '</div>' : '') +
           '<div class="ffm-actions">' +
           '<button type="button" class="btn btn-outline btn-sm" data-x="track"><i class="ti ti-refresh"></i> ' + esc(t('Refresh tracking', 'Muat semula jejak')) + '</button>' +
@@ -80,6 +81,13 @@
       if (live) checkJournal(live);
       reversals.forEach(function (s) { reverseIfNeeded(s, dor, true); });
     }
+    /* Goods sent: num = FFM units; pcs_per_unit stored at send time (older rows: 1). */
+    function goodsList(s) {
+      var g = (s.goods || []).filter(function (x) { return x && x.barCode; }); if (!g.length) return '';
+      return '<div class="ffm-sec">' + esc(t('Goods', 'Barang')) + '</div><ul class="ffm-steps" style="margin-bottom:12px">' + g.map(function (x) {
+        return '<li>' + esc(x.externalName || x.barCode) + ' <span class="ffm-muted">' + esc(x.barCode) + '</span><div><strong>' + esc(F.qty(x.num, x.pcs_per_unit)) + '</strong></div></li>';
+      }).join('') + '</ul>';
+    }
     function kv(k, v) { return '<div><div class="ffm-k">' + esc(k) + '</div><div class="ffm-v">' + esc(v) + '</div></div>'; }
     function refresh(card, dor) { return paint(card, dor.id); }
 
@@ -100,7 +108,7 @@
         F.MY_STATES.map(function (s) { return opt(s, s, String(cu.state || '').replace(/^W\.?P\.?\s*/i, '').toLowerCase() === s.toLowerCase()); }).join('') + '</select></div>' +
         '<div class="form-group"><label class="form-label" for="fs-pay">' + esc(t('Payment', 'Bayaran')) + '</label><select id="fs-pay" class="form-select">' +
         opt('2', t('Prepaid / bank transfer', 'Prabayar / pindahan bank'), true) + opt('3', t('E-payment', 'E-bayaran'), false) + opt('1', t('COD (collect on delivery)', 'COD (bayar semasa terima)'), false) + '</select></div>' +
-        '<div class="ffm-muted">' + esc(t('Goods are taken from the linked invoice. Products must be synced to this FFM account.', 'Barang diambil dari invois berkaitan. Produk mesti disegerak ke akaun FFM ini.')) + '</div>';
+        '<div class="ffm-muted">' + esc(t('Goods are taken from the linked invoice (qty in pcs) and sent as FFM units using each product\'s pcs per unit on this account. Products must be synced to this FFM account.', 'Barang diambil dari invois berkaitan (kuantiti dalam pcs) dan dihantar sebagai unit FFM ikut pcs seunit produk di akaun ini. Produk mesti disegerak ke akaun FFM ini.')) + '</div>';
       var ov = F.modal(t('Send via FFM', 'Hantar melalui FFM'), html, t('Send to FFM', 'Hantar ke FFM'), async function (ov, btn) {
         var v = function (id) { return ov.querySelector('#' + id).value.trim(); };
         var acct = accts.find(function (a) { return F.same(a.id, v('fs-acct')); }) || {};
