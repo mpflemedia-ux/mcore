@@ -28222,7 +28222,9 @@ async function _billHasPaymentJournals(billId) {
 
 async function _billPayVoid(billId, paymentId, amount) {
   const isBm = APP.language==='bm'
-  if(window.PAYV&&PAYV.on&&PAYV.on()) return PAYV.bill(billId, paymentId, amount)
+  // Payment created by a Payment Voucher → cascade to the PV void path (PV void + cashbook + PV journals, single bill reversal)
+  if(typeof _billPayVoidViaPV==='function' && await _billPayVoidViaPV(billId, paymentId, amount)) return
+  if(window.PAYV&&PAYV.on&&PAYV.on()) return PAYV.bill(billId, paymentId, amount, true)
   if(!confirm(isBm
     ? 'Batalkan bayaran ini? Baki bil akan dipulihkan dan jurnal berkaitan dibersihkan.'
     : 'Void this payment? Bill balance will be restored and related journals cleared.')) return
@@ -29023,39 +29025,59 @@ async function _pvbNotify(evt, o) {
 // Void of a PAID voucher linked to a bill: remove the bill payment it created
 // (archived to payment_voids when available — same as pay-void.js), reverse the
 // bill's paid_amt/status, and remove the cashbook `payments` row.
-async function _pvReverseBillPayment(v) {
+// opts.spId: void exactly this supplier_payments row (Bill-page cascade); opts.reason: archive reason
+async function _pvReverseBillPayment(v, opts) {
+  opts = opts || {}
   const tid = APP.tenant.id
   const amt = Math.round(Number(v.amount||0)*100)/100
   const ref = v.ref_no || ''
   const out = { sp:0, pay:0, bill:false, warn:[] }
   if(v.bill_id) {
     let sp = null
-    const r1 = await sb.from('supplier_payments').select('*').eq('tenant_id',tid).eq('bill_id',v.bill_id).eq('memo','PV '+ref).limit(1)
-    if(!r1.error && r1.data && r1.data.length) sp = r1.data[0]
+    if(opts.spId) {
+      const r0 = await sb.from('supplier_payments').select('*').eq('id',opts.spId).eq('tenant_id',tid).eq('bill_id',v.bill_id).maybeSingle()
+      if(!r0.error && r0.data) sp = r0.data
+    }
+    if(!sp) {
+      const r1 = await sb.from('supplier_payments').select('*').eq('tenant_id',tid).eq('bill_id',v.bill_id).eq('memo','PV '+ref).limit(1)
+      if(!r1.error && r1.data && r1.data.length) sp = r1.data[0]
+    }
     if(!sp && v.paid_at) {
       // Older rows (no memo column): same bill + amount, created within ±10 min of PV paid_at
       const t0 = new Date(new Date(v.paid_at).getTime() - 600000).toISOString()
       const t1 = new Date(new Date(v.paid_at).getTime() + 600000).toISOString()
-      const r2 = await sb.from('supplier_payments').select('*').eq('tenant_id',tid).eq('bill_id',v.bill_id).eq('amount',amt).gte('created_at',t0).lte('created_at',t1).order('created_at',{ascending:false}).limit(1)
+      const r2 = await sb.from('supplier_payments').select('*').eq('tenant_id',tid).eq('bill_id',v.bill_id).eq('amount',amt).gte('created_at',t0).lte('created_at',t1).order('created_at',{ascending:true}).limit(1)
       if(!r2.error && r2.data && r2.data.length) sp = r2.data[0]
     }
+    let revAmt = 0
     if(sp) {
       try {
         if(window.PAYX && typeof PAYX.has==='function' && await PAYX.has('payment_voids')) {
           await sb.from('payment_voids').insert({
             tenant_id: tid, kind:'supplier_payment', payment_id: sp.id, bill_id: v.bill_id, ref_no: ref || null,
             payment_date: sp.payment_date || null, payment_method: sp.method || null, amount: Number(sp.amount||0),
-            reason: 'PV void '+ref, snapshot: { payment: sp, payment_voucher_id: v.id },
+            reason: opts.reason || ('PV void '+ref), snapshot: { payment: sp, payment_voucher_id: v.id },
             voided_by: (typeof PAYX.isPA==='function' && PAYX.isPA()) ? null : (APP.user && APP.user.id) || null
           })
         }
       } catch(e) { console.warn('PV void archive', e) }
       const {error: dErr} = await sb.from('supplier_payments').delete().eq('id',sp.id).eq('tenant_id',tid)
-      if(dErr) out.warn.push(dErr.message); else out.sp = 1
+      if(dErr) out.warn.push(dErr.message)
+      else { out.sp = 1; revAmt = Math.round(Number(sp.amount||amt)*100)/100 }
     }
     const {data: bill} = await sb.from('supplier_bills').select('id,total,paid_amt').eq('id',v.bill_id).eq('tenant_id',tid).maybeSingle()
-    if(bill) {
-      const newPaid = Math.max(0, Math.round((Number(bill.paid_amt||0) - amt)*100)/100)
+    if(bill && !sp) {
+      // No payment row left: only reverse the part of paid_amt not backed by remaining payment rows
+      // (already reversed by a Bill-page void → 0, so never a double reversal)
+      const {data: rest, error: rErr} = await sb.from('supplier_payments').select('amount').eq('tenant_id',tid).eq('bill_id',v.bill_id)
+      if(!rErr) {
+        const backed = (rest||[]).reduce((s,p)=>s+Number(p.amount||0),0)
+        const unbacked = Math.round((Number(bill.paid_amt||0) - backed)*100)/100
+        revAmt = Math.max(0, Math.min(amt, unbacked))
+      }
+    }
+    if(bill && revAmt > 0.005) {
+      const newPaid = Math.max(0, Math.round((Number(bill.paid_amt||0) - revAmt)*100)/100)
       const total = Number(bill.total||0)
       const newStatus = newPaid <= 0.005 ? 'unpaid' : (newPaid >= total - 0.005 ? 'paid' : 'partial')
       const {error: bErr} = await sb.from('supplier_bills').update({ paid_amt:newPaid, status:newStatus }).eq('id',bill.id).eq('tenant_id',tid)
@@ -29074,39 +29096,109 @@ async function _pvReverseBillPayment(v) {
   return out
 }
 
+// Shared PV void (PV page + Bill-page cascade). Only the caller that flips status → void reverses money,
+// so voiding from both sides (or double clicks) never reverses the bill twice.
+async function _pvVoidCore(id, opts) {
+  opts = opts || {}
+  const tid = APP.tenant.id
+  let cur = opts.cur || null
+  if(!cur) ({data: cur} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',tid).maybeSingle())
+  if(!cur) return { ok:false, notFound:true }
+  if(String(cur.status||'').toLowerCase() === 'void') return { ok:false, already:true }
+  const wasPaid = String(cur.status||'').toLowerCase() === 'paid'
+  const {data: flipped, error} = await sb.from('payment_vouchers').update({ status:'void', updated_at:new Date().toISOString() })
+    .eq('id',id).eq('tenant_id',tid).neq('status','void').select('id')
+  if(error) return { ok:false, error:error.message }
+  if(!flipped || !flipped.length) return { ok:false, already:true }
+  let rev = null
+  if(wasPaid) {
+    try { rev = await _pvReverseBillPayment(cur, { spId: opts.spId, reason: opts.reason }) }
+    catch(e) { console.warn('PV void reverse', e); rev = { warn:[String(e && e.message || e)] } }
+  }
+  const n = await _pvClearJournals(id)
+  if(n) console.info('PV void cleared journals:', n)
+  auditLog('update','payment_vouchers', id)
+  _pvbNotify('pv_void', { id })
+  return { ok:true, rev, journals:n, pv:cur }
+}
+
+// Supplier-bill payment created by a PV? memo 'PV <ref>' (set by _pvMarkPaid) on the same bill;
+// legacy rows without memo: same bill + amount, PV paid_at within ±10 min of the payment.
+async function _pvFindForBillPayment(billId, paymentId) {
+  const tid = APP.tenant.id
+  const {data: sp, error: e1} = await sb.from('supplier_payments').select('*').eq('id',paymentId).eq('tenant_id',tid).maybeSingle()
+  if(e1) return { sp:null, pv:null, err:true }
+  if(!sp) return { sp:null, pv:null }
+  const {data: pvs, error: e2} = await sb.from('payment_vouchers').select('*').eq('tenant_id',tid).eq('bill_id',billId).eq('status','paid').is('deleted_at',null).limit(100)
+  if(e2 || !pvs || !pvs.length) return { sp, pv:null }
+  const m = String(sp.memo||'').match(/^PV\s+(.+)$/)
+  if(m) return { sp, pv: pvs.find(v=>String(v.ref_no||'')===m[1].trim()) || null }
+  if(sp.memo) return { sp, pv:null }
+  const amt = Number(sp.amount||0), t = new Date(sp.created_at).getTime()
+  const pv = pvs.find(v=>Math.abs(Number(v.amount||0)-amt)<0.005 && v.paid_at && !isNaN(t) && Math.abs(new Date(v.paid_at).getTime()-t)<=600000) || null
+  return { sp, pv }
+}
+
+// Bill-page void hook: returns true when handled (PV cascade, cancelled, or stale row), false → normal bill void.
+async function _billPayVoidViaPV(billId, paymentId, amount) {
+  const isBm = APP.language==='bm'
+  let f
+  try { f = await _pvFindForBillPayment(billId, paymentId) } catch(e) { console.warn('_pvFindForBillPayment', e); return false }
+  if(!f.sp && !f.err) {
+    showToast(isBm?'Bayaran ini sudah dibatalkan.':'This payment was already voided.','info')
+    renderSupplierBillDetail(billId); return true
+  }
+  const v = f.pv
+  if(!v) return false
+  const P = window.PAYX
+  if(P && typeof P.lockOk==='function' && !P.lockOk(f.sp.payment_date)) {
+    showToast(typeof P.t==='function' && typeof P.lock==='function' ? P.t('vLock',{ d: P.date(P.lock()) }) : (isBm?'Tempoh dikunci.':'Period is locked.'),'error'); return true
+  }
+  const msg = isBm
+    ? `Bayaran ini dari baucar ${v.ref_no||''}. Membatalkannya akan turut membatalkan baucar, memulihkan baki bil, membuang rekod bayaran dan membersihkan jurnal.`
+    : `This payment came from voucher ${v.ref_no||''}. Voiding it will also void the voucher, restore the bill balance, remove the payment records and clear related journals.`
+  let reason = null
+  if(window.PAYV && typeof PAYV.ask==='function' && P && typeof P.has==='function' && await P.has('payment_voids')) {
+    reason = await PAYV.ask(msg); if(!reason) return true
+  } else if(!confirm(msg + (isBm?' Teruskan?':' Continue?'))) return true
+  const r = await _pvVoidCore(v.id, { cur:v, spId:paymentId, reason })
+  if(r.ok) {
+    if(r.rev && r.rev.warn && r.rev.warn.length) showToast((isBm?'Amaran: ':'Warning: ')+r.rev.warn.join('; '),'error')
+    showToast(isBm?`Bayaran dibatalkan. Baucar ${v.ref_no||''} turut dibatalkan.`:`Payment voided. Voucher ${v.ref_no||''} was voided too.`,'success')
+  } else if(r.already) showToast(isBm?'Baucar sudah dibatalkan.':'Voucher already void.','info')
+  else showToast((isBm?'Ralat: ':'Error: ')+(r.error||'?'),'error')
+  renderSupplierBillDetail(billId)
+  return true
+}
+
 async function _pvSetStatus(id, status) {
   const isBm = APP.language==='bm'
-  let cur = null
   if(status === 'void') {
-    ;({data: cur} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single())
-    if(cur && String(cur.status||'').toLowerCase() === 'paid') {
+    const {data: cur} = await sb.from('payment_vouchers').select('*').eq('id',id).eq('tenant_id',APP.tenant.id).single()
+    if(!cur) { showToast(isBm?'Baucar tidak dijumpai.':'Voucher not found.','error'); return }
+    if(String(cur.status||'').toLowerCase() === 'paid') {
       if(!confirm(isBm
         ? `Baucar ${cur.ref_no||''} sudah dibayar. Batalkan, pulihkan baki bil, buang rekod bayaran dan bersihkan jurnal?`
         : `Voucher ${cur.ref_no||''} is paid. Void it, restore the bill balance, remove the payment records and clear related journals?`)) return
-    } else if(cur && String(cur.status||'').toLowerCase() === 'void') {
+    } else if(String(cur.status||'').toLowerCase() === 'void') {
       showToast(isBm?'Sudah dibatalkan.':'Already void.','info'); return
     } else if(!confirm(isBm ? 'Batalkan baucar ini?' : 'Void this voucher?')) return
-  }
-  const patch = { status, updated_at: new Date().toISOString() }
-  if(status==='approved') patch.approved_by = APP.user.name || APP.user.email
-  if(status==='draft') { /* noop */ }
-  const {error} = await sb.from('payment_vouchers').update(patch).eq('id',id).eq('tenant_id',APP.tenant.id)
-  if(error) { showToast((isBm?'Ralat: ':'Error: ')+error.message,'error'); return }
-  // When voiding: reverse bill payment + cashbook row (paid PVs), then clear auto-posted journals
-  if(status === 'void') {
-    if(cur && String(cur.status||'').toLowerCase() === 'paid') {
-      try {
-        const r = await _pvReverseBillPayment(cur)
-        if(r.warn.length) showToast((isBm?'Amaran: ':'Warning: ')+r.warn.join('; '),'error')
-      } catch(e) { console.warn('PV void reverse', e) }
+    const r = await _pvVoidCore(id, { cur })
+    if(r.already) showToast(isBm?'Sudah dibatalkan.':'Already void.','info')
+    else if(!r.ok) { showToast((isBm?'Ralat: ':'Error: ')+(r.error||'?'),'error'); return }
+    else {
+      if(r.rev && r.rev.warn && r.rev.warn.length) showToast((isBm?'Amaran: ':'Warning: ')+r.rev.warn.join('; '),'error')
+      showToast(isBm?'Baucar dibatalkan.':'Voucher voided.','success')
     }
-    const n = await _pvClearJournals(id)
-    if(n) console.info('PV void cleared journals:', n)
+  } else {
+    const patch = { status, updated_at: new Date().toISOString() }
+    if(status==='approved') patch.approved_by = APP.user.name || APP.user.email
+    const {error} = await sb.from('payment_vouchers').update(patch).eq('id',id).eq('tenant_id',APP.tenant.id)
+    if(error) { showToast((isBm?'Ralat: ':'Error: ')+error.message,'error'); return }
+    auditLog('update','payment_vouchers', id)
+    showToast(isBm?'Status dikemaskini.':'Status updated.', 'success')
+    if(status==='approved') _pvbNotify('pv_approved', { id })
   }
-  auditLog('update','payment_vouchers', id)
-  showToast(isBm ? (status==='void'?'Baucar dibatalkan.':'Status dikemaskini.') : (status==='void'?'Voucher voided.':'Status updated.'), 'success')
-  if(status==='approved') _pvbNotify('pv_approved', { id })
-  else if(status==='void') _pvbNotify('pv_void', { id })
   if(document.getElementById('pv-list-wrap')) renderPVList()
   else renderPVDetail(id)
 }
@@ -40309,7 +40401,7 @@ if('serviceWorker' in navigator){
 <script src="./pay-core.js?v=1"></script>
 <script src="./pay-ui.js?v=1"></script>
 <script src="./pay-sheet.js?v=3"></script>
-<script src="./pay-void.js?v=2"></script>
+<script src="./pay-void.js?v=3"></script>
 <script src="./pay-vlist.js?v=1"></script>
 <script src="./pay-claim.js?v=3"></script>
 <script src="./pay-rcpt.js?v=1"></script>
