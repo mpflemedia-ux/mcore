@@ -17,6 +17,7 @@
 
     async function mount(doId) {
       if (typeof canAccess === 'function' && !canAccess('logistics')) return;
+      if (!(await F.enabled())) return;
       var sel = document.getElementById('do-status-select'); if (!sel) return;
       var first = sel.closest('.card'); if (!first || document.getElementById('ffm-do-card')) return;
       var card = document.createElement('div');

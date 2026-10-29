@@ -19,6 +19,7 @@
     async function mount(poId) {
       if (typeof canAccess === 'function' && !(canAccess('purchasing') || canAccess('logistics'))) return;
       if (document.getElementById('ffm-po-card')) return;
+      if (!(await F.enabled())) return;
       var first = document.querySelector('#main .card.no-print'); if (!first) return;
       var accts = (await F.loadAccounts().catch(function () { return []; })).filter(function (a) { return a.is_active && a.has_api_key; });
       var rs = await sb.from('ffm_asn').select('*').eq('purchase_order_id', poId).eq('tenant_id', F.tid()).is('deleted_at', null).order('created_at', { ascending: false });

@@ -10,7 +10,7 @@
       params = params || {};
       if (params.view === 'ffm') return renderHub(params);
       var r = orig.apply(this, arguments);
-      if (!params.view || params.view === 'list') addHeaderBtn();
+      if (!params.view || params.view === 'list') F.enabled().then(function (ok) { if (ok) addHeaderBtn(); });
       return r;
     };
     wrapped.__ffm = true;
@@ -33,6 +33,7 @@
 
     async function renderHub(params) {
       var main = document.getElementById('main');
+      if (!(await F.enabled())) { return orig.call(this, {}); }
       if (typeof canAccess === 'function' && !canAccess('logistics')) { main.innerHTML = '<div class="empty-state"><i class="ti ti-lock"></i><h3>' + esc(t('No access', 'Tiada akses')) + '</h3></div>'; return; }
       var tab = TABS.some(function (x) { return x[0] === params.tab; }) ? params.tab : 'accounts';
       main.innerHTML = '<div class="ffm-root"><div class="page-header ffm-page-head"><div><div class="page-title">Flash Fulfillment (FFM)</div>' +

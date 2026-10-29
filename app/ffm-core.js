@@ -9,6 +9,17 @@
   var esc = FFM.esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   FFM.same = function (a, b) { return String(a) === String(b); };
   FFM.tid = function () { return APP && APP.tenant && APP.tenant.id; };
+  // Tenant gate: platform admin always; otherwise only tenants enabled in ffm_tenant_access (platform-managed).
+  var _gate = { tid: null, p: null };
+  FFM.enabled = function () {
+    if (typeof isPlatformAdmin === 'function' && isPlatformAdmin()) return Promise.resolve(true);
+    var t = FFM.tid(); if (!t || typeof sb === 'undefined') return Promise.resolve(false);
+    if (_gate.p && String(_gate.tid) === String(t)) return _gate.p;
+    _gate.tid = t;
+    _gate.p = sb.from('ffm_tenant_access').select('enabled').eq('tenant_id', t).is('deleted_at', null).maybeSingle()
+      .then(function (r) { return !!(r && !r.error && r.data && r.data.enabled === true); }, function () { return false; });
+    return _gate.p;
+  };
   FFM.isAdmin = function () {
     var r = String((APP.user && APP.user.role) || '').toLowerCase();
     return r === 'owner' || r === 'admin' || r === 'platform_admin' || (typeof isPlatformAdmin === 'function' && isPlatformAdmin());
