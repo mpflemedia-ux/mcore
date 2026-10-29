@@ -30,12 +30,12 @@
     accounting: 'kewangan', expense_claims: 'kewangan', vouchers: 'kewangan', reports: 'kewangan',
     nv_sd_access: 'sokongan', client_onboarding: 'sokongan', servis_saya: 'sokongan', laporan_bulanan: 'sokongan', docs: 'sokongan', learning: 'sokongan', sales_academy: 'sokongan',
     cob_admin: 'platform', cob_master: 'platform', nv_sd_desk: 'platform', nv_sd_contracts: 'platform',
-    admin: 'sistem', settings: 'sistem', nv_devroadmap: 'sistem'
+    admin: 'sistem', settings: 'sistem', nv_devroadmap: 'sistem', nv_promptcoll: 'sistem'
   };
   NV.ORDER = ['dashboard', 'planner', 'projects', 'nv_notif', 'nv_activity', 'crm', 'sales', 'pos', 'sales_plan', 'sales_commission', 'achievements', 'nv_bookings',
     'inventory', 'purchasing', 'production', 'logistics', 'hr', 'shifts', 'applicants', 'nv_tracker', 'accounting', 'expense_claims', 'vouchers', 'reports',
     'sd_desk_client', 'nv_sd_access', 'client_onboarding', 'servis_saya', 'laporan_bulanan', 'docs', 'learning', 'sales_academy',
-    'cob_admin', 'cob_master', 'nv_sd_desk', 'nv_sd_contracts', 'admin', 'settings', 'nv_devroadmap'];
+    'cob_admin', 'cob_master', 'nv_sd_desk', 'nv_sd_contracts', 'admin', 'settings', 'nv_devroadmap', 'nv_promptcoll'];
   NV.CHILD = { achievements: 'sales_commission', sales_academy: 'learning' };
   var SD = function () { return window.SD || { has: {} }; };
   var scrollTo = function (id) {
@@ -54,8 +54,12 @@
     { id: 'nv_sd_access', ic: 'ti-shield-lock', en: 'Support Access Consent', ms: 'Consent Akses Sokongan', ok: function () { return !!(SD().has && SD().has.consent) && NV.isTA(); }, go: function () { window.openPage('sd_access', {}); } },
     { id: 'nv_sd_desk', ic: 'ti-headset', en: 'Service Desk (all tenants)', ms: 'Service Desk semua tenant', ok: function () { return NV.isPA() && !!(SD().has && SD().has.desk); }, go: function () { window.openPage('admin', { view: 'sd_desk' }); } },
     { id: 'nv_sd_contracts', ic: 'ti-file-certificate', en: 'Service Contracts', ms: 'Kontrak Servis', ok: function () { return NV.isPA() && !!(SD().has && SD().has.contracts); }, go: function () { window.openPage('admin', { view: 'sd_contracts' }); } },
-    { id: 'nv_devroadmap', ic: 'ti-rocket', en: 'System Development', ms: 'System Development', ok: NV.isPA, go: function () { window.openPage('admin', { view: 'devroadmap' }); } }
+    { id: 'nv_devroadmap', ic: 'ti-rocket', en: 'System Development', ms: 'System Development', ok: NV.isPA, go: function () { window.openPage('admin', { view: 'devroadmap' }); } },
+    { id: 'nv_promptcoll', ic: 'ti-notes', en: 'Prompt Collections', ms: 'Koleksi Prompt', ok: NV.isPA, go: function () { window.openPage('admin', { view: 'prompt-collections' }); } }
   ];
+  /* Admin tab (params.view) -> sidebar shortcut id, so the shortcut stays highlighted while on that tab */
+  NV.VIEW = { devroadmap: 'nv_devroadmap', 'prompt-collections': 'nv_promptcoll' };
+  NV.curOf = function (page, params) { return (page === 'admin' && params && NV.VIEW[params.view]) || page; };
   NV.secOf = function (page) {
     if (page === 'nv_sd_access' && NV.isPA()) return 'platform';
     return NV.MAP[page] || 'lain';
