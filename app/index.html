@@ -27111,7 +27111,7 @@ async function _suppDelete(id, name) {
   // Warn if open bills (unpaid/partial) — prefer warn+allow over hard block
   try {
     const {data: openBills, error: qErr} = await sb.from('supplier_bills')
-      .select('id,bill_no,ref_no,status,total,paid_amt')
+      .select('id,bill_no,status,total,paid_amt')
       .eq('tenant_id', APP.tenant.id)
       .eq('supplier_id', id)
       .is('deleted_at', null)
@@ -27630,7 +27630,7 @@ async function renderPODetail(id) {
   // Linked supplier bills (read-only) — tenant-scoped, excludes soft-deleted/voided
   let poBills = [], poBillsErr = null
   try {
-    const {data: bl, error: blErr} = await sb.from('supplier_bills').select('id,bill_no,ref_no,bill_date,total,paid_amt,status').eq('po_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('bill_date',{ascending:false})
+    const {data: bl, error: blErr} = await sb.from('supplier_bills').select('id,bill_no,bill_date,due_date,total,paid_amt,status,po_id').eq('po_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('bill_date',{ascending:false})
     if(blErr) poBillsErr = blErr.message || String(blErr)
     else poBills = bl || []
   } catch(e) { poBillsErr = (e && e.message) || String(e) }
@@ -38757,7 +38757,7 @@ async function renderApAgingReport() {
   <div id="ap-aging-body"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div>`
 
   const {data, error} = await sb.from('supplier_bills')
-    .select('id,bill_no,ref_no,bill_date,due_date,total,paid_amt,status,suppliers(name)')
+    .select('id,bill_no,bill_date,due_date,total,paid_amt,status,suppliers(name)')
     .eq('tenant_id', APP.tenant.id).is('deleted_at', null)
   const body = document.getElementById('ap-aging-body')
   if(error) { body.innerHTML = `<div class="card"><p style="color:var(--danger);padding:24px">${_aiEscapeHtml(error.message)}</p></div>`; return }
