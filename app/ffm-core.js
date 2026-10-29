@@ -54,7 +54,8 @@
     var payload = Object.assign({ action: action, lang: APP.language === 'bm' ? 'bm' : 'en' }, body || {});
     var res = await sb.functions.invoke('ffm-api', { body: payload });
     if (res.error) {
-      var msg = res.error.message || 'FFM error';
+      var msg = res.error.message || 'FFM error', st = res.error.context && res.error.context.status;
+      if (res.error.name === 'FunctionsFetchError' || st === 404) msg = t('FFM service is not deployed yet (or no connection). Please try again later.', 'Servis FFM belum di-deploy (atau tiada sambungan). Sila cuba lagi kemudian.');
       try { var ctx = res.error.context; if (ctx && typeof ctx.json === 'function') { var j = await ctx.json(); if (j && j.error) msg = j.error; } } catch (e) { /* keep msg */ }
       throw new Error(msg);
     }
