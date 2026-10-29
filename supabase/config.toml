@@ -9,3 +9,11 @@ verify_jwt = false
 # Auth checked inside (x-push-secret from pg_cron, or user JWT for digest_me).
 [functions.pj-auto]
 verify_jwt = false
+
+# FFM connector: signed by FFM (HMAC Authorization header), verified inside.
+[functions.ffm-webhook]
+verify_jwt = false
+
+# FFM cron: x-push-secret from pg_cron (PUSH_CRON_SECRET), checked inside.
+[functions.ffm-cron]
+verify_jwt = false
