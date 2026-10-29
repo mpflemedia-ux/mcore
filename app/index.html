@@ -1520,6 +1520,15 @@ html[data-skip-intro="1"] #intro-skip {
   }
 }
 
+/* PO detail Linked Bills — phones: table → stacked rows (same idea as .crm-detail-inv-cards) → no horizontal overflow at ~380px */
+.po-lb-cards{display:none}
+@media (max-width:480px){
+  .po-lb-twrap{display:none!important}
+  .po-lb-cards{display:flex;flex-direction:column}
+  .po-lb-card{display:flex;flex-direction:column;gap:4px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;min-width:0}
+  .po-lb-card:last-child{border-bottom:none}
+  .po-lb-card > div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:2px 12px;font-size:13px;min-width:0}
+}
 /* Payment Voucher form — nowrap buttons with wrap; single column on phones */
 .pv-form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .pv-form-actions .btn,.pv-detail-actions .btn{white-space:nowrap}
@@ -27552,6 +27561,49 @@ async function _poSave(id) {
 }
 
 // ─── Purchase Orders: Detail ────────────────────────────────────────────────
+// PO detail → "Linked Bills" card (read-only). Bill status colours mirror _billRenderListTable / renderSupplierBillDetail.
+function _poLinkedBillsCard(po, bills, err, t) {
+  const head = `<div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">${t.linkedBills}</div>`
+  if(err) return `<div class="card no-print" style="max-width:900px;margin-top:16px">${head}<div class="empty-state" style="padding:30px"><p style="color:var(--danger)">${t.billsErr}: ${_aiEscapeHtml(err)}</p></div></div>`
+  if(!bills || !bills.length) return `<div class="card no-print" style="max-width:900px;margin-top:16px">${head}<div class="empty-state" style="padding:30px"><p>${t.noBills}</p></div></div>`
+  const statusColor = s => s==='paid'?'var(--success)':s==='partial'?'var(--warning)':'var(--danger)'
+  const statusLabel = s => s==='paid'?t.bPaid:s==='partial'?t.bPartial:t.bUnpaid
+  let billed = 0, paid = 0
+  bills.forEach(b => { billed += Number(b.total||0); paid += Number(b.paid_amt||0) })
+  const poTotal = Number(po.total||0)
+  const over = billed > poTotal + 0.005
+  const rows = bills.map(b => {
+    const bal = Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
+    const st = String(b.status||'unpaid').toLowerCase()
+    return `<tr onclick="openPage('purchasing',{view:'bill-detail',id:'${b.id}'})" style="cursor:pointer">
+      <td style="white-space:nowrap"><strong>${_aiEscapeHtml(b.bill_no||b.ref_no||'-')}</strong></td>
+      <td style="white-space:nowrap">${formatDate(b.bill_date)}</td>
+      <td class="num" style="white-space:nowrap">${formatRM(b.total)}</td>
+      <td class="num" style="white-space:nowrap;color:var(--success)">${formatRM(b.paid_amt)}</td>
+      <td class="num" style="white-space:nowrap;${bal>0.005?'color:var(--danger)':'color:var(--text-2)'}">${formatRM(bal)}</td>
+      <td style="white-space:nowrap"><span style="color:${statusColor(st)};font-weight:600">${statusLabel(st)}</span></td>
+    </tr>`
+  }).join('')
+  const cards = bills.map(b => {
+    const bal = Math.max(0, Number(b.total||0) - Number(b.paid_amt||0))
+    const st = String(b.status||'unpaid').toLowerCase()
+    return `<div class="po-lb-card" onclick="openPage('purchasing',{view:'bill-detail',id:'${b.id}'})">
+      <div><strong>${_aiEscapeHtml(b.bill_no||b.ref_no||'-')}</strong><span style="color:${statusColor(st)};font-weight:600">${statusLabel(st)}</span></div>
+      <div style="color:var(--text-3)"><span>${formatDate(b.bill_date)}</span><span>${t.billTotal}: <strong style="color:var(--text)">${formatRM(b.total)}</strong></span></div>
+      <div><span style="color:var(--success)">${t.billPaid}: ${formatRM(b.paid_amt)}</span><span style="${bal>0.005?'color:var(--danger)':'color:var(--text-2)'}">${t.billBal}: <strong>${formatRM(bal)}</strong></span></div>
+    </div>`
+  }).join('')
+  return `<div class="card no-print" style="max-width:900px;margin-top:16px">${head}
+    <div class="po-lb-twrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="po-lb-tbl"><thead><tr><th>${t.billNo}</th><th>${t.date}</th><th class="num">${t.billTotal}</th><th class="num">${t.billPaid}</th><th class="num">${t.billBal}</th><th>${t.status}</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <div class="po-lb-cards">${cards}</div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 16px;font-size:13px">
+      <span style="${over?'color:var(--warning);':''}">${t.billed}: <strong>${formatRM(billed)}</strong> / ${formatRM(poTotal)}</span>
+      <span style="color:var(--success)">${t.paidSum}: <strong>${formatRM(paid)}</strong></span>
+    </div>
+  </div>`
+}
+
 async function renderPODetail(id) {
   const isBm = APP.language==='bm'
   const t = isBm ? {
@@ -27559,18 +27611,30 @@ async function renderPODetail(id) {
     items:'Item', qty:'Kuantiti', qtyReceived:'Diterima', cost:'Kos Unit', amount:'Jumlah', total:'Jumlah Besar',
     status:'Status', notes:'Nota', receiveGoods:'Terima Barang', print:'Cetak', changeStatus:'Tukar Status...',
     draft:'Draf', sent:'Dihantar', partial:'Sebahagian', received:'Diterima', cancelled:'Dibatalkan',
-    grnHistory:'Sejarah Penerimaan', noGrn:'Tiada penerimaan lagi', notFound:'PO tidak dijumpai.', grnNo:'No. GRN', date:'Tarikh'
+    grnHistory:'Sejarah Penerimaan', noGrn:'Tiada penerimaan lagi', notFound:'PO tidak dijumpai.', grnNo:'No. GRN', date:'Tarikh',
+    linkedBills:'Bil Dilink', noBills:'Tiada bil pembekal dilink ke PO ini lagi', billsErr:'Gagal memuatkan bil dilink', billNo:'No. Bil',
+    billTotal:'Jumlah', billPaid:'Dibayar', billBal:'Baki', billed:'Dibilkan', paidSum:'Dibayar', bUnpaid:'Belum Dibayar', bPartial:'Separa', bPaid:'Selesai'
   } : {
     back:'Purchase Orders', edit:'Edit', supplier:'Supplier', orderDate:'Order Date', expectedDate:'Expected Date',
     items:'Items', qty:'Qty', qtyReceived:'Received', cost:'Unit Cost', amount:'Amount', total:'Grand Total',
     status:'Status', notes:'Notes', receiveGoods:'Receive Goods', print:'Print', changeStatus:'Change Status...',
     draft:'Draft', sent:'Sent', partial:'Partial', received:'Received', cancelled:'Cancelled',
-    grnHistory:'Receiving History', noGrn:'No receipts yet', notFound:'PO not found.', grnNo:'GRN No.', date:'Date'
+    grnHistory:'Receiving History', noGrn:'No receipts yet', notFound:'PO not found.', grnNo:'GRN No.', date:'Date',
+    linkedBills:'Linked Bills', noBills:'No supplier bills linked to this PO yet', billsErr:'Failed to load linked bills', billNo:'Bill No.',
+    billTotal:'Total', billPaid:'Paid', billBal:'Balance', billed:'Billed', paidSum:'Paid', bUnpaid:'Unpaid', bPartial:'Partial', bPaid:'Paid'
   }
   const {data: po} = await sb.from('purchase_orders').select('*,suppliers(name,phone,email,address)').eq('id',id).eq('tenant_id',APP.tenant.id).single()
   if(!po) { document.getElementById('main').innerHTML = `<div class="empty-state" style="padding:60px"><p>${t.notFound}</p></div>`; return }
   const {data: items} = await sb.from('purchase_order_items').select('*,products(name_en,name_bm)').eq('po_id',id)
   const {data: grns} = await sb.from('goods_received_notes').select('id,grn_no,received_date').eq('po_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('received_date',{ascending:false})
+  // Linked supplier bills (read-only) — tenant-scoped, excludes soft-deleted/voided
+  let poBills = [], poBillsErr = null
+  try {
+    const {data: bl, error: blErr} = await sb.from('supplier_bills').select('id,bill_no,ref_no,bill_date,total,paid_amt,status').eq('po_id',id).eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('bill_date',{ascending:false})
+    if(blErr) poBillsErr = blErr.message || String(blErr)
+    else poBills = bl || []
+  } catch(e) { poBillsErr = (e && e.message) || String(e) }
+  const poLinkedBillsHtml = _poLinkedBillsCard(po, poBills, poBillsErr, t)
 
   const statusColor = s => s==='received'?'var(--success)':s==='partial'?'var(--warning)':s==='cancelled'?'var(--danger)':'var(--text-3)'
   const statusLabel = s => t[s]||s
@@ -27624,6 +27688,7 @@ async function renderPODetail(id) {
     `<table><thead><tr><th>${t.grnNo}</th><th>${t.date}</th></tr></thead>
     <tbody>${grns.map(g=>`<tr><td style="white-space:nowrap">${g.grn_no}</td><td style="white-space:nowrap">${formatDate(g.received_date)}</td></tr>`).join('')}</tbody></table>`}
   </div>
+  ${poLinkedBillsHtml}
 
   <div class="pdoc print-only" style="--pdoc-accent:#0E7490;max-width:820px;margin:24px auto">
     <div class="pdoc-header">
