@@ -5,7 +5,7 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '2'  # bump when app/ffm-*.js change (v2: tenant gate)
+VER = '3'  # per-account barcode + pcs per unit
 ANCHOR = '<script src="./booking-notif-set.js?v=1"></script>'
 TAGS = ''.join('\n<script src="./%s?v=%s"></script>' % (f, VER) for f in ('ffm-core.js', 'ffm-hub.js', 'ffm-do.js', 'ffm-po.js'))
 def main():
