@@ -23,5 +23,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/index.html
           git diff --cached --quiet && echo "no change" && exit 0
-          git commit -m "chore(ffm): load ffm-core/hub/do/po.js?v=1 (Flash Fulfillment connector)"
+          git commit -m "chore(ffm): load ffm-core/hub/do/po.js (Flash Fulfillment connector, cache-bust)"
           git push origin HEAD:main
