@@ -84,8 +84,10 @@
       renderInvDetail(invoiceId);
     } catch (e) { P.toast(t('err') + ((e && e.message) || e), 'error'); }
   };
-  V.bill = async function (billId, paymentId, amount) {
+  V.bill = async function (billId, paymentId, amount, pvChecked) {
     try {
+      /* PV-created payment: cascade to the PV void path (index.html) so PV, cashbook row and PV journals follow, bill reversed once */
+      if (!pvChecked && typeof _billPayVoidViaPV === 'function' && (await _billPayVoidViaPV(billId, paymentId, amount))) return;
       if (!(await P.has('payment_voids'))) { ok[P.tid()] = false; V._legacy = 1; return _billPayVoid(billId, paymentId, amount); }
       var tid = P.tid(), amt = Number(amount || 0);
       var bill = (await q(sb.from('supplier_bills').select('id,total,paid_amt,status,bill_no,supplier_id,suppliers(name)').eq('id', billId).eq('tenant_id', tid).single())).data;
