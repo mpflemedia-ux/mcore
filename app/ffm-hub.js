@@ -93,7 +93,9 @@
     function inp(id, label, val, extra) { return '<div class="form-group"><label class="form-label" for="' + id + '">' + esc(label) + '</label><input id="' + id + '" class="form-input" value="' + esc(val == null ? '' : val) + '" ' + (extra || '') + '></div>'; }
     function sel(id, label, val, opts) { return '<div class="form-group"><label class="form-label" for="' + id + '">' + esc(label) + '</label><select id="' + id + '" class="form-select">' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(val == null ? '' : val) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></div>'; }
     function chk(id, label, on) { return '<label class="ffm-chk"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + esc(label) + '</label>'; }
-    function secret(id, label, has) { return inp(id, label, '', 'type="password" autocomplete="new-password" spellcheck="false" placeholder="' + esc(has ? t('Saved — leave blank to keep', 'Disimpan — biar kosong untuk kekal') : t('Paste here', 'Tampal di sini')) + '"'); }
+    var NOCAP = 'autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"';
+    function normUrl(s) { s = String(s || '').trim(); var m = s.match(/^([a-z][a-z0-9+.-]*:\/\/[^\/?#]*)(.*)$/i); return m ? m[1].toLowerCase() + m[2] : s; } // mobile auto-capital → https://open.…
+    function secret(id, label, has) { return inp(id, label, '', 'type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="' + esc(has ? t('Saved — leave blank to keep', 'Disimpan — biar kosong untuk kekal') : t('Paste here', 'Tampal di sini')) + '"'); }
 
     async function acctForm(a) {
       a = a || {};
@@ -102,16 +104,16 @@
       var html = '<div class="ffm-sec">' + esc(t('Account', 'Akaun')) + '</div>' + inp('fa-label', t('Label (e.g. Brzky / Funded)', 'Label (cth. Brzky / Funded)'), a.label, 'maxlength="60"') +
         '<div class="ffm-sec">' + esc(t('API keys (write-only)', 'Kunci API (tulis sahaja)')) + '</div><div class="ffm-row">' + secret('fa-mch', 'mchId', !!a.mch_id_masked) + secret('fa-key', 'API key', !!a.has_api_key) + '</div>' +
         '<div class="ffm-sec">' + esc(t('Webhook (from FFM, optional)', 'Webhook (daripada FFM, pilihan)')) + '</div><div class="ffm-row">' + secret('fa-wk', 'App Key', !!a.has_webhook_secret) + secret('fa-ws', 'App Secret', !!a.has_webhook_secret) + secret('fa-wc', 'App Code', !!a.has_webhook_secret) + '</div>' +
-        '<div class="ffm-sec">' + esc(t('Orders', 'Pesanan')) + '</div><div class="ffm-row">' + inp('fa-wh', t('Warehouse ID', 'ID Gudang'), a.warehouse_id) + inp('fa-store', t('Store code', 'Kod kedai'), a.store_code) + '</div>' +
+        '<div class="ffm-sec">' + esc(t('Orders', 'Pesanan')) + '</div><div class="ffm-row">' + inp('fa-wh', t('Warehouse ID', 'ID Gudang'), a.warehouse_id, NOCAP) + inp('fa-store', t('Store code', 'Kod kedai'), a.store_code, NOCAP) + '</div>' +
         '<div class="ffm-row">' + inp('fa-plat', t('Order source platform', 'Platform sumber pesanan'), a.order_source_platform || 'Line') + sel('fa-pay', t('Default payment', 'Bayaran lalai'), a.pay_mode || '2', [['1', 'COD'], ['2', t('Bank transfer', 'Pindahan bank')], ['3', t('E-payment', 'E-bayaran')]]) + '</div>' +
-        inp('fa-track', t('Tracking link (https…{pno}, optional)', 'Pautan jejak (https…{pno}, pilihan)'), a.tracking_url_template, 'placeholder="https://…{pno}"') +
+        inp('fa-track', t('Tracking link (https…{pno}, optional)', 'Pautan jejak (https…{pno}, pilihan)'), a.tracking_url_template, NOCAP + ' inputmode="url" placeholder="https://…{pno}"') +
         chk('fa-auto', t('Auto-approve orders at FFM (check=1)', 'Lulus auto pesanan di FFM (check=1)'), a.auto_approve) + chk('fa-low', t('Low-stock alerts', 'Amaran stok rendah'), a.low_stock_enabled !== false) +
         '<div class="ffm-sec">' + esc(t('Financing', 'Pembiayaan')) + '</div>' + chk('fa-fund', t('Funded stock (Sales Plan financing)', 'Stok dibiayai (pembiayaan Pelan Jualan)'), a.is_funded) +
         sel('fa-plan', t('Sales Plan', 'Pelan Jualan'), a.sales_plan_id || '', [['', '—']].concat(plans.map(function (p) { return [p.id, p.name || p.id]; }))) +
         '<div class="ffm-sec">' + esc(t('Advanced (verify with FFM MY)', 'Lanjutan (sahkan dengan FFM MY)')) + '</div><div class="ffm-row">' +
-        sel('fa-sign', t('Sign mode', 'Mod tandatangan'), a.sign_mode || 'json', [['json', 'JSON (Algorithm 2)'], ['form', 'Form (Algorithm 1)']]) + inp('fa-prefix', t('API path prefix', 'Awalan laluan API'), a.api_prefix, 'placeholder="(empty) or /open/v2"') + '</div><div class="ffm-row">' +
+        sel('fa-sign', t('Sign mode', 'Mod tandatangan'), a.sign_mode || 'json', [['json', 'JSON (Algorithm 2)'], ['form', 'Form (Algorithm 1)']]) + inp('fa-prefix', t('API path prefix', 'Awalan laluan API'), a.api_prefix, NOCAP + ' placeholder="(empty) or /open/v2"') + '</div><div class="ffm-row">' +
         sel('fa-mult', t('Amount unit', 'Unit amaun'), a.amount_multiplier || 100, [['100', t('sen (×100)', 'sen (×100)')], ['1', 'RM (×1)']]) + sel('fa-fee', t('Fee source', 'Sumber yuran'), a.fee_source || 'shipping', [['shipping', t('FFM order fee API', 'API yuran pesanan FFM')], ['manual', t('Manual entry', 'Masuk manual')]]) + '</div>' +
-        '<div class="ffm-row">' + inp('fa-base', 'Base URL', a.base_url || 'https://open.flashfulfillment.my') + inp('fa-src', 'FFM-Source-From', a.source_from) + '</div>' +
+        '<div class="ffm-row">' + inp('fa-base', 'Base URL', a.base_url || 'https://open.flashfulfillment.my', NOCAP + ' inputmode="url"') + inp('fa-src', 'FFM-Source-From', a.source_from, NOCAP) + '</div>' +
         (a.id ? chk('fa-active', t('Active', 'Aktif'), a.is_active !== false) : '');
       F.modal(a.id ? t('Edit FFM account', 'Ubah akaun FFM') : t('Add FFM account', 'Tambah akaun FFM'), html, t('Save', 'Simpan'), async function (ov, btn) {
         var v = function (id) { var el = ov.querySelector('#' + id); return el ? el.value.trim() : ''; }, c = function (id) { var el = ov.querySelector('#' + id); return !!(el && el.checked); };
@@ -119,9 +121,9 @@
         if (!a.id && (!v('fa-mch') || !v('fa-key'))) return F.modalErr(t('mchId and API key are required for a new account.', 'mchId dan kunci API diperlukan untuk akaun baharu.'));
         if (c('fa-fund') && !v('fa-plan')) return F.modalErr(t('Pick the Sales Plan for funded stock.', 'Pilih Pelan Jualan untuk stok dibiayai.'));
         var body = { id: a.id || undefined, label: v('fa-label'), mch_id: v('fa-mch'), api_key: v('fa-key'), webhook_app_key: v('fa-wk'), webhook_app_secret: v('fa-ws'), webhook_app_code: v('fa-wc'),
-          warehouse_id: v('fa-wh') || null, store_code: v('fa-store') || null, order_source_platform: v('fa-plat') || 'Line', pay_mode: v('fa-pay'), tracking_url_template: v('fa-track'),
+          warehouse_id: v('fa-wh') || null, store_code: v('fa-store') || null, order_source_platform: v('fa-plat') || 'Line', pay_mode: v('fa-pay'), tracking_url_template: normUrl(v('fa-track')),
           auto_approve: c('fa-auto'), low_stock_enabled: c('fa-low'), is_funded: c('fa-fund'), sales_plan_id: c('fa-fund') ? v('fa-plan') : null,
-          sign_mode: v('fa-sign'), api_prefix: v('fa-prefix'), amount_multiplier: Number(v('fa-mult')), fee_source: v('fa-fee'), base_url: v('fa-base'), source_from: v('fa-src') || null };
+          sign_mode: v('fa-sign'), api_prefix: v('fa-prefix'), amount_multiplier: Number(v('fa-mult')), fee_source: v('fa-fee'), base_url: normUrl(v('fa-base')).replace(/\/+$/, ''), source_from: v('fa-src') || null };
         if (a.id) body.is_active = c('fa-active');
         F.modalErr(''); F.busy(btn, true, t('Saving…', 'Menyimpan…'));
         try {
