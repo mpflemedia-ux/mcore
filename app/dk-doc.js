@@ -31,7 +31,12 @@
     '@media(max-width:900px){.dk-doc-ft.sticky{position:sticky;bottom:0;z-index:30;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;box-shadow:var(--shadow-lg,var(--shadow));' +
     'margin:0 0 calc(4px + env(safe-area-inset-bottom,0px))}.dk-doc-ft.sticky .btn{flex:1 1 auto}}' +
     '.dk-sigbox{display:none}' +
-    '@media print{.dk-doc{display:none!important}.pdoc.dk-src{display:block!important}.dk-sigbox{display:table!important}}';
+    '.pdoc.dk-gen .pdoc-table th{text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em}.pdoc.dk-gen .pdoc-table td{padding:8px 10px;vertical-align:top}.pdoc.dk-gen .pdoc-table .r{text-align:right;white-space:nowrap}' +
+    '.pdoc.dk-gen .dk-ptot{max-width:300px;margin:12px 0 0 auto}.pdoc.dk-gen .dk-ptot>div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:13px}.pdoc.dk-gen .dk-ptot>div.g{font-weight:800;font-size:15px;margin-top:4px;padding-top:8px}' +
+    '.pdoc.dk-gen .pdoc-notes{margin-top:14px;font-size:12px;white-space:pre-wrap;line-height:1.5}' +
+    '@media print{.dk-doc{display:none!important}.pdoc.dk-src{display:block!important}.dk-sigbox{display:table!important}' +
+    'body.dk-print-one .pdoc:not(.dk-one),body.dk-print-one .pdoc.dk-src:not(.dk-one){display:none!important}body.dk-print-one .pdoc.dk-one{display:block!important}}' +
+    '.pdoc.dk-one.dk-tmp{position:fixed;left:-10000px;top:0;width:794px}@media print{.pdoc.dk-one.dk-tmp{position:static;left:auto;width:auto}}';
   function addCss() { if (document.getElementById('dk-doc-css')) return; var s = document.createElement('style'); s.id = 'dk-doc-css'; s.textContent = css; document.head.appendChild(s); }
 
   /* ---------- parse .pdoc → model ---------- */
@@ -68,7 +73,7 @@
     });
     var pay = p.querySelector('.pdoc-pay-block');
     if (pay) { var q = pay.querySelector('img'); m.notes.push({ k: txt(pay.firstElementChild) || L('Payment', 'Pembayaran'), v: Array.prototype.slice.call(pay.children, 1).filter(function (x) { return x.tagName !== 'IMG'; }).map(txt).filter(Boolean).join('\n'), img: q ? q.getAttribute('src') : '' }); }
-    Array.prototype.forEach.call(p.querySelectorAll('.pdoc-inv-terms,.pdoc-terms,.pdoc-notes,[data-dk-note]'), function (n) { var s = txt(n); if (s) m.notes.push({ k: n.getAttribute('data-dk-note') || L('Terms', 'Terma'), v: s }); });
+    Array.prototype.forEach.call(p.querySelectorAll('.pdoc-inv-terms,.pdoc-terms,.pdoc-notes,[data-dk-note]'), function (n) { var s = txt(n.querySelector('.dk-nv') || n); if (s) m.notes.push({ k: n.getAttribute('data-dk-note') || L('Terms', 'Terma'), v: s }); });
     m.foot = txt(p.querySelector('.pdoc-footer-note'));
     try { m.accent = getComputedStyle(p).getPropertyValue('--pdoc-accent').trim(); } catch (e) {}
     Object.keys(extra).forEach(function (k) { if (k !== 'sigs') m[k] = extra[k]; });
@@ -249,5 +254,34 @@
   function file(models, name) { var ms = [].concat(models); return pdfOf(ms).then(function (b) { return fileOf(b, name || fname(ms[0])); }); }
   function download(f) { if (!f) return f; var u = URL.createObjectURL(f), a = document.createElement('a'); a.href = u; a.download = f.name || 'document.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 4000); toast(L('PDF downloaded', 'PDF dimuat turun')); return f; }
 
-  window.DKD = { parse: parse, view: view, mount: mount, print: print, sigBoxes: sigBoxes, pdf: pdfOf, file: file, download: download, clean: clean, css: addCss };
+  /* ---------- paper: model → .pdoc markup (existing pdoc classes; round-trips through parse) ---------- */
+  function paper(m, o) {
+    m = m || {}; o = o || {};
+    var h = '<div class="pdoc-header"><div class="pdoc-logo-row">' + (m.logo ? '<img src="' + esc(m.logo) + '" alt="" style="max-height:48px;max-width:120px;object-fit:contain">' : '') +
+      '<div><div class="pdoc-company-name">' + esc(m.co || '') + '</div>' + (m.sub ? '<div class="pdoc-company-sub">' + esc(m.sub) + '</div>' : '') + '</div></div>' +
+      '<div class="pdoc-meta">' + (m.meta || []).map(function (x) { return esc(x.k ? x.k + ': ' : '') + '<strong>' + esc(x.v) + '</strong>'; }).join('<br>') + '</div></div>';
+    h += '<div class="pdoc-title-bar">' + esc(m.title || '') + '</div>';
+    if (m.party && (m.party.name || (m.party.lines || []).length)) h += '<div class="pdoc-band"><div><div class="pdoc-band-name">' + esc(m.party.name || '') + '</div>' + (m.party.lines || []).map(function (l) { return '<div class="pdoc-band-sub">' + esc(l) + '</div>'; }).join('') + '</div></div>';
+    var cols = m.cols || [];
+    if (cols.length) h += '<table class="pdoc-table" style="width:100%;border-collapse:collapse"><thead><tr>' + cols.map(function (c, i) { return '<th' + (i ? ' class="r"' : '') + '>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      (m.rows || []).map(function (r) { return '<tr>' + cols.map(function (c, i) { return '<td' + (i ? ' class="r"' : '') + '>' + esc(r[i] == null ? '' : r[i]) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>';
+    if ((m.tots || []).length) h += '<div class="dk-ptot">' + m.tots.map(function (t) { return '<div class="' + (t.g ? 'g' : '') + '" style="display:flex;justify-content:space-between' + (t.g ? ';border-top:2px solid var(--pdoc-accent)' : '') + '"><span>' + esc(t.k) + '</span><span>' + esc(t.v) + '</span></div>'; }).join('') + '</div>';
+    (m.notes || []).forEach(function (n) { if (n && n.v) h += '<div class="pdoc-notes" data-dk-note="' + esc(n.k || '') + '"><strong>' + esc(n.k || '') + '</strong>\n<span class="dk-nv">' + esc(n.v) + '</span></div>'; });
+    if (m.foot) h += '<div class="pdoc-footer-note">' + esc(m.foot) + '</div>';
+    var d = document.createElement('div'); d.className = 'pdoc dk-gen' + (o.cls ? ' ' + o.cls : '');
+    d.style.cssText = (m.accent ? '--pdoc-accent:' + m.accent + ';' : '') + 'max-width:820px;margin:0 auto 24px';
+    d.innerHTML = h; return d;
+  }
+  /* print exactly one paper (temporary model paper or an existing .pdoc) */
+  function printOne(x, o) {
+    o = o || {}; addCss();
+    var el = x && x.nodeType ? x : paper(x, { cls: 'dk-tmp' }), tmp = !(x && x.nodeType);
+    if (tmp) (document.getElementById('main') || document.body).appendChild(el);
+    el.classList.add('dk-one'); document.body.classList.add('dk-print-one');
+    var done = function () { document.body.classList.remove('dk-print-one'); el.classList.remove('dk-one'); if (tmp) el.remove(); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    print(el, o); setTimeout(done, 4000);
+  }
+
+  window.DKD = { paper: paper, printOne: printOne, parse: parse, view: view, mount: mount, print: print, sigBoxes: sigBoxes, pdf: pdfOf, file: file, download: download, clean: clean, css: addCss };
 })();

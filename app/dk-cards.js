@@ -280,6 +280,7 @@
     if (canShare(cfg) && it.id) { var wb = document.createElement('button'); wb.type = 'button'; wb.className = 'btn btn-outline btn-sm dk-wa'; wb.innerHTML = '<i class="ti ti-brand-whatsapp"></i> WhatsApp'; wb.onclick = function () { DKS.share(cfg.doc, it.id); }; acts.appendChild(wb); }
     if (it.ac) [].forEach.call(it.ac.querySelectorAll('button,a.btn'), function (b) { acts.appendChild(cloneBtn(b)); });
     if (window.DKSign && cfg.doc && DKSign.has(cfg.doc) && it.id) { var sb2 = document.createElement('button'); sb2.type = 'button'; sb2.className = 'btn btn-outline btn-sm'; sb2.innerHTML = '<i class="ti ti-signature"></i> ' + esc(L('Sign', 'Tandatangan')); sb2.onclick = function () { DKSign.open(cfg.doc, it.id, it.title, function () { loadTl(R, el, it, true); }); }; acts.appendChild(sb2); }
+    if (typeof cfg.extra === 'function' && it.id) { try { (cfg.extra(it) || []).forEach(function (x) { var eb = document.createElement('button'); eb.type = 'button'; eb.className = 'btn btn-sm ' + (x.cls || 'btn-outline'); eb.innerHTML = (x.icon ? '<i class="ti ' + x.icon + '"></i> ' : '') + esc(x.label); eb.onclick = function (e) { e.stopPropagation(); x.onClick(eb, it); }; acts.appendChild(eb); }); } catch (e) {} }
     if (!acts.children.length) acts.remove();
     var head = el.querySelector('.dk-head');
     head.addEventListener('click', function (e) {
