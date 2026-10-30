@@ -12,7 +12,7 @@ function skip(el){
   if(['email','tel','url','password','number','date','datetime-local','hidden','checkbox','radio','file','search'].indexOf(t)>=0) return true;
   if(el.tagName==='SELECT' || el.readOnly || el.disabled) return true;
   var idn=id+' '+String(el.name||'');
-  if(/email|phone|tel|fax|postcode|zip|url|website|password|qty|price|amount|account|ssm|tin|qr|sku|search/i.test(idn)) return true;
+  if(/email|phone|tel|fax|postcode|zip|url|website|password|qty|price|amount|account|ssm|tin|qr|sku|barcode|search/i.test(idn)) return true;
   if(/\bcf-code\b|\bref_no\b|\bif-/.test(idn) && /code|ref/.test(idn)) return true;
   var v=String(el.value||'');
   if(v.indexOf('@')>=0) return true;

@@ -227,7 +227,7 @@
     function linkModal(acct, p, l, bc) {
       var ppu = F.ppu(l && l.pcs_per_unit), warned = '';
       var html = '<div class="ffm-muted" style="margin-bottom:10px">' + esc((typeof prodName === 'function' ? prodName(p) : p.name_en) + ' · ' + acct.label) + '</div>' +
-        '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="characters"') +
+        '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-no-titlecase="1"') +
         inp('fl-ppu', t('Pcs per FFM unit', 'Pcs seunit FFM'), String(ppu), 'type="number" min="1" step="1" inputmode="numeric"') + '</div>' +
         '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-warn" role="status"></div>';
       var ov = F.modal(t('FFM barcode & pack size', 'Barkod FFM & saiz pek'), html, t('Save', 'Simpan'), async function (ov, btn) {

@@ -5,7 +5,8 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '9'  # FFM: stock refresh skips rejected barcodes (named), honest Synced (goods/list check), stock notes on Products
+VER = '10'  # FFM: link barcode keeps exact case; sync add-only (no edit of existing FFM goods)
+TC_VER = '3'  # title-case-inputs.js: skip barcode fields
 ANCHOR = '<script src="./booking-notif-set.js?v=1"></script>'
 TAGS = ''.join('\n<script src="./%s?v=%s"></script>' % (f, VER) for f in ('ffm-core.js', 'ffm-hub.js', 'ffm-do.js', 'ffm-po.js'))
 def main():
@@ -14,6 +15,7 @@ def main():
     html = INDEX.read_text(encoding='utf-8')
     if 'ffm-core.js?v=' in html:
         new = re.sub(r'(\./ffm-(?:core|hub|do|po)\.js)\?v=\d+', r'\g<1>?v=' + VER, html)
+        new = re.sub(r'(\./title-case-inputs\.js)\?v=\d+', r'\g<1>?v=' + TC_VER, new)
         if new == html:
             print('already patched (v=%s)' % VER); return
         INDEX.write_text(new, encoding='utf-8'); print('bumped FFM script tags to v=%s' % VER); return

@@ -121,10 +121,11 @@ async function syncProducts(c: Ctx, b: Row) {
     if (p.code) body.goodsCode = String(p.code);
     if (p.image_url && /^https?:\/\//.test(p.image_url)) body.image = p.image_url;
     let err = '';
+    // Add only. 1309 = barcode already exists at FFM -> just link it; never edit_goods (would overwrite the merchant's own / draft goods in the SCM portal).
     try { await ffmCall(acct, sec, '/open/add_goods', body); }
     catch (e) {
       if (e instanceof FfmError && String(e.code) === '1002') { await onFfmErr(c, acct, e); throw e; }
-      try { await ffmCall(acct, sec, '/open/edit_goods', body); } catch (e2) { err = errMsg(e2) + ' | add: ' + errMsg(e); }
+      if (!(e instanceof FfmError && String(e.code) === '1309')) err = errMsg(e);
     }
     if (!err) { // honest "Synced": FFM said success — confirm the goods really exist there (/goods/list by barcode)
       try {
