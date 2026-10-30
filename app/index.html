@@ -1750,7 +1750,10 @@ html[data-skip-intro="1"] #intro-skip {
   }
 }
 </style>
-<script src="./public-inv-scroll.js?v=5"></script><link rel="stylesheet" href="./print-multipage.css?v=1"><link rel="stylesheet" href="./settings-audit-mobile.css?v=1"><script src="./public-apply-scroll.js?v=1"></script></head>
+<script src="./public-inv-scroll.js?v=5"></script><link rel="stylesheet" href="./print-multipage.css?v=1"><link rel="stylesheet" href="./settings-audit-mobile.css?v=1"><script src="./public-apply-scroll.js?v=1"></script>
+<style id="sd-paper-off">/* SD: the white paper is never shown (cards = only UI, sd-mobile-cards.js / sd-mobile-view.js); #sd-pdoc stays as hidden input layer, its loading/empty/error state + Generate Payslip card stay visible */
+@media screen{#sd-pdoc,#sd-pdoc>#sd-content{display:contents!important}#sd-pdoc>:not(#sd-content),#sd-content>:not(.empty-state):not(.card){display:none!important}}
+@media print{#sd-pdoc{display:none!important}}</style></head>
 <body>
 <!-- ─── INTRO VIDEO SCREEN ─────────────────────────────────────────────────── -->
 <div id="intro-screen" class="hidden" style="display:none">
@@ -32669,7 +32672,7 @@ async function renderSalaryDisbursement(month, year, reviewId) {
   const reload = 'renderSalaryDisbursement(Number(document.getElementById(\'sd-month\').value), Number(document.getElementById(\'sd-year\').value))'
   const tn = await _pdocGetTenant()
   const accent = _pdocAccentGet('sd')
-  _pdocSetPageOrientation('landscape')
+  _pdocSetPageOrientation('portrait', 10)
   _sdPrintFilenamePrefix = `SalaryDisbursement_${_pdocSlug(tn.name)}_${year}${String(month).padStart(2,'0')}`
   window._sdCurrentBatch = null
 
@@ -32683,7 +32686,7 @@ async function renderSalaryDisbursement(month, year, reviewId) {
       <span id="sd-batch-badge" class="no-print" style="display:inline-flex;align-items:center"></span>
       <span id="sd-review-slot" class="no-print" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"></span>
       <button class="btn btn-outline btn-sm no-print" id="sd-share-btn" style="display:none;white-space:nowrap" onclick="_sdShareForApproval(${month},${year})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi WhatsApp':'Share WhatsApp'}</button>
-      <button class="btn btn-outline" style="white-space:nowrap" onclick="_pdocSetPageOrientation('landscape', 6); _sdPreparePrint(); window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+      <button class="btn btn-outline" style="white-space:nowrap" onclick="_pdocSetPageOrientation('portrait', 10); _sdPreparePrint(); try{window._sdMobileView&&_sdMobileView.enterPrint()}catch(e){}; window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
     </div>
   </div>
   <div class="no-print" style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
@@ -33241,7 +33244,7 @@ function _sdRefreshSigRow() {
 }
 
 function _sdPreparePrint() {
-  _pdocSetPageOrientation('landscape', 6);
+  _pdocSetPageOrientation('portrait', 10); // SD prints the card layout (sd-mobile-view.js) at every width
   if(_sdPrintFilenamePrefix) { _pdocSetPrintFilename(_sdPrintFilenamePrefix+'_'+_pdocTimeStamp()); }
   _sdRefreshSigRow()
   ;(_sdRecords||[]).forEach(r => {
@@ -40202,7 +40205,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     // No controllerchange→reload: that forced a second full load after SW claim
     // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
-    navigator.serviceWorker.register('./sw.js?v=15').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=16').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
@@ -40221,7 +40224,7 @@ if('serviceWorker' in navigator){
 <script src="./payslip-band-align.js?v=1"></script>
 <script src="./payslip-statement.js?v=5"></script>
 <script src="./payslip-print-boot.js?v=3"></script>
-<script src="./sd-print-batch.js?v=3"></script>
+<script src="./sd-print-batch.js?v=4"></script>
 <script src="./employee-nickname.js?v=4"></script>
 <script src="./sales-commission-edit.js?v=1"></script>
 <script src="./sales-achievements-edit.js?v=1"></script>
@@ -40380,9 +40383,9 @@ if('serviceWorker' in navigator){
 <script src="./payslip-statutory-partial.js?v=2"></script>
 <script src="./payslip-pay-date.js?v=1"></script>
 <script src="./ot-payroll-resync.js?v=1"></script>
-<script src="./sd-mobile-cards.js?v=2"></script>
+<script src="./sd-mobile-cards.js?v=3"></script>
 <script src="./sd-tools.js?v=1"></script>
-<script src="./sd-mobile-view.js?v=1"></script>
+<script src="./sd-mobile-view.js?v=2"></script>
 <script src="./payslip-accum-outstanding.js?v=1"></script>
 <script src="./booking-free-confirm.js?v=2"></script>
 <script src="./settings-form-fit.js?v=4"></script>

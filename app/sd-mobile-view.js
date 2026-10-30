@@ -1,22 +1,22 @@
-/* Salary Disbursement — mobile view polish v1 (works with sd-mobile-cards.js).
-   When the cards are active (#sd-pdoc.sdc-on) on a <=900px screen:
-   - SCREEN: the whole white .pdoc paper is hidden (header, banner, summary bar, totals
-     strip, signature rows, wrapper-injected bits). It stays in the DOM so proxied inputs,
-     _sdRecalc, save and the desktop print keep working.
-   - A compact summary line (employees · Total Salary · Budget Required) sits above the
-     cards, read live from the hidden table; a Signatures card mirrors the paper's
-     Prepared/Checked/Approval inputs (proxied, fires their change -> _sdSaveSigs).
-   - PRINT from mobile: the paper is replaced by #sdm-print — read-only employee cards,
-     all expanded, header line + Total Net Pay, page-break-inside:avoid per card. Light
-     theme tokens are forced for the print only, then restored.
-   Desktop (>900px) screen + print untouched. Tokens only, EN/BM. */
+/* Salary Disbursement — paper-free view v2 (works with sd-mobile-cards.js v3).
+   v2 (Mike): the white .pdoc paper is gone at EVERY width, screen and print.
+   - #sd-pdoc stays in the DOM only as the hidden input/proxy layer (ids used by _sdRowValues,
+     _sdSaveAll, wrappers, review popup). On screen it is display:contents with everything
+     hidden except its loading / no-data / error .empty-state; in print it is display:none.
+     (index.html also carries a static copy of this rule in <head> so the paper never flashes.)
+   - Compact summary line (employees · Total Salary · Budget Required) above the cards and a
+     Signatures card mirroring Prepared/Checked/Approval inputs (fires their change -> _sdSaveSigs).
+   - PRINT at every width = read-only card print (#sdm-print): all cards expanded, header line,
+     Total Net Pay, page-break-inside:avoid per card, A4 portrait. Kept built continuously so it
+     prints even without beforeprint; light theme tokens forced during print, then restored.
+   Tokens only, EN/BM. */
 (function () {
   if (window.SD_MOBILE_VIEW_V1) return;
   window.SD_MOBILE_VIEW_V1 = true;
 
   var SIGS = [['preparedBy', 'Prepared By', 'Disediakan Oleh'], ['checkedBy', 'Checked By', 'Disemak Oleh'],
     ['firstApproval', 'First Approval', 'Kelulusan Pertama'], ['secondApproval', 'Second Approval', 'Kelulusan Kedua']];
-  var lastNarrow = null, printing = false, themeWas = null, timer = null;
+  var printing = false, themeWas = null, timer = null;
 
   function bm() { try { return APP.language === 'bm'; } catch (e) { return false; } }
   function L(en, ms) { return bm() ? ms : en; }
@@ -32,15 +32,7 @@
   function setHtml(el, h) { if (el && el.innerHTML !== h) el.innerHTML = h; }
   function mq(q) { try { return !!(window.matchMedia && window.matchMedia(q).matches); } catch (e) { return false; } }
 
-  // Screen width is cached while on screen media, so a print-media query can't fake it.
-  function screenNarrow() {
-    if (!mq('print')) {
-      lastNarrow = window.matchMedia ? mq('screen and (max-width: 900px)') : ((window.innerWidth || 9999) <= 900);
-    }
-    return !!lastNarrow;
-  }
   function cardsOn() { var p = $('sd-pdoc'); return !!(p && p.classList.contains('sdc-on') && $('sdc-wrap')); }
-  function mobileCards() { return cardsOn() && screenNarrow(); }
 
   /* ---------- CSS (tokens only) ---------- */
   function css() {
@@ -49,20 +41,26 @@
     s.id = 'sdm-css';
     s.textContent =
       '.sdm-sum,.sdm-sigs,#sdm-print{display:none}' +
-      '@media screen and (max-width:900px){' +
-        '#sd-pdoc.sdc-on{display:none!important}' +
+      '@media screen{' +
+        '#sd-pdoc,#sd-pdoc>#sd-content{display:contents!important}' +
+        '#sd-pdoc>:not(#sd-content),#sd-content>:not(.empty-state):not(.card){display:none!important}' +
+        '#sd-content>.empty-state{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-2)}' +
         '.sdm-sum.sdm-on{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:0 0 8px;padding:8px 12px;' +
           'background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);font-size:12px;color:var(--text-2);line-height:1.35}' +
         '.sdm-sum b{color:var(--text);font-weight:700;white-space:nowrap}' +
-        '.sdm-sum span{white-space:nowrap}' +
+        '.sdm-sum>span{white-space:nowrap}' +
+        '.sdm-sum>.sdm-hint{white-space:normal;flex-basis:100%;font-size:11px;color:var(--text-3)}' +
         '.sdm-sigs.sdm-on{display:block;margin:0 0 12px;padding:4px 12px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text)}' +
         '.sdm-sigs .sdc-row .form-input{flex:1 1 auto;width:auto;min-width:0;text-align:left}' +
         '.sdm-sigs .sdc-row>label{flex:0 0 42%}' +
       '}' +
+      '@media screen and (min-width:901px){' +
+        '.sdm-sig-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 24px}' +
+        '.sdm-sigs .sdc-row>label{flex:0 0 auto;min-width:120px}' +
+      '}' +
       '@media print{' +
-        '.sdm-sum,.sdm-sigs{display:none!important}' +
-        'html.sdm-print #sd-pdoc{display:none!important}' +
-        'html.sdm-print #sdm-print{display:block!important;break-inside:auto!important;page-break-inside:auto!important;' +
+        '.sdm-sum,.sdm-sigs,#sd-pdoc{display:none!important}' +
+        '#sdm-print{display:block!important;break-inside:auto!important;page-break-inside:auto!important;' +
           'color:var(--text);font-family:var(--font);font-size:11px;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
         '#sdm-print .sdm-p-head{border-bottom:2px solid var(--primary);padding:0 0 6px;margin:0 0 10px}' +
         '#sdm-print .sdm-p-co{font-size:14px;font-weight:700;color:var(--text)}' +
@@ -133,7 +131,9 @@
     var s = summary();
     setHtml(el, '<span>' + esc(L('Employees', 'Pekerja')) + ': <b>' + s.count + '</b></span>' +
       '<span>' + esc(L('Total Salary', 'Jumlah Gaji')) + ': <b>' + esc(s.salary) + '</b></span>' +
-      '<span>' + esc(L('Budget Required', 'Bajet Diperlukan')) + ': <b>' + esc(s.budget) + '</b></span>');
+      '<span>' + esc(L('Budget Required', 'Bajet Diperlukan')) + ': <b>' + esc(s.budget) + '</b></span>' +
+      '<span class="sdm-hint">' + esc(L('Statutory, allowance, advance and deduction fields are editable; saved when you tap Save. Yellow border = changed from the auto-calculated value.',
+        'Caruman, elaun, pendahuluan dan potongan boleh diedit; disimpan bila tekan Simpan. Border kuning = diubah dari nilai auto-kira.')) + '</span>');
   }
   function ensureSigs(on) {
     var pdoc = $('sd-pdoc'), el = $('sdm-sigs');
@@ -151,13 +151,14 @@
         });
       }
       el.setAttribute('data-lang', lang);
-      el.innerHTML = '<div class="sdc-cap">' + esc(L('Signatures', 'Tandatangan')) + '</div>' + SIGS.map(function (k) {
+      el.innerHTML = '<div class="sdc-cap">' + esc(L('Signatures', 'Tandatangan')) + '</div><div class="sdm-sig-grid">' + SIGS.map(function (k) {
         if (!$('sig-input-' + k[0])) return '';
         return '<div class="sdc-row"><label for="sdm-sig-' + k[0] + '">' + esc(L(k[1], k[2])) + '</label>' +
           '<input class="form-input" type="text" id="sdm-sig-' + k[0] + '" data-sig="sig-input-' + k[0] + '" autocomplete="off"></div>';
-      }).join('');
+      }).join('') + '</div>';
     }
-    if (!el.isConnected || el.previousSibling !== pdoc) pdoc.parentNode.insertBefore(el, pdoc.nextSibling);
+    var nx = $('sdm-print') || $('sdc-bar') || pdoc; // cards -> signatures -> print -> bar -> hidden paper
+    if (!el.isConnected || el.nextSibling !== nx) nx.parentNode.insertBefore(el, nx);
     if (el.classList.contains('sdm-on') !== on) el.classList.toggle('sdm-on', on);
     var active = document.activeElement;
     el.querySelectorAll('[data-sig]').forEach(function (inp) {
@@ -201,29 +202,26 @@
     var pdoc = $('sd-pdoc'); if (!pdoc) return null;
     var el = $('sdm-print');
     if (!el) { el = document.createElement('div'); el.id = 'sdm-print'; el.setAttribute('aria-hidden', 'true'); }
-    var anchor = $('sdm-sigs') || pdoc;
-    if (el.previousSibling !== anchor) anchor.parentNode.insertBefore(el, anchor.nextSibling);
+    var nx = $('sdc-bar') || pdoc;
+    if (!el.isConnected || el.nextSibling !== nx) nx.parentNode.insertBefore(el, nx);
     var vis = rows().filter(function (r) { return r.visible; }), s = summary();
     var co = String((pdoc.querySelector('.pdoc-company-name') || {}).textContent || ((window.APP && APP.tenant && APP.tenant.name) || '')).trim();
     var title = String((pdoc.querySelector('.pdoc-title-bar') || {}).textContent || L('Salary Disbursement', 'Penyaluran Gaji')).trim();
     var sigs = SIGS.map(function (k) { var t = $('sig-input-' + k[0]); return t && String(t.value || '').trim() ? L(k[1], k[2]) + ': ' + String(t.value).trim() : ''; })
       .filter(Boolean).join(' \u00b7 ');
     var d = new Date(), ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    el.innerHTML = '<div class="sdm-p-head">' + (co ? '<div class="sdm-p-co">' + esc(co) + '</div>' : '') +
+    setHtml(el, '<div class="sdm-p-head">' + (co ? '<div class="sdm-p-co">' + esc(co) + '</div>' : '') +
       '<div class="sdm-p-title">' + esc(title) + '</div>' +
       '<div class="sdm-p-meta">' + esc(s.count + ' ' + L('employee(s)', 'pekerja') + ' \u00b7 ' + L('Generated', 'Dijana') + ': ' + ymd) + '</div></div>' +
       vis.map(printCard).join('') +
       '<div class="sdm-p-total"><span>' + esc(L('Total Net Pay', 'Jumlah Gaji Bersih')) + '</span><span>' + esc(s.net) + '</span></div>' +
-      (sigs ? '<div class="sdm-p-sigs">' + esc(sigs) + '</div>' : '');
+      (sigs ? '<div class="sdm-p-sigs">' + esc(sigs) + '</div>' : ''));
     return el;
   }
   function enterPrint() {
-    if (!mobileCards()) return false;
+    if (!cardsOn()) return false;
     buildPrint();
     document.documentElement.classList.add('sdm-print');
-    var pg = $('sdm-page');
-    if (!pg) { pg = document.createElement('style'); pg.id = 'sdm-page'; pg.textContent = '@page{size:A4 portrait;margin:10mm}'; }
-    document.head.appendChild(pg); // last @page rule wins over pdoc landscape
     if (!printing) {
       themeWas = document.documentElement.getAttribute('data-theme');
       if (themeWas === 'dark') { document.documentElement.setAttribute('data-theme', 'light'); document.body.classList.remove('dark'); }
@@ -234,7 +232,6 @@
   }
   function exitPrint() {
     document.documentElement.classList.remove('sdm-print');
-    var pg = $('sdm-page'); if (pg) pg.remove();
     if (printing && themeWas === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); document.body.classList.add('dark'); }
     printing = false; themeWas = null;
   }
@@ -255,15 +252,16 @@
     var pm = window.matchMedia && window.matchMedia('print');
     if (pm) { var f = function (e) { if (!e.matches && printing) exitPrint(); }; pm.addEventListener ? pm.addEventListener('change', f) : pm.addListener(f); }
   } catch (e) {}
-  window.addEventListener('resize', function () { screenNarrow(); schedule(); });
+  window.addEventListener('resize', schedule);
 
   function tick() {
     timer = null;
     wrapRecalc();
     if (!$('sd-pdoc') || !$('sdc-wrap')) { ['sdm-sum', 'sdm-sigs'].forEach(function (i) { var e = $(i); if (e) e.remove(); }); return; }
-    var on = mobileCards();
+    var on = cardsOn();
     ensureSummary(on);
     ensureSigs(on);
+    if (on) buildPrint(); else { var pp = $('sdm-print'); if (pp) pp.remove(); }
   }
   function schedule() { if (!timer) timer = setTimeout(tick, 150); }
   function observe() {
@@ -283,5 +281,5 @@
   wrapRecalc();
   setTimeout(wrapRecalc, 900);
   observe();
-  window._sdMobileView = { tick: tick, summary: summary, buildPrint: buildPrint, enterPrint: enterPrint, exitPrint: exitPrint, mobileCards: mobileCards };
+  window._sdMobileView = { tick: tick, summary: summary, buildPrint: buildPrint, enterPrint: enterPrint, exitPrint: exitPrint, cardsOn: cardsOn };
 })();

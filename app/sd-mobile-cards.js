@@ -1,11 +1,12 @@
-/* Salary Disbursement — mobile card editor (<=900px). v2 (v2: status-chip slot, per-card
-   'Recalculate statutory' button, partial-save dirty handling, hooks for sd-tools.js)
-   Screen-only, compact accordion cards built as a SEPARATE DOM above #sd-pdoc.
-   Card inputs never reuse table ids: each has data-target="<table input id>"
-   and proxies its value into the (hidden on mobile) table input, then fires
-   'input'/'change' there, so _sdRecalc, sd-employer-edit, sd-table-fit,
-   print-batch, _sdSaveAll and print keep working unchanged. Desktop (>900px)
-   and print never show the cards; print still uses the table. */
+/* Salary Disbursement — card editor. v3 (v3: cards are the ONLY SD editing UI at every width;
+   the white .pdoc paper is hidden on screen + print by sd-mobile-view.js; desktop >900px gets a
+   responsive grid (open card spans the row, sections side by side) and an inline sticky action
+   bar; cards built from every payroll row, print-batch only filters them.)
+   v2: status-chip slot, per-card 'Recalculate statutory', partial-save dirty handling, sd-tools hooks.
+   Cards are a SEPARATE DOM above #sd-pdoc. Card inputs never reuse table ids: each has
+   data-target="<table input id>" and proxies its value into the hidden table input, then fires
+   'input'/'change' there, so _sdRecalc, sd-employer-edit, print-batch, _sdSaveAll and the
+   review popup keep working unchanged. */
 (function () {
   if (window.SD_MOBILE_CARDS_V1) return;
   window.SD_MOBILE_CARDS_V1 = true;
@@ -37,12 +38,9 @@
     var s = document.createElement('style');
     s.id = 'sdc-css';
     s.textContent =
-      '.sdc-wrap{display:none}' +
       '@media print{.sdc-wrap,.sdc-bar{display:none!important}}' +
-      '@media screen and (max-width:900px){' +
-      '#sd-pdoc.sdc-on .pdoc-sd-scroll{display:none!important}' +
+      '@media screen{' +
       '.sdc-wrap{display:flex;flex-direction:column;gap:6px;margin:0 0 12px}' +
-      '#main:has(> .sdc-bar){padding-bottom:calc(76px + env(safe-area-inset-bottom))!important}' +
       '.sdc-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;color:var(--text)}' +
       '.sdc-card.sdc-open{border-color:var(--primary)}' +
       '.sdc-head{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;text-align:left;color:var(--text);min-height:48px}' +
@@ -70,7 +68,7 @@
       '.sdc-row .form-input.sdc-amended{border-color:var(--warning)}' +
       '.sdc-netrow{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--text-2)}' +
       '.sdc-netrow b{font-family:"Space Grotesk",sans-serif;font-size:15px;color:var(--primary);white-space:nowrap}' +
-      '.sdc-bar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;' +
+      '.sdc-bar{z-index:50;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;' +
         'background:var(--bg-card);border-top:1px solid var(--border);padding:10px 14px calc(10px + env(safe-area-inset-bottom));color:var(--text)}' +
       '.sdc-tot{display:flex;flex-direction:column;min-width:0}' +
       '.sdc-tot span{font-size:11px;color:var(--text-3);white-space:nowrap}' +
@@ -79,19 +77,42 @@
       '.sdc-bar .sdc-unsaved{font-size:11px;font-weight:600;color:var(--warning);white-space:nowrap;display:none}' +
       '.sdc-bar.sdc-has-dirty .sdc-unsaved{display:inline}' +
       '.sdc-bar .btn{white-space:nowrap;min-height:40px}' +
+      '.sdc-sec>.sdc-cap:first-child{margin-top:10px}' +
+      '}' +
+      '@media screen and (max-width:900px){' +
+      '#main:has(> .sdc-bar){padding-bottom:calc(76px + env(safe-area-inset-bottom))!important}' +
+      '.sdc-bar{position:fixed;left:0;right:0;bottom:0}' +
       'body:has(.sdc-bar) #ai-chat-fab{bottom:84px}' +
       'body:has(.sdc-bar) #dash-home-fab{bottom:144px}' +
       'body:has(.sdc-bar) #scroll-top-btn{bottom:204px}' +
       '}' +
-      '@media screen and (min-width:901px){.sdc-bar{display:none!important}}';
+      '@media screen and (min-width:901px){' +
+      '.sdc-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;align-items:start}' +
+      '.sdc-card.sdc-open{grid-column:1/-1}' +
+      '.sdc-open .sdc-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:0 28px;padding:4px 16px 12px}' +
+      '.sdc-body>.sdc-netrow{grid-column:1/-1}' +
+      '.sdc-bar{position:sticky;bottom:0;margin:4px 0 16px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;box-shadow:var(--shadow)}' +
+      '}';
     document.head.appendChild(s);
   }
 
   /* ---------- read the table ---------- */
   function tableEl() { return document.querySelector('#sd-content .pdoc-sd-table'); }
+  function sdRecs() {
+    var r = null;
+    try { r = (typeof _sdRecords !== 'undefined') ? _sdRecords : null; } catch (e) { r = null; }
+    return r || window._sdRecords || [];
+  }
   function rowsFromTable(table) {
-    var out = [];
-    table.querySelectorAll('tbody > tr').forEach(function (tr) {
+    var out = [], trs = [], seen = {};
+    // every payroll_records row (never only print-batch-visible ones), then any extra table rows
+    sdRecs().forEach(function (rec) {
+      var inp = rec && document.getElementById('sd-epf-' + rec.id);
+      var tr = inp && inp.closest('tr');
+      if (tr && table.contains(tr) && !seen[rec.id]) { seen[rec.id] = 1; trs.push(tr); }
+    });
+    table.querySelectorAll('tbody > tr').forEach(function (tr) { if (trs.indexOf(tr) < 0) trs.push(tr); });
+    trs.forEach(function (tr) {
       var epf = tr.querySelector('input[id^="sd-epf-"]:not([id*="-er-"])');
       if (!epf) return;
       var id = String(epf.id).replace('sd-epf-', '');
@@ -156,18 +177,18 @@
         '<i class="ti ti-chevron-down sdc-chev"></i>' +
       '</button>' +
       '<div class="sdc-body">' +
-        '<div class="sdc-cap">' + esc(L('Earnings', 'Pendapatan')) + '</div>' + earn +
+        '<div class="sdc-sec"><div class="sdc-cap">' + esc(L('Earnings', 'Pendapatan')) + '</div>' + earn +
         '<div class="sdc-cap">' + esc(L('Allowances', 'Elaun')) + '</div>' +
-          pairRow('sd-atype1-' + id, 'sd-a1-' + id) + pairRow('sd-atype2-' + id, 'sd-a2-' + id) + pairRow('sd-atype3-' + id, 'sd-a3-' + id) +
-        '<div class="sdc-cap">' + esc(L('Statutory \u2014 Employee', 'Caruman \u2014 Pekerja')) + '</div>' +
+          pairRow('sd-atype1-' + id, 'sd-a1-' + id) + pairRow('sd-atype2-' + id, 'sd-a2-' + id) + pairRow('sd-atype3-' + id, 'sd-a3-' + id) + '</div>' +
+        '<div class="sdc-sec"><div class="sdc-cap">' + esc(L('Statutory \u2014 Employee', 'Caruman \u2014 Pekerja')) + '</div>' +
           inputRow('EPF', 'sd-epf-' + id) + inputRow('SOCSO', 'sd-socso-' + id) + inputRow('EIS', 'sd-eis-' + id) +
-          inputRow('PCB', 'sd-pcb-' + id) + inputRow('Zakat', 'sd-zakat-' + id) +
-        (er ? '<div class="sdc-cap">' + esc(L('Statutory \u2014 Employer', 'Caruman \u2014 Majikan')) + '</div>' + er : '') +
-        '<div class="sdc-row sdc-recalc"><button type="button" class="btn btn-outline btn-sm" data-act="recalc" data-row="' + esc(id) + '"><i class="ti ti-calculator"></i> ' + esc(L('Recalculate statutory', 'Kira semula caruman')) + '</button></div>' +
-        '<div class="sdc-cap">' + esc(L('Deductions', 'Potongan')) + '</div>' +
+          inputRow('PCB', 'sd-pcb-' + id) + inputRow('Zakat', 'sd-zakat-' + id) + '</div>' +
+        '<div class="sdc-sec">' + (er ? '<div class="sdc-cap">' + esc(L('Statutory \u2014 Employer', 'Caruman \u2014 Majikan')) + '</div>' + er : '') +
+        '<div class="sdc-row sdc-recalc"><button type="button" class="btn btn-outline btn-sm" data-act="recalc" data-row="' + esc(id) + '"><i class="ti ti-calculator"></i> ' + esc(L('Recalculate statutory', 'Kira semula caruman')) + '</button></div></div>' +
+        '<div class="sdc-sec"><div class="sdc-cap">' + esc(L('Deductions', 'Potongan')) + '</div>' +
           inputRow(L('Advance', 'Pendahuluan'), 'sd-adv-' + id) +
           selectRow(L('Deduct advance', 'Potong panjar'), 'sd-advsel-' + id) +
-          pairRow('sd-dtype1-' + id, 'sd-d1-' + id) + pairRow('sd-dtype2-' + id, 'sd-d2-' + id) +
+          pairRow('sd-dtype1-' + id, 'sd-d1-' + id) + pairRow('sd-dtype2-' + id, 'sd-d2-' + id) + '</div>' +
         '<div class="sdc-netrow"><span>' + esc(L('Net Pay', 'Gaji Bersih')) + '</span><b data-net="' + esc(id) + '"></b></div>' +
       '</div></div>';
   }
@@ -190,9 +211,11 @@
       wrap.addEventListener('input', onEdit);
       wrap.addEventListener('change', onEdit);
     }
-    if (wrap.nextSibling !== pdoc) pdoc.parentNode.insertBefore(wrap, pdoc);
-    var rows = rowsFromTable(table);
-    wrap.innerHTML = rows.map(cardHtml).join('');
+    // cards sit before the (hidden) paper; signatures/print/bar may sit between them
+    if (wrap.parentNode !== pdoc.parentNode || !(wrap.compareDocumentPosition(pdoc) & 4)) pdoc.parentNode.insertBefore(wrap, pdoc);
+    var rows = rowsFromTable(table), html = '';
+    rows.forEach(function (r) { try { html += cardHtml(r); } catch (e) { console.warn('SD card build', r && r.id, e); } });
+    wrap.innerHTML = html;
     // selects: copy current selected value (innerHTML clone keeps 'selected' attr only)
     wrap.querySelectorAll('select[data-target]').forEach(function (s) {
       var t = $(s.getAttribute('data-target'));
@@ -205,15 +228,22 @@
     refresh();
   }
 
+  // inline action bar = last SD block before the hidden paper (whose Generate Payslip card stays visible):
+  // cards -> signatures -> print block -> bar -> #sd-pdoc
+  function placeBar(bar) {
+    bar = bar || $('sdc-bar'); if (!bar) return;
+    var pdoc = $('sd-pdoc');
+    if (pdoc && pdoc.parentNode) { if (!bar.isConnected || bar.nextSibling !== pdoc) pdoc.parentNode.insertBefore(bar, pdoc); }
+    else if (!bar.isConnected) ($('main') || document.body).appendChild(bar);
+  }
   function ensureBar() {
     var bar = $('sdc-bar');
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'sdc-bar';
       bar.className = 'sdc-bar no-print';
-      var main = $('main') || document.body;
-      main.appendChild(bar);
     }
+    placeBar(bar);
     bar.innerHTML =
       '<div class="sdc-tot"><span>' + esc(L('Total Net Pay', 'Jumlah Gaji Bersih')) + '</span><b id="sdc-total"></b></div>' +
       '<div class="sdc-acts"><span class="sdc-unsaved">' + esc(L('Unsaved changes', 'Belum disimpan')) + '</span>' +
@@ -366,6 +396,7 @@
       build();
       return;
     }
+    placeBar();
     refresh();
   }
   function schedule() {
