@@ -16,6 +16,7 @@
   function wrapPdocs() {
     document.querySelectorAll('.pdoc').forEach(function (el) {
       if (el.parentNode && el.parentNode.classList.contains('pdoc-hscroll')) return;
+      if (el.classList.contains('psc-src')) return; // payslip card view (payslip-cards.js) — no h-scroll
       var wrap = document.createElement('div');
       wrap.className = 'pdoc-hscroll';
       el.parentNode.insertBefore(wrap, el);
