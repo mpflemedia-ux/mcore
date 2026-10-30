@@ -126,6 +126,15 @@ async function syncProducts(c: Ctx, b: Row) {
       if (e instanceof FfmError && String(e.code) === '1002') { await onFfmErr(c, acct, e); throw e; }
       try { await ffmCall(acct, sec, '/open/edit_goods', body); } catch (e2) { err = errMsg(e2) + ' | add: ' + errMsg(e); }
     }
+    if (!err) { // honest "Synced": FFM said success — confirm the goods really exist there (/goods/list by barcode)
+      try {
+        const g = await ffmCall(acct, sec, '/goods/list', { barCode: bc, page: 1, pageSize: 20 });
+        const list: Row[] = Array.isArray(g.data?.list) ? g.data.list : [];
+        const hit = list.some((x: Row) => String(x.barCode || '').trim() === bc || String(x.reserveBarcode || '').split(',').map((v) => v.trim()).includes(bc));
+        if (!list.length) err = 'FFM said OK but its goods list has no barcode ' + bc + ' — check FFM portal → Goods';
+        else if (!hit) console.warn(JSON.stringify({ ffm: 'goods_verify_ambiguous', bc, n: list.length }));
+      } catch (e) { if (e instanceof FfmError && String(e.code) === '1002') { await onFfmErr(c, acct, e); throw e; } console.warn(JSON.stringify({ ffm: 'goods_verify_skip', bc, err: errMsg(e) })); }
+    }
     await c.sb.from('ffm_product_links').upsert({ tenant_id: c.tenantId, account_id: acct.id, product_id: p.id, barcode: bc, synced_ok: !err, last_synced_at: nowIso(), last_error: err ? err.slice(0, 300) : null, updated_at: nowIso(), deleted_at: null }, { onConflict: 'account_id,product_id' });
     if (err) failed.push({ product_id: p.id, name: p.name_en || bc, error: err.slice(0, 200) }); else ok++;
   }

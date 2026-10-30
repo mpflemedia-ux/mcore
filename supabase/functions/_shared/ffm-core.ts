@@ -186,25 +186,44 @@ export async function pollShipment(sb: SB, acct: Row, sec: Row | null, ship: Row
 }
 
 // ---------- stock (ffm_stock ONLY — never products.stock_qty) ----------
-export async function pullStock(sb: SB, acct: Row, sec: Row | null): Promise<{ count: number; low: number }> {
+export async function pullStock(sb: SB, acct: Row, sec: Row | null): Promise<{ count: number; low: number; failed: { barcode: string; error: string }[] }> {
   const { data: links } = await sb.from('ffm_product_links').select('product_id,barcode').eq('account_id', acct.id).is('deleted_at', null).eq('synced_ok', true);
   const map = new Map<string, string>(); (links || []).forEach((l: Row) => { if (l.barcode) map.set(String(l.barcode), String(l.product_id)); });
   const codes = Array.from(map.keys()).filter((c) => /^[\w-]+$/.test(c));
+  const failed: { barcode: string; error: string }[] = [], okCodes: string[] = [];
+  const query = async (list: string[]): Promise<Row> => {
+    const body: Row = { barCode: list.join(','), goodsStatus: 'normal' };
+    if (acct.warehouse_id) body.warehouseId = String(acct.warehouse_id);
+    return (await ffmCall(acct, sec, '/open/goodsStock', body)).data || {};
+  };
+  // FFM rejects the WHOLE batch (e.g. 1608 goods not exist / not enabled) when one barcode is unknown -> retry one by one so valid barcodes still load.
+  const bizErr = (e: unknown) => e instanceof FfmError && /^\d+$/.test(String(e.code)) && String(e.code) !== '1002';
   let count = 0;
   for (let i = 0; i < codes.length; i += 40) {
-    const chunk = codes.slice(i, i + 40), body: Row = { barCode: chunk.join(','), goodsStatus: 'normal' };
-    if (acct.warehouse_id) body.warehouseId = String(acct.warehouse_id);
-    const r = await ffmCall(acct, sec, '/open/goodsStock', body);
-    const data = r.data || {}, rows: Row[] = [];
+    const chunk = codes.slice(i, i + 40); let data: Row = {};
+    try { data = await query(chunk); }
+    catch (e) {
+      if (!bizErr(e)) throw e;
+      if (chunk.length === 1) failed.push({ barcode: chunk[0], error: (e as Error).message });
+      else for (const bc of chunk) {
+        try { const d = await query([bc]); if (d[bc]) data[bc] = d[bc]; }
+        catch (e2) { if (!bizErr(e2)) throw e2; failed.push({ barcode: bc, error: (e2 as Error).message }); }
+        await sleep(120); // /open/goodsStock: 10 req / 1 s
+      }
+    }
+    const rows: Row[] = [];
     for (const bc of chunk) {
-      const s = data[bc]; if (!s) continue;
+      const s = data[bc]; if (!s) continue; okCodes.push(bc);
       rows.push({ tenant_id: acct.tenant_id, account_id: acct.id, product_id: map.get(bc) || null, barcode: bc, available_qty: Number(s.availableInventory || 0), inventory_qty: Number(s.inventory || 0), total_qty: Number(s.totalInventory || 0), synced_at: nowIso(), deleted_at: null });
     }
     if (rows.length) { const { error } = await sb.from('ffm_stock').upsert(rows, { onConflict: 'account_id,barcode' }); if (error) throw new Error(error.message); count += rows.length; }
   }
-  await markAccount(sb, acct, null);
+  // Per-barcode stock note on the product link (shown on Products tab); synced_ok untouched so ASN / orders are not blocked.
+  for (const f of failed) await sb.from('ffm_product_links').update({ last_error: ('Stock: ' + f.error).slice(0, 300), updated_at: nowIso() }).eq('account_id', acct.id).eq('barcode', f.barcode).is('deleted_at', null);
+  if (okCodes.length) await sb.from('ffm_product_links').update({ last_error: null, updated_at: nowIso() }).eq('account_id', acct.id).in('barcode', okCodes).like('last_error', 'Stock:%');
+  await markAccount(sb, acct, failed.length ? 'Stock not loaded for ' + failed.map((f) => f.barcode).join(', ') + ' — ' + failed[0].error : null);
   const low = acct.low_stock_enabled === false ? 0 : await lowStock(sb, acct);
-  return { count, low };
+  return { count, low, failed };
 }
 async function lowStock(sb: SB, acct: Row): Promise<number> {
   const { data: st } = await sb.from('ffm_stock').select('product_id,barcode,available_qty').eq('account_id', acct.id).is('deleted_at', null).not('product_id', 'is', null);

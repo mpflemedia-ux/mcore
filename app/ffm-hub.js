@@ -202,7 +202,7 @@
         (prods.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('FFM barcode', 'Barkod FFM')) + '</th><th>' + esc(t('Pcs / unit', 'Pcs / unit')) + '</th><th>' + esc(t('FFM', 'FFM')) + '</th><th></th></tr></thead><tbody>' +
           prods.map(function (p) {
             var l = links[String(p.id)], bc = bcOf(p);
-            var s = !bc ? '<span class="badge badge-gray">' + esc(t('No barcode', 'Tiada barkod')) + '</span>' : !l || (!l.synced_ok && !l.last_error) ? '<span class="badge badge-gray">' + esc(t('Not synced', 'Belum segerak')) + '</span>' : l.synced_ok ? '<span class="badge badge-green">' + esc(t('Synced', 'Disegerak')) + '</span> <span class="ffm-muted">' + esc(F.dt(l.last_synced_at)) + '</span>' : '<span class="badge badge-red">' + esc(t('Error', 'Ralat')) + '</span><div class="ffm-err">' + esc(l.last_error || '') + '</div>';
+            var s = !bc ? '<span class="badge badge-gray">' + esc(t('No barcode', 'Tiada barkod')) + '</span>' : !l || (!l.synced_ok && !l.last_error) ? '<span class="badge badge-gray">' + esc(t('Not synced', 'Belum segerak')) + '</span>' : l.synced_ok ? '<span class="badge badge-green">' + esc(t('Synced', 'Disegerak')) + '</span> <span class="ffm-muted">' + esc(F.dt(l.last_synced_at)) + '</span>' + (l.last_error ? '<div class="ffm-warn">' + esc(l.last_error) + '</div>' : '') : '<span class="badge badge-red">' + esc(t('Error', 'Ralat')) + '</span><div class="ffm-err">' + esc(l.last_error || '') + '</div>';
             var inv = l && p.barcode && String(p.barcode).trim() !== bc ? '<div class="ffm-muted">' + esc(t('Inventory: ', 'Inventori: ') + p.barcode) + '</div>' : '';
             return '<tr><td>' + esc(typeof prodName === 'function' ? prodName(p) : (p.name_en || p.code)) + '</td><td>' + (bc ? esc(bc) : '<span class="ffm-muted">-</span>') + inv + '</td><td>' + esc(F.ppu(l && l.pcs_per_unit)) + '</td><td>' + s + '</td>' +
               '<td><div class="ffm-actions"><button type="button" class="btn btn-outline btn-sm" data-edit="' + esc(p.id) + '"><i class="ti ti-pencil"></i> ' + esc(t('Edit', 'Ubah')) + '</button></div></td></tr>';
@@ -217,7 +217,8 @@
         F.busy(sbtn, true, t('Syncing…', 'Menyegerak…'));
         try {
           var r = await F.api('sync_products', { account_id: acct.id });
-          showToast(t('Synced ' + r.ok + ', failed ' + (r.failed || []).length, 'Disegerak ' + r.ok + ', gagal ' + (r.failed || []).length) + (r.remaining ? t(' — run again for ' + r.remaining + ' more', ' — ulang untuk ' + r.remaining + ' lagi') : ''), (r.failed || []).length ? 'warning' : 'success');
+          var fl = r.failed || [];
+          showToast(t('Synced ' + r.ok + ', failed ' + fl.length, 'Disegerak ' + r.ok + ', gagal ' + fl.length) + (fl.length ? ' — ' + fl[0].name + ': ' + fl[0].error : '') + (r.remaining ? t(' — run again for ' + r.remaining + ' more', ' — ulang untuk ' + r.remaining + ' lagi') : ''), fl.length ? 'warning' : 'success');
           reload('products', { account: acct.id });
         } catch (e) { F.busy(sbtn, false); F.err(e); }
       };
@@ -272,7 +273,15 @@
       var b = document.getElementById('ffm-pull');
       b.onclick = async function () {
         F.busy(b, true, t('Refreshing…', 'Memuat semula…'));
-        try { var r = await F.api('sync_stock', {}); var errs = (r.results || []).filter(function (x) { return x.error; }); showToast(errs.length ? errs[0].error : t('FFM stock updated', 'Stok FFM dikemas kini'), errs.length ? 'error' : 'success'); reload('stock'); }
+        try {
+          var r = await F.api('sync_stock', {}), res = r.results || [];
+          var errs = res.filter(function (x) { return x.error; }), bad = [], n = 0;
+          res.forEach(function (x) { n += Number(x.count || 0); (x.failed || []).forEach(function (f) { bad.push(f); }); });
+          // Name the barcode(s) FFM rejected; the valid ones still load.
+          var miss = bad.length ? t('Not loaded: ', 'Tidak dimuat: ') + bad.map(function (f) { return f.barcode; }).join(', ') + ' — ' + bad[0].error : '';
+          showToast(errs.length ? errs[0].error : bad.length ? t('FFM stock loaded for ' + n + '. ', 'Stok FFM dimuat untuk ' + n + '. ') + miss : t('FFM stock updated', 'Stok FFM dikemas kini'), errs.length ? 'error' : bad.length ? 'warning' : 'success');
+          reload('stock');
+        }
         catch (e) { F.busy(b, false); F.err(e); }
       };
     }
