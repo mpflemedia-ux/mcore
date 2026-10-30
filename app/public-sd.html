@@ -116,6 +116,20 @@
   #sd-approve .psd-ap-err{display:none;color:var(--psd-danger);font-size:14px;font-weight:600;margin:8px 0}
   #sd-approve .psd-ap-ok{font-size:15px;font-weight:700;color:var(--psd-ok)}
   #sd-approve .psd-ap-pend{font-size:15px;font-weight:700;color:var(--psd-primary)}
+  #sd-approve .psd-sg-st{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:4px 0 6px}
+  #sd-approve .psd-sg-n{font-size:13px;font-weight:800;color:var(--psd-primary);white-space:nowrap}
+  #sd-approve .psd-sg-n.psd-sg-done{color:var(--psd-ok)}
+  #sd-approve .psd-sg-list{list-style:none;margin:0;padding:0;border:1px solid var(--psd-row-border);border-radius:10px;overflow:hidden}
+  #sd-approve .psd-sg{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 12px;border-top:1px solid var(--psd-row-border);font-size:14px}
+  #sd-approve .psd-sg:first-child{border-top:0}
+  #sd-approve .psd-sg-me{box-shadow:inset 3px 0 0 var(--psd-primary)}
+  #sd-approve .psd-sg-k{display:flex;flex-direction:column;min-width:0}
+  #sd-approve .psd-sg-you{font-weight:600;color:var(--psd-primary)}
+  #sd-approve .psd-sg-w{font-size:13px;color:var(--psd-muted-2);overflow-wrap:anywhere}
+  #sd-approve .psd-sg-c{font-size:12px;font-weight:700;white-space:nowrap;padding:3px 9px;border-radius:999px;border:1px solid var(--psd-border)}
+  #sd-approve .psd-sg-ok{color:var(--psd-ok);border-color:var(--psd-ok)}
+  #sd-approve .psd-sg-pend{color:var(--psd-muted)}
+  #sd-approve .psd-sg-file{align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:14px;margin:4px 0;overflow-wrap:anywhere}
   html,body{margin:0;min-height:100%;background:var(--psd-bg);color:var(--psd-text);font-family:Inter,system-ui,sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .wrap{max-width:720px;margin:12px auto 96px;padding:20px 16px 48px;background:var(--psd-surface);border:1px solid var(--psd-border);border-radius:14px;box-shadow:var(--psd-shadow);box-sizing:border-box;overflow:hidden}
   .muted{color:var(--psd-muted);font-weight:700;font-size:12px}
@@ -189,6 +203,8 @@ const L=bm?{
 }
 document.documentElement.lang=bm?'ms':'en'
 window.__sdToken=new URLSearchParams(location.search).get('public_sd')
+/* per-role signing link (sd_signatures_01.sql): public-sd.html?sd_sign=<token> -> get_public_sd_sign + sd-sign-pub.js */
+window.__sdSignToken=window.__sdToken?null:new URLSearchParams(location.search).get('sd_sign')
 function deductCombined(r){
   return Number(r.epf_employee||0)+Number(r.socso_employee||0)+Number(r.eis_employee||0)+Number(r.pcb||0)+Number(r.deduction_total||0)
 }
@@ -211,9 +227,9 @@ function cardHtml(r){
 }
 ;(async function(){
   const root=document.getElementById('root')
-  const token=window.__sdToken
+  const token=window.__sdToken||window.__sdSignToken
   if(!token){ root.innerHTML='<div class="err"><h2>'+esc(L.unavailable)+'</h2><p>'+esc(L.missing)+'</p></div>'; return }
-  const {data:b,error}=await sb.rpc('get_public_salary_batch',{p_token:token})
+  const {data:b,error}=await sb.rpc(window.__sdToken?'get_public_salary_batch':'get_public_sd_sign',{p_token:token})
   if(error||!b){ root.innerHTML='<div class="err"><h2>'+esc(L.unavailable)+'</h2><p>'+esc(error&&error.message||L.notFound)+'</p></div>'; return }
   document.title=L.title+' - '+(b.tenant_name||'')
   window.__sdBatch=b
@@ -233,5 +249,6 @@ function cardHtml(r){
 })()
 </script>
 <script src="./sd-approve-pub.js?v=5"></script>
+<script src="./sd-sign-pub.js?v=1"></script>
 </body>
 </html>
