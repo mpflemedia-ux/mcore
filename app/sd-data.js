@@ -19,7 +19,7 @@
   var cat = null;
   SD.catalog = function () {
     if (cat) return Promise.resolve(cat);
-    return sb.from('service_catalog').select('code,name_en,name_bm,default_sla_hours,sort,active').is('deleted_at', null).order('sort')
+    return sb.from('service_catalog').select('code,name_en,name_bm,default_sla_hours,sort,active,form_fields').is('deleted_at', null).order('sort')
       .then(function (r) { if (r.error) throw r.error; cat = (r.data || []).filter(function (x) { return x.active !== false; }).sort(function (a, b) { return (+a.sort || 0) - (+b.sort || 0); }); return cat; });
   };
   SD.svcName = function (code) { var x = (cat || []).find(function (c) { return c.code === code; }); return x ? SD.L(x.name_en, x.name_bm) : code; };
@@ -83,22 +83,27 @@
     return '<span class="badge badge-' + (l < 0 ? 'red' : l < 8 ? 'yellow' : 'green') + '">' + (l < 0 ? SD.L('Overdue ', 'Lewat ') : SD.L('Left ', 'Baki ')) + SD.hrs(l) + '</span>';
   };
 
-  /* ref_no SR-YYYYMM-NNNN per tenant: MAX+1, unique (tenant_id, ref_no) index, retry on 23505 */
+  /* ref_no SR-<TENANTCODE>-YYYYMM-NNNN per tenant: MAX+1, unique (tenant_id, ref_no) index,
+     retry on 23505. Old SR-YYYYMM-NNNN refs (no tenant code segment) are left as-is forever —
+     this only shapes refs for requests created from now on. */
   SD.createRequest = function (row) {
-    var pre = 'SR-' + SD.today().slice(0, 7).replace('-', '') + '-', n = 0;
-    function attempt() {
-      return sb.from('service_requests').select('ref_no').eq('tenant_id', row.tenant_id).like('ref_no', pre + '%').order('ref_no', { ascending: false }).limit(1)
-        .then(function (r) {
-          var last = r.data && r.data[0] ? parseInt(String(r.data[0].ref_no).slice(pre.length), 10) || 0 : 0;
-          var rec = Object.assign({}, row, { ref_no: pre + String(last + 1 + n).padStart(4, '0') });
-          return sb.from('service_requests').insert(rec).select().single();
-        }).then(function (r) {
-          if (r.error && r.error.code === '23505' && ++n < 6) return attempt();
-          if (r.error) throw r.error;
-          return r.data;
-        });
-    }
-    return attempt();
+    return sb.from('tenants').select('code').eq('id', row.tenant_id).maybeSingle().then(function (tr) {
+      var code = String((tr.data && tr.data.code) || 'TEN').toUpperCase();
+      var pre = 'SR-' + code + '-' + SD.today().slice(0, 7).replace('-', '') + '-', n = 0;
+      function attempt() {
+        return sb.from('service_requests').select('ref_no').eq('tenant_id', row.tenant_id).like('ref_no', pre + '%').order('ref_no', { ascending: false }).limit(1)
+          .then(function (r) {
+            var last = r.data && r.data[0] ? parseInt(String(r.data[0].ref_no).slice(pre.length), 10) || 0 : 0;
+            var rec = Object.assign({}, row, { ref_no: pre + String(last + 1 + n).padStart(4, '0') });
+            return sb.from('service_requests').insert(rec).select().single();
+          }).then(function (r) {
+            if (r.error && r.error.code === '23505' && ++n < 6) return attempt();
+            if (r.error) throw r.error;
+            return r.data;
+          });
+      }
+      return attempt();
+    });
   };
   SD.event = function (r, type, extra) {
     var ev = Object.assign({ tenant_id: r.tenant_id, request_id: r.id, type: type, actor_id: SD.uid(), meta: {} }, extra || {});

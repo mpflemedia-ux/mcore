@@ -4,13 +4,13 @@
   var L = NT.L, esc = NT.esc;
   function link(n) {
     var l = n.link; if (l && l.page) return [l.page, l.params || {}];
-    if (n.category === 'service_desk') { var ref = (String(n.title).match(/SR-\d{6}-\d+/) || [])[0]; return [NT.isPA() ? 'admin' : 'servis_saya', NT.isPA() ? { view: 'sd_desk', ref: ref } : { ref: ref }]; }
+    if (n.category === 'service_desk') { var ref = (String(n.title).match(/SR-(?:[A-Z0-9]+-)?\d{6}-\d+/) || [])[0]; return [NT.isPA() ? 'admin' : 'servis_saya', NT.isPA() ? { view: 'sd_desk', ref: ref } : { ref: ref }]; }
     var c = n.category; return [{ sales: 'sales', inventory: 'inventory', purchasing: 'purchasing', finance: 'accounting', hr: 'hr', onboarding: 'client_onboarding' }[c] || 'dashboard', {}];
   }
   var ICON = { sd: 'ti-headset', approval: 'ti-circle-check', assigned: 'ti-user-check', overdue: 'ti-file-invoice', contract: 'ti-file-time', activity: 'ti-activity' };
   NT.fromRow = function (n) {
     var ic = (n.link && n.link.icon) || (n.type === 'mention' || /^assigned\.mention/.test(n.type || '') ? 'ti-at' : ICON[n._cat] || 'ti-bell');
-    var tt = n.title, rv = String(tt).match(/^(SR-\d{6}-\d+): (revision requested|client confirmed)/);
+    var tt = n.title, rv = String(tt).match(/^(SR-(?:[A-Z0-9]+-)?\d{6}-\d+): (revision requested|client confirmed)/);
     if (rv) tt = (rv[2] === 'revision requested' ? L('Client requested revision · ', 'Client minta pindaan · ') : L('Client confirmed · ', 'Client sahkan · ')) + rv[1];
     return { key: n.group_key ? 'g:' + n.group_key : 'n:' + n.id, row: n, ids: [n.id], kind: n._k, cat: n._cat, icon: ic, color: n.priority ? 'var(--danger)' : (n._k === 'activity' ? 'var(--text-2)' : 'var(--primary)'), ts: new Date(n.created_at).getTime(), prio: n.priority ? 1 : 0, unread: !n.read_at, done: !!n.acted_at, title: tt, meta: n.body || '', go: link(n), actor: n.actor_id };
   };
