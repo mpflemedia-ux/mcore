@@ -4,7 +4,7 @@
   if (window.SD && window.SD._core) return;
   var SD = window.SD = window.SD || {};
   SD._core = 1; SD.view = SD.view || {}; SD.admin = SD.admin || {};
-  SD.has = { contracts: false, desk: false, consent: false, packs: false };
+  SD.has = { contracts: false, desk: false, consent: false, packs: false, agent: false };
   var C = function () { return window.COB || {}; };
   ['bm', 'L', 'esc', 'isPA', 'isTA', 'tid', 'date', 'time', 'dt', 'today', 'daysTo', 'age', 'size', 'toast', 'err', 'modal', 'closeModal', 'loading', 'fail'].forEach(function (k) {
     SD[k] = function () { var f = C()[k]; return typeof f === 'function' ? f.apply(null, arguments) : undefined; };
@@ -13,8 +13,8 @@
   SD.same = function (a, b) { return String(a) === String(b); };
   SD.main = function () { return document.getElementById('main'); };
   SD.pages = { servis_saya: 1, laporan_bulanan: 1, sd_access: 1 };
-  SD.adminViews = { sd_contracts: 1, sd_desk: 1 };
-  var TABLES = { contracts: 'service_contracts', desk: 'service_requests', consent: 'support_access_consents', packs: 'service_report_packs' };
+  SD.adminViews = { sd_contracts: 1, sd_desk: 1, sd_agent: 1 };
+  var TABLES = { contracts: 'service_contracts', desk: 'service_requests', consent: 'support_access_consents', packs: 'service_report_packs', agent: 'sd_agent_settings' };
   var logged = false, probed = null, probedUid = null;
   SD.missing = function (e) { return !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache/i.test(e.message || '')); };
   SD.probe = function () {
@@ -76,7 +76,7 @@
   SD.openAdmin = function (params, orig) {
     return SD.probe().then(function () {
       var v = params.view;
-      if (!SD.isPA() || !(v === 'sd_contracts' ? SD.has.contracts : SD.has.desk)) return orig.call(window, 'admin', {});
+      if (!SD.isPA() || !(v === 'sd_contracts' ? SD.has.contracts : v === 'sd_agent' ? SD.has.agent : SD.has.desk)) return orig.call(window, 'admin', {});
       prep('admin', params, 'admin');
       SD.title('Admin');
       return SD.need(SD.admin, v).then(function () { if (APP.currentPage !== 'admin') return; return SD.run(SD.admin[v], params); });
@@ -118,7 +118,7 @@
       var wt = function (active) {
         var h = t.apply(this, arguments);
         if (!SD.isPA() || !SD.has.contracts) return h;
-        var add = tabBtn('sd_contracts', 'ti-file-certificate', 'Service Contracts', 'Kontrak Servis', active) + (SD.has.desk ? tabBtn('sd_desk', 'ti-headset', 'Service Desk', 'Service Desk', active, '') : '');
+        var add = tabBtn('sd_contracts', 'ti-file-certificate', 'Service Contracts', 'Kontrak Servis', active) + (SD.has.desk ? tabBtn('sd_desk', 'ti-headset', 'Service Desk', 'Service Desk', active, '') : '') + (SD.has.agent ? tabBtn('sd_agent', 'ti-robot', 'Agent', 'Agent', active) : '');
         if (SD.has.desk) setTimeout(function(){ SD.openBadge && SD.openBadge(); }, 50);
         var i = h.indexOf("view:'clients'"), j = i >= 0 ? h.indexOf('</button>', i) : -1;
         if (j >= 0) return h.slice(0, j + 9) + add + h.slice(j + 9);

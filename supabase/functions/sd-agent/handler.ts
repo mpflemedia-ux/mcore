@@ -95,7 +95,12 @@ export async function handleQueue(d: Deps, body: Row): Promise<Row> {
     const lastAgentEvent = ev.find((e) => e.meta && e.meta.by_agent);
     const lastClientComment = ev.find((e) => e.type === 'comment' && (!e.actor_id || String(e.actor_id) !== String(pa.id)));
     const clientRepliedSince = !!(lastClientComment && (!lastAgentEvent || new Date(lastClientComment.created_at) > new Date(lastAgentEvent.created_at)));
-    const needsDraft = !lastAiDraft || clientRepliedSince || r.status === 'revision';
+    // "Minta semula" (SR detail, Fasa 3): a human staff note -- not authored by the agent --
+    // newer than the current draft. Without this, re-requesting a redo would silently never
+    // re-queue the SR (queue() otherwise only reacts to a client reply or status=revision).
+    const lastHumanNote = ev.find((e) => e.type === 'internal_note' && !(e.meta && e.meta.by_agent));
+    const redoRequested = !!(lastHumanNote && lastAiDraft && new Date(lastHumanNote.created_at) > new Date(lastAiDraft.created_at));
+    const needsDraft = !lastAiDraft || clientRepliedSince || redoRequested || r.status === 'revision';
     if (!needsDraft) continue;
     const tenant = await d.db.tenant(r.tenant_id);
     out.push({
