@@ -81,13 +81,20 @@
         body.querySelectorAll('[data-a]').forEach(function (b) {
           b.onclick = function () {
             var a = accts.find(function (x) { return F.same(x.id, b.getAttribute('data-id')); }), act = b.getAttribute('data-a');
-            if (act === 'add') return acctForm(null);
+            if (act === 'add') return acctForm(newAcctDefaults(accts));
             if (act === 'edit') return acctForm(a);
             if (act === 'test') return testAcct(a, b);
             if (act === 'del') return delAcct(a, b);
           };
         });
       }
+    }
+    // Add form prefill (non-secret only; keys always typed by the user). Values = DB column defaults + FFM MY docs.
+    function newAcctDefaults(accts) {
+      var own = (accts || []).some(function (x) { return !x.is_funded; }), fund = (accts || []).some(function (x) { return x.is_funded; });
+      var d = { base_url: 'https://open.flashfulfillment.my', sign_mode: 'json', api_prefix: '', amount_multiplier: 100, fee_source: 'shipping', pay_mode: '2', order_source_platform: 'Line', auto_approve: false, low_stock_enabled: true };
+      if (!own) { d.label = 'Brzky'; d.is_funded = false; } else if (!fund) { d.label = 'Funded'; d.is_funded = true; d._pickPlan = true; }
+      return d;
     }
     function kv(k, v) { return '<div><div class="ffm-k">' + esc(k) + '</div><div class="ffm-v">' + esc(v) + '</div></div>'; }
     function inp(id, label, val, extra) { return '<div class="form-group"><label class="form-label" for="' + id + '">' + esc(label) + '</label><input id="' + id + '" class="form-input" value="' + esc(val == null ? '' : val) + '" ' + (extra || '') + '></div>'; }
@@ -101,6 +108,7 @@
       a = a || {};
       var plans = [];
       try { var r = await sb.from('sales_plans').select('id,name').eq('tenant_id', F.tid()).is('deleted_at', null).order('created_at', { ascending: false }); plans = r.data || []; } catch (e) { plans = []; }
+      if (a._pickPlan && !a.sales_plan_id && plans.length === 1) a.sales_plan_id = plans[0].id; // only one plan → preselect
       var html = '<div class="ffm-sec">' + esc(t('Account', 'Akaun')) + '</div>' + inp('fa-label', t('Label (e.g. Brzky / Funded)', 'Label (cth. Brzky / Funded)'), a.label, 'maxlength="60"') +
         '<div class="ffm-sec">' + esc(t('API keys (write-only)', 'Kunci API (tulis sahaja)')) + '</div><div class="ffm-row">' + secret('fa-mch', 'mchId', !!a.mch_id_masked) + secret('fa-key', 'API key', !!a.has_api_key) + '</div>' +
         '<div class="ffm-sec">' + esc(t('Webhook (from FFM, optional)', 'Webhook (daripada FFM, pilihan)')) + '</div><div class="ffm-row">' + secret('fa-wk', 'App Key', !!a.has_webhook_secret) + secret('fa-ws', 'App Secret', !!a.has_webhook_secret) + secret('fa-wc', 'App Code', !!a.has_webhook_secret) + '</div>' +

@@ -5,7 +5,7 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '5'  # Base URL: no mobile auto-capital + lowercase scheme/host before save
+VER = '6'  # Add FFM account form prefilled (non-secret defaults; Brzky / Funded label)
 ANCHOR = '<script src="./booking-notif-set.js?v=1"></script>'
 TAGS = ''.join('\n<script src="./%s?v=%s"></script>' % (f, VER) for f in ('ffm-core.js', 'ffm-hub.js', 'ffm-do.js', 'ffm-po.js'))
 def main():
