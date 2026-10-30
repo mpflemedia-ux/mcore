@@ -18,6 +18,7 @@ select 1 / (case when to_regclass('public.payment_vouchers') is null then 0 else
 
 -- ---------- 1) columns ----------
 alter table public.payment_voucher_batch_lines
+  add column if not exists voucher_id uuid,
   add column if not exists bank_account_no text,
   add column if not exists payee_type text,
   add column if not exists payee_id uuid,
@@ -33,19 +34,20 @@ alter table public.payment_voucher_batch_lines
   add column if not exists source_ref uuid,
   add column if not exists updated_at timestamptz default now();
 alter table public.payment_voucher_batch_lines drop constraint if exists pvd_lines_pay_status_check;
-alter table public.payment_voucher_batch_lines add constraint pvd_lines_pay_status_check check (pay_status in ('unpaid', 'paid', 'failed'));
+alter table public.payment_voucher_batch_lines add constraint pvd_lines_pay_status_check check (pay_status in ('unpaid', 'paid', 'failed')) not valid;
 alter table public.payment_voucher_batch_lines drop constraint if exists pvd_lines_payee_type_check;
-alter table public.payment_voucher_batch_lines add constraint pvd_lines_payee_type_check check (payee_type is null or payee_type in ('supplier', 'employee', 'other'));
+alter table public.payment_voucher_batch_lines add constraint pvd_lines_payee_type_check check (payee_type is null or payee_type in ('supplier', 'employee', 'other')) not valid;
 alter table public.payment_voucher_batch_lines drop constraint if exists pvd_lines_category_check;
-alter table public.payment_voucher_batch_lines add constraint pvd_lines_category_check check (category is null or category in ('supplier', 'salary', 'commission', 'statutory', 'utility', 'other'));
+alter table public.payment_voucher_batch_lines add constraint pvd_lines_category_check check (category is null or category in ('supplier', 'salary', 'commission', 'statutory', 'utility', 'other')) not valid;
 alter table public.payment_voucher_batch_lines drop constraint if exists pvd_lines_len_check;
 alter table public.payment_voucher_batch_lines add constraint pvd_lines_len_check check (
   coalesce(length(bank_account_no), 0) <= 40 and coalesce(length(phone), 0) <= 30 and coalesce(length(pay_ref), 0) <= 120
-  and coalesce(length(fail_reason), 0) <= 300 and coalesce(length(receipt_path), 0) <= 400);
+  and coalesce(length(fail_reason), 0) <= 300 and coalesce(length(receipt_path), 0) <= 400) not valid;
 create index if not exists pvd_lines_payee_idx on public.payment_voucher_batch_lines (tenant_id, lower(payee_name), amount);
 create index if not exists pvd_lines_voucher_idx on public.payment_voucher_batch_lines (voucher_id);
 
 alter table public.payment_voucher_batches
+  add column if not exists deleted_at timestamptz,
   add column if not exists first_approved_by text,
   add column if not exists created_by uuid default auth.uid(),
   add column if not exists required_sigs int,
@@ -75,7 +77,7 @@ alter table public.payment_vouchers
   add column if not exists last_reminded_at timestamptz,
   add column if not exists source text;
 alter table public.payment_vouchers drop constraint if exists payment_vouchers_category_check;
-alter table public.payment_vouchers add constraint payment_vouchers_category_check check (category is null or category in ('supplier', 'salary', 'commission', 'statutory', 'utility', 'other'));
+alter table public.payment_vouchers add constraint payment_vouchers_category_check check (category is null or category in ('supplier', 'salary', 'commission', 'statutory', 'utility', 'other')) not valid;
 create index if not exists payment_vouchers_batch_idx on public.payment_vouchers (batch_id);
 
 do $$ begin
@@ -85,6 +87,31 @@ do $$ begin
 end $$;
 
 -- ---------- 2) settings (per tenant) ----------
+-- Module guard: uses has_module() when the RBAC migration is installed; otherwise keeps today's
+-- tenant-member access (PVD was tenant FOR ALL). Avoids 42883 on DBs without has_module(text).
+create or replace function public.pv__can(p_module text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $fn$
+declare ok boolean;
+begin
+  if exists (select 1 from public.user_profiles where id = auth.uid() and lower(coalesce(role, '')) in ('owner', 'admin', 'platform_admin')) then
+    return true;
+  end if;
+  begin
+    execute 'select public.has_module($1)' into ok using p_module;
+    return coalesce(ok, false);
+  exception when undefined_function then
+    return exists (select 1 from public.user_profiles where id = auth.uid() and tenant_id = public.get_my_tenant_id());
+  end;
+end;
+$fn$;
+revoke all on function public.pv__can(text) from public;
+grant execute on function public.pv__can(text) to authenticated;
+
 create table if not exists public.pv_settings (
   tenant_id uuid primary key,
   sig_threshold numeric(14,2) not null default 5000 check (sig_threshold >= 0),
@@ -101,9 +128,9 @@ drop policy if exists pv_settings_read on public.pv_settings;
 create policy pv_settings_read on public.pv_settings for select to authenticated using (tenant_id = public.get_my_tenant_id());
 drop policy if exists pv_settings_write on public.pv_settings;
 create policy pv_settings_write on public.pv_settings for all to authenticated
-  using (tenant_id = public.get_my_tenant_id() and public.has_module('vouchers')
+  using (tenant_id = public.get_my_tenant_id() and public.pv__can('vouchers')
     and exists (select 1 from public.user_profiles p where p.id = auth.uid() and lower(coalesce(p.role, '')) in ('owner', 'admin', 'platform_admin', 'finance', 'accountant')))
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('vouchers')
+  with check (tenant_id = public.get_my_tenant_id() and public.pv__can('vouchers')
     and exists (select 1 from public.user_profiles p where p.id = auth.uid() and lower(coalesce(p.role, '')) in ('owner', 'admin', 'platform_admin', 'finance', 'accountant')));
 grant select, insert, update on public.pv_settings to authenticated;
 
@@ -113,15 +140,15 @@ drop policy if exists pvd_batches_select on public.payment_voucher_batches;
 drop policy if exists pvd_batches_write on public.payment_voucher_batches;
 create policy pvd_batches_select on public.payment_voucher_batches for select to authenticated using (tenant_id = public.get_my_tenant_id());
 create policy pvd_batches_write on public.payment_voucher_batches for all to authenticated
-  using (tenant_id = public.get_my_tenant_id() and public.has_module('vouchers'))
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('vouchers'));
+  using (tenant_id = public.get_my_tenant_id() and public.pv__can('vouchers'))
+  with check (tenant_id = public.get_my_tenant_id() and public.pv__can('vouchers'));
 drop policy if exists pvd_lines_tenant on public.payment_voucher_batch_lines;
 drop policy if exists pvd_lines_select on public.payment_voucher_batch_lines;
 drop policy if exists pvd_lines_write on public.payment_voucher_batch_lines;
 create policy pvd_lines_select on public.payment_voucher_batch_lines for select to authenticated using (tenant_id = public.get_my_tenant_id());
 create policy pvd_lines_write on public.payment_voucher_batch_lines for all to authenticated
-  using (tenant_id = public.get_my_tenant_id() and public.has_module('vouchers'))
-  with check (tenant_id = public.get_my_tenant_id() and public.has_module('vouchers'));
+  using (tenant_id = public.get_my_tenant_id() and public.pv__can('vouchers'))
+  with check (tenant_id = public.get_my_tenant_id() and public.pv__can('vouchers'));
 
 -- ---------- 4) role links (hash only) + signatures ----------
 create table if not exists public.pv_sign_links (
@@ -393,7 +420,7 @@ begin
   select * into d from public.pv__doc(p_kind, p_doc);
   if not found or (me.tenant_id is distinct from d.tenant_id and lower(coalesce(me.role, '')) <> 'platform_admin') then raise exception 'Voucher not found'; end if;
   if d.tenant_id is distinct from public.get_my_tenant_id() then raise exception 'Voucher not found'; end if;
-  if not public.has_module('vouchers') then raise exception 'No access to Payment Vouchers'; end if;
+  if not public.pv__can('vouchers') then raise exception 'No access to Payment Vouchers'; end if;
   if public.pv__view_only(d.tenant_id) then raise exception 'View-only support session'; end if;
   if p_role is null or p_role not in ('prepared', 'checked', 'first', 'second') then raise exception 'Invalid role'; end if;
   if d.status not in ('draft', 'shared', 'pending') then raise exception 'Already approved — locked'; end if;
@@ -437,7 +464,7 @@ begin
   if p_kind is null or p_kind not in ('pvd', 'pv') then raise exception 'Invalid document'; end if;
   select * into d from public.pv__doc(p_kind, p_doc);
   if not found or d.tenant_id is distinct from public.get_my_tenant_id() then raise exception 'Voucher not found'; end if;
-  if not public.has_module('vouchers') then raise exception 'No access to Payment Vouchers'; end if;
+  if not public.pv__can('vouchers') then raise exception 'No access to Payment Vouchers'; end if;
   if public.pv__view_only(d.tenant_id) then raise exception 'View-only support session'; end if;
   if p_role is null or p_role not in ('prepared', 'checked', 'first', 'second') then raise exception 'Invalid role'; end if;
   if d.status not in ('draft', 'shared', 'pending') then raise exception 'Already approved — locked'; end if;
@@ -592,7 +619,7 @@ begin
   select * into me from public.user_profiles where id = auth.uid();
   select * into s from public.salary_disbursement_batches where id = p_sd_batch and deleted_at is null;
   if not found or s.tenant_id is distinct from public.get_my_tenant_id() then raise exception 'Salary disbursement not found'; end if;
-  if not public.has_module('vouchers') then raise exception 'No access to Payment Vouchers'; end if;
+  if not public.pv__can('vouchers') then raise exception 'No access to Payment Vouchers'; end if;
   if public.pv__view_only(s.tenant_id) then raise exception 'View-only support session'; end if;
   if s.status <> 'approved' then raise exception 'Salary disbursement is not approved yet'; end if;
   select id into bid from public.payment_voucher_batches where tenant_id = s.tenant_id and source = 'sd' and source_ref = s.id and deleted_at is null limit 1;
