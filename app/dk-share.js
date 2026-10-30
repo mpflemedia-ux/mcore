@@ -54,6 +54,9 @@
     comm_send: { label: ['Commission statement', 'Penyata komisen'], desc: ['Statement PDF to the salesperson', 'PDF penyata kepada jurujual'], doc: 'comm',
       en: function (c) { return 'Hi ' + c.name + ', your commission statement for ' + c.period + ' is ready. The PDF is attached.\n– ' + c.co; },
       bm: function (c) { return 'Salam ' + c.name + ', penyata komisen anda bagi ' + c.period + ' telah sedia. PDF dilampirkan.\n– ' + c.co; } },
+    ar_remind: { label: ['Payment reminder', 'Peringatan bayaran'], desc: ['Outstanding invoices for one customer', 'Invois tertunggak bagi seorang pelanggan'], doc: 'arrem',
+      en: function (c) { return 'Hi ' + c.name + ', a friendly reminder that ' + c.amt + ' is outstanding on ' + (c.refs || c.ref) + (c.due ? ' (earliest due ' + c.due + ')' : '') + '.\nPlease arrange payment at your earliest convenience, or ignore this if already paid.\nThank you!\n– ' + c.co; },
+      bm: function (c) { return 'Salam ' + c.name + ', peringatan mesra: baki ' + c.amt + ' masih tertunggak bagi ' + (c.refs || c.ref) + (c.due ? ' (tarikh akhir terawal ' + c.due + ')' : '') + '.\nSila jelaskan bayaran secepat mungkin, atau abaikan jika telah dibayar.\nTerima kasih!\n– ' + c.co; } },
     sign_req: { label: ['Ask to sign', 'Minta tandatangan'], desc: ['Ask a teammate to sign in M-Core', 'Minta rakan tandatangan dalam M-Core'], doc: '',
       en: function (c) { return 'Hi ' + c.name + ', please review and sign ' + c.ref + ' in M-Core (Notifications → tap the request).' + (c.link ? '\n' + c.link : '') + '\n– ' + c.co; },
       bm: function (c) { return 'Salam ' + c.name + ', sila semak dan tandatangan ' + c.ref + ' dalam M-Core (Notifikasi → ketik permintaan).' + (c.link ? '\n' + c.link : '') + '\n– ' + c.co; } }
@@ -80,7 +83,7 @@
   var GL = { do: ['Delivery orders', 'Pesanan penghantaran'], rcpt: ['Receipts', 'Resit'], soa: ['Statements', 'Penyata'], cn: ['Credit notes', 'Nota kredit'],
     leave: ['Leave', 'Cuti'], ot: ['Overtime', 'Kerja lebih masa'], exp: ['Expense claims', 'Tuntutan perbelanjaan'], adv: ['Cash advance', 'Pendahuluan tunai'],
     po: ['Purchase orders', 'Pesanan belian'], bill: ['Supplier bills', 'Bil pembekal'], grn: ['Goods received', 'Terimaan barang'], ssoa: ['Supplier statements', 'Penyata pembekal'],
-    wo: ['Work orders', 'Arahan kerja'], comm: ['Commission', 'Komisen'], dk: ['Signatures', 'Tandatangan'] };
+    wo: ['Work orders', 'Arahan kerja'], comm: ['Commission', 'Komisen'], arrem: ['Payment reminders', 'Peringatan bayaran'], dk: ['Signatures', 'Tandatangan'] };
   new MutationObserver(function () {
     var s = document.querySelector('#wd2-tpl #wd2-k'); if (!s || s.dataset.dk) return; s.dataset.dk = '1';
     s.querySelectorAll('optgroup').forEach(function (g) {
@@ -92,7 +95,7 @@
 
   function render(k, lang, v) {
     var W = window.WAD; addI18n();
-    var c = { name: v.name || '-', ref: v.ref || '', amt: v.amt || '', bal: v.amt || '', due: v.due || '', link: v.link || '', co: v.co || (W && W.company ? W.company() : 'M-Core'), status: v.status || '', period: v.period || '' };
+    var c = { name: v.name || '-', ref: v.ref || '', refs: v.refs || '', amt: v.amt || '', bal: v.amt || '', due: v.due || '', link: v.link || '', co: v.co || (W && W.company ? W.company() : 'M-Core'), status: v.status || '', period: v.period || '' };
     var out = W && W.tpl ? W.tpl(k, lang, c) : (T[k] ? T[k][lang](c) : '');
     if (!out && T[k]) out = T[k][lang](c);
     // extra DK tags in tenant-custom bodies

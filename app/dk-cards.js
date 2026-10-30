@@ -71,7 +71,7 @@
   /* ---------- registry ----------
      DK.list({ key, sel: css selector of the table or its container, doc?: share/timeline doc type,
        fns?: [render function names to wrap], when?: fn()->bool, title?, sub?, amount?, status?, date?: column indexes,
-       quick?: RegExp for swipe/approve buttons, open?: fn(id,row), hide?: [col idx], bulk?: bool, table?: timeline source table, bulkActions?: [{label, icon, cls, run(ids, items, btn)}] }) */
+       quick?: RegExp for swipe/approve buttons, open?: fn(id,row), hide?: [col idx], bulk?: bool, table?: timeline source table, bulkActions?: [{label, icon, cls, run(ids, items, btn)}], skip?: fn(tr)->bool }) */
   DK.list = function (cfg) { DK.lists = DK.lists.filter(function (c) { return c.key !== cfg.key; }); DK.lists.push(cfg); (cfg.fns || []).forEach(wrapFn); schedule(); return cfg; };
   var wrapped = {};
   function wrapFn(name) {
@@ -144,6 +144,7 @@
     var heads = [].map.call(table.querySelectorAll('thead th'), txt);
     var trs = [].filter.call(table.querySelectorAll('tbody tr'), function (tr) { return tr.cells.length > 1 || !tr.cells[0] || !tr.cells[0].colSpan || tr.cells[0].colSpan < 2; });
     trs = trs.filter(function (tr) { return !(tr.cells.length === 1 && tr.cells[0].colSpan > 1); });
+    if (cfg.skip) trs = trs.filter(function (tr) { return !cfg.skip(tr); }); // e.g. grand-total rows
     if (!heads.length && trs[0]) heads = [].map.call(trs[0].cells, function (c, i) { return '#' + (i + 1); });
     var g = guess(heads, trs, cfg), items = [];
     trs.forEach(function (tr, i) {
