@@ -6,7 +6,8 @@ type Row = Record<string, any>;
 const T = 'ten-1', U = 'usr-1', PA = 'pa-1', TP = 'ten-pa';
 function world(over: Row = {}) {
   const W: Row = { n: [], log: [], subs: [{ id: 's1', tenant_id: T, user_id: U, endpoint: 'e1', lang: 'bm', fail_count: 0 }], prof: { [U]: { id: U, tenant_id: T, role: 'staff' }, [PA]: { id: PA, tenant_id: TP, role: 'platform_admin' } },
-    settings: {}, ts: {}, tg: {}, sr: {}, pushed: [], tgSent: [], codes: [], read: [], inserted: [], unread: 3, had: {}, ...over };
+    settings: {}, ts: {}, tg: {}, sr: {}, events: [], pushed: [], tgSent: [], codes: [], read: [], inserted: [], unread: 3, had: {}, ...over };
+  const SLA_ACTIVE = ['submitted', 'triaged', 'in_progress', 'revision'];
   const db: Repo = {
     notifications: async (ids) => W.n.filter((x: Row) => ids.includes(x.id)),
     recentNotifications: async () => W.n.slice(),
@@ -23,6 +24,16 @@ function world(over: Row = {}) {
     telegramChat: async (t, u) => W.tg[u] || null,
     recentPushed: async (u, since, ex) => W.log.filter((l: Row) => l.user_id === u && l.channel === 'push' && ['sent', 'grouped'].includes(l.status) && l.notification_id && l.notification_id !== ex && l.created_at >= since).map((l: Row) => W.n.find((x: Row) => x.id === l.notification_id)).filter(Boolean),
     sr: async (id) => W.sr[id] || null,
+    pendingSlaNotifications: async () => W.n.filter((x: Row) => String(x.group_key || '').startsWith('sla:') && !x.read_at),
+    markActed: async (id) => { const n = W.n.find((x: Row) => x.id === id); if (n) { n.read_at = W.now.toISOString(); n.acted_at = n.read_at; } },
+    markGroupActed: async (gk) => { W.n.filter((x: Row) => x.group_key === gk && !x.read_at).forEach((x: Row) => { x.read_at = W.now.toISOString(); x.acted_at = x.read_at; }); },
+    paOpenSrsWithDue: async () => Object.values(W.sr).filter((r: any) => SLA_ACTIVE.includes(r.status) && r.due_at),
+    paWaitingClientCount: async () => Object.values(W.sr).filter((r: any) => r.status === 'waiting_client').length,
+    paPendingDraftCount: async () => new Set(W.n.filter((x: Row) => x.type === 'sd.ai_draft' && !x.read_at).map((x: Row) => x.group_key)).size,
+    latestAiDraft: async (srId) => W.events.filter((e: Row) => e.request_id === srId && e.type === 'internal_note' && e.meta && e.meta.ai_draft).sort((a: Row, b: Row) => (a.created_at < b.created_at ? 1 : -1))[0] || null,
+    insertEvent: async (row) => { W.events.push({ created_at: W.now.toISOString(), ...row }); },
+    updateSrStatus: async (id, fromStatus, patch) => { const r = W.sr[id]; if (!r || r.status !== fromStatus) return null; Object.assign(r, patch); return r; },
+    tenantUsers: async (tid) => Object.values(W.prof).filter((u: any) => u.tenant_id === tid).map((u: any) => ({ id: u.id, language: u.language || 'en' })),
     openSrs: async () => Object.values(W.sr),
     urgentUnpicked: async () => Object.values(W.sr).filter((r: any) => r.priority === 'urgent' && r.status === 'submitted' && !r.assigned_to) as Row[],
     paUsers: async () => [W.prof[PA]],
@@ -109,6 +120,45 @@ Deno.test('tick: SLA 2h + overdue (once), escalation after 30 min (0 = off), mor
   assertEquals((await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), w3.d)).body.morning, 1); assert(w3.W.pushed.at(-1).b.body.startsWith('3 amaran'));
   assertEquals((await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), w3.d)).body.morning, 0);
   w3.W.now = new Date('2026-10-23T02:05:00Z'); const w4 = world(); w4.W.now = new Date('2026-10-23T02:05:00Z'); assertEquals((await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), w4.d)).body.morning, 0);
+});
+Deno.test('sla(): stale reminder (SR left SLA-active status) gets marked acted; overdue supersedes the 2h warning', async () => {
+  const sr = { id: 'sr10', tenant_id: 'cli', ref_no: 'SR-202610-0040', title: 'Payroll', status: 'in_progress', priority: 'normal', assigned_to: U, due_at: '2026-10-22T07:30:00Z' };
+  const { W, d } = world({ sr: { sr10: sr } });
+  let r = await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), d);
+  assertEquals(r.body.sla, 1); assertEquals(W.n.filter((x: Row) => x.group_key === 'sla:sr10' && !x.read_at).length, 1);
+  sr.status = 'waiting_client'; // SR paused -- the 2h warning no longer applies
+  r = await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), d);
+  assertEquals(r.body.sla, 0); assertEquals(W.n.filter((x: Row) => x.group_key === 'sla:sr10' && !x.read_at).length, 0, 'stale sla2 reminder marked acted once SR left SLA_ACTIVE');
+  sr.status = 'in_progress'; W.now = new Date('2026-10-22T07:31:00Z');
+  r = await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), d);
+  assertEquals(r.body.sla, 1); assertEquals(W.n.filter((x: Row) => x.group_key === 'sla:sr10' && !x.read_at).length, 1, 'only the fresh overdue reminder is left unread');
+});
+Deno.test('morning(): platform_admin gets the Service Desk ops summary, deep-linked to the board', async () => {
+  const subs = [{ id: 'sp', tenant_id: TP, user_id: PA, endpoint: 'ep', lang: 'en', fail_count: 0 }];
+  const { W, d } = world({
+    subs,
+    sr: { s1: { id: 's1', status: 'in_progress', due_at: '2026-10-22T23:00:00Z' }, s2: { id: 's2', status: 'triaged', due_at: '2026-10-23T01:00:00Z' }, s3: { id: 's3', status: 'waiting_client', due_at: null } },
+    n: [{ id: 'd1', tenant_id: TP, user_id: PA, title: 'x', category: 'service_desk', kind: 'action', type: 'sd.ai_draft', group_key: 'aid:s1', created_at: '2026-10-22T05:59:00Z' }],
+  });
+  W.now = new Date('2026-10-23T00:05:00Z'); // 08:05 MYT
+  const r = await handle({ action: 'tick' }, new Headers({ 'x-push-secret': 'S3' }), d);
+  assertEquals(r.body.morning, 1);
+  const b = W.pushed.at(-1).b; assertEquals(b.url, '/app/?page=admin&view=sd_desk'); assertEquals(b.body, '1 past SLA · 1 near SLA · 1 AI drafts pending · 1 waiting on client');
+});
+Deno.test('deliver: promotes the latest AI draft and moves the SR to delivered (platform_admin + token gated)', async () => {
+  const sr = { id: 'srA', tenant_id: T, ref_no: 'SR-202610-0050', title: 'Payslip batch', status: 'in_progress' };
+  const { W, d } = world({ sr: { srA: sr }, events: [{ request_id: 'srA', type: 'internal_note', file_path: 'p/draft.pdf', file_name: 'draft.pdf', meta: { ai_draft: true, version: 1 }, created_at: '2026-10-22T05:00:00Z' }] });
+  W.n.push({ id: 'nd1', tenant_id: TP, user_id: PA, title: 'x', category: 'service_desk', kind: 'action', type: 'sd.ai_draft', ref_id: 'srA', group_key: 'aid:srA', created_at: '2026-10-22T05:59:00Z' });
+  assertEquals((await handle({ action: 'deliver', id: 'nd1', uid: PA, t: 'bad' }, new Headers(), d)).status, 401);
+  assertEquals((await handle({ action: 'deliver', id: 'nd1', uid: U, t: await d.sign('nd1', U) }, new Headers(), d)).body.error, 'forbidden');
+  const res = await handle({ action: 'deliver', id: 'nd1', uid: PA, t: await d.sign('nd1', PA) }, new Headers(), d);
+  assertEquals(res.body.ok, true); assertEquals(res.body.ref_no, 'SR-202610-0050');
+  assertEquals(sr.status, 'delivered'); assert(!!(sr as Row).delivered_at);
+  assertEquals(W.events.filter((e: Row) => e.type === 'attachment' && e.meta && e.meta.deliverable).length, 1);
+  assertEquals(W.events.filter((e: Row) => e.type === 'status' && e.to_status === 'delivered').length, 1);
+  assertEquals(W.inserted.filter((x: Row) => x.type === 'sd.delivered' && x.tenant_id === T).length, 1, 'client tenant notified');
+  assertEquals(W.n.find((x: Row) => x.id === 'nd1').acted_at != null, true, 'ai_draft notification marked acted');
+  assertEquals((await handle({ action: 'deliver', id: 'nd1', uid: PA, t: await d.sign('nd1', PA) }, new Headers(), d)).body.error, 'bad_status', 'already delivered -- no double-deliver');
 });
 Deno.test('tick: anonymous public-page message (sd-result bellAdmins row) reaches platform admin', async () => {
   const subs = [{ id: 'sp', tenant_id: TP, user_id: PA, endpoint: 'ep', lang: 'en', fail_count: 0 }];
