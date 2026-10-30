@@ -28426,7 +28426,7 @@ async function renderCreditNoteList() {
     <th>${t.ref}</th><th>${t.date}</th><th>${t.customer}</th><th>${t.invoice}</th>
     <th style="text-align:right">${t.amount}</th><th>${t.refund}</th><th>${t.reason}</th>
   </tr></thead><tbody>
-  ${cnRows.map(r => `<tr>
+  ${cnRows.map(r => `<tr data-id="${r.id}">
     <td style="white-space:nowrap"><strong>${_aiEscapeHtml(r.ref_no||'-')}</strong></td>
     <td style="white-space:nowrap">${formatDate(r.credit_date)}</td>
     <td>${_aiEscapeHtml(r.customer_name||'-')}</td>
@@ -40529,9 +40529,10 @@ if('serviceWorker' in navigator){
 <script src="./ffm-hub.js?v=10"></script>
 <script src="./ffm-do.js?v=10"></script>
 <script src="./ffm-po.js?v=10"></script>
-<script src="./dk-cards.js?v=1"></script>
-<script src="./dk-doc.js?v=1"></script>
+<script src="./dk-cards.js?v=2"></script>
+<script src="./dk-doc.js?v=2"></script>
 <script src="./dk-sign.js?v=1"></script>
 <script src="./dk-share.js?v=1"></script>
+<script src="./dk-sales.js?v=1"></script>
 </body>
 </html>
