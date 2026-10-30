@@ -24,7 +24,7 @@
     '.wad-bub{width:100%;box-sizing:border-box;background:#D9FDD3;color:#111B21;border:0;border-radius:10px 10px 2px 10px;padding:10px 12px;font:inherit;font-size:14px;line-height:1.45;min-height:150px;resize:vertical;margin-top:8px}' +
     '[data-theme="dark"] .wad-bub{background:#005C4B;color:#E9EDEF}' +
     '.wad-note{font-size:12px;color:var(--text-2);margin:8px 0 2px}' +
-    '.wad-ft{display:flex;gap:10px;margin-top:12px}.wad-ft .btn{flex:1;min-height:44px;justify-content:center}.wad-ft .btn:last-child{flex:1.5}' +
+    '.wad-ft{display:flex;gap:10px;margin-top:12px}.wad-ft .btn{flex:1;min-height:44px;justify-content:center;white-space:nowrap;padding-left:10px;padding-right:10px;gap:6px}.wad-ft .btn:last-child{flex:1.5}' +
     '.btn.wad-wa{background:#25D366;border-color:#25D366;color:#06260f}.btn.wad-wa:disabled{opacity:.5}' +
     '@media print{.wad-bg,.wad-line,.wad-btn{display:none!important}}';
   document.head.appendChild(css);
