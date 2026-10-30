@@ -31537,10 +31537,10 @@ async function renderOTApprovals() {
   </div></div>
   <div class="card">
   ${(!claims || claims.length===0) ? `<div class="empty-state" style="padding:40px"><p>${t.noData}</p></div>` : `
-  <div style="overflow-x:auto"><table style="min-width:640px"><thead><tr><th>${t.name}</th><th>${t.date}</th><th>${t.type}</th><th style="text-align:right">${t.hours}</th><th style="text-align:right">${t.amount}</th><th style="min-width:180px">${t.action}</th></tr></thead>
+  <div id="ot-appr-wrap" style="overflow-x:auto"><table style="min-width:640px"><thead><tr><th>${t.name}</th><th>${t.date}</th><th>${t.type}</th><th style="text-align:right">${t.hours}</th><th style="text-align:right">${t.amount}</th><th style="min-width:180px">${t.action}</th></tr></thead>
   <tbody>${claims.map(c => {
     const isOwn = !isOwner && String(c.employees?.email||'').trim().toLowerCase() === myEmail && myEmail
-    return `<tr>
+    return `<tr data-id="${c.id}">
       <td>${_aiEscapeHtml(c.employees?.name||'-')}</td>
       <td>${formatDate(c.claim_date)}</td>
       <td>${dayLabel(c.day_type)}</td>
@@ -36398,7 +36398,7 @@ async function _leaveLoadTable() {
     <th>${t.employee}</th><th>${t.leaveType}</th><th>${t.startDate}</th><th>${t.endDate}</th>
     <th style="text-align:right">${t.days}</th><th>${t.status}</th><th>${t.actionedBy}</th><th></th>
   </tr></thead>
-  <tbody>${_leaveRequests.map(l=>`<tr>
+  <tbody>${_leaveRequests.map(l=>`<tr data-id="${l.id}">
     <td>${_aiEscapeHtml(l.employees?.name||'-')}</td>
     <td>${typeLabel(l.leave_type)}</td>
     <td style="white-space:nowrap">${formatDate(l.start_date)}</td>
@@ -36632,7 +36632,7 @@ async function _advLoadTable() {
   wrap.innerHTML = `<table><thead><tr>
     <th>${t.employee}</th><th style="text-align:right">${t.amount}</th><th style="text-align:right">${t.outstanding}</th><th>${t.status}</th><th>${t.actionedBy}</th><th></th>
   </tr></thead>
-  <tbody>${filtered.map(a=>`<tr>
+  <tbody>${filtered.map(a=>`<tr data-id="${a.id}">
     <td>${_aiEscapeHtml(a.employees?.name||'-')}</td>
     <td style="text-align:right;white-space:nowrap">${formatRM(a.amount)}</td>
     <td style="text-align:right;white-space:nowrap">${a.status==='approved' ? formatRM(a.outstanding_amount) : '-'}</td>
@@ -40534,5 +40534,6 @@ if('serviceWorker' in navigator){
 <script src="./dk-sign.js?v=1"></script>
 <script src="./dk-share.js?v=1"></script>
 <script src="./dk-sales.js?v=1"></script>
+<script src="./dk-staff.js?v=1"></script>
 </body>
 </html>
