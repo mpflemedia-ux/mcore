@@ -51,7 +51,7 @@
 
   /* Edge call — returns parsed JSON or throws Error(message from server). */
   FFM.api = async function (action, body) {
-    var payload = Object.assign({ action: action, lang: APP.language === 'bm' ? 'bm' : 'en' }, body || {});
+    var payload = Object.assign({ action: action, lang: APP.language === 'bm' ? 'bm' : 'en', tenant_id: FFM.tid() }, body || {}); // active tenant (Support mode); server honours it for platform_admin only
     var res = await sb.functions.invoke('ffm-api', { body: payload });
     if (res.error) {
       var msg = res.error.message || 'FFM error', st = res.error.context && res.error.context.status;
