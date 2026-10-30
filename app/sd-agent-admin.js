@@ -58,6 +58,18 @@
     var selTenant = ST.tenants.find(function (t) { return t.id === ST.selTenantId; });
     var tenantDl = '<datalist id="sd-agent-tl">' + ST.tenants.map(function (t) { return '<option value="' + SD.esc(tenantLabel(t)) + '">'; }).join('') + '</datalist>';
     m.innerHTML = '<div class="cob-root">' + SD.head(SD.L('Admin — Service Desk Agent', 'Admin — Agent Service Desk'), SD.L('External SR-processing agent: master switch, per-tenant access, run log', 'Agent pemprosesan SR luaran: suis induk, akses per-tenant, log larian')) + SD.tabs('sd_agent') +
+      '<div class="cob-card" style="padding:16px;margin-bottom:16px;border-left:3px solid var(--primary)">' +
+      '<div class="row" style="gap:8px;align-items:flex-start"><i class="ti ti-info-circle" style="color:var(--primary);margin-top:2px"></i><div>' +
+      '<b style="font-size:14px">' + SD.L('How the agent runs', 'Macam mana agent ni jalan') + '</b>' +
+      '<p class="cob-xs" style="margin-top:4px">' + SD.L(
+        'This agent lives outside M-Core — a scheduled Claude task that runs automatically every hour, calling the sd-agent backend to process any Service Request that needs a draft.',
+        'Agent ni berada di luar M-Core — satu scheduled Claude task yang jalan automatik setiap jam, memanggil backend sd-agent untuk proses mana-mana Service Request yang perlukan draf.'
+      ) + '</p>' +
+      '<p class="cob-xs" style="margin-top:6px">' + SD.L(
+        'To run it right now instead of waiting for the next hour: go to ',
+        'Untuk jalankan dia sekarang tanpa tunggu sejam: pergi '
+      ) + '<b>claude.ai</b> → <b>' + SD.L('Scheduled tasks', 'Scheduled tasks') + '</b> (' + SD.L('also called Routines', 'juga dipanggil Routines') + ') → ' + SD.L('find', 'cari') + ' <b>"M-Core Service Desk — SR Agent (hourly)"</b> → ' + SD.L('tap', 'tekan') + ' <b>"Run now"</b>.</p>' +
+      '</div></div></div>' +
       '<div class="cob-card" style="padding:16px;margin-bottom:16px">' +
       '<div class="row" style="justify-content:space-between;align-items:center;gap:10px"><div><b style="font-size:15px">' + SD.L('Master switch', 'Suis induk') + '</b><div class="cob-xs" style="margin-top:2px">' + SD.L('Turns the agent off for every tenant at once, regardless of per-tenant settings.', 'Matikan agent untuk semua tenant sekali gus, tanpa kira tetapan per-tenant.') + '</div></div>' +
       '<label class="row cob-sm" style="gap:8px;align-items:center;white-space:nowrap"><input type="checkbox" id="sd-agent-master"' + (ST.master && ST.master.enabled ? ' checked' : '') + '> ' + SD.L('Enabled', 'Dibenarkan') + '</label></div>' +
