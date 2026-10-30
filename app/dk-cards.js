@@ -71,7 +71,7 @@
   /* ---------- registry ----------
      DK.list({ key, sel: css selector of the table or its container, doc?: share/timeline doc type,
        fns?: [render function names to wrap], when?: fn()->bool, title?, sub?, amount?, status?, date?: column indexes,
-       quick?: RegExp for swipe/approve buttons, open?: fn(id,row), hide?: [col idx], bulk?: bool, table?: timeline source table }) */
+       quick?: RegExp for swipe/approve buttons, open?: fn(id,row), hide?: [col idx], bulk?: bool, table?: timeline source table, bulkActions?: [{label, icon, cls, run(ids, items, btn)}] }) */
   DK.list = function (cfg) { DK.lists = DK.lists.filter(function (c) { return c.key !== cfg.key; }); DK.lists.push(cfg); (cfg.fns || []).forEach(wrapFn); schedule(); return cfg; };
   var wrapped = {};
   function wrapFn(name) {
@@ -214,7 +214,7 @@
     var cfg = R.cfg, S = R.S, m = R.m, w = R.wrap, sts = statuses(m.items);
     if (!m.items.length) { w.innerHTML = '<div class="dk-empty"><i class="ti ti-inbox"></i>' + esc(cfg.emptyText || L('Nothing here yet', 'Tiada rekod lagi')) + '</div>'; return; }
     var h = '<div class="dk-tools"><input type="search" class="form-input dk-q" placeholder="' + esc(L('Search ref, name, status…', 'Cari no., nama, status…')) + '" value="' + esc(S.q) + '" aria-label="' + esc(L('Search', 'Cari')) + '">';
-    if (canShare(cfg) && cfg.bulk !== false) h += '<button type="button" class="btn btn-outline btn-sm dk-bulkt">' + '<i class="ti ti-checkbox"></i> ' + esc(S.bulk ? L('Done', 'Selesai') : L('Select', 'Pilih')) + '</button>';
+    if ((canShare(cfg) || cfg.bulkActions) && cfg.bulk !== false) h += '<button type="button" class="btn btn-outline btn-sm dk-bulkt">' + '<i class="ti ti-checkbox"></i> ' + esc(S.bulk ? L('Done', 'Selesai') : L('Select', 'Pilih')) + '</button>';
     h += '</div><div class="dk-chips">';
     if (sts.length > 1) { h += '<button type="button" class="dk-chip' + (S.s ? '' : ' on') + '" data-s="">' + esc(L('All', 'Semua')) + '</button>'; sts.forEach(function (s) { h += '<button type="button" class="dk-chip' + (S.s === s[0] ? ' on' : '') + '" data-s="' + esc(s[0]) + '">' + esc(s[0]) + '</button>'; }); }
     if (m.g.date >= 0 && m.items.some(function (i) { return i.date; })) [['', L('Any date', 'Semua tarikh')], ['7', L('7 days', '7 hari')], ['30', L('30 days', '30 hari')], ['m', L('This month', 'Bulan ini')]].forEach(function (d) { h += '<button type="button" class="dk-chip' + (S.d === d[0] ? ' on' : '') + '" data-d="' + d[0] + '">' + esc(d[1]) + '</button>'; });
@@ -306,9 +306,11 @@
     if (!R.S.bulk) { h.innerHTML = ''; return; }
     h.innerHTML = '<div class="dk-bulk"><span>' + esc(L(ids.length + ' selected', ids.length + ' dipilih')) + '</span><div>' +
       '<button type="button" class="btn btn-outline btn-sm" data-a="all">' + esc(L('Select all shown', 'Pilih semua')) + '</button>' +
-      '<button type="button" class="btn btn-primary btn-sm" data-a="share"' + (ids.length ? '' : ' disabled') + '><i class="ti ti-brand-whatsapp"></i> ' + esc(L('Share one by one', 'Kongsi satu persatu')) + '</button></div></div>';
+      (canShare(R.cfg) ? '<button type="button" class="btn btn-primary btn-sm" data-a="share"' + (ids.length ? '' : ' disabled') + '><i class="ti ti-brand-whatsapp"></i> ' + esc(L('Share one by one', 'Kongsi satu persatu')) + '</button>' : '') +
+      (R.cfg.bulkActions || []).map(function (a, k) { return '<button type="button" class="btn ' + (a.cls || 'btn-primary') + ' btn-sm" data-k="' + k + '"' + (ids.length ? '' : ' disabled') + '><i class="ti ' + esc(a.icon || 'ti-bolt') + '"></i> ' + esc(a.label) + '</button>'; }).join('') + '</div></div>';
     h.querySelector('[data-a=all]').onclick = function () { R.list.forEach(function (it) { if (it.id) R.S.sel[it.id] = it; }); draw(R); };
-    h.querySelector('[data-a=share]').onclick = function () { DKS.queue(R.cfg.doc, Object.keys(R.S.sel)); };
+    var sh = h.querySelector('[data-a=share]'); if (sh) sh.onclick = function () { DKS.queue(R.cfg.doc, Object.keys(R.S.sel)); };
+    [].forEach.call(h.querySelectorAll('[data-k]'), function (b) { var a = R.cfg.bulkActions[+b.dataset.k]; b.onclick = function () { var sel = R.S.sel, its = Object.keys(sel).map(function (k) { return sel[k]; }); b.disabled = true; b.classList.add('dk-busy'); Promise.resolve().then(function () { return a.run(Object.keys(sel), its, b); }).catch(function (e) { try { showToast(String(e && e.message || e), 'error'); } catch (x) {} }).then(function () { b.disabled = false; b.classList.remove('dk-busy'); }); }; });
   }
 
   /* ---------- timeline (created / sent / opened / signed / audit) ---------- */
