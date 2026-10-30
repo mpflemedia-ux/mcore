@@ -41,10 +41,12 @@
 
   function runRow(run) {
     var t = (ST.tenants || []).find(function (x) { return SD.same(x.id, run.tenant_id); });
-    return '<div class="cob-card" style="padding:10px 12px;margin-bottom:6px"><div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' +
+    var clickable = !!run.request_id;
+    return '<div class="cob-card' + (clickable ? ' sd-run-row' : '') + '" style="padding:10px 12px;margin-bottom:6px' + (clickable ? ';cursor:pointer' : '') + '"' + (clickable ? ' data-rid="' + SD.esc(run.request_id) + '" title="' + SD.L('Open this request', 'Buka permohonan ini') + '"' : '') + '><div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' +
       '<span class="badge badge-' + (STATUS_COLOR[run.status] || 'gray') + '">' + SD.esc(run.status) + '</span>' +
       '<b style="font-size:13px">' + SD.esc(run.action) + '</b>' +
       (t ? '<span class="cob-xs">' + SD.esc(t.name) + '</span>' : '') +
+      (clickable ? '<i class="ti ti-external-link cob-xs" style="margin-left:4px"></i>' : '') +
       '<span class="cob-xs" style="margin-left:auto;white-space:nowrap">' + SD.dt(run.created_at) + '</span></div>' +
       (run.detail && Object.keys(run.detail).length ? '<div class="cob-xs" style="margin-top:4px;overflow-wrap:anywhere">' + SD.esc(JSON.stringify(run.detail)) + '</div>' : '') + '</div>';
   }
@@ -127,6 +129,7 @@
       loadTenantRow(t.id).then(function (row) { ST.selRow = row; m.querySelector('#sd-agent-tenant-panel').innerHTML = tenantPanel(); wireTenantSave(); });
     };
     var filt = m.querySelector('#sd-agent-run-filter'); if (filt) filt.onchange = function () { ST.runFilter = filt.value; loadRuns().then(function (r) { ST.runs = r; paint(); }); };
+    [].forEach.call(m.querySelectorAll('.sd-run-row'), function (row) { row.onclick = function () { SD.go('admin', { view: 'sd_desk', id: row.dataset.rid }); }; });
     wireTenantSave();
   }
   function wireTenantSave() {
