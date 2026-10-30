@@ -99,7 +99,11 @@
     var f = ov.querySelector('input,select,textarea'); if (f) try { f.focus(); } catch (e) { /* */ }
     return ov;
   };
-  FFM.modalErr = function (msg) { var el = document.getElementById('ffm-merr'); if (el) el.innerHTML = msg ? esc(msg).replace(/\n/g, '<br>') : ''; };
+  // Error sits at the bottom of a long scrolling form — scroll it into view + toast so it is never missed on mobile.
+  FFM.modalErr = function (msg) {
+    var el = document.getElementById('ffm-merr'); if (el) el.innerHTML = msg ? esc(msg).replace(/\n/g, '<br>') : '';
+    if (msg) { try { if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* */ } try { showToast(String(msg), 'error'); } catch (e) { /* */ } }
+  };
 
   /* Download base64 label document. */
   FFM.openDoc = function (d, name) {

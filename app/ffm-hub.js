@@ -64,7 +64,7 @@
       var admin = F.isAdmin();
       var head = '<div class="ffm-actions" style="margin-bottom:12px">' + (admin ? '<button type="button" class="btn btn-primary btn-sm" data-a="add"><i class="ti ti-plus"></i> ' + esc(t('Add FFM account', 'Tambah akaun FFM')) + '</button>' : '') +
         '<span class="ffm-muted">' + esc(t('Keys are write-only and stored server-side. They are never shown again.', 'Kunci hanya boleh ditulis dan disimpan di server. Tidak akan dipaparkan semula.')) + '</span></div>';
-      if (!accts.length) { body.innerHTML = head + emptyNoAcct(); bind(); return; }
+      if (!accts.length) { body.innerHTML = head + emptyNoAcct() + '<div id="ffm-elsewhere"></div>'; bind(); elsewhere(); return; }
       body.innerHTML = head + accts.map(function (a) {
         return '<div class="card" style="padding:16px;margin-bottom:12px"><div class="ffm-actions" style="justify-content:space-between;margin-bottom:10px"><div><strong>' + esc(a.label) + '</strong> ' +
           (a.is_funded ? '<span class="badge badge-yellow">' + esc(t('Funded', 'Dibiayai')) + '</span> ' : '') + (a.is_active ? '<span class="badge badge-green">' + esc(t('Active', 'Aktif')) + '</span>' : '<span class="badge badge-gray">' + esc(t('Inactive', 'Tidak aktif')) + '</span>') + '</div>' +
@@ -89,6 +89,17 @@
         });
       }
     }
+    // Platform Admin only (RLS lets PA read all tenants): list FFM accounts that live under another company.
+    async function elsewhere() {
+      if (!(typeof isPlatformAdmin === 'function' && isPlatformAdmin())) return;
+      try {
+        var r = await sb.from('ffm_accounts').select('label,tenant_id,created_at,tenants(name)').neq('tenant_id', F.tid()).is('deleted_at', null).order('created_at', { ascending: false }).limit(10);
+        var el = document.getElementById('ffm-elsewhere'); if (!el || r.error || !(r.data || []).length) return;
+        el.innerHTML = '<div class="card" style="padding:16px;margin-top:12px"><div class="ffm-warn" style="margin-bottom:8px"><i class="ti ti-alert-triangle"></i> ' +
+          esc(t('Platform Admin: FFM accounts found under OTHER companies (not this one):', 'Platform Admin: akaun FFM dijumpai di syarikat LAIN (bukan syarikat ini):')) + '</div><ul class="ffm-steps">' +
+          r.data.map(function (x) { return '<li><strong>' + esc(x.label) + '</strong> · ' + esc((x.tenants && x.tenants.name) || '-') + ' <span class="ffm-muted">' + esc(String(x.tenant_id).slice(0, 6)) + ' · ' + esc(F.dt(x.created_at)) + '</span></li>'; }).join('') + '</ul></div>';
+      } catch (e) { /* hint only */ }
+    }
     // Add form prefill (non-secret only; keys always typed by the user). Values = DB column defaults + FFM MY docs.
     function newAcctDefaults(accts) {
       var own = (accts || []).some(function (x) { return !x.is_funded; }), fund = (accts || []).some(function (x) { return x.is_funded; });
@@ -100,7 +111,7 @@
     function inp(id, label, val, extra) { return '<div class="form-group"><label class="form-label" for="' + id + '">' + esc(label) + '</label><input id="' + id + '" class="form-input" value="' + esc(val == null ? '' : val) + '" ' + (extra || '') + '></div>'; }
     function sel(id, label, val, opts) { return '<div class="form-group"><label class="form-label" for="' + id + '">' + esc(label) + '</label><select id="' + id + '" class="form-select">' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(val == null ? '' : val) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></div>'; }
     function chk(id, label, on) { return '<label class="ffm-chk"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + esc(label) + '</label>'; }
-    var NOCAP = 'autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"';
+    var NOCAP = 'autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" data-no-titlecase="1"'; // title-case-inputs.js skips data-no-titlecase
     function normUrl(s) { s = String(s || '').trim(); var m = s.match(/^([a-z][a-z0-9+.-]*:\/\/[^\/?#]*)(.*)$/i); return m ? m[1].toLowerCase() + m[2] : s; } // mobile auto-capital → https://open.…
     function secret(id, label, has) { return inp(id, label, '', 'type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="' + esc(has ? t('Saved — leave blank to keep', 'Disimpan — biar kosong untuk kekal') : t('Paste here', 'Tampal di sini')) + '"'); }
 
@@ -135,7 +146,8 @@
         if (a.id) body.is_active = c('fa-active');
         F.modalErr(''); F.busy(btn, true, t('Saving…', 'Menyimpan…'));
         try {
-          await F.api('save_account', body);
+          var saved = await F.api('save_account', body);
+          if (saved.account && saved.account.tenant_id && !F.same(saved.account.tenant_id, F.tid())) throw new Error(t('Saved under another company (' + String(saved.account.tenant_id).slice(0, 6) + '), not this one. Refresh and try again.', 'Disimpan di syarikat lain (' + String(saved.account.tenant_id).slice(0, 6) + '), bukan syarikat ini. Muat semula dan cuba lagi.'));
           ov.querySelectorAll('input[type=password]').forEach(function (i) { i.value = ''; });
           F.closeModal(); showToast(t('FFM account saved', 'Akaun FFM disimpan'), 'success');
           if (typeof auditLog === 'function') auditLog(a.id ? 'update' : 'create', 'ffm_accounts', a.id || null);
