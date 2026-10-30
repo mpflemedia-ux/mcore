@@ -1,0 +1,14 @@
+reset role;
+
+-- SR Agent Backend -- Fasa 5 (Verify + docs). No schema change; this file only records the
+-- dev_roadmap_items entry. See supabase/functions/sd-agent/core_test.ts and
+-- supabase/functions/push-send/handler_test.ts for the actual test coverage added.
+
+update public.dev_roadmap_items set stage = 'completed', module = 'service_desk',
+  description = 'SR Agent Backend Fasa 5 (Verify + docs): supabase/functions/sd-agent/core_test.ts (new -- canMove/pathTo/pausedSec/statusPatch/refPrefix/secretOk/pathAllowed/safeName, pure logic, no DB). supabase/functions/push-send/handler_test.ts extended with the Fasa 4 behaviour: sla() stale-reminder cleanup, morning()''s platform_admin ops summary, and the deliver action (promote draft + deliver + client bell, token + role gated, rejects a repeat deliver once already delivered). Type-checked with tsc (Deno import/global shims) -- this sandbox has no deno binary, so tests are verified by type-check + hand-traced assertions here, not an actual `deno test` run; Mike should run `deno test supabase/functions/sd-agent supabase/functions/push-send` once after deploying to get a real pass/fail. Live test against a real tenant account also needs Mike -- this session has no deployed Edge Function or live-write DB access. supabase/functions/sd-agent/README.md unchanged -- Fasa 4''s bug fix (notifyPlatformAdmins) is an internal recipient-resolution fix, not a change to any action''s request/response contract.'
+where title = 'Service Desk: SR Agent Backend (Fasa 5 — Verify + docs)';
+insert into public.dev_roadmap_items (title, description, module, stage)
+select 'Service Desk: SR Agent Backend (Fasa 5 — Verify + docs)',
+  'SR Agent Backend Fasa 5 (Verify + docs): supabase/functions/sd-agent/core_test.ts (new -- canMove/pathTo/pausedSec/statusPatch/refPrefix/secretOk/pathAllowed/safeName, pure logic, no DB). supabase/functions/push-send/handler_test.ts extended with the Fasa 4 behaviour: sla() stale-reminder cleanup, morning()''s platform_admin ops summary, and the deliver action (promote draft + deliver + client bell, token + role gated, rejects a repeat deliver once already delivered). Type-checked with tsc (Deno import/global shims) -- this sandbox has no deno binary, so tests are verified by type-check + hand-traced assertions here, not an actual `deno test` run; Mike should run `deno test supabase/functions/sd-agent supabase/functions/push-send` once after deploying to get a real pass/fail. Live test against a real tenant account also needs Mike -- this session has no deployed Edge Function or live-write DB access. supabase/functions/sd-agent/README.md unchanged -- Fasa 4''s bug fix (notifyPlatformAdmins) is an internal recipient-resolution fix, not a change to any action''s request/response contract.',
+  'service_desk', 'completed'
+where not exists (select 1 from public.dev_roadmap_items where title = 'Service Desk: SR Agent Backend (Fasa 5 — Verify + docs)');
