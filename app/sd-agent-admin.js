@@ -4,6 +4,7 @@
 (function () {
   var SD = window.SD; if (!SD || SD._agentAdmin) return; SD._agentAdmin = 1;
   var ST = { catalog: [], master: null, paTenantId: null, tenants: [], runs: [], runFilter: 'all', selTenantId: '', selRow: null };
+  function tenantLabel(t) { return (t && t.name || '') + (t && t.code ? ' (' + t.code + ')' : ''); }
 
   function loadMaster() {
     return sb.from('user_profiles').select('tenant_id').eq('role', 'platform_admin').order('created_at', { ascending: true }).limit(1).maybeSingle()
@@ -54,7 +55,8 @@
     var rotated = ST.master && ST.master.secret_rotated_at ? new Date(ST.master.secret_rotated_at) : null;
     var days = rotated ? Math.floor((Date.now() - rotated.getTime()) / 864e5) : null;
     var warn = days != null && days > 30;
-    var tenantOpts = '<option value="">' + SD.L('Choose a tenant…', 'Pilih tenant…') + '</option>' + ST.tenants.map(function (t) { return '<option value="' + t.id + '"' + (ST.selTenantId === t.id ? ' selected' : '') + '>' + SD.esc(t.name) + (t.code ? ' (' + SD.esc(t.code) + ')' : '') + '</option>'; }).join('');
+    var selTenant = ST.tenants.find(function (t) { return t.id === ST.selTenantId; });
+    var tenantDl = '<datalist id="sd-agent-tl">' + ST.tenants.map(function (t) { return '<option value="' + SD.esc(tenantLabel(t)) + '">'; }).join('') + '</datalist>';
     m.innerHTML = '<div class="cob-root">' + SD.head(SD.L('Admin — Service Desk Agent', 'Admin — Agent Service Desk'), SD.L('External SR-processing agent: master switch, per-tenant access, run log', 'Agent pemprosesan SR luaran: suis induk, akses per-tenant, log larian')) + SD.tabs('sd_agent') +
       '<div class="cob-card" style="padding:16px;margin-bottom:16px">' +
       '<div class="row" style="justify-content:space-between;align-items:center;gap:10px"><div><b style="font-size:15px">' + SD.L('Master switch', 'Suis induk') + '</b><div class="cob-xs" style="margin-top:2px">' + SD.L('Turns the agent off for every tenant at once, regardless of per-tenant settings.', 'Matikan agent untuk semua tenant sekali gus, tanpa kira tetapan per-tenant.') + '</div></div>' +
@@ -66,7 +68,7 @@
       '<button class="btn btn-outline btn-sm" id="sd-agent-rotated"><i class="ti ti-key"></i> ' + SD.L('Mark secret just rotated', 'Tanda secret baru ditukar') + '</button></div>' +
       '<div class="row" style="margin-top:10px"><button class="btn btn-primary btn-sm" id="sd-agent-master-save"><i class="ti ti-device-floppy"></i> ' + SD.L('Save', 'Simpan') + '</button></div></div>' +
       '<div class="cob-card" style="padding:16px;margin-bottom:16px"><b style="font-size:15px">' + SD.L('Per-tenant access', 'Akses per-tenant') + '</b>' +
-      '<div class="form-group" style="margin-top:10px"><select class="form-select" id="sd-agent-tenant-pick">' + tenantOpts + '</select></div>' +
+      '<div class="form-group" style="margin-top:10px"><input class="form-input" data-no-titlecase="1" id="sd-agent-tenant-pick" list="sd-agent-tl" placeholder="' + SD.L('Type to search…', 'Taip untuk cari…') + '" value="' + SD.esc(selTenant ? tenantLabel(selTenant) : '') + '">' + tenantDl + '</div>' +
       '<div id="sd-agent-tenant-panel">' + (ST.selRow ? tenantPanel() : '') + '</div></div>' +
       '<div class="cob-card" style="padding:16px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:15px">' + SD.L('Run log', 'Log larian') + '</b>' +
       '<select class="form-select" id="sd-agent-run-filter" style="width:auto"><option value="all"' + (ST.runFilter === 'all' ? ' selected' : '') + '>' + SD.L('All', 'Semua') + '</option><option value="ok"' + (ST.runFilter === 'ok' ? ' selected' : '') + '>OK</option><option value="error"' + (ST.runFilter === 'error' ? ' selected' : '') + '>Error</option><option value="skipped"' + (ST.runFilter === 'skipped' ? ' selected' : '') + '>Skipped</option></select></div>' +
@@ -104,10 +106,13 @@
         SD.toast(SD.L('Noted.', 'Dicatat.'), 'success'); SD.admin.sd_agent();
       });
     };
-    var pick = m.querySelector('#sd-agent-tenant-pick'); if (pick) pick.onchange = function () {
-      ST.selTenantId = pick.value;
-      if (!ST.selTenantId) { ST.selRow = null; m.querySelector('#sd-agent-tenant-panel').innerHTML = ''; return; }
-      loadTenantRow(ST.selTenantId).then(function (row) { ST.selRow = row; m.querySelector('#sd-agent-tenant-panel').innerHTML = tenantPanel(); wireTenantSave(); });
+    var pick = m.querySelector('#sd-agent-tenant-pick'); if (pick) pick.oninput = function () {
+      var v = (pick.value || '').trim().toLowerCase();
+      var t = ST.tenants.find(function (x) { return tenantLabel(x).toLowerCase() === v; });
+      if (!t) { if (ST.selTenantId) { ST.selTenantId = ''; ST.selRow = null; m.querySelector('#sd-agent-tenant-panel').innerHTML = ''; } return; }
+      if (t.id === ST.selTenantId) return;
+      ST.selTenantId = t.id;
+      loadTenantRow(t.id).then(function (row) { ST.selRow = row; m.querySelector('#sd-agent-tenant-panel').innerHTML = tenantPanel(); wireTenantSave(); });
     };
     var filt = m.querySelector('#sd-agent-run-filter'); if (filt) filt.onchange = function () { ST.runFilter = filt.value; loadRuns().then(function (r) { ST.runs = r; paint(); }); };
     wireTenantSave();
