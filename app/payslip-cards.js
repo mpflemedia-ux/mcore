@@ -1,4 +1,4 @@
-/* Payslip card view v1 — replaces the white paper (.pdoc) on Payslip detail and
+/* Payslip card view v1 (+Staff ID v2) — replaces the white paper (.pdoc) on Payslip detail and
    All Payslips with token-based cards (dark/light, 380px..desktop), light A4
    print (one slip per page), pdf-lib PDF, WhatsApp share (WAD) and a
    "Payslip <Mon Year> ready" notification to the employee's login.
@@ -22,6 +22,22 @@
   function slug(s) { try { return _pdocSlug(s); } catch (e) { return String(s || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 40); } }
   function fname(rec, m) { return 'Payslip-' + slug((m && m.name) || (rec && rec.employees && rec.employees.name) || 'Staff') + '-' + MS[(Number(rec && rec.month) || 1) - 1] + (rec && rec.year || '') + '.pdf'; }
   function initials(n) { var w = String(n || '').split(/\s+/).filter(function (x) { return x && !/^(bin|binti|bt|bte|b\.|a\/l|a\/p)$/i.test(x); }); return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase(); }
+  /* Staff ID (employees.staff_code) — not in the payslip selects, so fetched once per employee and cached. */
+  var SID = window.__PSC_SID = window.__PSC_SID || {};
+  function sidOf(m) { var r = m && m.rec; if (!r) return ''; var e = r.employees || {}; var v = e.staff_code != null ? e.staff_code : SID[r.employee_id]; return String(v == null ? '' : v).trim(); }
+  function sidTxt(m) { var s = sidOf(m); return s ? L('Staff ID', 'ID Staf') + ' ' + s : ''; }
+  function loadSid(models) {
+    var ids = [];
+    (models || []).forEach(function (m) { var r = m && m.rec; if (r && r.employee_id && !(r.employee_id in SID) && !(r.employees && r.employees.staff_code != null) && ids.indexOf(r.employee_id) < 0) ids.push(r.employee_id); });
+    var cli = null; try { cli = typeof sb !== 'undefined' ? sb : window.sb; } catch (e) { cli = window.sb; }
+    if (!ids.length || !cli || !window.APP || !APP.tenant || !APP.tenant.id) return Promise.resolve(false);
+    return Promise.resolve(cli.from('employees').select('id,staff_code').in('id', ids).eq('tenant_id', APP.tenant.id)).then(function (res) {
+      ids.forEach(function (id) { SID[id] = ''; });
+      if (!res || res.error) return false;
+      var hit = false; (res.data || []).forEach(function (e) { SID[e.id] = e.staff_code || ''; if (e.staff_code) hit = true; });
+      return hit;
+    }, function () { ids.forEach(function (id) { SID[id] = ''; }); return false; });
+  }
   function mask(v) { var d = String(v || '').replace(/\s+/g, ''); if (!d || d === '—' || d === '-') return ''; return d.length > 4 ? '····' + d.slice(-4) : d; }
 
   /* ---------- CSS (tokens only; WhatsApp greens are the existing wad-doc values) ---------- */
@@ -176,8 +192,9 @@
     if (bk || av) subs.push('<i class="ti ti-building-bank"></i>' + esc([bk, av].filter(Boolean).join(' · ')));
     var extra = m.band.filter(function (b) { return (b.key === 'epf' || b.key === 'socso' || b.key === 'x') && b.v && b.v !== '—'; }).map(function (b) { return b.k + ' ' + b.v; });
     if (print) { var per = bandv(m, 'period'); if (per && per.v) extra.push(per.k + ' ' + per.v); }
+    var posLine = [sidTxt(m), m.pos].filter(Boolean).join(' · ');
     h += '<div class="psc-emp"><div class="who"><div class="psc-name">' + esc(m.name) + '</div>' +
-      (m.pos ? '<div class="psc-sub">' + esc(m.pos) + '</div>' : '') +
+      (posLine ? '<div class="psc-sub psc-pos-line">' + esc(posLine) + '</div>' : '') +
       (subs.length ? '<div class="psc-sub">' + subs.join('') + '</div>' : '') +
       (extra.length ? '<div class="psc-sub">' + esc(extra.join(' · ')) + '</div>' : '') + '</div>' +
       '<div class="psc-meta">' + (m.meta.pay ? esc(L('Pay date', 'Tarikh bayaran')) + '<b>' + esc(m.meta.pay.v) + '</b>' : '') + (m.meta.ref ? '<span>' + esc(m.meta.ref.v) + '</span>' : '') + '</div></div></div>';
@@ -203,7 +220,7 @@
     var bk = bank && bank.v !== '—' ? bank.v : '', av = acc ? mask(acc.v) : '';
     var sub = bk || av ? [bk, av].filter(Boolean).join(' · ') : L('Payslip', 'Slip gaji') + ' · ' + mon(rec);
     return '<div class="psc-card psc-tile" data-id="' + esc(m.id) + '"><div class="psc-emp"><div class="psc-logo ini">' + esc(initials(m.name)) + '</div>' +
-      '<div class="who"><div class="psc-name">' + esc(m.name) + '</div><div class="psc-sub"><i class="ti ti-building-bank"></i>' + esc(sub) + '</div></div>' +
+      '<div class="who"><div class="psc-name">' + esc(m.name) + '</div>' + (sidOf(m) ? '<div class="psc-sub psc-sid"><i class="ti ti-id"></i>' + esc(sidTxt(m)) + '</div>' : '') + '<div class="psc-sub"><i class="ti ti-building-bank"></i>' + esc(sub) + '</div></div>' +
       '<div class="psc-meta">' + esc(L('Net pay', 'Gaji bersih')) + '<b>' + esc(m.net.v) + '</b></div></div>' +
       '<div class="psc-acts"><button type="button" class="btn btn-outline btn-sm" data-psc="view"><i class="ti ti-eye"></i>' + esc(L('View', 'Lihat')) + '</button>' +
       '<button type="button" class="btn btn-outline btn-sm" data-psc="print"><i class="ti ti-printer"></i>' + esc(L('Print', 'Cetak')) + '</button>' +
@@ -257,6 +274,7 @@
       bar.querySelector('[data-psc=pdf]').onclick = function () { pdfDownload([m.id]); };
       var sb2 = bar.querySelector('[data-psc=share]'); if (sb2) sb2.onclick = function () { shareOne(m.id); };
       buildPrint(main, [m]);
+      loadSid([m]).then(function (hit) { if (hit && v.isConnected) { v.innerHTML = cardHtml(m, false); buildPrint(main, [m]); } });
     } catch (e) { console.warn('[payslip-cards] detail', e); fallback(main); }
   }
   function enhanceList(month, year) {
@@ -299,6 +317,7 @@
         };
       }
       buildPrint(main, models);
+      loadSid(models).then(function (hit) { if (hit && g.isConnected) { g.innerHTML = models.map(function (m) { return tileHtml(m, hr); }).join(''); buildPrint(main, models); } });
     } catch (e) { console.warn('[payslip-cards] list', e); fallback(main); }
   }
   function fallback(main) { main.querySelectorAll('.pdoc.psc-src').forEach(function (p) { p.classList.remove('psc-src'); }); main.querySelectorAll('.psc-srcwrap').forEach(function (w) { w.classList.remove('psc-srcwrap'); }); }
@@ -389,7 +408,8 @@
       y -= 52; pg.drawLine({ start: { x: X, y: y }, end: { x: R, y: y }, thickness: 0.8, color: line });
       // employee band
       y -= 20; tx(fit(m.name, 13, B, R - X), X, y, 13, B, ink);
-      if (m.pos) { y -= 14; tx(fit(m.pos, 9.5, F, R - X), X, y, 9.5, F, mut); }
+      var pl = [sidTxt(m), m.pos].filter(Boolean).join(' | ');
+      if (pl) { y -= 14; tx(fit(pl, 9.5, F, R - X), X, y, 9.5, F, mut); }
       y -= 8;
       var ORD = ['bank', 'acc', 'epf', 'socso', 'period', 'x']; var items = m.band.filter(function (b) { return b.v; }).sort(function (a, b) { return ORD.indexOf(a.key) - ORD.indexOf(b.key); });
       for (var bi = 0; bi < items.length; bi += 2) {
@@ -434,7 +454,7 @@
   function pdfFile(ids, name) {
     var models = ids.map(modelFor).filter(Boolean);
     if (!models.length) return Promise.reject(new Error('no payslip'));
-    return pdfOf(models).then(function (b) { return fileOf(b, name || fname(models[0].rec, models[0])); });
+    return loadSid(models).catch(function () {}).then(function () { return pdfOf(models); }).then(function (b) { return fileOf(b, name || fname(models[0].rec, models[0])); });
   }
   function pdfDownload(ids, name) {
     toast(L('Preparing PDF…', 'Menyediakan PDF…'));
