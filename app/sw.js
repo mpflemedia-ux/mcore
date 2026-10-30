@@ -36,6 +36,10 @@ self.addEventListener('notificationclick',e=>{
     if(d.fn&&d.nid&&d.uid&&d.rt) e.waitUntil(fetch(d.fn,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'read',id:d.nid,uid:d.uid,t:d.rt})}).catch(()=>{}))
     return
   }
+  if(e.action==='deliver'){
+    if(d.fn&&d.nid&&d.uid&&d.rt) e.waitUntil(fetch(d.fn,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'deliver',id:d.nid,uid:d.uid,t:d.rt})}).then(r=>r.json()).then(r=>{if(r&&r.ok)return self.registration.showNotification('M-Core',{body:(r.ref_no||'SR')+' · Dihantar kepada client / Sent to client',icon:'/app/icons/icon-192.png',tag:'mcore-deliver-'+d.nid})}).catch(()=>{}))
+    return
+  }
   const url=new URL(d.url||'/app/',self.location.origin).href
   e.waitUntil((async()=>{
     const all=await self.clients.matchAll({type:'window',includeUncontrolled:true})

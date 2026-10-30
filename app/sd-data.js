@@ -121,7 +121,8 @@
       if (!x.data || !x.data.length) throw new Error(SD.L('This request was changed by someone else. Reload.', 'Permohonan ini telah dikemas kini. Muat semula.'));
       var nr = x.data[0];
       return SD.event(nr, 'status', { from_status: r.status, to_status: to, body: body || null }).catch(function () {}).then(function () {
-        SD.bellFor(nr, nr.ref_no + ': ' + SD.stLabel(to), nr.title); return nr;
+        var type = to === 'delivered' ? 'sd.delivered' : to === 'revision' ? 'sd.revision' : 'sd.status';
+        SD.bellFor(nr, nr.ref_no + ': ' + SD.stLabel(to), nr.title, type); return nr;
       });
     });
   };
@@ -153,8 +154,15 @@
     if (!rows.length) return Promise.resolve();
     return Promise.resolve().then(function () { return sb.from('notifications').insert(rows); }).then(function () {}, function () {});
   };
-  SD.bellFor = function (r, title, body) {
-    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
+  /* type decides both notif-core.js NT.classify()'s category bucket (kind) and the bell/push
+     routing -- 'action' = needs a response (new SR for PA, delivered/revision), 'for_you' =
+     informational (ordinary status change, new message). Every SR-related insert goes through
+     this one function with an explicit type, so nothing falls back to classify()'s title-regex
+     guessing (the old behaviour every bellFor call used to produce). */
+  var BELL_KIND = { 'sd.new': 'action', 'sd.delivered': 'action', 'sd.revision': 'action', 'sd.status': 'for_you', 'sd.message': 'for_you' };
+  SD.bellFor = function (r, title, body, type) {
+    type = type || 'sd.status';
+    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', kind: BELL_KIND[type] || 'for_you', type: type, ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
     var q = SD.isPA()
       ? sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', r.tenant_id)
       : SD.paList ? SD.paList() : sb.from('user_profiles').select('id,tenant_id,role').eq('role', 'platform_admin');

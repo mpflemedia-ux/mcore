@@ -18,6 +18,7 @@ export interface Repo {
   insertRun(row: Row): Promise<void>;
   insertNotification(row: Row): Promise<void>;
   tenantStaff(tenantId: string, roles: string[]): Promise<Row[]>;
+  allPlatformAdmins(): Promise<Row[]>;
   signedUrl(path: string, seconds: number): Promise<string | null>;
   uploadFile(path: string, bytes: Uint8Array, contentType: string): Promise<boolean>;
   incrCounter(tenantId: string, counterKey: string): Promise<number>;
@@ -51,6 +52,11 @@ export function makeRepo(sb: any): Repo {
     insertRun: async (row) => { await sb.from('sd_agent_runs').insert(row); },
     insertNotification: async (row) => { await sb.from('notifications').insert(row); },
     tenantStaff: (tenantId, roles) => rows(sb.from('user_profiles').select('id,tenant_id,role,language').eq('tenant_id', tenantId).is('deleted_at', null).in('role', roles)),
+    // platform_admin is a global role (one staff pool across every client tenant), not scoped to
+    // whichever client tenant the SR belongs to -- unlike tenantStaff, this intentionally ignores
+    // tenant_id. Each admin's own tenant_id is still used on the inserted notification row (every
+    // notifications row needs a tenant_id, and it must be the recipient's own for RLS to match).
+    allPlatformAdmins: () => rows(sb.from('user_profiles').select('id,tenant_id,language').eq('role', 'platform_admin').is('deleted_at', null)),
     signedUrl: async (path, seconds) => { const r = await sb.storage.from('service-files').createSignedUrl(path, seconds); return r.error ? null : r.data.signedUrl; },
     uploadFile: async (path, bytes, contentType) => { const r = await sb.storage.from('service-files').upload(path, bytes, { contentType, upsert: false }); return !r.error; },
     // Atomic increment with retry-on-conflict, same idiom as app/sd-data.js SD.createRequest's

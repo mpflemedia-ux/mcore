@@ -25,7 +25,22 @@ export function makeRepo(sb: any): Repo {
       const ids = lg.map((x) => String(x.notification_id)).filter((x) => x !== String(exceptId));
       return ids.length ? rows(sb.from('notifications').select('id,title,user_id').in('id', ids).eq('user_id', uid)) : [];
     },
-    sr: (id) => one(sb.from('service_requests').select('id,priority,tenant_id').eq('id', id).maybeSingle()),
+    sr: (id) => one(sb.from('service_requests').select('id,priority,tenant_id,status,ref_no,title').eq('id', id).maybeSingle()),
+    // fetch-then-filter-in-JS for the meta.ai_draft flag (no jsonb '->>' operator filter -- stays
+    // on query patterns already proven in this codebase, e.g. sd-result's deliverables()/messageCount()).
+    latestAiDraft: async (srId) => {
+      const r = await rows(sb.from('service_request_events').select('file_path,file_name,meta,created_at').eq('request_id', srId).eq('type', 'internal_note').order('created_at', { ascending: false }).limit(20));
+      return r.find((e) => e.meta && e.meta.ai_draft) || null;
+    },
+    insertEvent: async (row) => { await sb.from('service_request_events').insert(row); },
+    updateSrStatus: async (id, fromStatus, patch) => { const r = await sb.from('service_requests').update(patch).eq('id', id).eq('status', fromStatus).select().maybeSingle(); return r.error ? null : r.data; },
+    tenantUsers: (tenantId) => rows(sb.from('user_profiles').select('id,language').eq('tenant_id', tenantId).is('deleted_at', null)),
+    pendingSlaNotifications: () => rows(sb.from('notifications').select('id,ref_id').like('group_key', 'sla:%').is('read_at', null).is('deleted_at', null).limit(500)),
+    paOpenSrsWithDue: () => rows(sb.from('service_requests').select('id,status,due_at,paused_at,sla_paused_seconds').in('status', ['submitted', 'triaged', 'in_progress', 'revision']).is('deleted_at', null).not('due_at', 'is', null).limit(1000)),
+    paWaitingClientCount: async () => { const r = await sb.from('service_requests').select('id', { count: 'exact', head: true }).eq('status', 'waiting_client').is('deleted_at', null); return r.count || 0; },
+    paPendingDraftCount: async () => { const r = await sb.from('notifications').select('group_key').eq('type', 'sd.ai_draft').is('read_at', null).is('deleted_at', null).limit(500); return new Set((r.data || []).map((x: Row) => x.group_key)).size; },
+    markActed: async (id) => { const now = new Date().toISOString(); await sb.from('notifications').update({ read_at: now, acted_at: now }).eq('id', id); },
+    markGroupActed: async (groupKey) => { const now = new Date().toISOString(); await sb.from('notifications').update({ read_at: now, acted_at: now }).eq('group_key', groupKey).is('read_at', null); },
     openSrs: () => rows(sb.from('service_requests').select('id,tenant_id,ref_no,title,status,priority,assigned_to,due_at,paused_at,sla_paused_seconds').in('status', OPEN).is('deleted_at', null).not('due_at', 'is', null).not('assigned_to', 'is', null).limit(500)),
     urgentUnpicked: (since) => rows(sb.from('service_requests').select('id,tenant_id,ref_no,title,created_at').eq('priority', 'urgent').eq('status', 'submitted').is('assigned_to', null).is('deleted_at', null).gte('created_at', since).limit(100)),
     paUsers: () => rows(sb.from('user_profiles').select('id,tenant_id,role').eq('role', 'platform_admin')),

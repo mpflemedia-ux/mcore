@@ -4,7 +4,7 @@
   var NT = window.NT; if (!NT || !NT.push || NT.push.booted) return;
   var P = NT.push; P.booted = 1;
   function parse(search) {
-    try { var q = new URLSearchParams(search || ''), d = {}; ['nt', 'ntp', 'page', 'id'].forEach(function (k) { var v = q.get(k); if (v) d[k] = String(v).slice(0, 80); }); return (d.nt || d.ntp || d.page) ? d : null; } catch (e) { return null; }
+    try { var q = new URLSearchParams(search || ''), d = {}; ['nt', 'ntp', 'page', 'id', 'view'].forEach(function (k) { var v = q.get(k); if (v) d[k] = String(v).slice(0, 80); }); return (d.nt || d.ntp || d.page) ? d : null; } catch (e) { return null; }
   }
   function ready() { return !!(window.APP && APP.user && APP.user.id && APP.tenant && APP.tenant.id && typeof window.openPage === 'function'); }
   P.route = function (d) {
@@ -16,13 +16,16 @@
       }, function () { window.openPage('notifikasi', {}); return false; });
     }
     if (d.ntp) { window.openPage('notifikasi', {}); return Promise.resolve(true); }
-    if (/^[a-z0-9_-]{1,40}$/i.test(d.page || '')) { window.openPage(d.page, d.id ? { id: d.id } : {}); return Promise.resolve(true); }
+    if (/^[a-z0-9_-]{1,40}$/i.test(d.page || '')) {
+      var p = {}; if (d.id) p.id = d.id; if (d.view && /^[a-z0-9_-]{1,40}$/i.test(d.view)) p.view = d.view;
+      window.openPage(d.page, p); return Promise.resolve(true);
+    }
     return Promise.resolve(false);
   };
   /* capture deep link once, strip it from the address bar, route after login */
   var pend = parse(location.search);
   if (pend) {
-    try { var u = new URL(location.href); ['nt', 'ntp', 'page', 'id'].forEach(function (k) { u.searchParams.delete(k); }); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e) {}
+    try { var u = new URL(location.href); ['nt', 'ntp', 'page', 'id', 'view'].forEach(function (k) { u.searchParams.delete(k); }); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e) {}
   }
   var last = null; /* account seen by the last sync; re-syncs when a different account logs in on this tab */
   function tick() {

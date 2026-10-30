@@ -14,11 +14,17 @@
     if (rv) tt = (rv[2] === 'revision requested' ? L('Client requested revision · ', 'Client minta pindaan · ') : L('Client confirmed · ', 'Client sahkan · ')) + rv[1];
     return { key: n.group_key ? 'g:' + n.group_key : 'n:' + n.id, row: n, ids: [n.id], kind: n._k, cat: n._cat, icon: ic, color: n.priority ? 'var(--danger)' : (n._k === 'activity' ? 'var(--text-2)' : 'var(--primary)'), ts: new Date(n.created_at).getTime(), prio: n.priority ? 1 : 0, unread: !n.read_at, done: !!n.acted_at, title: tt, meta: n.body || '', go: link(n), actor: n.actor_id };
   };
-  /* group rows that share group_key (and same-day activity titles) -> one item ×N */
+  /* group rows that share group_key (and near-simultaneous activity titles) -> one item ×N.
+     Fallback key (no group_key, e.g. legacy/trigger-inserted rows) matches NT.ACT_RE's own
+     prefix -- not a naive title.split(':')[0], which silently stopped grouping the moment a
+     trigger's title used a different separator (dash, etc.) -- and buckets by a rolling 2-min
+     window rather than calendar day, so a burst of e.g. journal-entry rows collapses into one
+     item instead of spamming the bell, while entries hours apart stay separate. */
   NT.group = function (items) {
     var by = {}, out = [];
     items.forEach(function (it) {
-      var g = it.row && (it.row.group_key || (it.kind === 'activity' ? 'act:' + String(it.title).split(':')[0].slice(0, 24) + ':' + NT.day(it.ts) : null));
+      var m = it.kind === 'activity' && NT.ACT_RE && NT.ACT_RE.exec(it.title || '');
+      var g = it.row && (it.row.group_key || (m ? 'act:' + m[1].slice(0, 24) + ':' + Math.floor(it.ts / 120000) : null));
       if (!g) { out.push(it); return; }
       var h = by[g];
       if (!h) { h = by[g] = Object.assign({}, it, { key: 'g:' + g, count: 1, metas: [it.meta] }); out.push(h); return; }

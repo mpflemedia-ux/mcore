@@ -78,6 +78,19 @@ async function notifyRoles(d: Deps, tenantId: string, roles: string[], excludeUi
   }
 }
 
+/** Like notifyRoles, but for the global platform_admin pool (not scoped to the SR's client
+ * tenant -- see Repo.allPlatformAdmins). Each row still carries the admin's OWN tenant_id. */
+async function notifyPlatformAdmins(d: Deps, opts: { title: (lang: string) => string; body: string; type: string; priority: number; groupKey: string }) {
+  const admins = await d.db.allPlatformAdmins();
+  for (const u of admins) {
+    await d.db.insertNotification({
+      tenant_id: u.tenant_id, user_id: u.id, actor_id: null, category: 'service_desk', kind: 'action', type: opts.type,
+      title: opts.title(u.language || 'en').slice(0, 200), body: opts.body.slice(0, 500), priority: opts.priority,
+      ref_table: 'service_requests', ref_id: opts.groupKey.split(':')[1] || null, group_key: opts.groupKey,
+    });
+  }
+}
+
 export async function handleQueue(d: Deps, body: Row): Promise<Row> {
   const pa = await d.db.firstPlatformAdmin();
   if (!pa) return { ok: true, items: [] };
@@ -212,7 +225,10 @@ export async function handleUploadDraft(d: Deps, body: Row): Promise<Row> {
   }
   await d.db.insertEvent({ tenant_id: working.tenant_id, request_id: working.id, type: 'internal_note', body: summary, file_path: path, file_name: filename.slice(-200), actor_id: pa.id, meta: { ai_draft: true, version, by_agent: true } });
   // group_key replaces the previous ai_draft notification for this SR -- one row kept "live" per SR.
-  await notifyRoles(d, working.tenant_id, ['platform_admin'], null, {
+  // platform_admin is a global role, not a member of the client's own tenant (working.tenant_id) --
+  // notifyRoles' tenantStaff lookup would always find zero rows here, so this never used to reach
+  // anyone. Fixed to notifyPlatformAdmins, which looks the role up globally.
+  await notifyPlatformAdmins(d, {
     title: (lang) => notifTitle(lang, 'aiDraft', working.ref_no), body: summary || working.title, type: 'sd.ai_draft', priority: 1, groupKey: 'aid:' + working.id,
   });
   await logRun(d, working.tenant_id, working.id, 'upload_draft', 'ok', { version, path });

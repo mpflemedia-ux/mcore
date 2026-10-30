@@ -9,9 +9,13 @@
       return { data: (v.data || []).map(function (u) { return { id: u.id, tenant_id: u.tenant_id, role: 'platform_admin' }; }) };
     }, old);
   };
-  /* new request: every platform admin + the tenant's owner(s); one row per user, never the submitter (SD.bell). */
-  SD.bellNew = function (r, title, body) {
-    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
+  /* new request (also reused by SD.escalate below): every platform admin + the tenant's
+     owner(s); one row per user, never the submitter (SD.bell). type defaults to 'sd.new'
+     (kind=action) since that's this function's main caller; escalate() passes 'sd.status'
+     explicitly since an escalation reminder isn't itself a new, unactioned request. */
+  SD.bellNew = function (r, title, body, type) {
+    type = type || 'sd.new';
+    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', kind: type === 'sd.new' ? 'action' : 'for_you', type: type, ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
     var own = Promise.resolve().then(function () { return sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', r.tenant_id).eq('role', 'owner'); });
     return Promise.all([SD.paList().then(null, function () { return {}; }), own.then(null, function () { return {}; })]).then(function (x) {
       var seen = {}, rows = [];
@@ -53,7 +57,7 @@
       (r.data || []).forEach(function (x) {
         var old = new Date(x.created_at).getTime() < new Date(cut24).getTime();
         var title = x.ref_no + (old ? (APP.language==='bm'?' · 24j tiada buka':' · 24h unopened') : (APP.language==='bm'?' · 4j tiada balasan':' · 4h no reply'));
-        SD.bellNew(x, title, x.title);
+        SD.bellNew(x, title, x.title, 'sd.status');
       });
     }, function () {});
   };
