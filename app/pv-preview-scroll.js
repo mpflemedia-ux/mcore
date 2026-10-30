@@ -1,9 +1,10 @@
-/* Phone preview: swipe left/right to see full payment voucher */
+/* Phone preview: swipe left/right to see full payment voucher. v4 — skips DK card-view documents (.dk-src) */
 (function () {
   function apply() {
     var docs = document.querySelectorAll('.pdoc');
     if (!docs.length) return;
     docs.forEach(function (pdoc) {
+      if (pdoc.classList.contains('dk-src') || pdoc.closest('[data-dk-doc]')) return;
       var parent = pdoc.parentElement;
       if (!parent) return;
       if (!parent.classList.contains('pdoc-hscroll')) {
