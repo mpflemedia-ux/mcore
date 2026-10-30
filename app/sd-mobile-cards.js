@@ -1,4 +1,5 @@
-/* Salary Disbursement — mobile card editor (<=900px). v1
+/* Salary Disbursement — mobile card editor (<=900px). v2 (v2: status-chip slot, per-card
+   'Recalculate statutory' button, partial-save dirty handling, hooks for sd-tools.js)
    Screen-only, compact accordion cards built as a SEPARATE DOM above #sd-pdoc.
    Card inputs never reuse table ids: each has data-target="<table input id>"
    and proxies its value into the (hidden on mobile) table input, then fires
@@ -48,6 +49,10 @@
       '.sdc-who{flex:1;min-width:0}' +
       '.sdc-name{font-size:13px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}' +
       '.sdc-sub{display:block;font-size:11px;color:var(--text-3);line-height:1.3;overflow-wrap:anywhere}' +
+      '.sdc-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}' +
+      '.sdc-chips:empty{display:none}' +
+      '.sdc-recalc{justify-content:flex-end;flex-wrap:wrap}' +
+      '.sdc-recalc .btn{white-space:nowrap}' +
       '.sdc-net{font-family:"Space Grotesk",sans-serif;font-size:14px;font-weight:700;white-space:nowrap;color:var(--text)}' +
       '.sdc-dot{width:8px;height:8px;border-radius:50%;background:var(--warning);flex:0 0 8px;visibility:hidden}' +
       '.sdc-card.sdc-dirty .sdc-dot{visibility:visible}' +
@@ -146,7 +151,7 @@
     return '<div class="sdc-card' + (dirty[id] ? ' sdc-dirty' : '') + (openId === id ? ' sdc-open' : '') + '" data-row="' + esc(id) + '">' +
       '<button type="button" class="sdc-head" aria-expanded="' + (openId === id) + '">' +
         '<span class="sdc-dot" title="' + esc(L('Unsaved', 'Belum disimpan')) + '"></span>' +
-        '<span class="sdc-who"><span class="sdc-name">' + esc(r.name.trim()) + '</span>' + (sub ? '<span class="sdc-sub">' + esc(sub) + '</span>' : '') + '</span>' +
+        '<span class="sdc-who"><span class="sdc-name">' + esc(r.name.trim()) + '</span>' + (sub ? '<span class="sdc-sub">' + esc(sub) + '</span>' : '') + '<span class="sdc-chips" data-chips="' + esc(id) + '"></span></span>' +
         '<span class="sdc-net" data-net="' + esc(id) + '"></span>' +
         '<i class="ti ti-chevron-down sdc-chev"></i>' +
       '</button>' +
@@ -158,6 +163,7 @@
           inputRow('EPF', 'sd-epf-' + id) + inputRow('SOCSO', 'sd-socso-' + id) + inputRow('EIS', 'sd-eis-' + id) +
           inputRow('PCB', 'sd-pcb-' + id) + inputRow('Zakat', 'sd-zakat-' + id) +
         (er ? '<div class="sdc-cap">' + esc(L('Statutory \u2014 Employer', 'Caruman \u2014 Majikan')) + '</div>' + er : '') +
+        '<div class="sdc-row sdc-recalc"><button type="button" class="btn btn-outline btn-sm" data-act="recalc" data-row="' + esc(id) + '"><i class="ti ti-calculator"></i> ' + esc(L('Recalculate statutory', 'Kira semula caruman')) + '</button></div>' +
         '<div class="sdc-cap">' + esc(L('Deductions', 'Potongan')) + '</div>' +
           inputRow(L('Advance', 'Pendahuluan'), 'sd-adv-' + id) +
           selectRow(L('Deduct advance', 'Potong panjar'), 'sd-advsel-' + id) +
@@ -246,10 +252,17 @@
     if (tot) tot.textContent = g ? g.textContent : '';
     var bar = $('sdc-bar');
     if (bar) bar.classList.toggle('sdc-has-dirty', dirtyCount() > 0);
+    try { if (window._sdTools && typeof window._sdTools.decorate === 'function') window._sdTools.decorate(); } catch (e) {}
   }
 
   /* ---------- events ---------- */
   function onClick(e) {
+    var act = e.target.closest && e.target.closest('[data-act="recalc"]');
+    if (act) {
+      e.preventDefault();
+      if (window._sdTools && typeof window._sdTools.recalcRows === 'function') window._sdTools.recalcRows([act.getAttribute('data-row')]);
+      return;
+    }
     var head = e.target.closest && e.target.closest('.sdc-head');
     if (!head) return;
     var card = head.parentNode, id = card.getAttribute('data-row');
@@ -290,9 +303,16 @@
     var w = async function () {
       var res = $('sd-save-result');
       if (res) res.innerHTML = '';
+      window._sdLastSave = null;
       var out = await o.apply(this, arguments);
-      var html = res ? res.innerHTML : '';
-      if (html && html.indexOf('var(--danger)') === -1) dirty = {};
+      var ls = window._sdLastSave;
+      if (ls && Array.isArray(ls.ok)) {
+        // partial save: only rows that saved lose their unsaved dot; failed rows stay dirty
+        if (!ls.blocked) ls.ok.forEach(function (id) { delete dirty[String(id)]; });
+      } else {
+        var html = res ? res.innerHTML : '';
+        if (html && html.indexOf('var(--danger)') === -1) dirty = {};
+      }
       refresh();
       return out;
     };
@@ -370,5 +390,11 @@
   setTimeout(function () { wrapRecalc(); wrapSave(); wrapOpenPage(); }, 700);
   observe();
 
-  window._sdMobileCards = { build: build, refresh: refresh, isDirty: function () { return dirtyCount() > 0; }, _dirty: function () { return dirty; } };
+  window._sdMobileCards = {
+    build: build, refresh: refresh,
+    isDirty: function () { return dirtyCount() > 0; },
+    _dirty: function () { return dirty; },
+    markDirty: function (ids) { (ids || []).forEach(function (id) { dirty[String(id)] = true; }); refresh(); },
+    clearDirty: function (ids) { (ids || []).forEach(function (id) { delete dirty[String(id)]; }); refresh(); }
+  };
 })();

@@ -33465,11 +33465,29 @@ async function _sdSaveAll() {
   const isBm = APP.language==='bm'
   const result = document.getElementById('sd-save-result')
   const lockedBatch = window._sdCurrentBatch
-  if(lockedBatch && ['shared','pending_review'].includes(lockedBatch.status)) {
-    showToast(isBm?'Dikunci — menunggu kelulusan.':'Locked — pending approval.', 'error')
+  const _sdLockMsg = st => st==='approved' ? (isBm?'Dikunci — sudah diluluskan. Buka kunci untuk edit.':'Locked — already approved. Unlock to edit.') : (isBm?'Dikunci — menunggu kelulusan.':'Locked — pending approval.')
+  window._sdLastSave = { total: 0, ok: [], failed: [], blocked: false }
+  if(lockedBatch && ['shared','pending_review','approved'].includes(lockedBatch.status)) {
+    window._sdLastSave.blocked = true
+    showToast(_sdLockMsg(lockedBatch.status), 'error')
     return
   }
+  // Re-check the live batch status on the server (another user may have shared/approved it since load)
+  try {
+    const mSel = document.getElementById('sd-month'), ySel = document.getElementById('sd-year')
+    if(mSel && ySel) {
+      const {data: liveBatch, error: lbErr} = await sb.from('salary_disbursement_batches').select('id,status')
+        .eq('tenant_id',APP.tenant.id).eq('month',Number(mSel.value)).eq('year',Number(ySel.value)).is('deleted_at',null).maybeSingle()
+      if(!lbErr && liveBatch && ['shared','pending_review','approved'].includes(liveBatch.status)) {
+        window._sdLastSave.blocked = true
+        showToast(_sdLockMsg(liveBatch.status), 'error')
+        _sdBatchStatus(Number(mSel.value), Number(ySel.value))
+        return
+      }
+    }
+  } catch(e) {}
   let okCount = 0, errCount = 0
+  const okIds = [], failedIds = []
   for(const r of _sdRecords) {
     const payload = _sdRowValues(r)
     let {error} = await sb.from('payroll_records').update(payload).eq('id', r.id).eq('tenant_id', APP.tenant.id)
@@ -33479,11 +33497,14 @@ async function _sdSaveAll() {
       const {commission, ot_amount, ...rest} = payload
       ;({error} = await sb.from('payroll_records').update(rest).eq('id', r.id).eq('tenant_id', APP.tenant.id))
     }
-    if(error) errCount++; else { okCount++; auditLog('update','payroll_records', r.id) }
+    if(error) { errCount++; failedIds.push(String(r.id)) } else { okCount++; okIds.push(String(r.id)); auditLog('update','payroll_records', r.id) }
   }
+  window._sdLastSave = { total: okCount + errCount, ok: okIds, failed: failedIds, blocked: false }
   if(result) result.innerHTML = `<span style="color:var(--success)">${isBm?`${okCount} rekod disimpan`:`${okCount} record(s) saved`}</span>` + (errCount>0?`, <span style="color:var(--danger)">${errCount} ${isBm?'gagal':'failed'}</span>`:'')
-  showToast(isBm?'Penyaluran gaji disimpan!':'Salary disbursement saved!', 'success')
-  await _sdApplyAdvanceSelections()
+  if(errCount === 0) showToast(isBm?'Penyaluran gaji disimpan!':'Salary disbursement saved!', 'success')
+  else showToast(isBm?`${errCount} daripada ${okCount + errCount} baris gagal disimpan`:`${errCount} of ${okCount + errCount} rows failed to save`, 'error')
+  // Advance recovery journals only for rows that actually saved; failed rows stay armed for the next save
+  await _sdApplyAdvanceSelections(okIds)
 }
 
 // Cash Advance/Panjar recovery for rows where the admin picked an advance
@@ -33498,10 +33519,10 @@ async function _sdSaveAll() {
 // amount. Only runs for rows the admin explicitly armed via the picker —
 // never infers a recovery just because the Advance field has a number in
 // it (that number may be an unrelated manual deduction).
-async function _sdApplyAdvanceSelections() {
+async function _sdApplyAdvanceSelections(onlyRowIds) {
   const isBm = APP.language==='bm'
   const selections = window._sdAdvanceSelections || {}
-  const rowIds = Object.keys(selections)
+  const rowIds = Object.keys(selections).filter(id => !Array.isArray(onlyRowIds) || onlyRowIds.includes(String(id)))
   if(!rowIds.length) return
   const cashAcc = await _getDefaultAccountId('cash')
   const employeeAdvanceAcc = await _getDefaultAccountId('employee_advance')
@@ -40359,7 +40380,8 @@ if('serviceWorker' in navigator){
 <script src="./payslip-statutory-partial.js?v=2"></script>
 <script src="./payslip-pay-date.js?v=1"></script>
 <script src="./ot-payroll-resync.js?v=1"></script>
-<script src="./sd-mobile-cards.js?v=1"></script>
+<script src="./sd-mobile-cards.js?v=2"></script>
+<script src="./sd-tools.js?v=1"></script>
 <script src="./payslip-accum-outstanding.js?v=1"></script>
 <script src="./booking-free-confirm.js?v=2"></script>
 <script src="./settings-form-fit.js?v=4"></script>
