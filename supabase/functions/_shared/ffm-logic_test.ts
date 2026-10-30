@@ -1,6 +1,6 @@
 // deno test supabase/functions/_shared/ffm-logic_test.ts
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { barcodeOk, ean13Ok, pcsToUnits, ppuOf, unitsToPcs, alg1String, alg2String, dedupeKey, feeFromDetail, hmacOk, hmacSign, nextStatus, orderSnFor, sha256Upper, signAlg1, signAlg2, toMinor, validateConsignee } from './ffm-logic.ts';
+import { normBaseUrl, normUrlHost, barcodeOk, ean13Ok, pcsToUnits, ppuOf, unitsToPcs, alg1String, alg2String, dedupeKey, feeFromDetail, hmacOk, hmacSign, nextStatus, orderSnFor, sha256Upper, signAlg1, signAlg2, toMinor, validateConsignee } from './ffm-logic.ts';
 
 const KEY = 'dd807a8e18b40153888e5a9864e70080';
 Deno.test('Algorithm 1 — FFM doc vector', async () => {
@@ -63,4 +63,11 @@ Deno.test('pack size: pcs <-> FFM units, no rounding', () => {
 Deno.test('barcode validation + EAN-13 checksum (KeraVive real codes)', () => {
   assert(barcodeOk('9555277201519')); assert(barcodeOk('AB12')); assert(!barcodeOk('')); assert(!barcodeOk('95-55')); assert(!barcodeOk('9555 277'));
   assert(ean13Ok('9555277201519')); assert(ean13Ok('9555277201526')); assert(!ean13Ok('9555277201510')); assert(ean13Ok('12345'));
+});
+Deno.test('base URL normalisation (mobile auto-capital)', () => {
+  assertEquals(normBaseUrl(' Https://Open.Flashfulfillment.My/ '), 'https://open.flashfulfillment.my');
+  assertEquals(normBaseUrl('Https://open.Flashfulfillment.My'), 'https://open.flashfulfillment.my');
+  assertEquals(normBaseUrl('https://open.flashfulfillment.my'), 'https://open.flashfulfillment.my');
+  assertEquals(normUrlHost('Https://Track.Example.My/T/{pno}'), 'https://track.example.my/T/{pno}');
+  assertEquals(normBaseUrl(''), '');
 });

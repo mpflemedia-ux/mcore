@@ -2,6 +2,10 @@
 // Docs: open-docs.flashfulfillment.co.th (API Standard §5/§6, Webhook signature id=27).
 export type Row = Record<string, any>;
 export const same = (a: unknown, b: unknown) => String(a) === String(b);
+/** Trim + lowercase scheme/host (mobile keyboards auto-capitalise 'Https://Open...'); path/query kept as typed. */
+export function normUrlHost(v: unknown): string { const s = String(v ?? '').trim(); const m = s.match(/^([a-z][a-z0-9+.-]*:\/\/[^/?#]*)(.*)$/i); return m ? m[1].toLowerCase() + m[2] : s; }
+/** Base URL: normUrlHost + no trailing slash. */
+export function normBaseUrl(v: unknown): string { return normUrlHost(v).replace(/\/+$/, ''); }
 
 const enc = new TextEncoder();
 const hex = (b: ArrayBuffer) => Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, '0')).join('');

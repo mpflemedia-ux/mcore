@@ -4,7 +4,7 @@ import {
   applyShipment, CORS, credentialAlert, FfmError, ffmCall, hasModule, isAdminRole, json, loadAccount, markAccount,
   notify, nowIso, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin, tenantEnabled,
 } from '../_shared/ffm-core.ts';
-import { barcodeOk, CANCELLABLE, ean13Ok, maskMch, normState, orderSnFor, pcsToUnits, ppuOf, Row, same, toMinor, feeFromDetail, validateConsignee } from '../_shared/ffm-logic.ts';
+import { barcodeOk, CANCELLABLE, ean13Ok, maskMch, normBaseUrl, normState, normUrlHost, orderSnFor, pcsToUnits, ppuOf, Row, same, toMinor, feeFromDetail, validateConsignee } from '../_shared/ffm-logic.ts';
 
 const SAFE_FIELDS = ['label', 'base_url', 'api_prefix', 'sign_mode', 'warehouse_id', 'store_code', 'order_source_platform', 'pay_mode', 'amount_multiplier', 'accept_language', 'source_from',
   'auto_approve', 'low_stock_enabled', 'is_funded', 'sales_plan_id', 'fee_source', 'tracking_url_template', 'is_active'];
@@ -56,9 +56,9 @@ async function saveAccount(c: Ctx, b: Row) {
   if ('fee_source' in row) need(['shipping', 'manual'].includes(row.fee_source), 'fee_source shipping|manual');
   if ('pay_mode' in row) need(['1', '2', '3'].includes(String(row.pay_mode)), 'pay_mode 1|2|3');
   if ('amount_multiplier' in row) { row.amount_multiplier = Number(row.amount_multiplier); need([1, 100].includes(row.amount_multiplier), 'amount_multiplier 1|100'); }
-  if ('base_url' in row) need(/^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(String(row.base_url)), 'base_url must be https');
+  if ('base_url' in row) { row.base_url = normBaseUrl(row.base_url); need(/^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(row.base_url), 'base_url must be https'); }
   if ('api_prefix' in row) need(/^(\/[\w.-]+)*$/.test(String(row.api_prefix || '')), 'api_prefix like /open/v2 or empty');
-  if ('tracking_url_template' in row) { row.tracking_url_template = String(row.tracking_url_template || '').trim() || null; need(!row.tracking_url_template || /^https:\/\/\S+\{pno\}\S*$/.test(row.tracking_url_template), 'Tracking URL must be https and contain {pno}'); }
+  if ('tracking_url_template' in row) { row.tracking_url_template = normUrlHost(row.tracking_url_template) || null; need(!row.tracking_url_template || /^https:\/\/\S+\{pno\}\S*$/.test(row.tracking_url_template), 'Tracking URL must be https and contain {pno}'); }
   if (row.sales_plan_id === '') row.sales_plan_id = null;
   if (row.sales_plan_id) { const { data: sp } = await c.sb.from('sales_plans').select('id').eq('id', row.sales_plan_id).eq('tenant_id', c.tenantId).maybeSingle(); need(sp, 'Sales Plan not found'); }
   const sec: Row = {};

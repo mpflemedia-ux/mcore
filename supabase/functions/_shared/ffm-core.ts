@@ -1,7 +1,7 @@
 // M-Core FFM connector — server I/O shared by ffm-api / ffm-webhook / ffm-cron (service role only).
 // Keys are read here from ffm_account_secrets and never returned to any client.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { doStatusFor, nextStatus, NOTIFY_STATUS, nonce, POLL_STATE, ppuOf, Row, same, signAlg1, signAlg2, TERMINAL, unitsToPcs } from './ffm-logic.ts';
+import { doStatusFor, nextStatus, normBaseUrl, NOTIFY_STATUS, nonce, POLL_STATE, ppuOf, Row, same, signAlg1, signAlg2, TERMINAL, unitsToPcs } from './ffm-logic.ts';
 
 export const DEFAULT_BASE = 'https://open.flashfulfillment.my';
 export const env = (k: string) => Deno.env.get(k) || '';
@@ -28,7 +28,7 @@ export async function loadAccount(sb: SB, accountId: string, tenantId?: string):
 /** Signed FFM call. Algorithm 2 (JSON, default) or Algorithm 1 (form) per account.sign_mode. 1378 -> backoff; 1002 -> never retry. */
 export async function ffmCall(acct: Row, sec: Row | null, path: string, body: Row = {}, tries = 4): Promise<Row> {
   if (!sec?.mch_id || !sec?.api_key) throw new FfmError('no_credentials', 'FFM keys not set for ' + (acct.label || 'account'));
-  const base = String(acct.base_url || DEFAULT_BASE).replace(/\/+$/, '') + String(acct.api_prefix || '').replace(/\/+$/, '');
+  const base = (normBaseUrl(acct.base_url) || DEFAULT_BASE) + String(acct.api_prefix || '').replace(/\/+$/, '');
   const headers: Row = { Accept: 'application/json', 'Accept-Language': acct.accept_language || 'en' };
   if (acct.source_from) headers['FFM-Source-From'] = acct.source_from;
   let last: FfmError | null = null;
