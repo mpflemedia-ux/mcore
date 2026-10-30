@@ -1,11 +1,13 @@
-/* Salary Disbursement — tools v1 (screen-only; loads after sd-mobile-cards.js).
+/* Salary Disbursement — tools v2 (screen-only; loads after sd-mobile-cards.js).
+   v2: 4-signature flow (sd-signatures.js) — 'shared' reads "Awaiting signatures"; unlock / reject / reset
+   say signatures are voided and notify the preparer + HR managers.
    6  Status chips per employee (Edited / Advance / Statutory 0) on the desktop payee cell + mobile card head.
    7  "Copy last month" — fills EMPTY allowance/deduction slots from the previous month's payroll_records.
    8  Locking — shared / pending_review / approved disable every SD input + Save/Copy/Recalc, show a banner;
       approved gets "Unlock to edit" (canManageHR, confirm, batch -> draft, auditLog, notify HR).
    10 "Recalculate statutory" per card + toolbar (all) via the existing _calcPayroll (+ exempt wrapper).
    Notifications (NT.notify = bell + push): batch approved / rejected -> preparer (created_by) + HR
-   managers; batch unlocked -> HR managers. Actor always excluded by NT.notify. No amounts in text.
+   managers; batch unlocked / signatures reset -> preparer + HR managers. Actor always excluded by NT.notify. No amounts in text.
    Save-toast fix (9) lives in _sdSaveAll itself (index.html) — this file only refreshes baselines. */
 (function () {
   if (window.SD_TOOLS_V1) return;
@@ -211,7 +213,7 @@
 
   /* ---------- 8: lock ---------- */
   var STATUS_LBL = {
-    shared: ['Shared for approval', 'Dikongsi untuk kelulusan'],
+    shared: ['Awaiting signatures', 'Menunggu tandatangan'],
     pending_review: ['Signed copy awaiting review', 'Salinan bertandatangan menunggu semakan'],
     approved: ['Approved', 'Diluluskan']
   };
@@ -235,6 +237,7 @@
       var lbl = STATUS_LBL[st] || [st, st];
       var html = '<i class="ti ti-lock"></i><span class="sdt-lock-txt"><b>' + esc(L('Locked', 'Dikunci')) + ' · ' + esc(L(lbl[0], lbl[1])) + '</b><br>' +
         esc(st === 'approved' ? L('Editing is disabled because this month is approved.', 'Tidak boleh edit kerana bulan ini telah diluluskan.')
+          : st === 'shared' ? L('Amounts are locked while the 4 signatures are collected. HR can reset signatures to edit.', 'Jumlah dikunci semasa 4 tandatangan dikumpul. HR boleh set semula tandatangan untuk edit.')
           : L('Editing is disabled until the approval is reviewed.', 'Tidak boleh edit sehingga kelulusan disemak.')) + '</span>' +
         (st === 'approved' && canHR() ? '<button type="button" class="btn btn-outline btn-sm" id="sdt-unlock"><i class="ti ti-lock-open"></i> ' + esc(L('Unlock to edit', 'Buka untuk edit')) + '</button>' : '');
       if (pdoc && pdoc.parentNode) {
@@ -261,8 +264,8 @@
     var b = batch();
     if (!b || b.status !== 'approved') return;
     if (!canHR()) { toast(L('Only HR managers can unlock.', 'Hanya pengurus HR boleh buka kunci.'), 'error'); return; }
-    if (!window.confirm(L('Unlock this approved salary disbursement for editing? It goes back to Draft and must be shared and approved again.',
-      'Buka kunci penyaluran gaji yang telah diluluskan untuk diedit? Status kembali ke Draf dan perlu dikongsi serta diluluskan semula.'))) return;
+    if (!window.confirm(L('Unlock this approved salary disbursement for editing? It goes back to Draft, all 4 signatures are voided and it must be signed again.',
+      'Buka kunci penyaluran gaji yang telah diluluskan untuk diedit? Status kembali ke Draf, kesemua 4 tandatangan dibatalkan dan perlu ditandatangan semula.'))) return;
     var now = new Date().toISOString(), res;
     try {
       res = await sb.from('salary_disbursement_batches').update({ status: 'draft', reviewed_by: uid(), reviewed_at: now })
@@ -289,15 +292,16 @@
       ((r && r.data) || []).forEach(function (u) {
         if (HR_ROLES.indexOf(String(u.role || '').toLowerCase()) >= 0 && ids.indexOf(u.id) < 0) ids.push(u.id);
       });
-      if (kind !== 'unlocked' && b.created_by && ids.indexOf(b.created_by) < 0) ids.push(b.created_by); // preparer
+      if (b.created_by && ids.indexOf(b.created_by) < 0) ids.push(b.created_by); // preparer
       ids = ids.filter(function (id) { return String(id) !== String(me); });
       if (!ids.length) return 0;
       var per = periodLabel(Number(b.month), Number(b.year));
       var who = (window.APP && APP.user && (APP.user.name || APP.user.email)) || 'M-Core';
       var T = {
         approved: [L('Salary disbursement approved · ', 'Penyaluran gaji diluluskan · ') + per, L('Approved by ', 'Diluluskan oleh ') + who, 'ti-circle-check'],
-        rejected: [L('Salary disbursement rejected · ', 'Penyaluran gaji ditolak · ') + per, L('Rejected by ', 'Ditolak oleh ') + who + L(' — open to see the reason and fix', ' — buka untuk lihat sebab dan betulkan'), 'ti-circle-x'],
-        unlocked: [L('Salary disbursement unlocked · ', 'Penyaluran gaji dibuka kunci · ') + per, L('Unlocked by ', 'Dibuka oleh ') + who + L(' — back to Draft, needs approval again', ' — kembali ke Draf, perlu kelulusan semula'), 'ti-lock-open']
+        rejected: [L('Salary disbursement rejected · ', 'Penyaluran gaji ditolak · ') + per, L('Rejected by ', 'Ditolak oleh ') + who + L(' — signatures voided; open to see the reason and fix', ' — tandatangan dibatalkan; buka untuk lihat sebab dan betulkan'), 'ti-circle-x'],
+        unlocked: [L('Salary disbursement unlocked · ', 'Penyaluran gaji dibuka kunci · ') + per, L('Unlocked by ', 'Dibuka oleh ') + who + L(' — back to Draft, signatures voided, needs signing again', ' — kembali ke Draf, tandatangan dibatalkan, perlu ditandatangan semula'), 'ti-lock-open'],
+        reset: [L('Salary disbursement signatures reset · ', 'Tandatangan penyaluran gaji diset semula · ') + per, L('Reset by ', 'Diset semula oleh ') + who + L(' — back to Draft, signatures voided', ' — kembali ke Draf, tandatangan dibatalkan'), 'ti-rotate']
       }[kind];
       return NT.notify({
         users: ids, kind: 'for_you', type: 'approval.payroll',

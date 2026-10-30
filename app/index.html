@@ -40205,7 +40205,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     // No controllerchange→reload: that forced a second full load after SW claim
     // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
-    navigator.serviceWorker.register('./sw.js?v=16').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=17').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
@@ -40384,8 +40384,9 @@ if('serviceWorker' in navigator){
 <script src="./payslip-pay-date.js?v=1"></script>
 <script src="./ot-payroll-resync.js?v=1"></script>
 <script src="./sd-mobile-cards.js?v=3"></script>
-<script src="./sd-tools.js?v=1"></script>
-<script src="./sd-mobile-view.js?v=2"></script>
+<script src="./sd-tools.js?v=2"></script>
+<script src="./sd-signatures.js?v=1"></script>
+<script src="./sd-mobile-view.js?v=3"></script>
 <script src="./payslip-accum-outstanding.js?v=1"></script>
 <script src="./booking-free-confirm.js?v=2"></script>
 <script src="./settings-form-fit.js?v=4"></script>

@@ -1,4 +1,6 @@
-/* Salary Disbursement — paper-free view v2 (works with sd-mobile-cards.js v3).
+/* Salary Disbursement — paper-free view v3 (works with sd-mobile-cards.js v3 + sd-signatures.js v1).
+   v3: Signatures card carries per-row .sdm-sig-x slots + n/4 progress + footer, decorated by
+   window._sdSig (sd-signatures.js); print uses its 4-column signature grid when available.
    v2 (Mike): the white .pdoc paper is gone at EVERY width, screen and print.
    - #sd-pdoc stays in the DOM only as the hidden input/proxy layer (ids used by _sdRowValues,
      _sdSaveAll, wrappers, review popup). On screen it is display:contents with everything
@@ -151,11 +153,12 @@
         });
       }
       el.setAttribute('data-lang', lang);
-      el.innerHTML = '<div class="sdc-cap">' + esc(L('Signatures', 'Tandatangan')) + '</div><div class="sdm-sig-grid">' + SIGS.map(function (k) {
+      el.innerHTML = '<div class="sdc-cap"><span>' + esc(L('Signatures', 'Tandatangan')) + '</span><span class="sdm-sig-n"></span></div><div class="sdm-sig-grid">' + SIGS.map(function (k) {
         if (!$('sig-input-' + k[0])) return '';
         return '<div class="sdc-row"><label for="sdm-sig-' + k[0] + '">' + esc(L(k[1], k[2])) + '</label>' +
-          '<input class="form-input" type="text" id="sdm-sig-' + k[0] + '" data-sig="sig-input-' + k[0] + '" autocomplete="off"></div>';
-      }).join('') + '</div>';
+          '<input class="form-input" type="text" id="sdm-sig-' + k[0] + '" data-sig="sig-input-' + k[0] + '" autocomplete="off">' +
+          '<div class="sdm-sig-x" data-role="' + k[0] + '"></div></div>';
+      }).join('') + '</div><div class="sdm-sig-foot"></div>';
     }
     var nx = $('sdm-print') || $('sdc-bar') || pdoc; // cards -> signatures -> print -> bar -> hidden paper
     if (!el.isConnected || el.nextSibling !== nx) nx.parentNode.insertBefore(el, nx);
@@ -165,6 +168,7 @@
       var t = $(inp.getAttribute('data-sig'));
       if (t && inp !== active && inp.value !== t.value) inp.value = t.value;
     });
+    try { if (window._sdSig && typeof _sdSig.decorate === 'function') _sdSig.decorate(el); } catch (e) {} // sd-signatures.js: thumbnails, chips, Sign / Share link
   }
   function target(inp) { var id = inp && inp.getAttribute && inp.getAttribute('data-sig'); return id ? $(id) : null; }
 
@@ -207,7 +211,8 @@
     var vis = rows().filter(function (r) { return r.visible; }), s = summary();
     var co = String((pdoc.querySelector('.pdoc-company-name') || {}).textContent || ((window.APP && APP.tenant && APP.tenant.name) || '')).trim();
     var title = String((pdoc.querySelector('.pdoc-title-bar') || {}).textContent || L('Salary Disbursement', 'Penyaluran Gaji')).trim();
-    var sigs = SIGS.map(function (k) { var t = $('sig-input-' + k[0]); return t && String(t.value || '').trim() ? L(k[1], k[2]) + ': ' + String(t.value).trim() : ''; })
+    var sgrid = ''; try { if (window._sdSig && typeof _sdSig.printHtml === 'function') sgrid = _sdSig.printHtml(); } catch (e) { sgrid = ''; }
+    var sigs = sgrid ? '' : SIGS.map(function (k) { var t = $('sig-input-' + k[0]); return t && String(t.value || '').trim() ? L(k[1], k[2]) + ': ' + String(t.value).trim() : ''; })
       .filter(Boolean).join(' \u00b7 ');
     var d = new Date(), ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     setHtml(el, '<div class="sdm-p-head">' + (co ? '<div class="sdm-p-co">' + esc(co) + '</div>' : '') +
@@ -215,7 +220,7 @@
       '<div class="sdm-p-meta">' + esc(s.count + ' ' + L('employee(s)', 'pekerja') + ' \u00b7 ' + L('Generated', 'Dijana') + ': ' + ymd) + '</div></div>' +
       vis.map(printCard).join('') +
       '<div class="sdm-p-total"><span>' + esc(L('Total Net Pay', 'Jumlah Gaji Bersih')) + '</span><span>' + esc(s.net) + '</span></div>' +
-      (sigs ? '<div class="sdm-p-sigs">' + esc(sigs) + '</div>' : ''));
+      (sgrid || (sigs ? '<div class="sdm-p-sigs">' + esc(sigs) + '</div>' : '')));
     return el;
   }
   function enterPrint() {
