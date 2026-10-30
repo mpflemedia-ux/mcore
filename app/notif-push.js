@@ -44,7 +44,7 @@
   P.reg = function () {
     if (!('serviceWorker' in nav)) return Promise.resolve(null);
     var ready = nav.serviceWorker.getRegistration('./').then(function (ex) {
-      return (ex ? Promise.resolve(ex) : nav.serviceWorker.register('./sw.js?v=15')).then(function () { return nav.serviceWorker.ready; });
+      return (ex ? Promise.resolve(ex) : nav.serviceWorker.register('./sw.js?v=16')).then(function () { return nav.serviceWorker.ready; });
     }).catch(function () { return null; });
     return Promise.race([ready, new Promise(function (r) { setTimeout(function () { r(null); }, 12000); })]);
   };

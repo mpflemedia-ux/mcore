@@ -18,6 +18,16 @@ export interface Repo {
   telegramChat(tid: string, uid: string): Promise<string | null>;
   recentPushed(uid: string, sinceIso: string, exceptId: string): Promise<Row[]>;
   sr(id: string): Promise<Row | null>;
+  pendingSlaNotifications(): Promise<Row[]>;
+  markActed(id: string): Promise<void>;
+  markGroupActed(groupKey: string): Promise<void>;
+  paOpenSrsWithDue(): Promise<Row[]>;
+  paWaitingClientCount(): Promise<number>;
+  paPendingDraftCount(): Promise<number>;
+  latestAiDraft(srId: string): Promise<Row | null>;
+  insertEvent(row: Row): Promise<void>;
+  updateSrStatus(id: string, fromStatus: string, patch: Row): Promise<Row | null>;
+  tenantUsers(tenantId: string): Promise<Row[]>;
   openSrs(): Promise<Row[]>;
   urgentUnpicked(sinceIso: string): Promise<Row[]>;
   paUsers(): Promise<Row[]>;
@@ -110,6 +120,36 @@ export async function testSend(uid: string, subId: string | null, d: Deps): Prom
   return r;
 }
 
+/** Push action 'deliver' (the "Hantar" button on a sd.ai_draft notification): promote the latest
+ * AI draft to a client-visible deliverable and move the SR straight to delivered, mirroring
+ * app/sd-detail.js's "Send to client" button (attachment event -> SD.setStatus(delivered) -> its
+ * own 'status' event + client bell) without needing the app open. Token-gated like action 'read'
+ * (same sign(nid,uid) HMAC), plus a platform_admin role check since this mutates the SR. */
+export async function deliverDraft(nid: string, uid: string, d: Deps): Promise<Row> {
+  const n = (await d.db.notifications([nid]))[0];
+  if (!n || n.type !== 'sd.ai_draft' || !n.ref_id) return { ok: false, error: 'not_found' };
+  const prof = await d.db.profile(uid);
+  if (!prof || String(prof.role || '').toLowerCase() !== 'platform_admin') return { ok: false, error: 'forbidden' };
+  const r = await d.db.sr(String(n.ref_id));
+  if (!r) return { ok: false, error: 'sr_not_found' };
+  if (r.status !== 'in_progress') return { ok: false, error: 'bad_status' };
+  const draft = await d.db.latestAiDraft(r.id);
+  if (!draft) return { ok: false, error: 'no_draft' };
+  const now = iso(d.now());
+  await d.db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'attachment', file_path: draft.file_path, body: draft.file_name, meta: { name: draft.file_name, deliverable: true } });
+  const nr = await d.db.updateSrStatus(r.id, 'in_progress', { status: 'delivered', updated_at: now, delivered_at: now });
+  if (!nr) return { ok: false, error: 'conflict' };
+  await d.db.insertEvent({ tenant_id: r.tenant_id, request_id: r.id, type: 'status', from_status: 'in_progress', to_status: 'delivered', body: null });
+  let notified = 0;
+  for (const u of await d.db.tenantUsers(r.tenant_id)) {
+    const lang = u.language === 'bm' ? 'bm' : 'en';
+    const row = await d.db.insertNotification({ tenant_id: r.tenant_id, user_id: u.id, actor_id: null, title: (r.ref_no || 'SR') + ': ' + (lang === 'bm' ? 'Dihantar' : 'Delivered'), body: String(r.title || '').slice(0, 300), category: 'service_desk', kind: 'action', type: 'sd.delivered', ref_table: 'service_requests', ref_id: String(r.id) });
+    if (row) { await processOne(row, d); notified++; }
+  }
+  await d.db.markActed(n.id);
+  return { ok: true, ref_no: r.ref_no, notified };
+}
+
 export async function handle(body: Row, headers: Headers, d: Deps): Promise<{ status: number; body: Row }> {
   const trusted = secretOk(headers.get('x-push-secret'), d.secret);
   if (body && body.type === 'INSERT' && body.table === 'notifications' && body.record) {
@@ -128,6 +168,11 @@ export async function handle(body: Row, headers: Headers, d: Deps): Promise<{ st
     const id = String(body.id || ''), uid = String(body.uid || '');
     if (!id || !uid || !body.t || body.t !== (await d.sign(id, uid))) return { status: 401, body: { ok: false, error: 'token' } };
     await d.db.markRead(id, uid); return { status: 200, body: { ok: true } };
+  }
+  if (a === 'deliver') {
+    const id = String(body.id || ''), uid = String(body.uid || '');
+    if (!id || !uid || !body.t || body.t !== (await d.sign(id, uid))) return { status: 401, body: { ok: false, error: 'token' } };
+    return { status: 200, body: await deliverDraft(id, uid, d) };
   }
   const jwt = (headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   const uid = jwt ? await d.authUser(jwt) : null;

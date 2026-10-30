@@ -67,15 +67,16 @@ export function slaDue(r: Row, now: Date): Date | null {
 }
 
 const TX: Record<string, Record<string, string>> = {
-  en: { open: 'Open', openSr: 'Open SR', read: 'Mark read', view: 'View', many: ' new alerts', test: 'Test alert', testB: 'Push works on this device.', morning: 'Good morning', unread: ' unread alerts in M-Core', sla2: 'SLA due in 2h', slaO: 'SLA overdue', esc: 'URGENT not picked up for ' },
-  bm: { open: 'Buka', openSr: 'Buka SR', read: 'Tanda dibaca', view: 'Lihat', many: ' amaran baharu', test: 'Amaran ujian', testB: 'Push berfungsi pada peranti ini.', morning: 'Selamat pagi', unread: ' amaran belum dibaca dalam M-Core', sla2: 'SLA tamat dalam 2j', slaO: 'SLA lewat', esc: 'SEGERA belum diambil selama ' },
+  en: { open: 'Open', openSr: 'Open SR', read: 'Mark read', view: 'View', many: ' new alerts', test: 'Test alert', testB: 'Push works on this device.', morning: 'Good morning', unread: ' unread alerts in M-Core', sla2: 'SLA due in 2h', slaO: 'SLA overdue', esc: 'URGENT not picked up for ', paOverdue: ' past SLA', paSoon: ' near SLA', paDrafts: ' AI drafts pending', paWaiting: ' waiting on client', deliver: 'Send' },
+  bm: { open: 'Buka', openSr: 'Buka SR', read: 'Tanda dibaca', view: 'Lihat', many: ' amaran baharu', test: 'Amaran ujian', testB: 'Push berfungsi pada peranti ini.', morning: 'Selamat pagi', unread: ' amaran belum dibaca dalam M-Core', sla2: 'SLA tamat dalam 2j', slaO: 'SLA lewat', esc: 'SEGERA belum diambil selama ', paOverdue: ' lepas SLA', paSoon: ' hampir SLA', paDrafts: ' draf AI tunggu lulus', paWaiting: ' tunggu client', deliver: 'Hantar' },
 };
 export const tx = (lang: string, k: string) => (TX[lang === 'bm' ? 'bm' : 'en'][k]) || TX.en[k] || k;
 
 /** Payload for sw.js 'push'. prio 2 = stays until tapped. */
 export function payload(n: Row, info: { cat: string; prio: number }, lang: string, extra: Row = {}): Row {
   const sr = n.ref_table === 'service_requests' || info.cat === 'sd';
-  const actions = sr ? [{ action: 'open', title: tx(lang, 'openSr') }, { action: 'read', title: tx(lang, 'read') }]
+  const actions = n.type === 'sd.ai_draft' ? [{ action: 'open', title: tx(lang, 'openSr') }, { action: 'deliver', title: tx(lang, 'deliver') }]
+    : sr ? [{ action: 'open', title: tx(lang, 'openSr') }, { action: 'read', title: tx(lang, 'read') }]
     : info.cat === 'approval' ? [{ action: 'open', title: tx(lang, 'view') }] : [{ action: 'open', title: tx(lang, 'open') }, { action: 'read', title: tx(lang, 'read') }];
   return Object.assign({
     title: String(n.title || 'M-Core').slice(0, 80), body: String(n.body || '').slice(0, 180), tag: 'mcore-n-' + n.id, nid: n.id, uid: n.user_id,

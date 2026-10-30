@@ -144,7 +144,7 @@
       send.disabled = true;
       var p = t ? SD.event(r, int ? 'internal_note' : 'comment', { body: t }) : Promise.resolve();
       p.then(function () { return f && !int ? SD.upload(r, f, admin && document.getElementById('sd-dv').checked) : null; })
-        .then(function () { if (!int) SD.bellFor(r, r.ref_no + ': ' + SD.L('new message', 'mesej baharu'), t || (f && f.name)); return reload(); })
+        .then(function () { if (!int) SD.bellFor(r, r.ref_no + ': ' + SD.L('new message', 'mesej baharu'), t || (f && f.name), 'sd.message'); return reload(); })
         .catch(function (e) { send.disabled = false; SD.toast(SD.err(e), 'error'); });
     };
   }
