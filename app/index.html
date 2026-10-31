@@ -30311,7 +30311,7 @@ async function renderEmployeeList() {
       .select('id,month,year,net_pay,generated_at,employee_id')
       .eq('tenant_id', tid)
       .order('generated_at', { ascending: false })
-      .limit(20)
+      .limit(240) // DK card view lazy-renders 20 at a time + period chips
     if(res.error) return res
     const rows = res.data || []
     const empIds = [...new Set(rows.map(r => r.employee_id).filter(Boolean))]
@@ -30327,8 +30327,8 @@ async function renderEmployeeList() {
     <table><thead><tr><th>${t.period}</th><th>${t.name}</th><th style="text-align:right">${t.netPay}</th><th style="width:56px"></th></tr></thead>
     <tbody>${payrolls.map(p=>{
       const nm = (p.employees?.name||'-').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
-      return `<tr>
-      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${p.month}/${p.year}</td>
+      return `<tr data-id="${p.id}" onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">
+      <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${String(p.month).padStart(2,'0')}/${p.year}</td>
       <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="cursor:pointer">${_aiEscapeHtml(p.employees?.name||'-')}</td>
       <td onclick="openPage('hr',{view:'payslip',id:'${p.id}'})" style="text-align:right;cursor:pointer;white-space:nowrap">${formatRM(p.net_pay)}</td>
       <td style="white-space:nowrap;text-align:center">
@@ -30339,7 +30339,7 @@ async function renderEmployeeList() {
   document.getElementById('main').insertAdjacentHTML('beforeend', `
   <div class="card" style="margin-top:16px">
     <div class="card-header"><div class="card-title">${t.payrollHistory}</div></div>
-    <div style="overflow-x:auto">${historyHtml}</div>
+    <div id="pr-hist-wrap" style="overflow-x:auto">${historyHtml}</div>
   </div>`)
 }
 
@@ -40387,7 +40387,7 @@ if('serviceWorker' in navigator){
 <script src="./sd-signatures.js?v=1"></script>
 <script src="./sd-mobile-view.js?v=3"></script>
 <script src="./payslip-accum-outstanding.js?v=1"></script>
-<script src="./payslip-cards.js?v=2"></script>
+<script src="./payslip-cards.js?v=3"></script>
 <script src="./pv-core.js?v=1"></script>
 <script src="./pv-cards.js?v=1"></script>
 <script src="./pv-single.js?v=1"></script>
@@ -40530,11 +40530,11 @@ if('serviceWorker' in navigator){
 <script src="./ffm-do.js?v=10"></script>
 <script src="./ffm-po.js?v=10"></script>
 <script src="./dk-cards.js?v=4"></script>
-<script src="./dk-doc.js?v=2"></script>
+<script src="./dk-doc.js?v=3"></script>
 <script src="./dk-sign.js?v=1"></script>
 <script src="./dk-share.js?v=2"></script>
 <script src="./dk-sales.js?v=1"></script>
-<script src="./dk-staff.js?v=1"></script>
+<script src="./dk-staff.js?v=2"></script>
 <script src="./dk-purch.js?v=1"></script>
 <script src="./dk-ops.js?v=1"></script>
 <script src="./dk-acct.js?v=1"></script>
