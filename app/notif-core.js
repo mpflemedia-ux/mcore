@@ -138,6 +138,9 @@
         var n = NT.classify(Object.assign({}, p.new || {})); if (!NT.same(n.tenant_id, NT.tid())) return;
         if (n._k !== 'activity' && NT.ch(n._cat, 'p') && !NT.quiet(null, n.priority)) { try { _notifOsNotify(n.title, n.body || '', false, n.link, n); } catch (e) {} }
         if (NT.refresh) NT.refresh();
+      }).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: 'user_id=eq.' + NT.uid() }, function () {
+        /* bumped sd.status/sd.message row (sd_notif_dedupe_01.sql) or read elsewhere: quiet refresh, no OS popup */
+        clearTimeout(NT._upT); NT._upT = setTimeout(function () { if (NT.refresh) NT.refresh(); }, 800);
       }).subscribe();
     } catch (e) {}
   };
