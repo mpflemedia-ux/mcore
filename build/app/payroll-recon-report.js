@@ -36,7 +36,7 @@
     return '.prc-doc{--a:#0E7490;--ink:#0F172A;--mut:#64748B;--line:#E2E8F0;--tint:#E8F4F7;background:#fff;color:var(--ink);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:11px;line-height:1.4;max-width:820px;margin:0 auto;border:1px solid var(--line);border-radius:10px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
       '.prc-doc *{box-sizing:border-box}' +
       '.prc-doc .lh{display:flex;align-items:center;gap:12px;background:var(--a);color:#fff;padding:14px 22px}' +
-      '.prc-doc .lh img{height:34px;max-width:120px;object-fit:contain;background:#fff;border-radius:6px;padding:2px}' +
+      '.prc-doc .lh img{height:34px;max-width:120px;object-fit:contain;background:transparent;border-radius:6px;padding:2px}' +
       '.prc-doc .lh .lg{width:34px;height:34px;border-radius:6px;background:var(--a);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}' +
       '.prc-doc .lh .co{flex:1;min-width:0}.prc-doc .lh .cn{font-size:15px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;overflow-wrap:anywhere}' +
       '.prc-doc .lh .cs{font-size:9.5px;color:#CBD5E1;overflow-wrap:anywhere}' +
