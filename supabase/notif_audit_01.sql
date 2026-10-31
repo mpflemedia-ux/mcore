@@ -3,9 +3,8 @@
 -- No has_module(), no user_profiles.email. Every table / function is guarded (to_regclass / to_regprocedure).
 --
 -- What it fixes
---  A) dk__staff_notify / dk__purch_notify / dk__ops_notify compared notifications.ref_id (TEXT) = rid (UUID)
---     -> "operator does not exist: text = uuid" -> caught by the exception block -> NO staff / purchasing / ops
---     bell or push was ever written. Fixed with rid::text.
+--  A) Type-safe ref_id: every comparison casts BOTH sides to text (x.ref_id::text = rid::text), so this file and the
+--     DK triggers work whether notifications.ref_id is uuid (live) or text. Inserts pass the uuid as-is.
 --  B) dk__notify wrote EVERY row as kind='action', priority 1 (even "PO received", "Leave approved") so the bell
 --     badge counted info rows as to-dos. Now: action only for things that need a decision, others for_you;
 --     group_key + actor_id are stored; 1 event = 1 row per recipient (10-min group_key guard).
@@ -38,7 +37,7 @@ begin
     left(case when lower(coalesce(to_jsonb(u)->>'language', '')) = 'bm' then p_title_bm else p_title_en end, 200),
     left(case when lower(coalesce(to_jsonb(u)->>'language', '')) = 'bm' then p_body_bm else p_body_en end, 500),
     split_part(p_type, '.', 1), public.dk__notif_kind(p_type), p_type, public.dk__notif_prio(p_type), p_link,
-    p_group, p_actor, p_ref_table, p_ref_id::text
+    p_group, p_actor, p_ref_table, p_ref_id
   from public.user_profiles u
   where u.tenant_id = p_tid and coalesce((to_jsonb(u)->>'is_active')::boolean, true)
     and (p_actor is null or u.id <> p_actor)
@@ -122,7 +121,7 @@ begin
       -- left pending -> the approvers' to-do rows stop counting (all approvers, every device)
       if ost in ('pending', 'submitted') and st not in ('pending', 'submitted') then
         update public.notifications set acted_at = now(), read_at = coalesce(read_at, now())
-        where tenant_id = tid and ref_id = rid::text and type = 'hr.' || k || '_submitted' and acted_at is null;
+        where tenant_id = tid and ref_id::text = rid::text and type = 'hr.' || k || '_submitted' and acted_at is null;
       end if;
     end if;
     if st in ('pending', 'submitted') then ev := 'submitted';
@@ -130,7 +129,7 @@ begin
     else return NEW; end if;
     if TG_OP = 'INSERT' and ev <> 'submitted' then return NEW; end if;
     typ := 'hr.' || k || '_' || ev;
-    if exists (select 1 from public.notifications x where x.tenant_id = tid and x.ref_id = rid::text and x.type = typ and x.created_at > now() - interval '60 seconds') then return NEW; end if;
+    if exists (select 1 from public.notifications x where x.tenant_id = tid and x.ref_id::text = rid::text and x.type = typ and x.created_at > now() - interval '60 seconds') then return NEW; end if;
     perform public.dk__staff_event(k, n, ev, auth.uid(), TG_TABLE_NAME);
   exception when others then
     raise warning 'dk__staff_notify(%): %', k, sqlerrm;
@@ -152,7 +151,8 @@ begin
   end loop;
 end $$;
 
--- ---------- 4) purchasing / ops triggers: same text = uuid bug, patched in place (no other change) ----------
+-- ---------- 4) purchasing / ops triggers: make the dedupe check type-safe in place (no other change) ----------
+-- Only touches the exact old pattern; already-patched or missing functions are skipped. Safe on uuid or text ref_id.
 do $$
 declare f text; d text;
 begin
@@ -160,8 +160,10 @@ begin
     if to_regprocedure('public.' || f || '()') is null then raise notice 'notif_audit: % missing — skipped', f; continue; end if;
     d := pg_get_functiondef(('public.' || f || '()')::regprocedure);
     if position('x.ref_id = rid and' in d) > 0 then
-      execute replace(d, 'x.ref_id = rid and', 'x.ref_id = rid::text and');
-      raise notice 'notif_audit: % patched (ref_id = rid::text)', f;
+      execute replace(d, 'x.ref_id = rid and', 'x.ref_id::text = rid::text and');
+      raise notice 'notif_audit: % patched (ref_id::text = rid::text)', f;
+    else
+      raise notice 'notif_audit: % already type-safe — skipped', f;
     end if;
   end loop;
 end $$;
@@ -188,7 +190,7 @@ begin
     if to_regclass('public.' || r.tbl) is null then continue; end if;
     execute format($q$update public.notifications n set acted_at = now(), read_at = coalesce(n.read_at, now())
       where n.acted_at is null and n.deleted_at is null and n.type = %L and n.ref_id is not null
-        and not exists (select 1 from public.%I s where s.id::text = n.ref_id and lower(coalesce(s.status, 'pending')) in ('pending', 'submitted'))$q$,
+        and not exists (select 1 from public.%I s where s.id::text = n.ref_id::text and lower(coalesce(s.status, 'pending')) in ('pending', 'submitted'))$q$,
       'hr.' || r.k || '_submitted', r.tbl);
     get diagnostics c = row_count; raise notice 'notif_audit 6a: % stale % rows closed', c, r.k;
   end loop;
@@ -202,7 +204,7 @@ begin
   update public.notifications n set acted_at = now(), read_at = coalesce(n.read_at, now())
   from public.service_requests s
   where n.acted_at is null and n.deleted_at is null and n.kind = 'action' and n.ref_table = 'service_requests'
-    and n.ref_id = s.id::text
+    and n.ref_id::text = s.id::text
     and ((n.type = 'sd.new' and s.status <> 'submitted')
       or (n.type = 'sd.revision' and s.status not in ('revision', 'triaged', 'in_progress'))
       or (n.type = 'sd.delivered' and s.status <> 'delivered'));
@@ -210,7 +212,7 @@ begin
   update public.notifications n set acted_at = now(), read_at = coalesce(n.read_at, now())
   where n.acted_at is null and n.deleted_at is null and n.kind = 'action' and n.ref_table = 'service_requests'
     and n.type in ('sd.new', 'sd.revision', 'sd.delivered') and n.ref_id is not null
-    and not exists (select 1 from public.service_requests s where s.id::text = n.ref_id);
+    and not exists (select 1 from public.service_requests s where s.id::text = n.ref_id::text);
 end $$;
 
 -- 6c) pending staff docs (last 30 days) that never got an approver notification (trigger bug A).
@@ -225,7 +227,7 @@ begin
         where lower(coalesce(s.status, 'pending')) in ('pending', 'submitted')
           and coalesce((to_jsonb(s)->>'deleted_at'), '') = ''
           and s.created_at > now() - interval '30 days' and s.created_at < now() - interval '10 minutes'
-          and not exists (select 1 from public.notifications x where x.ref_id = s.id::text and x.type = %L)$q$, r.tbl, typ) loop
+          and not exists (select 1 from public.notifications x where x.ref_id::text = s.id::text and x.type = %L)$q$, r.tbl, typ) loop
       g := typ || ':' || (d->>'id');
       c := c + public.dk__staff_event(r.k, d, 'submitted', null, r.tbl);
       update public.notifications set created_at = (d->>'created_at')::timestamptz where group_key = g and created_at = now();
@@ -245,7 +247,7 @@ begin
           and coalesce((to_jsonb(s)->>'deleted_at'), '') = ''
           and coalesce((to_jsonb(s)->>'updated_at')::timestamptz, s.created_at) > now() - interval '7 days'
           and coalesce((to_jsonb(s)->>'updated_at')::timestamptz, s.created_at) < now() - interval '10 minutes'
-          and not exists (select 1 from public.notifications x where x.ref_id = s.id::text and x.type = 'hr.' || %L || '_' || lower(s.status))$q$, r.tbl, r.k) loop
+          and not exists (select 1 from public.notifications x where x.ref_id::text = s.id::text and x.type = 'hr.' || %L || '_' || lower(s.status))$q$, r.tbl, r.k) loop
       ev := lower(d->>'status'); g := 'hr.' || r.k || '_' || ev || ':' || (d->>'id');
       ts := coalesce((d->>'updated_at')::timestamptz, (d->>'created_at')::timestamptz);
       c := c + public.dk__staff_event(r.k, d, ev, null, r.tbl);
@@ -263,7 +265,7 @@ begin
   if not found then
     insert into public.dev_roadmap_items (title, description, module, stage)
     values ('Notification audit & badge fix',
-      'Bell/sidebar/app-icon badge = unread count; Mark all read clears all three. DK triggers fixed (ref_id text vs uuid), correct action vs for_you, 1 event = 1 notif per recipient, outstation notifications, stale to-dos closed, backfill of missed staff notifications.',
+      'Bell/sidebar/app-icon badge = unread count; Mark all read clears all three. Type-safe ref_id comparisons, correct action vs for_you, 1 event = 1 notif per recipient, outstation notifications, stale to-dos closed, backfill of missed staff notifications.',
       'core', 'completed');
   end if;
 end $$;
