@@ -13,9 +13,10 @@
      owner(s); one row per user, never the submitter (SD.bell). type defaults to 'sd.new'
      (kind=action) since that's this function's main caller; escalate() passes 'sd.status'
      explicitly since an escalation reminder isn't itself a new, unactioned request. */
-  SD.bellNew = function (r, title, body, type) {
+  SD.bellNew = function (r, title, body, type, gk) {
     type = type || 'sd.new';
-    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', kind: type === 'sd.new' ? 'action' : 'for_you', type: type, ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
+    var rid = r && r.id ? String(r.id) : null, g = rid ? type + ':' + rid : (gk || null);
+    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', kind: type === 'sd.new' ? 'action' : 'for_you', type: type, group_key: g, ref_table: 'service_requests', ref_id: rid }; };
     var own = Promise.resolve().then(function () { return sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', r.tenant_id).eq('role', 'owner'); });
     return Promise.all([SD.paList().then(null, function () { return {}; }), own.then(null, function () { return {}; })]).then(function (x) {
       var seen = {}, rows = [];
@@ -49,13 +50,21 @@
       if (typeof _tgActivity === 'function') _tgActivity('service_desk', msg, { daily: true });
     }, function () {});
   };
-  /* escalation: requests >4h without reply get a bell; >24h unopened get another */
+  /* escalation: requests >4h without reply get a bell; >24h unopened get another.
+     Was firing on EVERY admin page open (sd.status spam): now once per SR per stage per 20h on this device,
+     and the DB trigger folds it into the recipient's unread sd.status row for that SR. */
+  var escSeen = function (k) {
+    try { var t = +localStorage.getItem(k) || 0; if (Date.now() - t < 20 * 3600000) return true; localStorage.setItem(k, String(Date.now())); } catch (e) {}
+    return false;
+  };
   SD.escalate = function () {
+    if (SD._escAt && Date.now() - SD._escAt < 30 * 60000) return; SD._escAt = Date.now();
     var cut4 = new Date(Date.now() - 4*3600000).toISOString();
     var cut24 = new Date(Date.now() - 24*3600000).toISOString();
     sb.from('service_requests').select('id,ref_no,title,status,created_at,tenant_id').is('deleted_at', null).in('status', ['submitted','triaged']).lt('created_at', cut4).limit(20).then(function (r) {
       (r.data || []).forEach(function (x) {
         var old = new Date(x.created_at).getTime() < new Date(cut24).getTime();
+        if (escSeen('sd_esc_' + x.id + (old ? '_24' : '_4'))) return;
         var title = x.ref_no + (old ? (APP.language==='bm'?' · 24j tiada buka':' · 24h unopened') : (APP.language==='bm'?' · 4j tiada balasan':' · 4h no reply'));
         SD.bellNew(x, title, x.title, 'sd.status');
       });

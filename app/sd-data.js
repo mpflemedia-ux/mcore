@@ -121,6 +121,7 @@
       if (!x.data || !x.data.length) throw new Error(SD.L('This request was changed by someone else. Reload.', 'Permohonan ini telah dikemas kini. Muat semula.'));
       var nr = x.data[0];
       return SD.event(nr, 'status', { from_status: r.status, to_status: to, body: body || null }).catch(function () {}).then(function () {
+        if (r.status === to) return nr; /* no real change -> no bell */
         var type = to === 'delivered' ? 'sd.delivered' : to === 'revision' ? 'sd.revision' : 'sd.status';
         SD.bellFor(nr, nr.ref_no + ': ' + SD.stLabel(to), nr.title, type); return nr;
       });
@@ -160,9 +161,12 @@
      this one function with an explicit type, so nothing falls back to classify()'s title-regex
      guessing (the old behaviour every bellFor call used to produce). */
   var BELL_KIND = { 'sd.new': 'action', 'sd.delivered': 'action', 'sd.revision': 'action', 'sd.status': 'for_you', 'sd.message': 'for_you' };
-  SD.bellFor = function (r, title, body, type) {
+  /* group_key = type:sr_id (or gk for SR groups): DB trigger sd_notif_coalesce (supabase/sd_notif_dedupe_01.sql)
+     bumps the recipient's still-unread row instead of adding another -> 1 live row per SR per user. */
+  SD.bellFor = function (r, title, body, type, gk) {
     type = type || 'sd.status';
-    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', kind: BELL_KIND[type] || 'for_you', type: type, ref_table: 'service_requests', ref_id: r && r.id ? String(r.id) : null }; };
+    var rid = r && r.id ? String(r.id) : null, g = rid ? type + ':' + rid : (gk || null);
+    var mk = function (u) { return { tenant_id: u.tenant_id, user_id: u.id, title: title, body: body || '', category: 'service_desk', kind: BELL_KIND[type] || 'for_you', type: type, group_key: g, ref_table: 'service_requests', ref_id: rid }; };
     var q = SD.isPA()
       ? sb.from('user_profiles').select('id,tenant_id,role').eq('tenant_id', r.tenant_id)
       : SD.paList ? SD.paList() : sb.from('user_profiles').select('id,tenant_id,role').eq('role', 'platform_admin');

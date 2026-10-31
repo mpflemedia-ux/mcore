@@ -80,7 +80,7 @@
           var v = (document.getElementById('mg-msg').value || '').trim(); if (!v) return;
           b.disabled = true;
           MG.post(g, v).then(function () {
-            (SD.isPA() ? SD.bellFor : SD.bellNew || SD.bellFor)({ tenant_id: g.tenant_id }, g.ref_no + ': ' + SD.L('new message', 'mesej baharu'), v.slice(0, 140));
+            (SD.isPA() ? SD.bellFor : SD.bellNew || SD.bellFor)({ tenant_id: g.tenant_id }, g.ref_no + ': ' + SD.L('new message', 'mesej baharu'), v.slice(0, 140), 'sd.message', 'sd.message:' + g.id);
             SD.closeModal(); MG.threadModal(g);
           }, function (e) { b.disabled = false; SD.toast(SD.err(e), 'error'); });
         };
