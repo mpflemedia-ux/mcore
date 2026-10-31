@@ -1,4 +1,4 @@
-const CACHE='mcore-shell-v51'
+const CACHE='mcore-shell-v52'
 self.addEventListener('install',e=>{e.waitUntil(self.skipWaiting())})
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim()))})
 self.addEventListener('fetch',e=>{
@@ -27,6 +27,9 @@ self.addEventListener('push',e=>{
   e.waitUntil((async()=>{
     if(Array.isArray(d.replaces)&&d.replaces.length){try{const old=await self.registration.getNotifications();old.forEach(n=>{if(d.replaces.indexOf(n.tag)>=0)n.close()})}catch(_){}}
     await self.registration.showNotification(title,opts)
+    // app-icon badge: exact count when the payload carries one, else a dot; open tabs then recompute the real unread count
+    try{const nav=self.navigator;if(nav&&nav.setAppBadge){if(typeof d.badge==='number')await(d.badge>0?nav.setAppBadge(d.badge):nav.clearAppBadge());else await nav.setAppBadge()}}catch(_){}
+    try{const cs=await self.clients.matchAll({type:'window',includeUncontrolled:true});cs.forEach(c=>{try{c.postMessage({type:'mcore-nt-refresh'})}catch(_){}})}catch(_){}
   })())
 })
 self.addEventListener('notificationclick',e=>{
