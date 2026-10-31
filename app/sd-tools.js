@@ -398,7 +398,12 @@
           zakat_enabled: emp.zakat_enabled != null ? emp.zakat_enabled : f.zakat_enabled,
           zakat_amount: emp.zakat_amount != null ? emp.zakat_amount : f.zakat_amount,
           epf_exempt: !!f.epf_exempt,
-          skip_employer_contrib: !!f.skip_employer_contrib
+          skip_employer_contrib: !!f.skip_employer_contrib,
+          // live SD allowance slots: per-type EPF/SOCSO/PCB flags (Payroll & OT Settings) decide which count as wages
+          allowances: [1, 2, 3].map(function (i) {
+            var tEl = document.getElementById('sd-atype' + i + '-' + r.id), aEl = document.getElementById('sd-a' + i + '-' + r.id);
+            return { type: tEl ? (tEl.value || 'other') : (r['allowance_type_' + i] || 'other'), amount: Number(aEl ? aEl.value : r['allowance_' + i]) || 0 };
+          })
         }) || {};
         STAT_OUT.forEach(function (o) {
           var el = $(o[0] + r.id);
