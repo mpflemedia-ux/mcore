@@ -260,7 +260,8 @@
   function cloneBtn(b) {
     var c = b.cloneNode(true); c.removeAttribute('id'); c.classList.add('btn-sm'); if (!c.classList.contains('btn')) c.classList.add('btn', 'btn-outline');
     c.style.whiteSpace = 'nowrap';
-    c.addEventListener('click', function (e) { e.stopPropagation(); }, true);
+    /* bubble phase, not capture: a capture listener on the button stopped the click before it reached an inner <i> icon, so icon-only buttons (e.g. the pencil edit) never ran their onclick */
+    c.addEventListener('click', function (e) { e.stopPropagation(); });
     if (!txt(c) && b.title) c.insertAdjacentText('beforeend', ' ' + b.title);
     return c;
   }
@@ -275,7 +276,7 @@
     h += '<div class="dk-body"><dl class="dk-kv"></dl><div class="dk-acts"></div><div class="dk-tl" hidden></div></div><div class="dk-swa"></div>';
     el.innerHTML = h;
     var kv = el.querySelector('.dk-kv');
-    it.kv.forEach(function (p) { var dt = document.createElement('dt'); dt.textContent = p[0]; var dd = document.createElement('dd'); dd.innerHTML = p[1].innerHTML; [].forEach.call(dd.querySelectorAll('[onclick]'), function (x) { x.addEventListener('click', function (e) { e.stopPropagation(); }, true); }); [].forEach.call(dd.querySelectorAll('[id]'), function (x) { x.removeAttribute('id'); }); kv.appendChild(dt); kv.appendChild(dd); });
+    it.kv.forEach(function (p) { var dt = document.createElement('dt'); dt.textContent = p[0]; var dd = document.createElement('dd'); dd.innerHTML = p[1].innerHTML; [].forEach.call(dd.querySelectorAll('[onclick]'), function (x) { x.addEventListener('click', function (e) { e.stopPropagation(); }); }); [].forEach.call(dd.querySelectorAll('[id]'), function (x) { x.removeAttribute('id'); }); kv.appendChild(dt); kv.appendChild(dd); });
     var acts = el.querySelector('.dk-acts');
     if (it.clickable) { var ob = document.createElement('button'); ob.type = 'button'; ob.className = 'btn btn-primary btn-sm'; ob.innerHTML = '<i class="ti ti-arrow-right"></i> ' + esc(L('Open', 'Buka')); ob.onclick = function () { if (cfg.open) cfg.open(it.id, it.tr); else it.tr.click(); }; acts.appendChild(ob); }
     if (canShare(cfg) && it.id) { var wb = document.createElement('button'); wb.type = 'button'; wb.className = 'btn btn-outline btn-sm dk-wa'; wb.innerHTML = '<i class="ti ti-brand-whatsapp"></i> WhatsApp'; wb.onclick = function () { DKS.share(cfg.doc, it.id); }; acts.appendChild(wb); }
