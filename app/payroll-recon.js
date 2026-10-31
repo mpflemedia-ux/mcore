@@ -70,14 +70,16 @@
   };
 
   function injectButton() {
-    if (document.getElementById('btn-payroll-recon')) return;
-    var btn = document.createElement('button');
-    btn.id = 'btn-payroll-recon';
-    btn.className = 'btn btn-primary';
-    btn.style.cssText = 'position:fixed;bottom:24px;right:16px;z-index:9998;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.3)';
-    btn.innerHTML = L('Reconciliation', 'Reconciliation');
+    if (document.getElementById("btn-payroll-recon")) return;
+    var main = document.getElementById("main") || document.querySelector(".cob-root") || document.body;
+    var btn = document.createElement("button");
+    btn.id = "btn-payroll-recon";
+    btn.className = "btn btn-primary";
+    btn.style.cssText = "margin:12px 16px;white-space:nowrap";
+    btn.innerHTML = L("Reconciliation", "Reconciliation");
     btn.onclick = function () { renderPayrollRecon(); };
-    document.body.appendChild(btn);
+    main.appendChild(btn);
+  }
   }
 
   function tryInject() {
