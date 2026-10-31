@@ -676,13 +676,3 @@
     try { injectBtn(); } catch (e) {}
   }, 2000);
 })();
-
-/* Theme-aware letterhead logo: transparent bg in dark mode */
-(function () {
-  var css = document.createElement('style');
-  css.textContent = 
-    '[data-theme="dark"] .pdoc-header, [data-theme="dark"] .pdoc-logo-row, ' +
-    '[data-theme="dark"] .letterhead, [data-theme="dark"] .doc-header { background: transparent !important; } ' +
-    '[data-theme="dark"] .pdoc-header img, [data-theme="dark"] .pdoc-logo-row img { background: transparent !important; }';
-  document.head.appendChild(css);
-})();
