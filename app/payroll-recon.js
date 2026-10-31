@@ -50,7 +50,7 @@
       rows.slice(0, 20).forEach(function (r) {
         var emp = r.employees || {};
         var bal = r.balance_outstanding != null ? r2(r.balance_outstanding) : r2((r.net_pay || 0) - (r.amount_paid || 0));
-        var status = bal > 0 ? '<span class="badge" style="background:#f59e0b;color:#fff">Outstanding</span>' : '<span class="badge" style="background:#10b981;color:#fff">Settled</span>';
+        var status = bal > 0 ? '<span class="badge" class="badge">Outstanding</span>' : '<span class="badge" class="badge">Settled</span>';
         html += '<tr><td>' + (emp.staff_code || '—') + '</td><td>' + (emp.name || '—') + '</td><td class="num">' + fmt(r.net_pay) + '</td><td class="num">' + fmt(r.amount_paid) + '</td><td class="num">' + fmt(bal) + '</td><td>' + status + '</td></tr>';
       });
       html += '</table><div class="cob-xs" style="margin-top:8px">Contoh data / Example data · ' + L('Showing recent records', 'Rekod terkini') + '</div></div>';
