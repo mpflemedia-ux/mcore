@@ -89,7 +89,7 @@
       (atts.length ? '<div class="cob-xs" style="margin-top:10px;font-weight:700">' + SD.L('Attachments', 'Lampiran') + '</div>' + atts.map(fileRow).join('') : '') + '</div>' +
       draftCard +
       (open ? '<div class="cob-card" style="padding:16px;margin-bottom:12px"><textarea class="form-input" data-no-titlecase="1" id="sd-cm" rows="3" placeholder="' + SD.L('Write a comment…', 'Tulis komen…') + '"></textarea><div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">' +
-        '<input type="file" id="sd-cf" class="form-input" style="flex:1;min-width:180px">' + (admin ? '<label class="cob-xs row" style="gap:6px"><input type="checkbox" id="sd-int"> ' + SD.L('Internal note (staff only)', 'Nota dalaman (staf sahaja)') + '</label><label class="cob-xs row" style="gap:6px"><input type="checkbox" id="sd-dv" checked> ' + SD.L('File is a deliverable', 'Fail ialah hasil kerja') + '</label>' : '') +
+        '<input type="file" id="sd-cf" class="form-input" multiple style="flex:1;min-width:180px">' + (admin ? '<label class="cob-xs row" style="gap:6px"><input type="checkbox" id="sd-int"> ' + SD.L('Internal note (staff only)', 'Nota dalaman (staf sahaja)') + '</label><label class="cob-xs row" style="gap:6px"><input type="checkbox" id="sd-dv" checked> ' + SD.L('File is a deliverable', 'Fail ialah hasil kerja') + '</label>' : '') +
         '<button class="btn btn-primary" id="sd-send"><i class="ti ti-send"></i> ' + SD.L('Send', 'Hantar') + '</button></div></div>' : '') +
       '<div class="cob-card" style="padding:16px;margin-bottom:12px"><b style="font-size:15px">' + SD.L('Timeline', 'Garis masa') + '</b><div class="sd-tl" style="margin-top:8px">' + ev.map(function (e) {
         return '<div class="sd-ev' + (e.type === 'internal_note' ? ' int' : '') + '"><i class="ti ' + (e.type === 'status' ? (SD.ST[e.to_status] || [0, 'ti-point'])[1] : EVI[e.type] || 'ti-point') + '"></i><div class="grow" style="min-width:0">' + evText(e) + (e.body ? '<div style="font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;min-width:0">' + SD.lnk(e.body) + '</div>' : '') + '<div class="cob-xs">' + SD.dt(e.created_at) + (who(e.actor_id) ? ' · ' + SD.esc(who(e.actor_id)) : '') + '</div></div></div>';
@@ -139,12 +139,24 @@
       });
     };
     var send = m.querySelector('#sd-send'); if (send) send.onclick = function () {
-      var t = document.getElementById('sd-cm').value.trim(), f = document.getElementById('sd-cf').files[0], int = admin && document.getElementById('sd-int').checked;
-      if (!t && !f) return;
+      var t = document.getElementById('sd-cm').value.trim(), files = Array.prototype.slice.call(document.getElementById('sd-cf').files || []), int = admin && document.getElementById('sd-int').checked;
+      if (!t && !files.length) return;
       send.disabled = true;
       var p = t ? SD.event(r, int ? 'internal_note' : 'comment', { body: t }) : Promise.resolve();
-      p.then(function () { return f && !int ? SD.upload(r, f, admin && document.getElementById('sd-dv').checked) : null; })
-        .then(function () { if (!int) SD.bellFor(r, r.ref_no + ': ' + SD.L('new message', 'mesej baharu'), t || (f && f.name), 'sd.message'); return reload(); })
+      p.then(function () {
+        if (int || !files.length) return null;
+        var dv = admin && document.getElementById('sd-dv').checked;
+        /* sequential, not Promise.all -- each SD.upload() inserts its own attachment event, so
+           uploading one at a time keeps the timeline in the same order the files were picked. */
+        return files.reduce(function (chain, file) { return chain.then(function () { return SD.upload(r, file, dv); }); }, Promise.resolve());
+      })
+        .then(function () {
+          if (!int) {
+            var body = t || (files.length === 1 ? files[0].name : files.length + ' ' + SD.L('files', 'fail'));
+            SD.bellFor(r, r.ref_no + ': ' + SD.L('new message', 'mesej baharu'), body, 'sd.message');
+          }
+          return reload();
+        })
         .catch(function (e) { send.disabled = false; SD.toast(SD.err(e), 'error'); });
     };
   }
