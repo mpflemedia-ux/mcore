@@ -3754,7 +3754,9 @@ function formatRM(a) { return 'RM '+Number(a||0).toLocaleString('ms-MY',{minimum
 let _pdocTenantCache = null
 async function _pdocGetTenant() {
   if(_pdocTenantCache && _pdocTenantCache.id===APP.tenant.id) return _pdocTenantCache
-  const {data} = await sb.from('tenants').select('id,name,logo_url,address,address_line2,city,postcode,state,country,phone,sst_gst_no,bank_name,account_number,account_name,payment_qr_url').eq('id',APP.tenant.id).single()
+  const _tCols = 'id,name,logo_url,address,address_line2,city,postcode,state,country,phone,sst_gst_no,bank_name,account_number,account_name,payment_qr_url'
+  let {data, error} = await sb.from('tenants').select(_tCols + ',kwsp_no,perkeso_no,lhdn_e_no').eq('id',APP.tenant.id).single()
+  if(error) ({data} = await sb.from('tenants').select(_tCols).eq('id',APP.tenant.id).single()) // employer statutory no. SQL not run yet
   _pdocTenantCache = data || {id:APP.tenant.id, name:APP.tenant.name}
   return _pdocTenantCache
 }
@@ -3932,6 +3934,7 @@ function _pdocPayslipHtml(rec, tn, t, isBm, accent) {
       <tr class="pdoc-total-row"><td>${isBm?'Jumlah Caruman Majikan':'Total Employer Contrib.'}</td><td style="text-align:right">${formatRM(Number(rec.epf_employer||0)+Number(rec.socso_employer||0)+Number(rec.eis_employer||0))}</td></tr>
     </tbody></table>
     <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.4">${isBm?'Caruman majikan ditanggung syarikat — tidak ditolak dari gaji pekerja.':'Employer contributions are borne by the company — not deducted from employee net pay.'}</div>
+    ${(tn && (tn.kwsp_no || tn.perkeso_no || tn.lhdn_e_no)) ? `<div class="pdoc-employer-nos" style="font-size:11px;color:#64748b;margin-top:4px;line-height:1.4">${isBm?'No. Majikan':'Employer No.'}: ${[tn.kwsp_no ? 'KWSP '+_aiEscapeHtml(tn.kwsp_no) : '', tn.perkeso_no ? 'PERKESO '+_aiEscapeHtml(tn.perkeso_no) : '', tn.lhdn_e_no ? (isBm?'LHDN (E) ':'LHDN (E) ')+_aiEscapeHtml(tn.lhdn_e_no) : ''].filter(Boolean).join(' · ')}</div>` : ''}
     <div class="pdoc-footer-note">${isBm?'Slip gaji janaan komputer · Tiada tandatangan diperlukan':'Computer-generated payslip · No signature required'}</div>
   </div>`
 }
@@ -30150,32 +30153,81 @@ function _ageFromIC(icNo) {
   return age
 }
 
+// PERKESO band tables (Act 4 Third Schedule + Act 800 Second Schedule), wage ceiling RM6,000 from 1 Oct 2024.
+// Source: https://www.perkeso.gov.my/perkhidmatan-kami/majikan-pekerja/kadar-caruman.html
+//   and the Akta 4 / Akta 800 Jadual Caruman PDFs on perkeso.gov.my (Pekeliling Majikan Bil. 2/2022 layout, extended to RM6,000).
+// Row = [band upper limit RM, Cat 1 employer, Cat 1 employee, EIS employer = EIS employee]. Cat 2 (age 60+) employer = Cat 1 employer − Cat 1 employee, employee 0.
+// Wages above RM6,000 use the RM6,000 row. Lindung 24 Jam (SKBBK) employee share is NOT included (voluntary for local workers).
+const SOCSO_EIS_BANDS = [[30,0.40,0.10,0.05],[50,0.70,0.20,0.10],[70,1.10,0.30,0.15],[100,1.50,0.40,0.20],[140,2.10,0.60,0.25],[200,2.95,0.85,0.35],[300,4.35,1.25,0.5],[400,6.15,1.75,0.7],[500,7.85,2.25,0.9],[600,9.65,2.75,1.1],[700,11.35,3.25,1.3],[800,13.15,3.75,1.5],[900,14.85,4.25,1.7],[1000,16.65,4.75,1.9],[1100,18.35,5.25,2.1],[1200,20.15,5.75,2.3],[1300,21.85,6.25,2.5],[1400,23.65,6.75,2.7],[1500,25.35,7.25,2.9],[1600,27.15,7.75,3.1],[1700,28.85,8.25,3.3],[1800,30.65,8.75,3.5],[1900,32.35,9.25,3.7],[2000,34.15,9.75,3.9],[2100,35.85,10.25,4.1],[2200,37.65,10.75,4.3],[2300,39.35,11.25,4.5],[2400,41.15,11.75,4.7],[2500,42.85,12.25,4.9],[2600,44.65,12.75,5.1],[2700,46.35,13.25,5.3],[2800,48.15,13.75,5.5],[2900,49.85,14.25,5.7],[3000,51.65,14.75,5.9],[3100,53.35,15.25,6.1],[3200,55.15,15.75,6.3],[3300,56.85,16.25,6.5],[3400,58.65,16.75,6.7],[3500,60.35,17.25,6.9],[3600,62.15,17.75,7.1],[3700,63.85,18.25,7.3],[3800,65.65,18.75,7.5],[3900,67.35,19.25,7.7],[4000,69.15,19.75,7.9],[4100,70.85,20.25,8.1],[4200,72.65,20.75,8.3],[4300,74.35,21.25,8.5],[4400,76.15,21.75,8.7],[4500,77.85,22.25,8.9],[4600,79.65,22.75,9.1],[4700,81.35,23.25,9.3],[4800,83.15,23.75,9.5],[4900,84.85,24.25,9.7],[5000,86.65,24.75,9.9],[5100,88.35,25.25,10.1],[5200,90.15,25.75,10.3],[5300,91.85,26.25,10.5],[5400,93.65,26.75,10.7],[5500,95.35,27.25,10.9],[5600,97.15,27.75,11.1],[5700,98.85,28.25,11.3],[5800,100.65,28.75,11.5],[5900,102.35,29.25,11.7],[6000,104.15,29.75,11.9]]
+function _socsoEisBand(wage) {
+  const w = Number(wage) || 0
+  if(w <= 0) return null
+  for(const row of SOCSO_EIS_BANDS) if(w <= row[0]) return row
+  return SOCSO_EIS_BANDS[SOCSO_EIS_BANDS.length - 1]
+}
+// Per allowance TYPE (SD_ALLOWANCE_TYPES keys): which statutory wages include it. Tenant override in tenants.config.payroll_allowance_flags.
+// Defaults: EPF/SOCSO count fixed cash allowances as wages except travel; PCB taxes them except travel (LHDN exemption up to RM6,000/yr).
+const PAYROLL_ALLOWANCE_FLAG_DEFAULTS = {
+  transport: { epf:false, socso:false, pcb:false },
+  meal:      { epf:true,  socso:true,  pcb:true },
+  housing:   { epf:true,  socso:true,  pcb:true },
+  phone:     { epf:true,  socso:true,  pcb:true },
+  other:     { epf:true,  socso:true,  pcb:true },
+}
+function _payrollAllowanceFlags() {
+  const cfg = (APP && APP.tenant && APP.tenant.config && APP.tenant.config.payroll_allowance_flags) || {}
+  const out = {}
+  Object.keys(PAYROLL_ALLOWANCE_FLAG_DEFAULTS).forEach(k => {
+    const d = PAYROLL_ALLOWANCE_FLAG_DEFAULTS[k], c = cfg[k] || {}
+    out[k] = { epf: c.epf==null ? d.epf : !!c.epf, socso: c.socso==null ? d.socso : !!c.socso, pcb: c.pcb==null ? d.pcb : !!c.pcb }
+  })
+  return out
+}
+// Fixed allowances on the employee: emp.allowances [{type, amount}] (SD slots) or fixed_allowance_type_N / fixed_allowance_N columns.
+function _payrollEmpAllowances(employee) {
+  const list = []
+  if(employee && Array.isArray(employee.allowances)) {
+    employee.allowances.slice(0,3).forEach(a => { const amt = Number(a && a.amount) || 0; if(amt > 0) list.push({ type: (a.type||'other'), amount: amt }) })
+    return list
+  }
+  for(let i=1;i<=3;i++) {
+    const amt = Number(employee && employee['fixed_allowance_'+i]) || 0
+    if(amt > 0) list.push({ type: (employee['fixed_allowance_type_'+i] || 'other'), amount: amt })
+  }
+  return list
+}
+
 function _calcPayroll(employee) {
   const r2 = n => Math.round(n * 100) / 100
   const b = Number(employee?.basic_salary) || 0
   const age = _ageFromIC(employee?.ic_no)
   const isSenior = age !== null && age >= 60 // no IC on file → assumed under 60
 
+  // Fixed allowances flagged per type are added to the matching statutory wage. No fixed allowances → basic only (as before).
+  const allow = _payrollEmpAllowances(employee)
+  const flags = _payrollAllowanceFlags()
+  let epfAdd = 0, socsoAdd = 0, pcbAdd = 0
+  allow.forEach(a => { const f = flags[a.type] || flags.other; if(f.epf) epfAdd += a.amount; if(f.socso) socsoAdd += a.amount; if(f.pcb) pcbAdd += a.amount })
+  const epfWage = b + epfAdd, socsoWageRaw = b + socsoAdd, pcbWage = b + pcbAdd
+
   // EPF (KWSP) — Third Schedule, simplified to the published percentage tiers
   // (age 60+: employee 0%; employer 4% ≤RM5,000 wage, 6.5% above)
-  const epf_employee = isSenior ? 0 : r2(b * 0.11)
-  const epf_employer = isSenior ? r2(b * (b <= 5000 ? 0.04 : 0.065)) : r2(b * (b <= 5000 ? 0.13 : 0.12))
+  const epf_employee = isSenior ? 0 : r2(epfWage * 0.11)
+  const epf_employer = isSenior ? r2(epfWage * (epfWage <= 5000 ? 0.04 : 0.065)) : r2(epfWage * (epfWage <= 5000 ? 0.13 : 0.12))
 
-  // SOCSO (PERKESO) — wage ceiling RM5,000; age 60+ = Category 2 (employment
-  // injury only, employer-only), under 60 = Category 1 (both schemes)
-  const socsoWage = Math.min(b, 5000)
-  const socso_employee = isSenior ? 0 : r2(socsoWage * 0.005)
-  const socso_employer = isSenior ? r2(socsoWage * 0.0125) : r2(socsoWage * 0.0175)
+  // SOCSO (PERKESO) — band table above, ceiling RM6,000; age 60+ = Category 2 (employment injury only, employer-only)
+  const band = _socsoEisBand(socsoWageRaw)
+  const socso_employee = (!band || isSenior) ? 0 : band[2]
+  const socso_employer = !band ? 0 : (isSenior ? r2(band[1] - band[2]) : band[1])
 
-  // EIS — wage ceiling RM5,000; not applicable from age 60 onward
-  const eisWage = Math.min(b, 5000)
-  const eis_employee = isSenior ? 0 : r2(eisWage * 0.002)
-  const eis_employer = isSenior ? 0 : r2(eisWage * 0.002)
+  // EIS (Act 800) — same bands, ceiling RM6,000; not applicable from age 60 onward
+  const eis_employee = (!band || isSenior) ? 0 : band[3]
+  const eis_employer = (!band || isSenior) ? 0 : band[3]
 
   // PCB — progressive resident-individual tax brackets on annualized chargeable
   // income (wage×12 − EPF relief capped RM4,000/yr − RM9,000 personal relief),
   // divided back to a monthly estimate. NO other individual relief applied.
-  const annualWage = b * 12
+  const annualWage = pcbWage * 12
   const epfRelief = Math.min(epf_employee * 12, 4000)
   const chargeableIncome = Math.max(0, annualWage - epfRelief - 9000)
   const PCB_BRACKETS = [
@@ -30196,8 +30248,14 @@ function _calcPayroll(employee) {
   const zakatOn = !!(employee && (employee.zakat_enabled === true || employee.zakat_enabled === 'true' || employee.zakat_enabled === 1))
   const zakat = zakatOn ? r2(Math.max(0, Number(employee.zakat_amount) || 0)) : 0
 
-  const net_pay = r2(b - epf_employee - socso_employee - eis_employee - pcb - zakat)
-  return { basic_salary: b, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, zakat, net_pay }
+  const allowTotal = allow.reduce((s,a) => s + a.amount, 0)
+  const net_pay = r2(b + allowTotal - epf_employee - socso_employee - eis_employee - pcb - zakat)
+  const out = { basic_salary: b, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, zakat, net_pay }
+  // Only employees with fixed allowances carry allowance fields, so payroll re-runs never wipe SD-entered allowances for others.
+  if(allow.length && !Array.isArray(employee.allowances)) {
+    for(let i=1;i<=3;i++) { const a = allow[i-1]; out['allowance_type_'+i] = a ? a.type : null; out['allowance_'+i] = a ? r2(a.amount) : 0 }
+  }
+  return out
 }
 
 function renderHR(params={}) {
@@ -30265,12 +30323,28 @@ async function renderEmployeeList() {
   <div style="background:var(--warning-bg,#fef3c7);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-2);margin-bottom:16px">
     <i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${isBm?HR_DISCLAIMER_BM:HR_DISCLAIMER_EN}
   </div>
+  <div id="emp-dept-bar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px"></div>
   <div id="emp-sort-bar"></div>
   <div class="card"><div id="emp-list-wrap" style="overflow-x:auto"><div class="empty-state" style="padding:40px"><div class="spinner"></div></div></div></div>`
   const wrap = document.getElementById('emp-list-wrap')
-  const {data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary,email')
+  let {data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary,email,department')
     .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})
+  if(error && /department/i.test(error.message||'')) ({data, error} = await sb.from('employees').select('id,name,ic_no,position,basic_salary,email')
+    .eq('tenant_id',APP.tenant.id).is('deleted_at',null).order('name',{ascending:true})) // HR profile SQL not run yet
   let empRows = data || []
+  // Department filter (P5) — options from this tenant's employees; choice kept for the session
+  const _depts = [...new Set(empRows.map(r => String(r.department||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b))
+  const _deptSel = window._hrDeptFilter || ''
+  const _deptBar = document.getElementById('emp-dept-bar')
+  if(_deptBar && _depts.length) {
+    _deptBar.innerHTML = `<label class="form-label" style="margin:0;white-space:nowrap" for="emp-dept-filter">${isBm?'Jabatan':'Department'}</label>
+      <select id="emp-dept-filter" class="form-select" style="max-width:220px" onchange="window._hrDeptFilter=this.value;renderEmployeeList()">
+        <option value="">${isBm?'Semua jabatan':'All departments'} (${empRows.length})</option>
+        ${_depts.map(d=>`<option value="${_aiEscapeHtml(d)}" ${d===_deptSel?'selected':''}>${_aiEscapeHtml(d)} (${empRows.filter(r=>String(r.department||'').trim()===d).length})</option>`).join('')}
+        ${empRows.some(r=>!String(r.department||'').trim()) ? `<option value="__none" ${_deptSel==='__none'?'selected':''}>${isBm?'Tiada jabatan':'No department'}</option>` : ''}
+      </select>`
+  }
+  if(_deptSel && (_depts.includes(_deptSel) || _deptSel==='__none')) empRows = empRows.filter(r => _deptSel==='__none' ? !String(r.department||'').trim() : String(r.department||'').trim()===_deptSel)
   empRows = _listApplySort(empRows, 'emp', {
     name: r => r.name || '',
     position: r => r.position || '',
@@ -30294,7 +30368,7 @@ async function renderEmployeeList() {
     <td><input type="checkbox" class="hr-emp-check" value="${e.id}" onchange="_hrEmpSyncAllBox()"></td>
     <td>${_aiEscapeHtml(e.name)}</td>
     <td style="white-space:nowrap">${e.ic_no||'-'}</td>
-    <td>${_aiEscapeHtml(e.position||'-')}</td>
+    <td>${_aiEscapeHtml([e.position, e.department].filter(Boolean).join(' · ')||'-')}</td>
     <td style="text-align:right;white-space:nowrap">${formatRM(e.basic_salary)}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-sm" style="padding:4px 8px;margin-right:4px" onclick="openPage('hr',{view:'employee-form',id:'${e.id}'})"><i class="ti ti-edit"></i></button>
@@ -32745,6 +32819,23 @@ async function renderSalaryDisbursement(month, year, reviewId) {
       })
     }
   } catch(e) { console.warn('SD cash advance fetch', e) }
+  // Employee fixed allowances (Employee form) prefill empty allowance slots while the batch is
+  // still editable. Statutory is swapped to the allowance-aware calc only when the stored
+  // figures still equal the basic-only calc (i.e. nobody edited them). Soft-fails before SQL.
+  const _sdFa = {}
+  let _sdFaLocked = false
+  try {
+    const {data: bRow} = await sb.from('salary_disbursement_batches').select('status')
+      .eq('tenant_id',APP.tenant.id).eq('month',month).eq('year',year).is('deleted_at',null).maybeSingle()
+    _sdFaLocked = !!(bRow && ['shared','pending_review','approved'].includes(bRow.status))
+    const ids = [...new Set(data.map(r => r.employee_id).filter(Boolean))]
+    if(ids.length && !_sdFaLocked) {
+      const {data: faRows, error: faErr} = await sb.from('employees')
+        .select('id,fixed_allowance_type_1,fixed_allowance_1,fixed_allowance_type_2,fixed_allowance_2,fixed_allowance_type_3,fixed_allowance_3')
+        .eq('tenant_id',APP.tenant.id).in('id', ids)
+      if(!faErr) (faRows||[]).forEach(e => { _sdFa[e.id] = e })
+    }
+  } catch(e) { console.warn('SD fixed allowance fetch', e) }
   // Auto-fill statutory from current employee calc when record is empty/stale
   // (user can still edit; Save persists). Keeps SD in sync with Run Payroll rules.
   ;(data||[]).forEach(r => {
@@ -32770,6 +32861,18 @@ async function renderSalaryDisbursement(month, year, reviewId) {
     if(emp.zakat_enabled && Number(emp.zakat_amount)>0 && !(Number(r.zakat)>0)) {
       r.zakat = calc.zakat
     }
+    const fa = _sdFa[r.employee_id]
+    const recHasAllow = [1,2,3].some(i => Number(r['allowance_'+i]) > 0)
+    if(fa && !recHasAllow && [1,2,3].some(i => Number(fa['fixed_allowance_'+i]) > 0)) {
+      const slots = [1,2,3].map(i => ({ type: fa['fixed_allowance_type_'+i] || 'other', amount: Number(fa['fixed_allowance_'+i]) || 0 })).filter(a => a.amount > 0)
+      slots.forEach((a, i) => { r['allowance_type_'+(i+1)] = a.type; r['allowance_'+(i+1)] = a.amount })
+      const base = { basic_salary: r.basic_salary != null ? r.basic_salary : emp.basic_salary, ic_no: emp.ic_no, zakat_enabled: emp.zakat_enabled, zakat_amount: emp.zakat_amount }
+      const basicOnly = _calcPayroll(Object.assign({}, base, { allowances: [] }))
+      const full = _calcPayroll(Object.assign({}, base, { allowances: slots }))
+      const untouched = keys.every(k => Math.abs(Number(r[k]||0) - Number(basicOnly[k]||0)) < 0.01)
+      if(untouched) keys.forEach(k => { r[k] = full[k] })
+      r._sdFaPrefilled = true
+    }
   })
   // Commission earned last month, payable this period — read-only line,
   // separate from allowance_1/2/3 (see Sales Commission module). Snapshot
@@ -32781,6 +32884,13 @@ async function renderSalaryDisbursement(month, year, reviewId) {
       r.commission = total
     }))
   } catch(e) { console.warn('SD commission fetch', e); data.forEach(r => { r.commission = r.commission || 0 }) }
+  // Net for rows whose allowances were just prefilled — same formula as _sdRowValues
+  data.forEach(r => {
+    if(!r._sdFaPrefilled) return
+    const n = (k) => Number(r[k]||0)
+    r.net_pay = Math.round((n('basic_salary') + n('allowance_1') + n('allowance_2') + n('allowance_3') + n('commission') + n('ot_amount')
+      - n('epf_employee') - n('socso_employee') - n('eis_employee') - n('pcb') - n('zakat') - n('advance') - n('deduction_1') - n('deduction_2')) * 100) / 100
+  })
   _sdRecords = data
 
   const sumSalary = data.reduce((s,r)=>s+Number(r.basic_salary||0),0)
@@ -36413,9 +36523,33 @@ async function _leaveLoadTable() {
   </tr>`).join('')}</tbody></table>`
 }
 
+// Annual leave balance = entitlement + carried − approved annual. In the opening year, a set opening balance
+// (balance remaining at go-live, e.g. imported from the old system) replaces entitlement + carry for that year.
+// Entitlement = employees.annual_leave_days (null → ANNUAL_LEAVE_ENTITLEMENT). Carry forward into
+// year Y = min(cap, max(0, balance of Y−1)); cap = tenants.config.leave_carry_cap (0/blank → no carry).
+function _leaveAnnualBalance(emp, usedByYear, year) {
+  const cap = Math.max(0, Number(APP?.tenant?.config?.leave_carry_cap) || 0)
+  const ent = (emp && emp.annual_leave_days != null && emp.annual_leave_days !== '') ? Number(emp.annual_leave_days) : ANNUAL_LEAVE_ENTITLEMENT
+  const oy = Number(emp && emp.leave_opening_year) || null
+  const joinY = emp && emp.join_date ? new Date(emp.join_date).getFullYear() : null
+  let y0 = oy || (cap > 0 ? year - 1 : year)
+  if(!oy && joinY && joinY > y0) y0 = joinY
+  if(y0 > year) y0 = year
+  let carried = 0, res = { entitlement: ent, carried: 0, opening: 0, used: 0, balance: ent }
+  for(let y = y0; y <= year; y++) {
+    const isOpen = !!(oy && y === oy && emp.leave_opening_balance != null && emp.leave_opening_balance !== '')
+    const opening = isOpen ? (Number(emp.leave_opening_balance) || 0) : 0
+    const used = Number((usedByYear[y]) || 0)
+    const bal = Math.round(((isOpen ? opening : ent + carried) - used) * 100) / 100
+    res = { entitlement: isOpen ? 0 : ent, carried: isOpen ? 0 : carried, opening, used, balance: bal }
+    carried = cap > 0 ? Math.min(cap, Math.max(0, bal)) : 0
+  }
+  return res
+}
 async function _leaveLoadBalances(employees) {
   const isBm = APP.language==='bm'
-  const t = isBm ? { employee:'Pekerja', balance:'Baki', usedOf:'hari digunakan' } : { employee:'Employee', balance:'Balance', usedOf:'days used' }
+  const t = isBm ? { employee:'Pekerja', balance:'Baki', usedOf:'hari digunakan', days:'hari', ent:'Kelayakan', cf:'Bawa ke hadapan', open:'Baki pembukaan', used:'Digunakan' }
+    : { employee:'Employee', balance:'Balance', usedOf:'days used', days:'days', ent:'Entitlement', cf:'Carried forward', open:'Opening balance', used:'Used' }
   const wrap = document.getElementById('lv-balance-wrap')
   if(!employees || employees.length===0) { wrap.innerHTML = `<p style="color:var(--text-3);font-size:13px">-</p>`; return }
   const currentYear = new Date().getFullYear()
@@ -36423,13 +36557,22 @@ async function _leaveLoadBalances(employees) {
     .eq('tenant_id',APP.tenant.id).eq('status','approved').eq('leave_type','annual').is('deleted_at',null)
   const usedMap = {}
   ;(approvedAnnual||[]).forEach(l=>{
-    if(new Date(l.start_date).getFullYear() !== currentYear) return
-    usedMap[l.employee_id] = (usedMap[l.employee_id]||0) + Number(l.days_count||0)
+    const y = new Date(l.start_date).getFullYear()
+    const m = usedMap[l.employee_id] = usedMap[l.employee_id] || {}
+    m[y] = (m[y]||0) + Number(l.days_count||0)
   })
+  // Leave profile columns (soft-fail before the HR profile SQL is run → default 14, no carry)
+  const prof = {}
+  try {
+    const {data: lp, error: lpErr} = await sb.from('employees').select('id,annual_leave_days,leave_opening_balance,leave_opening_year,join_date')
+      .eq('tenant_id',APP.tenant.id).in('id', employees.map(e=>e.id))
+    if(!lpErr) (lp||[]).forEach(r => { prof[r.id] = r })
+  } catch(e) {}
   wrap.innerHTML = `<table><thead><tr><th>${t.employee}</th><th style="text-align:right">${t.balance}</th></tr></thead>
   <tbody>${employees.map(e=>{
-    const used = usedMap[e.id] || 0
-    return `<tr><td>${_aiEscapeHtml(e.name)}</td><td style="text-align:right">${used}/${ANNUAL_LEAVE_ENTITLEMENT} ${t.usedOf}</td></tr>`
+    const b = _leaveAnnualBalance(Object.assign({}, e, prof[e.id]||{}), usedMap[e.id] || {}, currentYear)
+    const tip = `${t.open} ${b.opening} · ${t.ent} ${b.entitlement} · ${t.cf} ${b.carried} · ${t.used} ${b.used}`
+    return `<tr><td>${_aiEscapeHtml(e.name)}</td><td style="text-align:right" title="${_aiEscapeHtml(tip)}"><strong>${b.balance}</strong> ${t.days}<div style="font-size:11px;color:var(--text-3)">${b.used}/${b.entitlement + b.carried + b.opening} ${t.usedOf}</div></td></tr>`
   }).join('')}</tbody></table>`
 }
 
@@ -40377,13 +40520,13 @@ if('serviceWorker' in navigator){
 <script src="./sd-table-fit.js?v=9"></script>
 <script src="./sd-dark-contrast.js?v=1"></script>
 <script src="./payslip-scroll.js?v=2"></script>
-<script src="./payslip-statutory-partial-a.js?v=2"></script>
+<script src="./payslip-statutory-partial-a.js?v=3"></script>
 <script src="./payslip-statutory-partial-b.js?v=3"></script>
 <script src="./payslip-statutory-partial.js?v=2"></script>
 <script src="./payslip-pay-date.js?v=1"></script>
 <script src="./ot-payroll-resync.js?v=1"></script>
 <script src="./sd-mobile-cards.js?v=3"></script>
-<script src="./sd-tools.js?v=2"></script>
+<script src="./sd-tools.js?v=3"></script>
 <script src="./sd-signatures.js?v=1"></script>
 <script src="./sd-mobile-view.js?v=3"></script>
 <script src="./payslip-accum-outstanding.js?v=1"></script>
@@ -40538,5 +40681,7 @@ if('serviceWorker' in navigator){
 <script src="./dk-purch.js?v=1"></script>
 <script src="./dk-ops.js?v=1"></script>
 <script src="./dk-acct.js?v=1"></script>
+<script src="./hr-profile.js?v=1"></script>
+<script src="./hr-import.js?v=1"></script>
 </body>
 </html>
