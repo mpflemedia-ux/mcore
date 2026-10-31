@@ -76,3 +76,9 @@
     }
   };
 })();
+
+// Auto-hook: if SD report or payroll page has a container, render
+document.addEventListener('DOMContentLoaded', function () {
+  var root = document.getElementById('payroll-recon-root');
+  if (root && typeof renderPayrollRecon === 'function') renderPayrollRecon();
+});
