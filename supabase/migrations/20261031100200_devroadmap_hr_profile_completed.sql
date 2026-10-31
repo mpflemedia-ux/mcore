@@ -11,7 +11,7 @@ begin
     ('HR P3: data health check before payroll', 'Run Payroll lists employees missing IC, EPF no or bank account with links to fix, and asks to confirm before generating when selected staff are incomplete.'),
     ('HR P4: contract expiry reminder', 'hr_contract_remind(): contract staff ending within 30 days -> one bell + push per employee per end date to owner/admin/HR, deep link to the employee form. Daily pg_cron + on app open.'),
     ('HR P5: department filter + totals', 'Employee list department filter with counts; Salary Disbursement department totals (staff, gross, net, employer contribution, company cost).'),
-    ('HR P6: leave carry forward with cap', 'Annual leave balance = opening balance + entitlement + carried forward (capped by tenant leave_carry_cap) - used, per year from opening year / join year. Tooltip breakdown.'),
+    ('HR P6: leave carry forward with cap', 'Annual leave balance per year = entitlement + carried forward (capped by tenant leave_carry_cap) - used, starting from join year. In the go-live year the balance at go-live replaces entitlement + carry. Tooltip breakdown.'),
     ('HR P7: employer numbers on payslip', 'Payslip shows employer KWSP, PERKESO and LHDN (E) numbers under the employer contribution note.')
   ) as t(title, descr) loop
     begin
