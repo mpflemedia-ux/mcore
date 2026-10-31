@@ -99,6 +99,17 @@
 
   function regLists() {
     if (!window.DK || !DK.list) return;
+    /* HR & Payroll → Payroll History: card per payslip (name · net pay · period chip), period chips filter, lazy 20.
+       PDF / Print / WhatsApp hand off to the payslip view (payslip-cards owns the A4/PDF/WAD flow) via a one-shot flag. */
+    DK.list({ key: 'prh', sel: '#pr-hist-wrap', fns: ['renderEmployeeList'], title: 1, sub: -1, party: -1, date: -1, amount: 2, status: 0, bulk: false,
+      emptyText: L('No payroll records yet.', 'Belum ada rekod gaji.'),
+      open: function (id) { openPage('hr', { view: 'payslip', id: id }); },
+      extra: function (it) {
+        var go = function (k) { try { sessionStorage.setItem('psc_act', JSON.stringify({ id: it.id, k: k, t: Date.now() })); } catch (e) {} openPage('hr', { view: 'payslip', id: it.id }); };
+        return [{ label: 'PDF', icon: 'ti-file-download', onClick: function () { go('pdf'); } },
+          { label: L('Print', 'Cetak'), icon: 'ti-printer', onClick: function () { go('print'); } }]
+          .concat(window.WAD ? [{ label: 'WhatsApp', icon: 'ti-brand-whatsapp', cls: 'btn-outline dk-wa', onClick: function () { go('share'); } }] : []);
+      } });
     DK.list({ key: 'exp', sel: '#exp-table-wrap', doc: 'exp', fns: ['_expRenderListTable', 'renderExpenseClaims'], title: 2, party: 0, date: 1, amount: 3, status: 4, table: 'expense_claims', emptyText: L('No expense claims yet.', 'Belum ada tuntutan perbelanjaan.'), extra: extra('exp') });
     DK.list({ key: 'leave', sel: '#lv-table-wrap', doc: 'leave', fns: ['_leaveLoadTable', 'renderLeave'], title: 0, sub: 1, date: 2, amount: -1, status: 5, table: 'leave_requests', emptyText: L('No leave requests yet.', 'Belum ada permohonan cuti.'), extra: extra('leave') });
     DK.list({ key: 'adv', sel: '#adv-table-wrap', doc: 'adv', fns: ['_advLoadTable', 'renderAdvance'], title: 0, amount: 1, status: 3, date: -1, table: 'cash_advances', emptyText: L('No cash advances yet.', 'Belum ada pendahuluan tunai.'), extra: extra('adv') });

@@ -74,7 +74,7 @@
     '.psc-bar .btn,.psc-tbar .btn,.psc-tile .psc-acts .btn{white-space:nowrap;justify-content:center;gap:6px}' +
     '.psc-bar .btn{flex:1;padding:9px 8px;font-size:13px;min-height:40px}.psc-bar .btn:last-child{flex:1.45}' +
     '.btn.psc-wa{background:#25D366;border-color:#25D366;color:#06260f;font-weight:600}.btn.psc-wa:hover{filter:brightness(.95)}' +
-    '@media(max-width:900px){.psc-bar{position:fixed;left:0;right:0;bottom:0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}#main.psc-has-bar{padding-bottom:84px!important}}' +
+    '@media(max-width:900px){.psc-bar{position:fixed;left:0;right:0;bottom:0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}#main:has(> .psc-bar){padding-bottom:84px!important}}' +
     '@media(min-width:901px){.psc-bar{position:sticky;bottom:0;max-width:640px;margin:8px auto 0;border:1px solid var(--border);border-radius:var(--radius)}}' +
     '.psc-tbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.psc-tbar .btn{min-height:36px}.psc-tile .psc-meta b{font-size:15px;font-weight:800;color:var(--text)}@media(max-width:700px){.psc-tbar{display:grid;grid-template-columns:1fr 1fr;width:100%}.psc-tbar .btn{width:100%}}' +
     '.psc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}@media(max-width:1100px){.psc-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.psc-grid{grid-template-columns:1fr}}' +
@@ -273,6 +273,11 @@
       bar.querySelector('[data-psc=print]').onclick = function () { printNow(null); };
       bar.querySelector('[data-psc=pdf]').onclick = function () { pdfDownload([m.id]); };
       var sb2 = bar.querySelector('[data-psc=share]'); if (sb2) sb2.onclick = function () { shareOne(m.id); };
+      try { // one-shot action handed over from the Payroll History cards (dk-staff.js 'prh')
+        var pa = JSON.parse(sessionStorage.getItem('psc_act') || 'null');
+        if (pa && pa.id === m.id && Date.now() - pa.t < 60000) { sessionStorage.removeItem('psc_act');
+          setTimeout(function () { if (pa.k === 'pdf') pdfDownload([m.id]); else if (pa.k === 'print') printNow(null); else if (pa.k === 'share' && sb2) shareOne(m.id); }, 400); }
+      } catch (e) {}
       buildPrint(main, [m]);
       loadSid([m]).then(function (hit) { if (hit && v.isConnected) { v.innerHTML = cardHtml(m, false); buildPrint(main, [m]); } });
     } catch (e) { console.warn('[payslip-cards] detail', e); fallback(main); }

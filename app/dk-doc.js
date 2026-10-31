@@ -1,6 +1,6 @@
 /* dk-doc.js — M-Core document kit (window.DKD). Reads the final .pdoc paper markup into a model, renders it as an
    on-screen card view (all widths) with a sticky action footer, keeps the paper hidden on screen (.dk-src) but printed
-   (light A4, "like SD"), adds print signature boxes, and builds an A4 PDF with pdf-lib. Tokens only on screen. v1 */
+   (light A4, "like SD"), adds print signature boxes, and builds an A4 PDF with pdf-lib. Tokens only on screen. v3 (docked sticky action bar) */
 (function () {
   if (window.DKD) return;
   function bm() { try { return APP.language === 'bm'; } catch (e) { return false; } }
@@ -28,8 +28,15 @@
     '.dk-doc-note{font-size:13px;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}' +
     '.dk-doc-note img{max-width:160px;height:auto;display:block;margin:6px 0;background:#fff;border-radius:var(--radius-sm,6px)}' +
     '.dk-doc-ft{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.dk-doc-ft .btn{white-space:nowrap}' +
-    '@media(max-width:900px){.dk-doc-ft.sticky{position:sticky;bottom:0;z-index:30;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;box-shadow:var(--shadow-lg,var(--shadow));' +
-    'margin:0 0 calc(4px + env(safe-area-inset-bottom,0px))}.dk-doc-ft.sticky .btn{flex:1 1 auto}}' +
+    /* v2 sticky action bar: a docked bar (solid page bg + top border token), not a floating card. It is the LAST child of
+       .dk-doc so it only pins while the document is on screen, then parks under the last card (signatures/timeline) —
+       never on top of it once you reach the end. Full width of the doc column, safe-area aware, single-line buttons. */
+    '.dk-doc-ft.sticky{position:sticky;bottom:calc(-1 * var(--dk-ft-off,0px));z-index:30;background:var(--bg);border-top:1px solid var(--border);margin:0;' +
+    'padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}' +
+    '.dk-doc-ft.sticky .btn{flex:1 1 0;min-width:max-content;justify-content:center}' +
+    '@media(max-width:900px){.dk-doc-ft.sticky{padding-right:60px}}' + /* clear the bottom-right FAB stack, same as SD */
+    '@media(min-width:901px){.dk-doc-ft.sticky{position:static;border-top:0;background:transparent;padding:4px 0 0}.dk-doc-ft.sticky .btn{flex:0 0 auto}}' +
+    '.dk-doc:has(>.dk-doc-ft.sticky){scroll-margin-bottom:64px}' +
     '.dk-sigbox{display:none}' +
     '.pdoc.dk-gen .pdoc-table th{text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em}.pdoc.dk-gen .pdoc-table td{padding:8px 10px;vertical-align:top}.pdoc.dk-gen .pdoc-table .r{text-align:right;white-space:nowrap}' +
     '.pdoc.dk-gen .dk-ptot{max-width:300px;margin:12px 0 0 auto}.pdoc.dk-gen .dk-ptot>div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:13px}.pdoc.dk-gen .dk-ptot>div.g{font-weight:800;font-size:15px;margin-top:4px;padding-top:8px}' +
@@ -109,6 +116,14 @@
     return h;
   }
   /* mount(pdoc, {doc, id, ref, actions:[{label, icon, cls, onClick}], sign:true, print:true, pdf:true, share:true, partyLabel, name}) */
+  /* Sticky offsets are measured from the scroll container's PADDING edge, so #main's padding-bottom (24px, or 84px when a
+     payslip bar class lingers) left the bar hovering above the screen edge with content peeking under it. Pull it down by
+     the scroller's actual padding-bottom so it docks flush to the bottom of the viewport. */
+  function scroller(el) { for (var n = el.parentElement; n && n !== document.body; n = n.parentElement) { var oy = getComputedStyle(n).overflowY; if (oy === 'auto' || oy === 'scroll') return n; } return null; }
+  function dockFt(ft) {
+    var fit = function () { if (!ft.isConnected) { window.removeEventListener('resize', fit); return; } var sc = scroller(ft); var pb = sc ? parseFloat(getComputedStyle(sc).paddingBottom) || 0 : 0; ft.style.setProperty('--dk-ft-off', pb + 'px'); };
+    fit(); window.addEventListener('resize', fit);
+  }
   function mount(p, o) {
     addCss(); o = o || {};
     if (!p || !p.parentNode) return null;
@@ -129,7 +144,7 @@
       b.innerHTML = (a.icon ? '<i class="ti ' + a.icon + '"></i> ' : '') + esc(a.label); b.onclick = function () { a.onClick(b); };
       if (a.disabled) b.disabled = true; ft.appendChild(b);
     });
-    if (!acts.length) ft.remove();
+    if (!acts.length) ft.remove(); else dockFt(ft);
     if (o.sign !== false && o.doc && window.DKSign && DKSign.has(o.doc)) DKSign.panel(w.querySelector('.dk-doc-sign'), o.doc, o.id, { pdoc: p, ref: o.ref });
     if (o.id && o.doc && o.timeline !== false && window.DK && DK.timeline) {
       var tl = w.querySelector('.dk-doc-tl'); tl.className = 'dk-doc-card dk-doc-tl';
