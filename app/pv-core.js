@@ -202,7 +202,7 @@
     var oldNotify = window._pvbNotify;
     if (typeof oldNotify === 'function' && !oldNotify._pvx) {
       var n = function (evt, o) {
-        if (evt === 'bill_created') return oldNotify.apply(this, arguments);
+        if (evt === 'bill_created') return Promise.resolve(0); // DB trigger dk__purch_notify sends purchasing.bill_new (no amount); the client copy duplicated it with RM in the push
         return X.notify(evt, Object.assign({ kind: 'pv' }, o || {}));
       };
       n._pvx = true; window._pvbNotify = n;
