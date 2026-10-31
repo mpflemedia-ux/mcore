@@ -27,12 +27,9 @@
     /* dashboard "insights refreshed" notices are dropped from the bell */
     wrapFn('_dbInsightPushNotif', function (o) { return function () { if (NT.on) return Promise.resolve(); return o.apply(this, arguments); }; });
     /* approval results -> requester (Untuk Kau) */
-    wrapFn('_tgNotifyEmployee', function (o) { return function (empId, text) {
-      var r = o.apply(this, arguments);
-      if (NT.on && empId) { var s = strip(text), v = /Cuti|Leave/i.test(s.t) ? 'leave' : /Outstation/i.test(s.t) ? 'attendance' : /Pendahuluan|Advance/i.test(s.t) ? 'advance' : 'leave', ok = /dilulus|approved/i.test(s.t);
-        NT.userForEmp(empId).then(function (u) { if (u) NT.notify({ users: [u], kind: 'for_you', type: 'approval.result', title: s.t, body: s.b, link: { page: 'hr', params: { view: v }, icon: ok ? 'ti-circle-check' : 'ti-circle-x' } }); }); }
-      return r;
-    }; });
+    /* leave / outstation / advance results: the bell+push row now comes from the DB trigger
+       (dk__staff_notify, notif_audit_01.sql) -> one notification per event, BM/EN per user, no amounts.
+       The old client copy here duplicated it (and pushed the advance amount), so Telegram only. */
     /* support access: tell the client owner when a platform admin enters */
     wrapFn('_enterSupportTenant', function (o) { return function (tid) {
       var r = o.apply(this, arguments);

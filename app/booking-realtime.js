@@ -76,6 +76,8 @@
   var ntTries = 0; (function go() { if (!wrapNT() && ++ntTries < 40) setTimeout(go, 250); })();
   async function bumpBadge() {
     if (!window.sb || !APP.tenant) return;
+    // one badge writer: when bell v2 is on, the bell recomputes (hold bookings already land as rows via insertBell)
+    if (window.NT && NT.on && typeof NT.refresh === 'function') return NT.refresh();
     var since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     var q = await sb.from('bookings').select('id', { count: 'exact', head: true })
       .eq('tenant_id', APP.tenant.id)

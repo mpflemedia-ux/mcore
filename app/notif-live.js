@@ -123,7 +123,7 @@
           var g = by[tid], x = g[0], n = g.length;
           var title = (nm[tid] || '') + (n > 1 ? L(' · ', ' · ') + n + L(' open', ' terbuka') : L(' · open', ' · terbuka'));
           var meta = n > 1 ? g.slice(0, 3).map(function (r) { return r.ref_no; }).join(', ') : ((x.ref_no || '') + ' · ' + (x.title || ''));
-          out.push(esc24({ key: 'sd:' + tid, kind: 'action', cat: 'sd', icon: 'ti-headset', color: 'var(--primary)', ts: x.created_at, title: title, meta: meta, go: ['admin', { view: 'sd_desk', id: n > 1 ? null : x.id }], tenant: tid }, x.created_at));
+          out.push(esc24({ key: 'sd:' + tid, kind: 'action', cat: 'sd', icon: 'ti-headset', color: 'var(--primary)', ts: x.created_at, title: title, meta: meta, go: ['admin', { view: 'sd_desk', id: n > 1 ? null : x.id }], tenant: tid, refs: g.map(function (r) { return r.id; }) }, x.created_at));
         });
       });
     }));

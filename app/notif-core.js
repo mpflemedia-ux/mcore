@@ -69,7 +69,11 @@
     }
     n._k = k;
     n._cat = k === 'activity' ? 'activity' : (n.type && n.type.split('.')[0]) || (c === 'service_desk' ? 'sd' : (c === 'hr' ? 'approval' : 'assigned'));
-    if (NT.TYPES.indexOf(n._cat) < 0) n._cat = k === 'activity' ? 'activity' : 'assigned';
+    if (NT.TYPES.indexOf(n._cat) < 0) {
+      // DB-trigger types (hr.leave_submitted, purchasing.bill_new, finance.dk_ap_due …) -> a settings bucket
+      var ty = String(n.type || '');
+      n._cat = k === 'activity' ? 'activity' : /_submitted$|\.dk_sign/.test(ty) ? 'approval' : 'assigned';
+    }
     return n;
   };
   NT.fetchRows = function (days) {
