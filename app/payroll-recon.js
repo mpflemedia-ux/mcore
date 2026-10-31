@@ -88,3 +88,20 @@
   setTimeout(tryInject, 1500);
   setTimeout(tryInject, 3000);
 })();
+
+// Extra: try to add button next to Add Employee if present
+function addNearAddEmployee() {
+  if (document.getElementById('btn-payroll-recon-inline')) return;
+  var addBtn = Array.from(document.querySelectorAll('button, a')).find(function(el) {
+    return /add employee/i.test(el.textContent || '');
+  });
+  if (!addBtn) return;
+  var btn = document.createElement('button');
+  btn.id = 'btn-payroll-recon-inline';
+  btn.className = 'btn btn-outline';
+  btn.style.cssText = 'margin-left:8px;white-space:nowrap';
+  btn.innerHTML = L('Reconciliation', 'Reconciliation');
+  btn.onclick = function(){ renderPayrollRecon(); };
+  addBtn.parentNode.insertBefore(btn, addBtn.nextSibling);
+}
+setInterval(addNearAddEmployee, 2000);
