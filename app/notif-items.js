@@ -4,7 +4,17 @@
   var L = NT.L, esc = NT.esc;
   function link(n) {
     var l = n.link; if (l && l.page) return [l.page, l.params || {}];
-    if (n.category === 'service_desk') { var ref = (String(n.title).match(/SR-(?:[A-Z0-9]+-)?\d{6}-\d+/) || [])[0]; return [NT.isPA() ? 'admin' : 'servis_saya', NT.isPA() ? { view: 'sd_desk', ref: ref } : { ref: ref }]; }
+    if (n.category === 'service_desk') {
+      var page = NT.isPA() ? 'admin' : 'servis_saya';
+      /* ref_id is the SR's real id, set on every SD notification at insert time (bellFor/bellNew/
+         push-send) -- use it directly so the click opens the request itself (SD.detail via
+         admin.sd_desk's/view.servis_saya's own p.id handling), not just the board/list. Regex-
+         parsing ref_no out of the title and resolving it back to an id via an extra DB round trip
+         (NT.open's p.ref fallback) stays only as a safety net for any row that somehow lacks ref_id. */
+      if (n.ref_table === 'service_requests' && n.ref_id) return [page, NT.isPA() ? { view: 'sd_desk', id: n.ref_id } : { id: n.ref_id }];
+      var ref = (String(n.title).match(/SR-(?:[A-Z0-9]+-)?\d{6}-\d+/) || [])[0];
+      return [page, NT.isPA() ? { view: 'sd_desk', ref: ref } : { ref: ref }];
+    }
     var c = n.category; return [{ sales: 'sales', inventory: 'inventory', purchasing: 'purchasing', finance: 'accounting', hr: 'hr', onboarding: 'client_onboarding' }[c] || 'dashboard', {}];
   }
   var ICON = { sd: 'ti-headset', approval: 'ti-circle-check', assigned: 'ti-user-check', overdue: 'ti-file-invoice', contract: 'ti-file-time', activity: 'ti-activity' };
