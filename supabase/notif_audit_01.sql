@@ -215,7 +215,7 @@ begin
     and not exists (select 1 from public.service_requests s where s.id::text = n.ref_id::text);
 end $$;
 
--- 6c) pending staff docs (last 30 days) that never got an approver notification (trigger bug A).
+-- 6c) pending staff docs (last 30 days) that never got an approver notification (e.g. outstation, which had no DB trigger before).
 --     created_at = the document's created_at, so push-send (only flushes the last 10 min) does NOT push them.
 do $$
 declare r record; d jsonb; c int := 0; g text; typ text;
