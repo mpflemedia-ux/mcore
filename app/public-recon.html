@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark" id="psd-color-scheme">
+<meta name="robots" content="noindex,nofollow">
+<title>Salary Reconciliation</title>
+<script>
+/* Lock to ?theme=light|dark from the share link (sharer's app theme). Else OS prefers-color-scheme. */
+(function(){
+  try{
+    var t=new URLSearchParams(location.search).get('theme');
+    if(t!=='light'&&t!=='dark') return;
+    document.documentElement.setAttribute('data-theme',t);
+    var m=document.getElementById('psd-color-scheme'); if(m) m.setAttribute('content',t);
+    try{document.documentElement.style.colorScheme=t}catch(e){}
+  }catch(e){}
+})();
+</script>
+<style>
+  :root{--psd-bg:#F1F5F9;--psd-surface:#fff;--psd-border:#e2e8f0;--psd-text:#0f172a;--psd-muted:#334155;--psd-primary:#0E7490;--psd-card-bg:#fff;--psd-input-bg:#fff;--psd-btn-bg:#fff;--psd-danger:#991b1b;--psd-ok:#166534;--psd-on-primary:#fff;--psd-shadow:0 4px 20px rgba(0,0,0,.06)}
+  @media (prefers-color-scheme: dark){:root:not([data-theme]){--psd-bg:#0b1220;--psd-surface:#111827;--psd-border:#1f2937;--psd-text:#f1f5f9;--psd-muted:#94a3b8;--psd-primary:#2dd4bf;--psd-card-bg:#1e293b;--psd-input-bg:#0f172a;--psd-btn-bg:#1e293b;--psd-danger:#fca5a5;--psd-ok:#86efac;--psd-on-primary:#0b1220;--psd-shadow:0 4px 20px rgba(0,0,0,.35)}}
+  html[data-theme="dark"]{color-scheme:dark;--psd-bg:#0b1220;--psd-surface:#111827;--psd-border:#1f2937;--psd-text:#f1f5f9;--psd-muted:#94a3b8;--psd-primary:#2dd4bf;--psd-card-bg:#1e293b;--psd-input-bg:#0f172a;--psd-btn-bg:#1e293b;--psd-danger:#fca5a5;--psd-ok:#86efac;--psd-on-primary:#0b1220;--psd-shadow:0 4px 20px rgba(0,0,0,.35)}
+  html[data-theme="light"]{color-scheme:light}
+  html,body{margin:0;min-height:100%;background:var(--psd-bg);color:var(--psd-text);font-family:Inter,system-ui,sans-serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .wrap{max-width:860px;margin:12px auto 64px;padding:0 10px;box-sizing:border-box}
+  .err{max-width:560px;margin:60px auto;padding:24px;background:var(--psd-surface);border-radius:12px;border:1px solid var(--psd-border);color:var(--psd-text)}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin:0 0 10px}
+  .btn{min-height:44px;padding:10px 16px;border-radius:10px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;box-sizing:border-box;border:1px solid var(--psd-border);background:var(--psd-btn-bg);color:var(--psd-text)}
+  .btn.pri{border:0;background:var(--psd-primary);color:var(--psd-on-primary)}
+  .btn:disabled{opacity:.6;cursor:default}
+  #sign{margin-top:14px;padding:16px 14px;border:1px solid var(--psd-border);border-radius:12px;background:var(--psd-card-bg);color:var(--psd-text);box-sizing:border-box}
+  #sign h3{margin:0 0 4px;font-size:17px}
+  #sign .sub{font-size:14px;color:var(--psd-muted);margin:0 0 12px}
+  #sign label{font-size:13px;font-weight:700;color:var(--psd-muted)}
+  #sign input[type=text]{display:block;width:100%;box-sizing:border-box;margin:4px 0 10px;padding:10px;border:1px solid var(--psd-border);border-radius:8px;font:inherit;font-size:15px;color:var(--psd-text);background:var(--psd-input-bg)}
+  #sign canvas{width:100%;height:160px;touch-action:none;border:1px solid var(--psd-border);border-radius:8px;background:#fff;display:block;margin:4px 0 8px}
+  #sign .row{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+  #sign .e{display:none;color:var(--psd-danger);font-size:14px;font-weight:600;margin:8px 0}
+  #sign .ok{font-size:15px;font-weight:700;color:var(--psd-ok)}
+  #sign .chk{display:flex;gap:8px;align-items:flex-start;font-size:14px;color:var(--psd-text);font-weight:500;margin:0 0 10px}
+  @media print{.bar,#sign{display:none!important}.wrap{margin:0;padding:0;max-width:none}html,body{background:#fff}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./payroll-recon-report.js?v=1"></script>
+</head>
+<body>
+<div id="root"><div style="max-width:720px;margin:40px auto;text-align:center;color:#334155">Loading…</div></div>
+<script>
+const SUPABASE_URL='https://wjqhhnjlgoigoagsnsen.supabase.co'
+const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw'
+const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
+;(function(){
+  var qs=new URLSearchParams(location.search)
+  var tok=(qs.get('prc_sign')||'').trim()
+  var langQ=qs.get('lang')
+  var root=document.getElementById('root')
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function hex(b){return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2)}).join('')}
+  function shaText(s){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)).then(hex)}
+  function clearPad(cv){var c=cv.getContext('2d');c.fillStyle='white';c.fillRect(0,0,cv.width,cv.height);delete cv.dataset.drawn}
+  function initPad(cv){
+    var r=cv.getBoundingClientRect();cv.width=Math.round(r.width)||600;cv.height=Math.round(r.height)||160;clearPad(cv)
+    var c=cv.getContext('2d'),down=false,last=null;c.strokeStyle='black';c.lineWidth=2.5;c.lineCap='round';c.lineJoin='round'
+    function pos(e){var b=cv.getBoundingClientRect();return {x:(e.clientX-b.left)*(cv.width/b.width),y:(e.clientY-b.top)*(cv.height/b.height)}}
+    cv.addEventListener('pointerdown',function(e){down=true;last=pos(e);try{cv.setPointerCapture(e.pointerId)}catch(x){}c.beginPath();c.arc(last.x,last.y,1.2,0,6.3);c.fillStyle='black';c.fill();cv.dataset.drawn='1';e.preventDefault()})
+    cv.addEventListener('pointermove',function(e){if(!down)return;var p=pos(e);c.beginPath();c.moveTo(last.x,last.y);c.lineTo(p.x,p.y);c.stroke();last=p;cv.dataset.drawn='1';e.preventDefault()})
+    ;['pointerup','pointercancel','pointerleave'].forEach(function(k){cv.addEventListener(k,function(){down=false})})
+  }
+  var bm0=langQ==='bm'
+  function T0(en,bm){return bm0?bm:en}
+  if(!tok){root.innerHTML='<div class="err"><h2>'+esc(T0('Link unavailable','Pautan tidak tersedia'))+'</h2><p>'+esc(T0('Missing token.','Token tiada.'))+'</p></div>';return}
+  sb.rpc('get_public_prc_sign',{p_token:tok}).then(function(res){
+    var d=res.data
+    if(res.error||!d){root.innerHTML='<div class="err"><h2>'+esc(T0('Link unavailable','Pautan tidak tersedia'))+'</h2><p>'+esc(T0('This link has expired, was replaced, or the report was reset. Ask HR for a new link.','Pautan ini telah tamat, diganti, atau laporan telah diset semula. Minta pautan baru daripada HR.'))+'</p></div>';return}
+    var lang=(langQ==='bm'||langQ==='en')?langQ:(d.lang||'en'), B=lang==='bm'
+    function T(en,bm){return B?bm:en}
+    document.documentElement.lang=B?'ms':'en'
+    document.title=T('Salary Reconciliation','Rekonsiliasi Gaji')+' - '+((d.snapshot&&d.snapshot.tenant&&d.snapshot.tenant.name)||'')
+    PRC.ensureCss()
+    var signed=d.status==='signed'
+    var html='<div class="wrap"><div class="bar"><button class="btn" onclick="window.print()">'+esc(T('Print / Save PDF','Cetak / Simpan PDF'))+'</button></div>'
+      +PRC.reportHtml(d.snapshot||{},lang,{sig:signed?{name:d.signer_name,at:d.signed_at}:null})
+      +'<div id="sign">'
+    if(signed){
+      html+='<div class="ok">✓ '+esc(T('Signed by ','Ditandatangani oleh ')+(d.signer_name||'')+' · '+new Date(d.signed_at).toLocaleString(B?'ms-MY':'en-MY',{timeZone:'Asia/Kuala_Lumpur'}))+'</div>'
+        +'<p class="sub" style="margin-top:6px">'+esc(T('This report is locked. Thank you.','Laporan ini telah dikunci. Terima kasih.'))+'</p>'
+    }else{
+      var nm=(d.snapshot&&d.snapshot.emp&&d.snapshot.emp.name)||''
+      html+='<h3>'+esc(T('Acknowledge & sign','Akui & tandatangan'))+'</h3><p class="sub">'+esc(T('Read the report above, then sign below. Once signed it is locked.','Baca laporan di atas, kemudian tandatangan di bawah. Selepas ditandatangan ia dikunci.'))+'</p>'
+        +'<label>'+esc(T('Full name','Nama penuh'))+'</label><input type="text" id="s-nm" maxlength="120" value="'+esc(nm)+'">'
+        +'<label>'+esc(T('Signature','Tandatangan'))+'</label><canvas id="s-cv"></canvas>'
+        +'<label class="chk"><input type="checkbox" id="s-ok"> <span>'+esc(T('I have read and agree with this reconciliation.','Saya telah membaca dan bersetuju dengan rekonsiliasi ini.'))+'</span></label>'
+        +'<div class="e" id="s-e"></div>'
+        +'<div class="row"><button class="btn" id="s-clr">'+esc(T('Clear','Padam'))+'</button><button class="btn pri" id="s-go">'+esc(T('Sign & submit','Tandatangan & hantar'))+'</button></div>'
+    }
+    html+='</div></div>'
+    root.innerHTML=html
+    if(signed)return
+    var cv=document.getElementById('s-cv'),E=document.getElementById('s-e'),go=document.getElementById('s-go')
+    initPad(cv)
+    function err(m){E.textContent=m;E.style.display=m?'block':'none'}
+    document.getElementById('s-clr').onclick=function(){clearPad(cv)}
+    go.onclick=function(){
+      var name=document.getElementById('s-nm').value.trim()
+      if(!name)return err(T('Enter your full name','Masukkan nama penuh'))
+      if(!cv.dataset.drawn)return err(T('Please sign in the box','Sila tandatangan dalam kotak'))
+      if(!document.getElementById('s-ok').checked)return err(T('Tick the box to agree','Tandakan kotak untuk bersetuju'))
+      err('');go.disabled=true;go.textContent=T('Submitting…','Menghantar…')
+      var path
+      shaText(tok).then(function(h){
+        path=d.tenant_id+'/prc-sign/'+h+'/sig-'+Date.now()+'.png'
+        return new Promise(function(res,rej){cv.toBlob(function(b){b?res(b):rej(new Error('sig'))},'image/png')})
+      }).then(function(png){
+        return sb.storage.from('doc-files').upload(path,png,{contentType:'image/png',upsert:false})
+      }).then(function(u){
+        if(u.error)throw u.error
+        return sb.rpc('prc_sign_public',{p_token:tok,p_name:name,p_path:path})
+      }).then(function(r){
+        if(r.error)throw r.error
+        location.reload()
+      }).catch(function(e){
+        go.disabled=false;go.textContent=T('Sign & submit','Tandatangan & hantar')
+        err((e&&e.message)||String(e))
+      })
+    }
+  })
+})()
+</script>
+</body>
+</html>
