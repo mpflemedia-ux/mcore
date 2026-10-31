@@ -4,13 +4,33 @@
   var L = NT.L, esc = NT.esc, tab = 'action', cache = null, busy = null;
   NT.load = function () {
     if (busy) return busy;
-    busy = Promise.all([NT.S && NT._sk === NT.lsKey() ? NT.S : NT.loadSettings(), NT.fetchRows(30), NT.loadLive()]).then(function (r) { NT.rows = r[1]; cache = NT.build(); NT.listen(); NT.tidy(); busy = null; return cache; }, function () { busy = null; return cache; });
+    busy = Promise.all([NT.S && NT._sk === NT.lsKey() ? NT.S : NT.loadSettings(), NT.fetchRows(30).then(NT.resolve), NT.loadLive()]).then(function (r) { NT.rows = r[1]; cache = NT.build(); NT.listen(); NT.tidy(); busy = null; return cache; }, function () { busy = null; return cache; });
     return busy;
   };
-  NT.badge = function (t) { var b = document.getElementById('notif-badge'); if (!b) return; var n = t ? t.badge : 0; b.textContent = n > 99 ? '99+' : String(n); b.classList.toggle('show', n > 0); };
+  /* one writer for every badge: header bell, sidebar (nav-core mirrors #notif-badge) and the PWA app icon */
+  NT.appBadge = function (n) {
+    try { var nv = navigator; if (n > 0 && nv.setAppBadge) nv.setAppBadge(n).catch(function () {}); else if (nv.clearAppBadge) nv.clearAppBadge().catch(function () {}); } catch (e) {}
+  };
+  NT.badge = function (t) {
+    var n = t ? t.badge : 0; NT.badgeN = n; NT.appBadge(n);
+    var b = document.getElementById('notif-badge'); if (!b) return; b.textContent = n > 99 ? '99+' : String(n); b.classList.toggle('show', n > 0);
+    try { if (window.NV && typeof NV.badges === 'function') NV.badges(); } catch (e) {}
+  };
+  /* Mark read = everything unread for me in this tenant (all tabs + live items). Optimistic: badges clear at once. */
+  NT.markAll = function () {
+    var now = new Date().toISOString(), uid = NT.uid(), tid = NT.tid();
+    (NT.rows || []).forEach(function (n) { if (!n.read_at) n.read_at = now; });
+    NT.markSeen(NT.live); cache = NT.build(); NT.badge(cache);
+    var m = document.getElementById('notif-menu'); if (m && m.classList.contains('open')) NT.paint();
+    if (!uid || !tid) return Promise.resolve();
+    return Promise.resolve(sb.from('notifications').update({ read_at: now }).eq('user_id', uid).eq('tenant_id', tid).is('read_at', null).is('deleted_at', null))
+      .then(function () {}, function () {}).then(NT.refresh);
+  };
+  /* sw.js posts this after a push lands (app open in background) -> exact count instead of the dot */
+  try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', function (e) { if (e && e.data && e.data.type === 'mcore-nt-refresh' && NT.on) NT.refresh(); }); } catch (e) {}
   NT.refresh = function () { return NT.load().then(function (t) { NT.badge(t); var m = document.getElementById('notif-menu'); if (m && m.classList.contains('open')) NT.paint(); }); };
   function tabs(t) {
-    return '<div class="nt-tabs" role="tablist">' + [['action', L('Action', 'Tindakan'), t.badge], ['for_you', L('For you', 'Untuk Kau'), t.youN], ['activity', L('Activity', 'Aktiviti'), 0]].map(function (x) {
+    return '<div class="nt-tabs" role="tablist">' + [['action', L('Action', 'Tindakan'), t.actU], ['for_you', L('For you', 'Untuk Kau'), t.youN], ['activity', L('Activity', 'Aktiviti'), 0]].map(function (x) {
       return '<button type="button" role="tab" aria-selected="' + (tab === x[0]) + '" class="nt-tab' + (tab === x[0] ? ' on' : '') + '" data-tab="' + x[0] + '">' + esc(x[1]) + (x[2] ? ' <span class="nt-c">' + x[2] + '</span>' : '') + '</button>';
     }).join('') + '</div>';
   }
@@ -25,9 +45,9 @@
     var t = cache, list = t[tab] || [], dg = tab === 'action' && NT.digestDue();
     m.classList.add('nt-menu');
     m.innerHTML = '<div class="nt-h"><b>' + esc(L('Notifications', 'Pemberitahuan')) + '</b>' +
-      NT.btn(L('Mark read', 'Tanda dibaca'), 'ti-checks', 'btn-outline', 'data-mr="1"') + '<button type="button" class="btn btn-sm btn-outline nt-b" data-set="1" aria-label="' + esc(L('Settings', 'Settings')) + '"><i class="ti ti-settings"></i></button></div>' + tabs(t) +
+      NT.btn(L('Mark all read', 'Tanda semua dibaca'), 'ti-checks', 'btn-outline', 'data-mr="1"') + '<button type="button" class="btn btn-sm btn-outline nt-b" data-set="1" aria-label="' + esc(L('Settings', 'Settings')) + '"><i class="ti ti-settings"></i></button></div>' + tabs(t) +
       (tab === 'activity' ? '<div class="nt-note"><i class="ti ti-info-circle"></i> ' + esc(L('Activity does not add to the badge', 'Aktiviti tidak tambah kiraan badge')) + '</div>' : '') +
-      (dg ? '<div class="nt-dg"><i class="ti ti-sun"></i><div class="nt-bd"><b>' + esc(L('Morning summary ready', 'Ringkasan pagi sedia')) + '</b><div class="nt-m">' + t.badge + L(' to action · ', ' perlu tindakan · ') + t.youN + L(' for you', ' untuk kau') + '</div></div>' + NT.btn(L('View', 'Lihat'), '', 'btn-outline', 'data-dg="1"') + '</div>' : '') +
+      (dg ? '<div class="nt-dg"><i class="ti ti-sun"></i><div class="nt-bd"><b>' + esc(L('Morning summary ready', 'Ringkasan pagi sedia')) + '</b><div class="nt-m">' + t.actN + L(' to action · ', ' perlu tindakan · ') + t.badge + L(' unread', ' belum dibaca') + '</div></div>' + NT.btn(L('View', 'Lihat'), '', 'btn-outline', 'data-dg="1"') + '</div>' : '') +
       '<div class="nt-list" id="notif-list">' + (list.length ? list.map(NT.itemHtml).join('') : empty(tab)) + '</div>' +
       (t.snoozed.length && tab === 'action' ? '<div class="nt-note">' + t.snoozed.length + ' ' + esc(L('snoozed', 'di-snooze')) + '</div>' : '') +
       '<div class="nt-f"><a href="javascript:void 0" data-all="1">' + esc(tab === 'activity' ? L('View Activity Log', 'Lihat Activity Log') : L('View all notifications', 'Lihat semua pemberitahuan')) + (tab === 'activity' ? ' <i class="ti ti-arrow-right"></i>' : '') + '</a></div>';
@@ -36,13 +56,7 @@
     var q = function (s) { return m.querySelector(s); };
     q('[data-mr]').onclick = function (e) {
       e.stopPropagation();
-      var ids = [], hide = [];
-      list.forEach(function (i) {
-        if (i.ids && i.ids.length && i.unread) ids = ids.concat(i.ids);
-        if (i.live && i.key) hide.push(i.key);
-      });
-      try { var k = 'mcore_nt_hide_' + NT.uid(); var a = JSON.parse(localStorage.getItem(k) || '{}'); list.forEach(function (i) { if (i.live && i.key) a[i.key] = String(i.meta || ''); }); localStorage.setItem(k, JSON.stringify(a)); } catch (e) {}
-      NT.markRead(ids).then(NT.refresh);
+      NT.markAll();
     };
     q('[data-set]').onclick = function (e) { e.stopPropagation(); NT.close(); window.openPage('notifikasi', { view: 'settings' }); };
     q('[data-all]').onclick = function (e) { e.stopPropagation(); NT.close(); window.openPage('notifikasi', tab === 'activity' ? { f: 'activity' } : {}); };

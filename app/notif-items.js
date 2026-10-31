@@ -41,11 +41,67 @@
   };
   NT.isSnoozed = function (it) { var u = NT.S && NT.S.sn[it.key]; return !!(u && new Date(u).getTime() > Date.now()); };
   NT.isPinned = function (it) { return !!(NT.S && NT.S.pin.indexOf(it.key) >= 0); };
+  /* ---- one event = one entry: a DB row about the same source doc as a live item merges into it ---- */
+  var LIVE_OF = { 'hr.leave_submitted': 'leave:', 'hr.ot_submitted': 'ot:', 'hr.exp_submitted': 'claim:', 'hr.adv_submitted': 'adv:', 'hr.os_submitted': 'os:' };
+  NT.liveKey = function (n, refIx) {
+    var p = n && LIVE_OF[n.type]; if (p && n.ref_id) return p + n.ref_id;
+    return n && /^sd\./.test(n.type || '') && n._k === 'action' && n.ref_id && refIx ? refIx[n.ref_id] || null : null;
+  };
+  /* ---- "seen" for live items (no DB row to stamp): key -> meta when last marked read. Old hide map migrates in. ---- */
+  NT.seenKey = function () { return 'mcore_nt_seen_' + NT.uid(); };
+  NT.seen = function () {
+    var s = {}, hk = 'mcore_nt_hide_' + NT.uid();
+    try {
+      s = JSON.parse(localStorage.getItem(NT.seenKey()) || '{}') || {};
+      var h = localStorage.getItem(hk); if (h) { Object.assign(s, JSON.parse(h) || {}); localStorage.removeItem(hk); localStorage.setItem(NT.seenKey(), JSON.stringify(s)); }
+    } catch (e) {}
+    return s;
+  };
+  NT.markSeen = function (items) {
+    var s = NT.seen(), live = {};
+    (items || []).forEach(function (i) { if (i && i.live && i.key) s[i.key] = String(i.meta || ''); });
+    if (NT.live.length) { NT.live.forEach(function (x) { live[x.key] = 1; }); Object.keys(s).forEach(function (k) { if (!live[k]) delete s[k]; }); }
+    try { localStorage.setItem(NT.seenKey(), JSON.stringify(s)); } catch (e) {}
+  };
+  /* ---- auto-resolve: an action row whose source doc is no longer waiting is done (persisted via acted) ---- */
+  var OPEN_ST = { leave_requests: ['pending', 'submitted'], ot_claims: ['pending', 'submitted'], expense_claims: ['pending', 'submitted'], cash_advances: ['pending', 'submitted'], outstation_requests: ['pending', 'submitted'] };
+  var SD_OPEN = { 'sd.new': ['submitted'], 'sd.revision': ['revision', 'triaged', 'in_progress'], 'sd.delivered': ['delivered'] };
+  function openFor(n) { return n.ref_table === 'service_requests' ? SD_OPEN[n.type] : OPEN_ST[n.ref_table]; }
+  NT.resolve = function (rows) {
+    var by = {};
+    (rows || []).forEach(function (n) { if (n._k === 'action' && !n.acted_at && n.ref_id && openFor(n)) (by[n.ref_table] = by[n.ref_table] || []).push(n); });
+    var jobs = Object.keys(by).map(function (tbl) {
+      var ids = by[tbl].map(function (n) { return String(n.ref_id); }).filter(function (v, i, a) { return a.indexOf(v) === i; }).slice(0, 200);
+      return Promise.resolve(sb.from(tbl).select('id,status').in('id', ids)).then(function (r) {
+        if (!r || r.error) return [];
+        var st = {}; (r.data || []).forEach(function (x) { st[String(x.id)] = String(x.status || '').toLowerCase(); });
+        return by[tbl].filter(function (n) { var s = st[String(n.ref_id)]; return s != null && openFor(n).indexOf(s) < 0; });
+      }, function () { return []; });
+    });
+    return Promise.all(jobs).then(function (res) {
+      var done = [].concat.apply([], res), now = new Date().toISOString();
+      done.forEach(function (n) { n.acted_at = now; n.read_at = n.read_at || now; });
+      if (done.length) NT.acted(done.map(function (n) { return n.id; }));
+      return rows;
+    }, function () { return rows; });
+  };
   NT.build = function (opts) {
-    opts = opts || {}; var S = NT.S || NT.merge();
-    var rows = NT.rows.filter(function (n) { return !(n.actor_id && NT.same(n.actor_id, NT.uid())); }).map(NT.fromRow);
-    var hid = {}; try { hid = JSON.parse(localStorage.getItem('mcore_nt_hide_' + NT.uid()) || '{}'); } catch (e) {}
-    var all = NT.group(rows.concat(NT.live.filter(function (x) { return !(x.live && hid[x.key] === String(x.meta || '')); }).map(function (x) { return Object.assign({ ids: [] }, x); })));
+    opts = opts || {}; var S = NT.S || NT.merge(), seen = NT.seen(), liveBy = {}, refIx = {}, merged = {};
+    NT.live.forEach(function (x) { liveBy[x.key] = x; (x.refs || []).forEach(function (r) { refIx[String(r)] = x.key; }); });
+    var rows = [];
+    NT.rows.forEach(function (n) {
+      if (n.actor_id && NT.same(n.actor_id, NT.uid())) return;
+      var lk = !n.acted_at && NT.liveKey(n, refIx);
+      if (lk && liveBy[lk]) { (merged[lk] = merged[lk] || []).push(n); return; }
+      rows.push(NT.fromRow(n));
+    });
+    var lives = NT.live.map(function (x) {
+      var it = Object.assign({ ids: [] }, x), m = merged[x.key];
+      if (m) { it.ids = m.map(function (r) { return r.id; }); it.unread = m.some(function (r) { return !r.read_at; }); }
+      else it.unread = seen[x.key] !== String(x.meta || '');
+      return it;
+    });
+    var all = NT.group(rows.concat(lives));
     var t = { action: [], for_you: [], activity: [], snoozed: [] };
     all.forEach(function (it) {
       if (!NT.ch(it.cat, 'b', S) && !opts.all) return;
@@ -55,8 +111,11 @@
     });
     var cut = Date.now() - 7 * 864e5;
     if (!opts.all) { t.for_you = t.for_you.filter(function (i) { return i.unread || i.live || i.ts > cut; }).slice(0, 30); t.activity = t.activity.filter(function (i) { return i.ts > cut; }).slice(0, 30); }
-    Object.keys(t).forEach(function (k) { t[k].sort(function (a, b) { return (NT.isPinned(b) - NT.isPinned(a)) || (b.prio - a.prio) || (b.ts - a.ts); }); });
-    t.badge = t.action.length; t.youN = t.for_you.filter(function (i) { return i.unread || i.live; }).length;
+    Object.keys(t).forEach(function (k) { t[k].sort(function (a, b) { return (NT.isPinned(b) - NT.isPinned(a)) || (b.unread - a.unread) || (b.prio - a.prio) || (b.ts - a.ts); }); });
+    var un = function (i) { return !!i.unread; };
+    /* badge = UNREAD (Action + For you); open-but-read action items stay listed, never counted */
+    t.actN = t.action.length; t.actU = t.action.filter(un).length; t.youN = t.for_you.filter(un).length;
+    t.badge = t.actU + t.youN; t.all = all;
     return t;
   };
   NT.when = function (ts) {
@@ -79,7 +138,8 @@
       (acts ? '<div class="nt-acts">' + acts + '</div>' : '') + '</div><button type="button" class="nt-more" data-pin="' + i + '" aria-label="Pin" title="' + esc(NT.isPinned(it) ? L('Unpin', 'Nyahpin') : 'Pin') + '"><i class="ti ' + (NT.isPinned(it) ? 'ti-pinned-off' : 'ti-pin') + '"></i></button></div>';
   };
   NT.open = function (it) {
-    if (!it) return; NT.markRead(it.ids); if (it.kind === 'action' && it.row) NT.acted(it.ids);
+    if (!it) return; NT.markRead(it.ids); if (it.live) NT.markSeen([it]); if (it.kind === 'action' && it.row) NT.acted(it.ids);
+    (NT.rows || []).forEach(function (n) { if ((it.ids || []).indexOf(n.id) >= 0) n.read_at = n.read_at || new Date().toISOString(); }); try { NT.badge(NT.build()); } catch (e) {}
     var g = it.go || ['dashboard', {}], p = Object.assign({}, g[1]);
     if (p.taskId) { window._pjOpenTask = p.taskId; delete p.taskId; } // projects.js reads+clears this to auto-open that task's detail (same mechanism as the WhatsApp task deep-link)
     if (p.ref && !p.id) {
