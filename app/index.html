@@ -38548,6 +38548,12 @@ function _repPrintToolbar(reportCode, dateOpts) {
   const code = String(reportCode || 'Report').replace(/[^a-zA-Z0-9]+/g, '').slice(0, 32)
   return `<button type="button" class="btn btn-outline btn-sm no-print" onclick='_repPrint(${JSON.stringify(code)}, ${JSON.stringify(dateOpts||{})})'><i class="ti ti-printer"></i> ${label}</button>`
 }
+/** Share-via-WhatsApp toolbar button + "manage shared links" link, for Reports pages. */
+function _repShareToolbar(reportType, title) {
+  const isBm = APP.language === 'bm'
+  return `<button type="button" class="btn btn-outline btn-sm no-print" onclick="RPTShare.share('${reportType}', ${JSON.stringify(title)})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi':'Share'}</button>
+  <button type="button" class="btn btn-outline btn-sm no-print" title="${isBm?'Urus pautan dikongsi':'Manage shared links'}" onclick="RPTShare.openManage('${reportType}')"><i class="ti ti-link"></i></button>`
+}
 function _repPrint(reportCode, dateOpts) {
   try {
     const prev = document.title
@@ -38623,7 +38629,10 @@ async function renderTrialBalance() {
   const today = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
     ${_repPrintToolbar('TrialBalance',{asOfId:'tb-asof'})}
+    ${_repShareToolbar('trial_balance', APP.language==='bm'?'Imbangan Duga':'Trial Balance')}
+    </div>
   </div>
   ${_repTabs('tb')}
   <div class="card no-print" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
@@ -38695,6 +38704,16 @@ async function _tbLoad() {
       ${ok ? ('✓ '+t.balanced) : ('⚠ '+t.unbalanced+' — Δ '+formatRM(Math.abs(totalD-totalC)))}
     </div>
   </div>`
+
+  if(window.RPTShare) RPTShare.setSnapshot('trial_balance', {
+    kind: 'statement', title: isBm?'Imbangan Duga':'Trial Balance', periodLabel: `${isBm?'Sehingga':'As of'}: ${formatDate(asOf)}`, company: (APP.tenant && APP.tenant.name) || 'Company',
+    sections: [ {
+      heading: null,
+      rows: rows.map(r=>({label:`${r.a.code} — ${r.a.name_en}`, values:[`${t.debit}: ${r.d?formatRM(r.d):'-'}`, `${t.credit}: ${r.cr?formatRM(r.cr):'-'}`]})),
+      total: { label:t.total, values:[`${t.debit}: ${formatRM(totalD)}`, `${t.credit}: ${formatRM(totalC)}`] }, strong:true
+    } ],
+    closing: [ { label: ok?('✓ '+t.balanced):('⚠ '+t.unbalanced+' — Δ '+formatRM(Math.abs(totalD-totalC))), values:[], tone: ok?'success':'danger' } ]
+  })
 }
 
 // journal_lines .in('entry_id', ids) can silently return nothing once a
@@ -38730,7 +38749,10 @@ async function renderPnL() {
   }
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
     ${_repPrintToolbar('IncomeStatement',{fromId:'pnl-from',toId:'pnl-to'})}
+    ${_repShareToolbar('pnl', APP.language==='bm'?'Penyata Pendapatan':'Income Statement')}
+    </div>
   </div>
   ${_repTabs('pnl')}
   <div class="no-print">${_repDateRangeBar('pnl-from','pnl-to','_pnlLoad()')}</div>
@@ -38791,6 +38813,15 @@ async function _pnlLoad() {
   _repPnlContext = `Period: ${from} to ${to}. Total Revenue: RM${totalRev.toFixed(2)}. Total Expenses: RM${totalExp.toFixed(2)}. Net Profit/Loss: RM${(totalRev-totalExp).toFixed(2)}.\n` +
     `Revenue breakdown: ${revRows.map(r=>`${r.a.name_en} RM${r.amt.toFixed(2)}`).join(', ')||'none'}.\n` +
     `Expense breakdown: ${expRows.map(r=>`${r.a.name_en} RM${r.amt.toFixed(2)}`).join(', ')||'none'}.`
+
+  if(window.RPTShare) RPTShare.setSnapshot('pnl', {
+    kind: 'statement', title: APP.language==='bm'?'Penyata Pendapatan':'Income Statement', periodLabel, company: coName,
+    sections: [
+      { heading: t.revenue, rows: revRows.map(r=>({label:`${r.a.code} - ${r.a.name_en}`, values:[formatRM(r.amt)]})), total:{label:t.totalRevenue, values:[formatRM(totalRev)]} },
+      { heading: t.expense, rows: expRows.map(r=>({label:`${r.a.code} - ${r.a.name_en}`, values:[formatRM(r.amt)]})), total:{label:t.totalExpenses, values:[formatRM(totalExp)]} }
+    ],
+    closing: [ { label: t.netProfit, values:[formatRM(totalRev-totalExp)], tone: (totalRev-totalExp)>=0?'success':'danger' } ]
+  })
 }
 
 // ─── Balance Sheet ────────────────────────────────────────────────────────────
@@ -38805,7 +38836,10 @@ async function renderBalanceSheet() {
   const today = new Date().toISOString().slice(0,10)
   document.getElementById('main').innerHTML = `
   <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
     ${_repPrintToolbar('BalanceSheet',{asOfId:'bs-asof'})}
+    ${_repShareToolbar('balance_sheet', APP.language==='bm'?'Kunci Kira-kira':'Balance Sheet')}
+    </div>
   </div>
   ${_repTabs('bs')}
   <div class="card no-print" style="padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
@@ -38890,6 +38924,16 @@ async function _bsLoad() {
   </div>` + _repAiSummaryBlock('bs-ai-btn','bs-ai-out')
 
   _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity (incl. Retained Earnings RM${retainedEarnings.toFixed(2)}): RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
+
+  if(window.RPTShare) RPTShare.setSnapshot('balance_sheet', {
+    kind: 'statement', title: isBm?'Kunci Kira-kira':'Balance Sheet', periodLabel: `${t.asOf}: ${formatDate(asOf)}`, company: (APP.tenant && APP.tenant.name) || 'Company',
+    sections: [
+      { heading: t.assets, rows: assets.rows.map(r=>({label:(r.a.code?r.a.code+' - ':'')+r.a.name_en, values:[formatRM(r.amt)]})), total:{label:t.totalAssets, values:[formatRM(assets.total)]}, strong:true },
+      { heading: t.liabilities, rows: liab.rows.map(r=>({label:(r.a.code?r.a.code+' - ':'')+r.a.name_en, values:[formatRM(r.amt)]})), total:{label:t.totalLiabilities, values:[formatRM(liab.total)]} },
+      { heading: t.equity, rows: eq.rows.map(r=>({label:(r.a.code?r.a.code+' - ':'')+r.a.name_en, values:[formatRM(r.amt)]})), total:{label:t.totalEquity, values:[formatRM(eq.total)]} }
+    ],
+    closing: [ { label: t.totalLE, values:[formatRM(liab.total+eq.total)] } ]
+  })
 }
 
 // ─── Sales Report ──────────────────────────────────────────────────────────────
@@ -39272,7 +39316,10 @@ async function renderSstReport() {
     <div class="page-title">${t.title}</div>
     <div style="font-size:13px;color:var(--text-3);margin-top:2px">${t.sub}</div>
   </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px">
   <button class="btn btn-outline btn-sm no-print" onclick="_pdocSetPrintFilename('SST_'+document.getElementById('sst-from').value.replace(/-/g,'')+'-'+document.getElementById('sst-to').value.replace(/-/g,''));window.print()"><i class="ti ti-printer"></i> ${t.print}</button>
+  ${_repShareToolbar('sst', isBm?'Laporan SST':'SST Report')}
+  </div>
   </div>
   ${_repTabs('sst')}
   <div class="card no-print" style="padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
@@ -39372,6 +39419,15 @@ async function _sstRun() {
       ? 'Nota: Invois tanpa tax_amt = 0% SST. Ini ringkasan dalaman — bukan borang SST-02 rasmi LHDN.'
       : 'Note: Invoices without tax_amt = 0% SST. Internal summary only — not an official LHDN SST-02 form.'}</p>
   </div>`
+
+  if(window.RPTShare) RPTShare.setSnapshot('sst', {
+    kind: 'table', title: isBm?'Laporan SST':'SST Report', periodLabel: `${isBm?'Dari':'From'} ${formatDate(from)} ${isBm?'hingga':'to'} ${formatDate(to)}`, company: (APP.tenant && APP.tenant.name) || 'Company',
+    table: {
+      headers: [isBm?'Invois':'Invoice', isBm?'Tarikh':'Date', isBm?'Pelanggan':'Customer', isBm?'Subjumlah':'Subtotal', isBm?'Kadar':'Rate', 'SST', isBm?'Jumlah':'Total'],
+      rows: rows.map(r=>[r.ref_no||'-', formatDate(r.issue_date), r.customer_name||'-', formatRM(r._sub), (r._rate*100).toFixed(0)+'%', formatRM(r._tax), formatRM(r.total)]),
+      totalsRow: [isBm?'Jumlah SST':'Total SST', '', '', '', '', formatRM(sumTax), formatRM(sumTotal)]
+    }
+  })
 }
 
 function renderCustomReport() {
@@ -39381,7 +39437,11 @@ function renderCustomReport() {
     title:'Custom Report', selectSource:'Select Data Source', selectCols:'Select Columns', generate:'Generate Report'
   }
   document.getElementById('main').innerHTML = `
-  <div class="page-header"><div><div class="page-title">${t.title}</div></div></div>
+  <div class="page-header"><div><div class="page-title">${t.title}</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+    ${_repShareToolbar('custom', t.title)}
+    </div>
+  </div>
   ${_repTabs('custom')}
   <div class="card" style="max-width:900px;padding:20px">
     <div style="font-weight:600;margin-bottom:8px">${t.selectSource}</div>
@@ -39489,6 +39549,14 @@ async function _repCustomGenerate() {
     <div style="overflow-x:auto"><table><thead><tr>${selectedCols.map(c=>`<th>${isBm?c.bm:c.en}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(row=>`<tr>${selectedCols.map(c=>`<td${_repCustomNowrap(c)?' style="white-space:nowrap"':''}>${_repCustomFmtVal(row,c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
   </div>`
+
+  if(window.RPTShare) RPTShare.setSnapshot('custom', {
+    kind: 'table', title: isBm?'Laporan Tersendiri':'Custom Report', periodLabel: _repCustomSourceLabel(_repCustomSource), company: (APP.tenant && APP.tenant.name) || 'Company',
+    table: {
+      headers: selectedCols.map(c=>isBm?c.bm:c.en),
+      rows: rows.map(row=>selectedCols.map(c=>String(_repCustomFmtVal(row,c))))
+    }
+  })
 }
 
 function _repCustomExportCsv() {
@@ -40683,6 +40751,7 @@ if('serviceWorker' in navigator){
 <script src="./dk-purch.js?v=1"></script>
 <script src="./dk-ops.js?v=1"></script>
 <script src="./dk-acct.js?v=2"></script>
+<script src="./report-share.js?v=1"></script>
 <script src="./hr-profile.js?v=1"></script>
 <script src="./hr-import.js?v=1"></script>
 </body>

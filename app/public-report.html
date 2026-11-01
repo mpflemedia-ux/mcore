@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark" id="prp-color-scheme">
+<meta name="robots" content="noindex,nofollow">
+<title>Report</title>
+<script>
+/* Lock to ?theme=light|dark from the share link (sharer's app theme). Else OS prefers-color-scheme. */
+(function(){
+  try{
+    var t=new URLSearchParams(location.search).get('theme');
+    if(t!=='light'&&t!=='dark') return;
+    document.documentElement.setAttribute('data-theme',t);
+    var m=document.getElementById('prp-color-scheme'); if(m) m.setAttribute('content',t);
+    try{document.documentElement.style.colorScheme=t}catch(e){}
+  }catch(e){}
+})();
+</script>
+<style>
+  :root{--bg:#F1F5F9;--card:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#334155;--primary:#0E7490;--danger:#991b1b;--ok:#166534;--shadow:0 4px 20px rgba(0,0,0,.06)}
+  @media (prefers-color-scheme: dark){:root:not([data-theme]){--bg:#0b1220;--card:#1e293b;--border:#1f2937;--text:#f1f5f9;--muted:#94a3b8;--primary:#2dd4bf;--danger:#fca5a5;--ok:#86efac;--shadow:0 4px 20px rgba(0,0,0,.35)}}
+  html[data-theme="dark"]{color-scheme:dark;--bg:#0b1220;--card:#1e293b;--border:#1f2937;--text:#f1f5f9;--muted:#94a3b8;--primary:#2dd4bf;--danger:#fca5a5;--ok:#86efac;--shadow:0 4px 20px rgba(0,0,0,.35)}
+  html[data-theme="light"]{color-scheme:light}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}
+  .wrap{max-width:720px;margin:12px auto 64px;padding:0 10px;box-sizing:border-box}
+  .err{max-width:560px;margin:60px auto;padding:24px;background:var(--card);border-radius:12px;border:1px solid var(--border);color:var(--text);text-align:center}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin:0 0 10px}
+  .btn{min-height:44px;padding:10px 16px;border-radius:10px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;box-sizing:border-box;border:1px solid var(--border);background:var(--card);color:var(--text)}
+  .card{background:var(--card);border-radius:12px;border:1px solid var(--border);padding:20px;box-sizing:border-box;box-shadow:var(--shadow);margin-bottom:16px}
+  .co{font-weight:700;font-size:16px;margin-bottom:2px}
+  .ttl{font-size:14px;color:var(--muted);margin-bottom:8px}
+  .period{font-size:13px;color:var(--muted);margin-bottom:14px}
+  .heading{font-weight:700;margin:16px 0 8px}
+  .row-card{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow-wrap:anywhere}
+  .row-card .vals{display:flex;flex-wrap:wrap;gap:4px 16px;font-weight:600;white-space:nowrap}
+  .total-row{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;padding:10px 14px;border-top:1px solid var(--border);margin-top:4px}
+  .total-row.strong{font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px}
+  .closing{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:16px}
+  .closing.success{color:var(--ok)}.closing.danger{color:var(--danger)}
+  .expiry{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
+  @media print{.bar,.expiry{display:none!important}.wrap{margin:0;padding:0;max-width:none}html,body{background:#fff}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div id="root"><div style="max-width:720px;margin:40px auto;text-align:center;color:#334155">Loading…</div></div>
+<script>
+const SUPABASE_URL='https://wjqhhnjlgoigoagsnsen.supabase.co'
+const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqcWhobmpsZ29pZ29hZ3Nuc2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTU1NTMsImV4cCI6MjA5NTM3MTU1M30.FWLOZEV47hg5H5b4XKU1Wbiutv8Z3GbagS-aLbHmhaw'
+const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
+;(function(){
+  var qs=new URLSearchParams(location.search)
+  var tok=(qs.get('rpt')||'').trim()
+  var langQ=qs.get('lang')
+  var root=document.getElementById('root')
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  var bm0=langQ==='bm'
+  function T0(en,bm){return bm0?bm:en}
+  if(!tok){root.innerHTML='<div class="err"><h2>'+esc(T0('Link unavailable','Pautan tidak tersedia'))+'</h2><p>'+esc(T0('Missing token.','Token tiada.'))+'</p></div>';return}
+
+  function errScreen(msg){root.innerHTML='<div class="err"><h2>'+esc(T0('Link unavailable','Pautan tidak tersedia'))+'</h2><p>'+esc(msg)+'</p></div>'}
+
+  function sectionHtml(sec){
+    var h=sec.heading?('<div class="heading">'+esc(sec.heading)+'</div>'):''
+    h+=(sec.rows||[]).map(function(r){
+      return '<div class="row-card"><span>'+esc(r.label)+'</span><span class="vals">'+(r.values||[]).map(function(v){return '<span>'+esc(v)+'</span>'}).join('')+'</span></div>'
+    }).join('') || '<div class="row-card" style="color:var(--muted)">-</div>'
+    if(sec.total){
+      h+='<div class="total-row'+(sec.strong?' strong':'')+'"><span>'+esc(sec.total.label)+'</span><span class="vals">'+(sec.total.values||[]).map(function(v){return '<span>'+esc(v)+'</span>'}).join('')+'</span></div>'
+    }
+    return h
+  }
+  function statementHtml(snap){
+    var h=''
+    ;(snap.sections||[]).forEach(function(sec){h+=sectionHtml(sec)})
+    ;(snap.closing||[]).forEach(function(c){
+      h+='<div class="closing'+(c.tone?' '+esc(c.tone):'')+'"><span>'+esc(c.label)+'</span><span class="vals">'+(c.values||[]).map(function(v){return '<span>'+esc(v)+'</span>'}).join('')+'</span></div>'
+    })
+    return h
+  }
+  function tableHtml(snap){
+    var tbl=snap.table||{headers:[],rows:[]}
+    var h=(tbl.rows||[]).map(function(r){
+      return '<div class="row-card" style="flex-direction:column;align-items:stretch;gap:4px">'+
+        tbl.headers.map(function(hd,i){return '<div style="display:flex;justify-content:space-between;gap:10px"><span style="color:var(--muted)">'+esc(hd)+'</span><span style="font-weight:600;text-align:right">'+esc(r[i]!=null?r[i]:'')+'</span></div>'}).join('')+
+      '</div>'
+    }).join('') || '<div class="row-card" style="color:var(--muted)">-</div>'
+    if(tbl.totalsRow){
+      var tlabel=tbl.totalsRow[0]
+      var trest=tbl.headers.map(function(hd,i){ if(i===0) return ''; var v=tbl.totalsRow[i]; return v?(hd+': '+v):'' }).filter(Boolean)
+      h+='<div class="total-row strong" style="flex-direction:column;align-items:flex-start;gap:6px">'
+        +'<div>'+esc(tlabel)+'</div>'
+        +(trest.length?('<div style="display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px">'+trest.map(function(x){return '<span>'+esc(x)+'</span>'}).join('')+'</div>'):'')
+        +'</div>'
+    }
+    return h
+  }
+
+  sb.rpc('get_public_report',{p_token:tok}).then(function(res){
+    var d=res.data
+    if(res.error||!d||!d.ok){
+      var reason=(d&&d.error)||'not_found'
+      var msg=reason==='expired'?T0('This link has expired.','Pautan ini telah tamat tempoh.')
+        :reason==='revoked'?T0('This link was revoked by the sender.','Pautan ini telah dibatalkan oleh penghantar.')
+        :T0('This link is invalid or was already removed.','Pautan ini tidak sah atau telah dialih keluar.')
+      errScreen(msg); return
+    }
+    var lang=(langQ==='bm'||langQ==='en')?langQ:'en', B=lang==='bm'
+    document.documentElement.lang=B?'ms':'en'
+    var snap=d.snapshot||{}
+    document.title=(snap.title||d.title||'Report')+' - '+(d.company||'')
+    var h='<div class="wrap"><div class="bar"><button class="btn" onclick="window.print()">'+esc(B?'Cetak / Simpan PDF':'Print / Save PDF')+'</button></div>'
+      +'<div class="card">'
+      +'<div class="co">'+esc(d.company||'')+'</div>'
+      +'<div class="ttl">'+esc(snap.title||d.title||'')+'</div>'
+      +(snap.periodLabel?('<div class="period">'+esc(snap.periodLabel)+'</div>'):'')
+      +(snap.kind==='table'?tableHtml(snap):statementHtml(snap))
+      +'</div>'
+      +'<div class="expiry">'+esc((B?'Pautan tamat ':'Link expires ')+new Date(d.expires_at).toLocaleDateString(B?'ms-MY':'en-MY',{timeZone:'Asia/Kuala_Lumpur'}))+'</div>'
+      +'</div>'
+    root.innerHTML=h
+  }, function(){ errScreen(T0('Could not load this report. Please try again later.','Gagal memuatkan laporan ini. Sila cuba lagi kemudian.')) })
+})()
+</script>
+</body>
+</html>
