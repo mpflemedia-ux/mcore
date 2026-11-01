@@ -1,6 +1,7 @@
 /* dk-acct.js — DK Phase 5 · Accounting & reports.
    Lists → DK.list cards at all widths: chart of accounts, journal entries, fiscal years, fixed assets, payment vouchers,
-   disbursement batches, AR aging and AP aging (grand-total rows skipped; the card summary shows the total).
+   disbursement batches, AR aging and AP aging (grand-total rows skipped; the card summary shows the total),
+   SST report and Custom Report (column set varies per source — DK.list auto-guesses title/date/amount/party).
    AR aging → bulk payment reminders: tick invoices, then "WhatsApp reminders" sends ONE message per customer
    (all that customer's selected invoices + total balance) one by one through the shared DKS queue, or
    "Email reminders" lists a mailto link per customer (fallback when there is no phone). Nothing is sent automatically:
@@ -121,6 +122,10 @@
         { label: L('Email reminders', 'Peringatan e-mel'), icon: 'ti-mail', cls: 'btn-outline', run: function (ids) { return mailRemind(ids); } }] });
     DK.list({ key: 'ap', sel: '#ap-aging-body', fns: ['renderApAgingReport', '_apAgingApply'], title: 0, sub: 1, party: -1, date: 2, amount: 5, status: -1, table: 'supplier_bills', skip: total, bulk: false,
       emptyText: L('No outstanding supplier balances.', 'Tiada baki hutang pembekal.') });
+    DK.list({ key: 'sst', sel: '#sst-out', fns: ['_sstRun'], title: 0, sub: 2, party: -1, date: 1, amount: 6, status: -1, bulk: false,
+      emptyText: L('No invoices in this period.', 'Tiada invois dalam tempoh ini.') });
+    DK.list({ key: 'rc', sel: '#rc-result', fns: ['_repCustomGenerate'], bulk: false,
+      emptyText: L('No data.', 'Tiada data.') });
   }
   function css() {
     if (document.getElementById('dk-acct-css')) return;

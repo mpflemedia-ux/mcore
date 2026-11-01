@@ -38679,24 +38679,19 @@ async function _tbLoad() {
     return
   }
   const ok = Math.abs(totalD - totalC) < 0.02
+  const dcPair = (d, cr) => `<span style="display:flex;gap:16px;white-space:nowrap">
+      <span>${t.debit}: ${d}</span><span>${t.credit}: ${cr}</span>
+    </span>`
   result.innerHTML = `
-  <div class="card" style="overflow-x:auto">
-    <table>
-      <thead><tr><th>${t.account}</th><th style="text-align:right">${t.debit}</th><th style="text-align:right">${t.credit}</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `<tr>
-          <td>${r.a.code} — ${_aiEscapeHtml(r.a.name_en||'')}</td>
-          <td style="text-align:right">${r.d?formatRM(r.d):''}</td>
-          <td style="text-align:right">${r.cr?formatRM(r.cr):''}</td>
-        </tr>`).join('')}
-        <tr style="font-weight:700;border-top:2px solid var(--border)">
-          <td>${t.total}</td>
-          <td style="text-align:right">${formatRM(totalD)}</td>
-          <td style="text-align:right">${formatRM(totalC)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <div style="padding:12px 16px;font-size:13px;color:${ok?'var(--success)':'var(--danger)'}">
+  <div class="card" style="padding:20px">
+    ${rows.map(r => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;overflow-wrap:anywhere">
+      <span>${r.a.code} — ${_aiEscapeHtml(r.a.name_en||'')}</span>
+      <span style="font-weight:600">${dcPair(r.d?formatRM(r.d):'-', r.cr?formatRM(r.cr):'-')}</span>
+    </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-weight:700;font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px">
+      <span>${t.total}</span>${dcPair(formatRM(totalD), formatRM(totalC))}
+    </div>
+    <div style="padding:12px 0 0;font-size:13px;color:${ok?'var(--success)':'var(--danger)'}">
       ${ok ? ('✓ '+t.balanced) : ('⚠ '+t.unbalanced+' — Δ '+formatRM(Math.abs(totalD-totalC)))}
     </div>
   </div>`
@@ -38746,10 +38741,11 @@ async function renderPnL() {
 // One stacked "row card" per account line — replaces the old <table> that forced
 // min-width:480px + horizontal scroll on narrow screens (380px). No deps beyond
 // existing design tokens, so this prints fine too (no separate print markup needed).
-function _repLineCardsHtml(rows) {
+function _repLineCardsHtml(rows, labelFn) {
   if(!rows.length) return `<div style="padding:10px 14px;color:var(--text-3);font-size:13px">-</div>`
+  const label = labelFn || (r => `${r.a.code} - ${r.a.name_en}`)
   return rows.map(r => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;overflow-wrap:anywhere">
-    <span>${r.a.code} - ${r.a.name_en}</span><span style="white-space:nowrap;font-weight:600">${formatRM(r.amt)}</span>
+    <span>${label(r)}</span><span style="white-space:nowrap;font-weight:600">${formatRM(r.amt)}</span>
   </div>`).join('')
 }
 async function _pnlLoad() {
@@ -38822,8 +38818,8 @@ async function renderBalanceSheet() {
 }
 
 async function _bsLoad() {
-  const t = APP.language==='bm' ? { assets:'Aset', liabilities:'Liabiliti', equity:'Ekuiti', totalAssets:'Jumlah Aset', totalLE:'Jumlah Liabiliti + Ekuiti', noData:'Tiada data', retainedEarnings:'Untung/(Rugi) Terkumpul' }
-    : { assets:'Assets', liabilities:'Liabilities', equity:'Equity', totalAssets:'Total Assets', totalLE:'Total Liabilities + Equity', noData:'No data', retainedEarnings:'Retained Earnings' }
+  const t = APP.language==='bm' ? { asOf:'Sehingga', assets:'Aset', liabilities:'Liabiliti', equity:'Ekuiti', totalAssets:'Jumlah Aset', totalLiabilities:'Jumlah Liabiliti', totalEquity:'Jumlah Ekuiti', totalLE:'Jumlah Liabiliti + Ekuiti', noData:'Tiada data', retainedEarnings:'Untung/(Rugi) Terkumpul' }
+    : { asOf:'As Of', assets:'Assets', liabilities:'Liabilities', equity:'Equity', totalAssets:'Total Assets', totalLiabilities:'Total Liabilities', totalEquity:'Total Equity', totalLE:'Total Liabilities + Equity', noData:'No data', retainedEarnings:'Retained Earnings' }
   const asOf = document.getElementById('bs-asof')?.value
   const result = document.getElementById('bs-result')
 
@@ -38867,9 +38863,9 @@ async function _bsLoad() {
     eq.total += retainedEarnings
   }
 
-  const section = (label, group) => `<div style="font-weight:700;margin:16px 0 8px">${label}</div>
-    <table><tbody>${group.rows.map(r=>`<tr><td>${r.a.code?r.a.code+' - ':''}${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:600;padding:8px 0;border-top:1px solid var(--border)"><span>${label}</span><span>${formatRM(group.total)}</span></div>`
+  const section = (label, group, totalLabel, strong) => `<div style="font-weight:700;margin:16px 0 8px">${label}</div>
+    ${_repLineCardsHtml(group.rows, r => (r.a.code?r.a.code+' - ':'')+r.a.name_en)}
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;${strong?'font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px':'padding:10px 14px;border-top:1px solid var(--border);margin-top:4px'}"><span>${totalLabel}</span><span>${formatRM(group.total)}</span></div>`
 
   const negCash = assets.rows.some(r => r.amt < -0.01) || assets.total < -0.01
   const isBm = APP.language==='bm'
@@ -38884,16 +38880,13 @@ async function _bsLoad() {
       </button>
     </div>` : ''
 
-  result.innerHTML = `<div class="card" style="padding:20px;overflow-x:auto">
-    <div style="min-width:480px">
+  result.innerHTML = `<div class="card" style="padding:20px">
     <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">${t.asOf}: ${formatDate(asOf)}</div>
     ${cashHint}
-    ${section(t.assets, assets)}
-    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalAssets}</span><span>${formatRM(assets.total)}</span></div>
-    ${section(t.liabilities, liab)}
-    ${section(t.equity, eq)}
-    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;padding:10px 0;border-top:2px solid var(--text);margin-top:8px"><span>${t.totalLE}</span><span>${formatRM(liab.total+eq.total)}</span></div>
-    </div>
+    ${section(t.assets, assets, t.totalAssets, true)}
+    ${section(t.liabilities, liab, t.totalLiabilities)}
+    ${section(t.equity, eq, t.totalEquity)}
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:16px"><span>${t.totalLE}</span><span style="white-space:nowrap">${formatRM(liab.total+eq.total)}</span></div>
   </div>` + _repAiSummaryBlock('bs-ai-btn','bs-ai-out')
 
   _repBsContext = `As of: ${asOf}. Total Assets: RM${assets.total.toFixed(2)}. Total Liabilities: RM${liab.total.toFixed(2)}. Total Equity (incl. Retained Earnings RM${retainedEarnings.toFixed(2)}): RM${eq.total.toFixed(2)}. Total Liabilities+Equity: RM${(liab.total+eq.total).toFixed(2)}.`
@@ -40689,7 +40682,7 @@ if('serviceWorker' in navigator){
 <script src="./dk-staff.js?v=2"></script>
 <script src="./dk-purch.js?v=1"></script>
 <script src="./dk-ops.js?v=1"></script>
-<script src="./dk-acct.js?v=1"></script>
+<script src="./dk-acct.js?v=2"></script>
 <script src="./hr-profile.js?v=1"></script>
 <script src="./hr-import.js?v=1"></script>
 </body>
