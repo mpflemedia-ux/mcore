@@ -36850,9 +36850,18 @@ async function renderPnL() {
   await _pnlLoad()
 }
 
+// One stacked "row card" per account line — replaces the old <table> that forced
+// min-width:480px + horizontal scroll on narrow screens (380px). No deps beyond
+// existing design tokens, so this prints fine too (no separate print markup needed).
+function _repLineCardsHtml(rows) {
+  if(!rows.length) return `<div style="padding:10px 14px;color:var(--text-3);font-size:13px">-</div>`
+  return rows.map(r => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;overflow-wrap:anywhere">
+    <span>${r.a.code} - ${r.a.name_en}</span><span style="white-space:nowrap;font-weight:600">${formatRM(r.amt)}</span>
+  </div>`).join('')
+}
 async function _pnlLoad() {
-  const t = APP.language==='bm' ? { revenue:'Hasil', expense:'Perbelanjaan', netProfit:'Untung/(Rugi) Bersih', account:'Akaun', amount:'Jumlah', noData:'Tiada data untuk tempoh ini' }
-    : { revenue:'Revenue', expense:'Expenses', netProfit:'Net Profit/(Loss)', account:'Account', amount:'Amount', noData:'No data for this period' }
+  const t = APP.language==='bm' ? { revenue:'Hasil', expense:'Perbelanjaan', totalRevenue:'Jumlah Hasil', totalExpenses:'Jumlah Perbelanjaan', netProfit:'Untung/(Rugi) Bersih', account:'Akaun', amount:'Jumlah', noData:'Tiada data untuk tempoh ini' }
+    : { revenue:'Revenue', expense:'Expenses', totalRevenue:'Total Revenue', totalExpenses:'Total Expenses', netProfit:'Net Profit/(Loss)', account:'Account', amount:'Amount', noData:'No data for this period' }
   const from = document.getElementById('pnl-from')?.value
   const to = document.getElementById('pnl-to')?.value
   const result = document.getElementById('pnl-result')
@@ -36875,20 +36884,18 @@ async function _pnlLoad() {
 
   const periodLabel = (APP.language==='bm' ? 'Tempoh' : 'Period') + ': ' + formatDate(from) + ' — ' + formatDate(to)
   const coName = (APP.tenant && APP.tenant.name) || 'Company'
-  result.innerHTML = `<div class="card rep-print-card" style="padding:20px;overflow-x:auto">
-    <div style="min-width:480px">
+  result.innerHTML = `<div class="card rep-print-card" style="padding:20px">
     <div class="print-only" style="display:none;font-weight:700;font-size:16px;margin-bottom:4px">${_aiEscapeHtml(coName)}</div>
     <div class="print-only" style="display:none;font-size:14px;margin-bottom:8px">${APP.language==='bm'?'Penyata Pendapatan':'Income Statement'}</div>
     <div style="font-size:13px;color:var(--text-3);margin-bottom:14px">${periodLabel}</div>
     <div style="font-weight:700;margin-bottom:8px">${t.revenue}</div>
-    <table><tbody>${revRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.revenue}</span><span>${formatRM(totalRev)}</span></div>
-    <div style="font-weight:700;margin:16px 0 8px">${t.expense}</div>
-    <table><tbody>${expRows.map(r=>`<tr><td>${r.a.code} - ${r.a.name_en}</td><td style="text-align:right">${formatRM(r.amt)}</td></tr>`).join('')||`<tr><td colspan="2" style="color:var(--text-3)">-</td></tr>`}</tbody></table>
-    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:600;padding:8px 0;border-top:1px solid var(--border);margin-top:4px"><span>${t.expense}</span><span>${formatRM(totalExp)}</span></div>
-    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;font-size:18px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px;color:${(totalRev-totalExp)>=0?'var(--success)':'var(--danger)'}">
+    ${_repLineCardsHtml(revRows)}
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;padding:10px 14px;border-top:1px solid var(--border);margin-top:4px"><span>${t.totalRevenue}</span><span>${formatRM(totalRev)}</span></div>
+    <div style="font-weight:700;margin:20px 0 8px">${t.expense}</div>
+    ${_repLineCardsHtml(expRows)}
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;padding:10px 14px;border-top:1px solid var(--border);margin-top:4px"><span>${t.totalExpenses}</span><span>${formatRM(totalExp)}</span></div>
+    <div style="display:flex;justify-content:space-between;white-space:nowrap;font-weight:700;font-size:18px;padding:14px 0;border-top:2px solid var(--text);margin-top:16px;color:${(totalRev-totalExp)>=0?'var(--success)':'var(--danger)'}">
       <span>${t.netProfit}</span><span>${formatRM(totalRev-totalExp)}</span>
-    </div>
     </div>
   </div>` + _repAiSummaryBlock('pnl-ai-btn','pnl-ai-out')
 
