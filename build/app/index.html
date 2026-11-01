@@ -36786,8 +36786,8 @@ async function _tbLoad() {
     return
   }
   const ok = Math.abs(totalD - totalC) < 0.02
-  const dcPair = (d, cr) => `<span style="display:flex;gap:16px;white-space:nowrap">
-      <span>${t.debit}: ${d}</span><span>${t.credit}: ${cr}</span>
+  const dcPair = (d, cr) => `<span style="display:flex;flex-wrap:wrap;gap:4px 16px">
+      <span style="white-space:nowrap">${t.debit}: ${d}</span><span style="white-space:nowrap">${t.credit}: ${cr}</span>
     </span>`
   result.innerHTML = `
   <div class="card" style="padding:20px">
