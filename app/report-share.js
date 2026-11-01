@@ -37,27 +37,33 @@
   function base() { try { return (window.WAD && WAD.base) ? WAD.base() : (location.origin + location.pathname.replace(/index\.html$/, '')); } catch (e) { return '/'; } }
 
   RS.share = function (type, title) {
-    var W = window.WAD;
-    if (!W || typeof W.open !== 'function') { toast(L('WhatsApp share is not available.', 'Kongsi WhatsApp tidak tersedia.'), 'error'); return; }
-    var snap = snaps[type];
-    if (!snap) { toast(L('Nothing to share yet — load the report first.', 'Tiada apa nak kongsi lagi — muatkan laporan dahulu.'), 'warning'); return; }
-    addI18n();
-    var cached = null;
-    W.open({
-      docType: 'report', docId: null, docRef: title, to: null, phone: '', recipientKind: 'other',
-      k: 'rpt_share',
-      tpls: [{ k: 'rpt_share', label: 'rptShare', desc: 'rptShareD' }],
-      build: function (k, lang) {
-        var get = cached ? Promise.resolve(cached) : Promise.resolve(
-          sb.rpc('report_share_link_create', { p_report_type: type, p_title: title, p_snapshot: snap, p_days: 7 })
-        ).then(function (r) { if (r.error) throw r.error; cached = r.data; return cached; });
-        return get.then(function (d) {
-          var th = (window.WAD && WAD.theme) ? WAD.theme() : null;
-          var url = base() + 'public-report.html?rpt=' + encodeURIComponent(d.token) + (lang === 'bm' ? '&lang=bm' : '') + (th ? '&theme=' + th : '');
-          return { text: msgText(lang, title, url), link_id: d.link_id, expires_at: d.expires_at };
-        });
-      }
-    });
+    try {
+      var W = window.WAD;
+      if (!W) { toast(L('WhatsApp share is not available (WAD not loaded — try reloading the app).', 'Kongsi WhatsApp tidak tersedia (WAD tidak dimuatkan — cuba muat semula app).'), 'error'); console.error('[report-share] window.WAD missing'); return; }
+      if (typeof W.open !== 'function') { toast(L('WhatsApp share is not available (open() missing — try reloading the app).', 'Kongsi WhatsApp tidak tersedia (open() tiada — cuba muat semula app).'), 'error'); console.error('[report-share] WAD.open missing'); return; }
+      var snap = snaps[type];
+      if (!snap) { toast(L('Nothing to share yet — reload this report (change the date and Apply), then try Share again.', 'Tiada apa nak kongsi lagi — muat semula laporan ni (tukar tarikh dan Apply), cuba Share lagi.'), 'warning'); console.warn('[report-share] no snapshot cached for', type); return; }
+      addI18n();
+      var cached = null;
+      W.open({
+        docType: 'report', docId: null, docRef: title, to: null, phone: '', recipientKind: 'other',
+        k: 'rpt_share',
+        tpls: [{ k: 'rpt_share', label: 'rptShare', desc: 'rptShareD' }],
+        build: function (k, lang) {
+          var get = cached ? Promise.resolve(cached) : Promise.resolve(
+            sb.rpc('report_share_link_create', { p_report_type: type, p_title: title, p_snapshot: snap, p_days: 7 })
+          ).then(function (r) { if (r.error) throw r.error; cached = r.data; return cached; });
+          return get.then(function (d) {
+            var th = (window.WAD && WAD.theme) ? WAD.theme() : null;
+            var url = base() + 'public-report.html?rpt=' + encodeURIComponent(d.token) + (lang === 'bm' ? '&lang=bm' : '') + (th ? '&theme=' + th : '');
+            return { text: msgText(lang, title, url), link_id: d.link_id, expires_at: d.expires_at };
+          }).catch(function (e) { console.error('[report-share] link create failed', e); throw e; });
+        }
+      });
+    } catch (e) {
+      console.error('[report-share] share() threw', e);
+      toast(L('Share failed: ', 'Kongsi gagal: ') + ((e && e.message) || String(e)), 'error');
+    }
   };
 
   /* ---------- manage / revoke panel ---------- */

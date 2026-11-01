@@ -38551,8 +38551,9 @@ function _repPrintToolbar(reportCode, dateOpts) {
 /** Share-via-WhatsApp toolbar button + "manage shared links" link, for Reports pages. */
 function _repShareToolbar(reportType, title) {
   const isBm = APP.language === 'bm'
-  return `<button type="button" class="btn btn-outline btn-sm no-print" onclick="RPTShare.share('${reportType}', ${JSON.stringify(title)})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi':'Share'}</button>
-  <button type="button" class="btn btn-outline btn-sm no-print" title="${isBm?'Urus pautan dikongsi':'Manage shared links'}" onclick="RPTShare.openManage('${reportType}')"><i class="ti ti-link"></i></button>`
+  const guard = isBm ? "if(!window.RPTShare){showToast('Modul kongsi belum dimuat — cuba tutup & buka app semula','error');return}" : "if(!window.RPTShare){showToast('Share module not loaded — try closing and reopening the app','error');return}"
+  return `<button type="button" class="btn btn-outline btn-sm no-print" onclick="${guard}RPTShare.share('${reportType}', ${JSON.stringify(title)})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi':'Share'}</button>
+  <button type="button" class="btn btn-outline btn-sm no-print" title="${isBm?'Urus pautan dikongsi':'Manage shared links'}" onclick="${guard}RPTShare.openManage('${reportType}')"><i class="ti ti-link"></i></button>`
 }
 function _repPrint(reportCode, dateOpts) {
   try {
