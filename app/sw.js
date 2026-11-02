@@ -1,4 +1,4 @@
-const CACHE='mcore-shell-v69'
+const CACHE='mcore-shell-v70'
 self.addEventListener('install',e=>{e.waitUntil(self.skipWaiting())})
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim()))})
 self.addEventListener('fetch',e=>{

@@ -208,7 +208,7 @@
       var prods = rs[0].data || [], links = {}; (rs[1].data || []).forEach(function (l) { links[String(l.product_id)] = l; });
       var bcOf = function (p) { var l = links[String(p.id)]; return String((l && l.barcode) || p.barcode || '').trim(); };
       var nBc = prods.filter(bcOf).length, noBc = prods.length - nBc;
-      _pState = { acct: acct, prods: prods, links: links };
+      _pState = { acct: acct, accts: accts, prods: prods, links: links };
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px">' + acctPicker(accts, acct.id) +
         '<button type="button" class="btn btn-primary btn-sm" id="ffm-sync"' + (nBc ? '' : ' disabled') + '><i class="ti ti-refresh"></i> ' + esc(t('Sync products with barcode', 'Segerak produk berbarkod')) + ' (' + nBc + ')</button>' +
         (noBc ? '<span class="ffm-muted">' + esc(t(noBc + ' product(s) without barcode are skipped', noBc + ' produk tanpa barkod dilangkau')) + '</span>' : '') + '</div>' +
@@ -241,7 +241,9 @@
         '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-no-titlecase="1"') +
         inp('fl-ppu', t('Pcs per FFM unit', 'Pcs seunit FFM'), String(ppu), 'type="number" min="1" step="1" inputmode="numeric"') + '</div>' +
         '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-ppu-warn" role="status"></div><div class="ffm-warn" id="fl-warn" role="status"></div>' +
-        (l ? '<button type="button" class="btn btn-outline btn-sm" id="fl-del" style="color:var(--danger);border-color:var(--danger);margin-top:10px"><i class="ti ti-unlink"></i> ' + esc(t('Remove link for this account', 'Buang pautan untuk akaun ini')) + '</button>' : '');
+        (l ? '<button type="button" class="btn btn-outline btn-sm" id="fl-del" style="color:var(--danger);border-color:var(--danger);margin-top:10px"><i class="ti ti-unlink"></i> ' + esc(t('Remove link for this account', 'Buang pautan untuk akaun ini')) + '</button>' : '') +
+        '<div class="ffm-sec" style="margin-top:16px">' + esc(t('Not this product? ', 'Bukan produk ini? ')) + '</div>' +
+        '<button type="button" class="btn btn-outline btn-sm" id="fl-delprod" style="color:var(--danger);border-color:var(--danger)"><i class="ti ti-trash"></i> ' + esc(t('Delete this product', 'Padam produk ini')) + '</button>';
       var ov = F.modal(t('FFM barcode & pack size', 'Barkod FFM & saiz pek'), html, t('Save', 'Simpan'), async function (ov, btn) {
         var nb = ov.querySelector('#fl-bc').value.trim(), np = Number(ov.querySelector('#fl-ppu').value);
         if (!F.barcodeOk(nb)) return F.modalErr(t('Barcode: letters and digits only (max 40).', 'Barkod: huruf dan digit sahaja (maks 40).'));
@@ -272,6 +274,20 @@
         F.api('delete_link', { account_id: acct.id, product_id: p.id }).then(function () {
           F.closeModal(); showToast(t('Link removed', 'Pautan dibuang'), 'success'); reload('products', { account: acct.id });
         }).catch(function (e) { F.busy(delBtn, false); F.err(e); });
+      };
+      var delProdBtn = ov.querySelector('#fl-delprod');
+      if (delProdBtn) delProdBtn.onclick = async function () {
+        var nm = typeof prodName === 'function' ? prodName(p) : (p.name_en || p.code);
+        if (!confirm(t('Delete "' + nm + '" completely? This removes it from Inventory and clears its FFM link on every connected account (not just ' + acct.label + '). This cannot be undone from here.', 'Padam "' + nm + '" terus? Ini buang produk dari Inventori dan kosongkan pautan FFM di SEMUA akaun bersambung (bukan ' + acct.label + ' sahaja). Tak boleh undo dari sini.'))) return;
+        F.busy(delProdBtn, true, t('Deleting…', 'Memadam…'));
+        try {
+          var allAccts = (_pState.accts && _pState.accts.length) ? _pState.accts : [acct];
+          await Promise.all(allAccts.map(function (a) { return F.api('delete_link', { account_id: a.id, product_id: p.id }).catch(function () {}); }));
+          var r = await sb.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', p.id).eq('tenant_id', F.tid());
+          if (r.error) throw new Error(r.error.message);
+          if (typeof auditLog === 'function') auditLog('delete', 'products', p.id);
+          F.closeModal(); showToast(t('Product deleted', 'Produk dipadam'), 'success'); reload('products', { account: acct.id });
+        } catch (e) { F.busy(delProdBtn, false); F.err(e); }
       };
     }
 
