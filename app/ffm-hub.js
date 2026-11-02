@@ -203,9 +203,14 @@
       var acct = accts.find(function (a) { return F.same(a.id, accountId); }) || accts[0];
       var rs = await Promise.all([
         sb.from('products').select('id,code,name_en,name_bm,barcode').eq('tenant_id', F.tid()).is('deleted_at', null).order('name_en').limit(1000),
-        sb.from('ffm_product_links').select('product_id,barcode,pcs_per_unit,synced_ok,last_synced_at,last_error').eq('account_id', acct.id).is('deleted_at', null)
+        // Whole tenant (not just this account): need to know which products are already claimed by OTHER accounts, to hide them here.
+        sb.from('ffm_product_links').select('product_id,account_id,barcode,pcs_per_unit,synced_ok,last_synced_at,last_error').eq('tenant_id', F.tid()).is('deleted_at', null)
       ]);
-      var prods = rs[0].data || [], links = {}; (rs[1].data || []).forEach(function (l) { links[String(l.product_id)] = l; });
+      var allLinks = rs[1].data || [], links = {}, elsewhere = {};
+      allLinks.forEach(function (l) { if (F.same(l.account_id, acct.id)) links[String(l.product_id)] = l; else elsewhere[String(l.product_id)] = true; });
+      // A product already linked to a different account doesn't show here — avoids the "No barcode" card that looks
+      // broken/irrelevant but is actually correct (its barcode lives on another account), which led to an accidental delete.
+      var prods = (rs[0].data || []).filter(function (p) { return links[String(p.id)] || !elsewhere[String(p.id)]; });
       var bcOf = function (p) { var l = links[String(p.id)]; return String((l && l.barcode) || p.barcode || '').trim(); };
       var nBc = prods.filter(bcOf).length, noBc = prods.length - nBc;
       _pState = { acct: acct, accts: accts, prods: prods, links: links };
