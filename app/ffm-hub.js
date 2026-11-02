@@ -186,6 +186,19 @@
     function acctPicker(accts, cur) { return '<select class="form-select" id="ffm-acct-pick" style="max-width:260px">' + accts.map(function (a) { return '<option value="' + esc(a.id) + '"' + (F.same(a.id, cur) ? ' selected' : '') + '>' + esc(a.label + (a.is_funded ? ' · ' + t('Funded', 'Dibiayai') : '')) + '</option>'; }).join('') + '</select>'; }
 
     /* ---------- Products (per-account FFM barcode + pcs per FFM unit) ---------- */
+    // Edit button uses an inline onclick="..." (not a post-render .onclick= binding): once
+    // DK.list cards this table (dk-ffm.js), the card's action button is a cloneNode(true) of
+    // the original — cloneNode never copies a JS-assigned .onclick, only real HTML attributes
+    // — so a .onclick= binding works in the plain table but goes dead inside the card. Every
+    // other DK-carded list in this app already uses inline onclick="..." for this reason.
+    var _pState = {};
+    window.FFMProd = window.FFMProd || {};
+    window.FFMProd.edit = function (productId) {
+      var p = (_pState.prods || []).find(function (x) { return F.same(x.id, productId); });
+      if (!p || !_pState.acct) return;
+      var l = _pState.links[String(p.id)], bc = String((l && l.barcode) || p.barcode || '').trim();
+      linkModal(_pState.acct, p, l, bc);
+    };
     async function productsTab(body, accts, accountId) {
       var acct = accts.find(function (a) { return F.same(a.id, accountId); }) || accts[0];
       var rs = await Promise.all([
@@ -195,6 +208,7 @@
       var prods = rs[0].data || [], links = {}; (rs[1].data || []).forEach(function (l) { links[String(l.product_id)] = l; });
       var bcOf = function (p) { var l = links[String(p.id)]; return String((l && l.barcode) || p.barcode || '').trim(); };
       var nBc = prods.filter(bcOf).length, noBc = prods.length - nBc;
+      _pState = { acct: acct, prods: prods, links: links };
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px">' + acctPicker(accts, acct.id) +
         '<button type="button" class="btn btn-primary btn-sm" id="ffm-sync"' + (nBc ? '' : ' disabled') + '><i class="ti ti-refresh"></i> ' + esc(t('Sync products with barcode', 'Segerak produk berbarkod')) + ' (' + nBc + ')</button>' +
         (noBc ? '<span class="ffm-muted">' + esc(t(noBc + ' product(s) without barcode are skipped', noBc + ' produk tanpa barkod dilangkau')) + '</span>' : '') + '</div>' +
@@ -205,13 +219,10 @@
             var s = !bc ? '<span class="badge badge-gray">' + esc(t('No barcode', 'Tiada barkod')) + '</span>' : !l || (!l.synced_ok && !l.last_error) ? '<span class="badge badge-gray">' + esc(t('Not synced', 'Belum segerak')) + '</span>' : l.synced_ok ? '<span class="badge badge-green">' + esc(t('Synced', 'Disegerak')) + '</span> <span class="ffm-muted">' + esc(F.dt(l.last_synced_at)) + '</span>' + (l.last_error ? '<div class="ffm-warn">' + esc(l.last_error) + '</div>' : '') : '<span class="badge badge-red">' + esc(t('Error', 'Ralat')) + '</span><div class="ffm-err">' + esc(l.last_error || '') + '</div>';
             var inv = l && p.barcode && String(p.barcode).trim() !== bc ? '<div class="ffm-muted">' + esc(t('Inventory: ', 'Inventori: ') + p.barcode) + '</div>' : '';
             return '<tr><td>' + esc(typeof prodName === 'function' ? prodName(p) : (p.name_en || p.code)) + '</td><td>' + (bc ? esc(bc) : '<span class="ffm-muted">-</span>') + inv + '</td><td>' + esc(F.ppu(l && l.pcs_per_unit)) + '</td><td>' + s + '</td>' +
-              '<td><div class="ffm-actions"><button type="button" class="btn btn-outline btn-sm" data-edit="' + esc(p.id) + '"><i class="ti ti-pencil"></i> ' + esc(t('Edit', 'Ubah')) + '</button></div></td></tr>';
+              '<td><div class="ffm-actions"><button type="button" class="btn btn-outline btn-sm" onclick="FFMProd.edit(\'' + esc(p.id) + '\')"><i class="ti ti-pencil"></i> ' + esc(t('Edit', 'Ubah')) + '</button></div></td></tr>';
           }).join('') + '</tbody></table></div>'
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-barcode"></i><h3>' + esc(t('No products yet', 'Belum ada produk')) + '</h3><p>' + esc(t('Add products in Inventory first — FFM matches goods by barcode.', 'Tambah produk di Inventori dahulu — FFM padankan barang ikut barkod.')) + '</p></div>') + '</div>';
       document.getElementById('ffm-acct-pick').onchange = function () { reload('products', { account: this.value }); };
-      body.querySelectorAll('[data-edit]').forEach(function (b) {
-        b.onclick = function () { var p = prods.find(function (x) { return F.same(x.id, b.getAttribute('data-edit')); }); if (p) linkModal(acct, p, links[String(p.id)], bcOf(p)); };
-      });
       var sbtn = document.getElementById('ffm-sync');
       sbtn.onclick = async function () {
         F.busy(sbtn, true, t('Syncing…', 'Menyegerak…'));
