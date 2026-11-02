@@ -29,18 +29,29 @@
   .bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin:0 0 10px}
   .btn{min-height:44px;padding:10px 16px;border-radius:10px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;box-sizing:border-box;border:1px solid var(--border);background:var(--card);color:var(--text)}
   .card{background:var(--card);border-radius:12px;border:1px solid var(--border);padding:20px;box-sizing:border-box;box-shadow:var(--shadow);margin-bottom:16px}
-  .co{font-weight:700;font-size:16px;margin-bottom:2px}
-  .ttl{font-size:14px;color:var(--muted);margin-bottom:8px}
-  .period{font-size:13px;color:var(--muted);margin-bottom:14px}
-  .heading{font-weight:700;margin:16px 0 8px}
-  .row-card{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow-wrap:anywhere}
-  .row-card .vals{display:flex;flex-wrap:wrap;gap:4px 16px;font-weight:600;white-space:nowrap}
+  .hd-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;background:color-mix(in srgb, var(--ok) 16%, transparent);color:var(--ok);white-space:nowrap}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
+  .ref{font-size:12px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
+  .ttl-big{font-size:21px;font-weight:800;line-height:1.3;margin-bottom:4px;overflow-wrap:anywhere}
+  .sub2{font-size:14px;color:var(--muted);margin-bottom:10px;overflow-wrap:anywhere}
+  .meta2{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+  .meta2 svg{flex:none}
+  .sec-card{padding:14px}
+  .sec-head{font-weight:700;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:2px 6px 10px}
+  .heading{font-weight:700;margin:16px 6px 8px}
+  .row-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;overflow-wrap:anywhere}
+  .row-card.plain{color:var(--muted)}
+  .row-ic{flex:none;width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--primary)}
+  .row-ic svg{width:16px;height:16px}
+  .row-body{flex:1;min-width:0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .row-body.stack{flex-direction:column;align-items:stretch;gap:4px}
+  .row-body .vals{display:flex;flex-wrap:wrap;gap:4px 16px;font-weight:600;white-space:nowrap}
   .total-row{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;padding:10px 14px;border-top:1px solid var(--border);margin-top:4px}
-  .total-row.strong{font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:12px}
-  .closing{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;font-size:16px;padding:14px 0;border-top:2px solid var(--text);margin-top:16px}
+  .total-row.strong{font-size:16px;padding:14px 6px;border-top:2px solid var(--text);margin-top:12px}
+  .closing{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-weight:700;font-size:16px;padding:14px 6px;border-top:2px solid var(--text);margin-top:16px}
   .closing.success{color:var(--ok)}.closing.danger{color:var(--danger)}
-  .expiry{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
-  @media print{.bar,.expiry{display:none!important}.wrap{margin:0;padding:0;max-width:none}html,body{background:#fff}}
+  @media print{.bar{display:none!important}.wrap{margin:0;padding:0;max-width:none}html,body{background:#fff}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -62,11 +73,14 @@ const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persi
 
   function errScreen(msg){root.innerHTML='<div class="err"><h2>'+esc(T0('Link unavailable','Pautan tidak tersedia'))+'</h2><p>'+esc(msg)+'</p></div>'}
 
+  var ROW_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>'
+  var CLOCK_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>'
+
   function sectionHtml(sec){
     var h=sec.heading?('<div class="heading">'+esc(sec.heading)+'</div>'):''
     h+=(sec.rows||[]).map(function(r){
-      return '<div class="row-card"><span>'+esc(r.label)+'</span><span class="vals">'+(r.values||[]).map(function(v){return '<span>'+esc(v)+'</span>'}).join('')+'</span></div>'
-    }).join('') || '<div class="row-card" style="color:var(--muted)">-</div>'
+      return '<div class="row-card"><div class="row-ic">'+ROW_ICON+'</div><div class="row-body"><span>'+esc(r.label)+'</span><span class="vals">'+(r.values||[]).map(function(v){return '<span>'+esc(v)+'</span>'}).join('')+'</span></div></div>'
+    }).join('') || '<div class="row-card plain">-</div>'
     if(sec.total){
       h+='<div class="total-row'+(sec.strong?' strong':'')+'"><span>'+esc(sec.total.label)+'</span><span class="vals">'+(sec.total.values||[]).map(function(v){return '<span>'+esc(v)+'</span>'}).join('')+'</span></div>'
     }
@@ -83,10 +97,10 @@ const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persi
   function tableHtml(snap){
     var tbl=snap.table||{headers:[],rows:[]}
     var h=(tbl.rows||[]).map(function(r){
-      return '<div class="row-card" style="flex-direction:column;align-items:stretch;gap:4px">'+
+      return '<div class="row-card"><div class="row-ic">'+ROW_ICON+'</div><div class="row-body stack">'+
         tbl.headers.map(function(hd,i){return '<div style="display:flex;justify-content:space-between;gap:10px"><span style="color:var(--muted)">'+esc(hd)+'</span><span style="font-weight:600;text-align:right">'+esc(r[i]!=null?r[i]:'')+'</span></div>'}).join('')+
-      '</div>'
-    }).join('') || '<div class="row-card" style="color:var(--muted)">-</div>'
+      '</div></div>'
+    }).join('') || '<div class="row-card plain">-</div>'
     if(tbl.totalsRow){
       var tlabel=tbl.totalsRow[0]
       var trest=tbl.headers.map(function(hd,i){ if(i===0) return ''; var v=tbl.totalsRow[i]; return v?(hd+': '+v):'' }).filter(Boolean)
@@ -96,6 +110,14 @@ const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persi
         +'</div>'
     }
     return h
+  }
+  function itemCount(snap){
+    if(snap.kind==='table') return (snap.table&&snap.table.rows||[]).length
+    var n=0; (snap.sections||[]).forEach(function(s){n+=(s.rows||[]).length}); return n
+  }
+  function fmtDT(iso){
+    try{ return new Date(iso).toLocaleString(bm0?'ms-MY':'en-MY',{timeZone:'Asia/Kuala_Lumpur',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}).replace(/\b(am|pm)\b/i,function(m){return m.toUpperCase()}) }
+    catch(e){ return '' }
   }
 
   sb.rpc('get_public_report',{p_token:tok}).then(function(res){
@@ -111,14 +133,24 @@ const sb=window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persi
     document.documentElement.lang=B?'ms':'en'
     var snap=d.snapshot||{}
     document.title=(snap.title||d.title||'Report')+' - '+(d.company||'')
+    var category=/^ffm_/.test(d.report_type||'')?T0('FFM Report','Laporan FFM'):T0('Accounting Report','Laporan Perakaunan')
+    var ref='RPT-'+tok.slice(0,8).toUpperCase()
+    var days=Math.max(0,Math.ceil((new Date(d.expires_at)-Date.now())/86400000))
+    var metaTxt=T0('Shared ','Dikongsi ')+fmtDT(d.created_at)+' · '+T0('expires in ','tamat dalam ')+days+T0(days===1?' day':' days',' hari')
+    var count=itemCount(snap)
+    var countTxt=count+' '+T0(count===1?'item':'items', 'baris')
     var h='<div class="wrap"><div class="bar"><button class="btn" onclick="window.print()">'+esc(B?'Cetak / Simpan PDF':'Print / Save PDF')+'</button></div>'
       +'<div class="card">'
-      +'<div class="co">'+esc(d.company||'')+'</div>'
-      +'<div class="ttl">'+esc(snap.title||d.title||'')+'</div>'
-      +(snap.periodLabel?('<div class="period">'+esc(snap.periodLabel)+'</div>'):'')
+      +'<div class="hd-top"><span class="pill"><span class="dot"></span>'+esc(T0('Active','Aktif'))+'</span><span class="ref">'+esc(ref)+'</span></div>'
+      +'<div class="ttl-big">'+esc(snap.title||d.title||'')+'</div>'
+      +'<div class="sub2">'+esc(category+' · '+(d.company||''))+'</div>'
+      +(snap.periodLabel?('<div class="sub2" style="margin-top:-6px">'+esc(snap.periodLabel)+'</div>'):'')
+      +'<div class="meta2">'+CLOCK_ICON+'<span>'+esc(metaTxt)+'</span></div>'
+      +'</div>'
+      +'<div class="card sec-card">'
+      +'<div class="sec-head">'+esc(T0('Report data','Data laporan')+' ('+countTxt+')')+'</div>'
       +(snap.kind==='table'?tableHtml(snap):statementHtml(snap))
       +'</div>'
-      +'<div class="expiry">'+esc((B?'Pautan tamat ':'Link expires ')+new Date(d.expires_at).toLocaleDateString(B?'ms-MY':'en-MY',{timeZone:'Asia/Kuala_Lumpur'}))+'</div>'
       +'</div>'
     root.innerHTML=h
   }, function(){ errScreen(T0('Could not load this report. Please try again later.','Gagal memuatkan laporan ini. Sila cuba lagi kemudian.')) })
