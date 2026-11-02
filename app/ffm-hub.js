@@ -240,7 +240,8 @@
       var html = '<div class="ffm-muted" style="margin-bottom:10px">' + esc((typeof prodName === 'function' ? prodName(p) : p.name_en) + ' · ' + acct.label) + '</div>' +
         '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-no-titlecase="1"') +
         inp('fl-ppu', t('Pcs per FFM unit', 'Pcs seunit FFM'), String(ppu), 'type="number" min="1" step="1" inputmode="numeric"') + '</div>' +
-        '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-ppu-warn" role="status"></div><div class="ffm-warn" id="fl-warn" role="status"></div>';
+        '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-ppu-warn" role="status"></div><div class="ffm-warn" id="fl-warn" role="status"></div>' +
+        (l ? '<button type="button" class="btn btn-outline btn-sm" id="fl-del" style="color:var(--danger);border-color:var(--danger);margin-top:10px"><i class="ti ti-unlink"></i> ' + esc(t('Remove link for this account', 'Buang pautan untuk akaun ini')) + '</button>' : '');
       var ov = F.modal(t('FFM barcode & pack size', 'Barkod FFM & saiz pek'), html, t('Save', 'Simpan'), async function (ov, btn) {
         var nb = ov.querySelector('#fl-bc').value.trim(), np = Number(ov.querySelector('#fl-ppu').value);
         if (!F.barcodeOk(nb)) return F.modalErr(t('Barcode: letters and digits only (max 40).', 'Barkod: huruf dan digit sahaja (maks 40).'));
@@ -264,6 +265,14 @@
         ov.querySelector('#fl-ppu-warn').textContent = (ok && n > 1) ? t('Pcs / unit is above 1 — double-check in the FFM merchant portal that this barcode is really tracked by carton/box there, not by the base unit. If unsure, use 1.', 'Pcs / unit melebihi 1 — sahkan semula dalam portal peniaga FFM barkod ini memang dikira ikut karton/kotak di sana, bukan unit asas. Jika tak pasti, guna 1.') : '';
       };
       ov.querySelector('#fl-ppu').oninput = hint; ov.querySelector('#fl-bc').oninput = function () { ov.querySelector('#fl-warn').textContent = ''; warned = ''; }; hint();
+      var delBtn = ov.querySelector('#fl-del');
+      if (delBtn) delBtn.onclick = function () {
+        if (!confirm(t('Remove the FFM link for this product on ' + acct.label + '? The barcode/pcs setting will be cleared for this account only — the product itself is not touched.', 'Buang pautan FFM untuk produk ini di ' + acct.label + '? Tetapan barkod/pcs untuk akaun ini sahaja akan dikosongkan — produk itu sendiri tidak disentuh.'))) return;
+        F.busy(delBtn, true, t('Removing…', 'Membuang…'));
+        F.api('delete_link', { account_id: acct.id, product_id: p.id }).then(function () {
+          F.closeModal(); showToast(t('Link removed', 'Pautan dibuang'), 'success'); reload('products', { account: acct.id });
+        }).catch(function (e) { F.busy(delBtn, false); F.err(e); });
+      };
     }
 
     /* ---------- Stock (FFM only; M-Core stock shown for reference, never overwritten) ---------- */

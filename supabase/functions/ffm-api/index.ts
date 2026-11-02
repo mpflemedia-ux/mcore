@@ -172,6 +172,15 @@ async function saveLink(c: Ctx, b: Row) {
   if (changed && mine) await c.sb.from('ffm_stock').update({ deleted_at: nowIso() }).eq('account_id', acct.id).eq('product_id', pid).neq('barcode', bc).is('deleted_at', null);
   return { ok: true, resync: changed, ean13_warning: !ean13Ok(bc) };
 }
+async function deleteLink(c: Ctx, b: Row) {
+  requireMod(c, ['logistics', 'inventory']);
+  const { acct } = await acctOf(c, b.account_id);
+  need(b.product_id, 'product_id required');
+  const pid = String(b.product_id);
+  await c.sb.from('ffm_product_links').update({ deleted_at: nowIso() }).eq('account_id', acct.id).eq('product_id', pid).is('deleted_at', null);
+  await c.sb.from('ffm_stock').update({ deleted_at: nowIso() }).eq('account_id', acct.id).eq('product_id', pid).is('deleted_at', null);
+  return { ok: true };
+}
 
 // ---------- DO -> addOrder ----------
 async function doGoods(c: Ctx, doRow: Row, acctId: string) {
@@ -362,7 +371,7 @@ async function recon(c: Ctx) { requireMod(c, ['logistics', 'inventory']); return
 
 const ACTIONS: Record<string, (c: Ctx, b: Row) => Promise<Row>> = {
   save_account: saveAccount, delete_account: deleteAccount, test: testAccount, sync_products: syncProducts, send_order: sendOrder, cancel: cancelOrder,
-  save_link: saveLink, label, tracking, fee, create_asn: createAsn, refresh_asn: refreshAsn, sync_stock: syncStock, recon,
+  save_link: saveLink, delete_link: deleteLink, label, tracking, fee, create_asn: createAsn, refresh_asn: refreshAsn, sync_stock: syncStock, recon,
 };
 
 Deno.serve(async (req) => {
