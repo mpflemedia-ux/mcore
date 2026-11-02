@@ -199,7 +199,7 @@
         '<button type="button" class="btn btn-primary btn-sm" id="ffm-sync"' + (nBc ? '' : ' disabled') + '><i class="ti ti-refresh"></i> ' + esc(t('Sync products with barcode', 'Segerak produk berbarkod')) + ' (' + nBc + ')</button>' +
         (noBc ? '<span class="ffm-muted">' + esc(t(noBc + ' product(s) without barcode are skipped', noBc + ' produk tanpa barkod dilangkau')) + '</span>' : '') + '</div>' +
         '<p class="ffm-muted" style="margin:0 0 10px">' + esc(t('Barcode and pcs per unit are set per FFM account. FFM usually reports stock in the product’s own base unit (bottle, pcs, etc) — only raise “Pcs / unit” above 1 if you’ve confirmed with FFM that this barcode is tracked by carton/box.', 'Barkod dan pcs seunit ditetapkan ikut akaun FFM. FFM biasanya laporkan stok dalam unit asas produk itu sendiri (botol, pcs, dll) — naikkan “Pcs / unit” melebihi 1 hanya jika anda telah sahkan dengan FFM bahawa barkod ini dikira ikut karton/kotak.')) + '</p>' +
-        (prods.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('FFM barcode', 'Barkod FFM')) + '</th><th>' + esc(t('Pcs / unit', 'Pcs / unit')) + '</th><th>' + esc(t('FFM', 'FFM')) + '</th><th></th></tr></thead><tbody>' +
+        (prods.length ? '<div class="ffm-tbl" id="ffm-prod-wrap"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('FFM barcode', 'Barkod FFM')) + '</th><th>' + esc(t('Pcs / unit', 'Pcs / unit')) + '</th><th>' + esc(t('FFM', 'FFM')) + '</th><th></th></tr></thead><tbody>' +
           prods.map(function (p) {
             var l = links[String(p.id)], bc = bcOf(p);
             var s = !bc ? '<span class="badge badge-gray">' + esc(t('No barcode', 'Tiada barkod')) + '</span>' : !l || (!l.synced_ok && !l.last_error) ? '<span class="badge badge-gray">' + esc(t('Not synced', 'Belum segerak')) + '</span>' : l.synced_ok ? '<span class="badge badge-green">' + esc(t('Synced', 'Disegerak')) + '</span> <span class="ffm-muted">' + esc(F.dt(l.last_synced_at)) + '</span>' + (l.last_error ? '<div class="ffm-warn">' + esc(l.last_error) + '</div>' : '') : '<span class="badge badge-red">' + esc(t('Error', 'Ralat')) + '</span><div class="ffm-err">' + esc(l.last_error || '') + '</div>';
@@ -267,14 +267,16 @@
       var keys = Object.keys(rows);
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px"><button type="button" class="btn btn-primary btn-sm" id="ffm-pull"><i class="ti ti-refresh"></i> ' + esc(t('Refresh from FFM', 'Muat semula dari FFM')) + '</button>' +
         '<span class="ffm-muted">' + esc(t('Auto every 30 min. FFM stock is kept separate — M-Core stock is not changed.', 'Auto setiap 30 min. Stok FFM diasingkan — stok M-Core tidak diubah.')) + '</span></div>' +
-        (keys.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th>' + accts.map(function (a) { return '<th>' + esc(a.label) + '<div class="ffm-muted" style="text-transform:none">' + esc(t('avail / total', 'tersedia / jumlah')) + '</div></th>'; }).join('') + '<th>' + esc(t('M-Core stock', 'Stok M-Core')) + '</th></tr></thead><tbody>' +
+        (keys.length ? '<div class="ffm-tbl" id="ffm-stock-wrap"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th>' + accts.map(function (a) { return '<th>' + esc(a.label) + '<div class="ffm-muted" style="text-transform:none">' + esc(t('avail / total', 'tersedia / jumlah')) + '</div></th>'; }).join('') + '<th>' + esc(t('M-Core stock', 'Stok M-Core')) + '</th><th>' + esc(t('Status', 'Keadaan')) + '</th></tr></thead><tbody>' +
           keys.map(function (k) {
-            var r = rows[k], p = r.p, rp = p && p.reorder_point != null ? Number(p.reorder_point) : 5;
-            return '<tr><td>' + esc(p ? (typeof prodName === 'function' ? prodName(p) : p.name_en) : r.bc) + '<div class="ffm-muted">' + esc(r.bc) + '</div></td>' + accts.map(function (a) {
+            var r = rows[k], p = r.p, rp = p && p.reorder_point != null ? Number(p.reorder_point) : 5, anyLow = false;
+            var acctTds = accts.map(function (a) {
               var s = r.by[String(a.id)]; if (!s) return '<td class="ffm-muted">-</td>';
               var k = ppu[a.id + ':' + s.product_id] || 1, low = Number(s.available_qty) * k <= rp; // reorder point is pcs
+              if (low) anyLow = true;
               return '<td><strong>' + esc(F.qty(s.available_qty, k)) + '</strong><div>/ ' + esc(F.qty(s.total_qty, k)) + '</div>' + (low ? ' <span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '<div class="ffm-muted">' + esc(F.dt(s.synced_at)) + '</div></td>';
-            }).join('') + '<td>' + esc(p ? p.stock_qty + ' pcs' : '-') + '</td></tr>';
+            }).join('');
+            return '<tr><td>' + esc(p ? (typeof prodName === 'function' ? prodName(p) : p.name_en) : r.bc) + '<div class="ffm-muted">' + esc(r.bc) + '</div></td>' + acctTds + '<td>' + esc(p ? p.stock_qty + ' pcs' : '-') + '</td><td>' + (anyLow ? '<span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>'
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-box"></i><h3>' + esc(t('No FFM stock yet', 'Belum ada stok FFM')) + '</h3><p>' + esc(t('Sync products first, then refresh.', 'Segerak produk dahulu, kemudian muat semula.')) + '</p></div>') + '</div>';
       var b = document.getElementById('ffm-pull');
@@ -298,14 +300,23 @@
       var al = {}; (await F.loadAccounts().catch(function () { return []; })).forEach(function (a) { al[String(a.id)] = a.label; });
       var r = await sb.from('ffm_recon_runs').select('*').eq('tenant_id', F.tid()).is('deleted_at', null).order('run_date', { ascending: false }).limit(1);
       var run = (r.data || [])[0], diffs = run ? (run.rows || []).filter(function (x) { return Number(x.diff) !== 0; }) : [];
+      var shareTitle = (t('FFM Reconciliation', 'Rekonsiliasi FFM')) + (run ? ' ' + run.run_date : '');
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px"><button type="button" class="btn btn-primary btn-sm" id="ffm-recon"><i class="ti ti-scale"></i> ' + esc(t('Run now', 'Jalankan sekarang')) + '</button>' +
+        (run && typeof _repShareToolbar === 'function' ? _repShareToolbar('ffm_recon', shareTitle) : '') +
         '<span class="ffm-muted">' + esc(run ? t('Last run ' + run.run_date + ' · ' + run.product_count + ' products · ' + run.diff_count + ' differences', 'Terakhir ' + run.run_date + ' · ' + run.product_count + ' produk · ' + run.diff_count + ' perbezaan') : t('Runs daily 07:15 MYT', 'Berjalan setiap hari 07:15 MYT')) + '</span></div>' +
         (!run ? '<div class="empty-state" style="padding:30px"><i class="ti ti-scale"></i><h3>' + esc(t('No report yet', 'Belum ada laporan')) + '</h3></div>'
           : !diffs.length ? '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-check"></i><h3>' + esc(t('All matched', 'Semua sepadan')) + '</h3></div>'
-          : '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('M-Core', 'M-Core')) + '</th><th>' + esc(t('FFM total', 'Jumlah FFM')) + '</th><th>' + esc(t('Difference', 'Perbezaan')) + '</th></tr></thead><tbody>' +
+          : '<div class="ffm-tbl" id="ffm-recon-wrap"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('M-Core', 'M-Core')) + '</th><th>' + esc(t('FFM total', 'Jumlah FFM')) + '</th><th>' + esc(t('Difference', 'Perbezaan')) + '</th></tr></thead><tbody>' +
             diffs.map(function (x) { return '<tr><td>' + esc(APP.language === 'bm' ? (x.name_bm || x.name_en) : x.name_en) + '<div class="ffm-muted">' + esc(x.code || '') + '</div></td><td>' + esc(x.mcore_qty) + ' pcs</td><td>' + esc(x.ffm_total) + ' pcs' + byAcct(x) + '</td><td style="font-weight:600;color:var(' + (x.diff > 0 ? '--warning' : '--danger') + ')">' + (x.diff > 0 ? '+' : '') + esc(x.diff) + ' pcs</td></tr>'; }).join('') + '</tbody></table></div>') +
         '<p class="ffm-muted" style="margin:12px 0 0">' + esc(t('Report only — nothing is adjusted automatically.', 'Laporan sahaja — tiada pelarasan automatik.')) + '</p></div>';
       function byAcct(x) { var u = x.by_account_units || {}; return Object.keys(u).map(function (id) { return '<div class="ffm-muted">' + esc((al[id] || 'FFM') + ': ' + F.qty(u[id].units, u[id].ppu)) + '</div>'; }).join(''); }
+      if (run && window.RPTShare) RPTShare.setSnapshot('ffm_recon', {
+        kind: 'table', title: shareTitle, periodLabel: run.run_date, company: (APP.tenant && APP.tenant.name) || 'Company',
+        table: {
+          headers: [t('Product', 'Produk'), t('M-Core', 'M-Core'), t('FFM total', 'Jumlah FFM'), t('Difference', 'Perbezaan')],
+          rows: diffs.map(function (x) { return [APP.language === 'bm' ? (x.name_bm || x.name_en) : x.name_en, x.mcore_qty + ' pcs', x.ffm_total + ' pcs', (x.diff > 0 ? '+' : '') + x.diff + ' pcs']; })
+        }
+      });
       var b = document.getElementById('ffm-recon');
       b.onclick = async function () { F.busy(b, true); try { await F.api('recon', {}); reload('recon'); } catch (e) { F.busy(b, false); F.err(e); } };
     }

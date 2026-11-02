@@ -38552,7 +38552,7 @@ function _repPrintToolbar(reportCode, dateOpts) {
 function _repShareToolbar(reportType, title) {
   const isBm = APP.language === 'bm'
   const guard = isBm ? "if(!window.RPTShare){showToast('Modul kongsi belum dimuat — cuba tutup & buka app semula','error');return}" : "if(!window.RPTShare){showToast('Share module not loaded — try closing and reopening the app','error');return}"
-  return `<button type="button" class="btn btn-outline btn-sm no-print" onclick="${guard}RPTShare.share('${reportType}', ${JSON.stringify(title)})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi':'Share'}</button>
+  return `<button type="button" class="btn btn-outline btn-sm no-print" onclick="${guard}RPTShare.share('${reportType}', ${JSON.stringify(title).replace(/"/g,'&quot;')})"><i class="ti ti-brand-whatsapp"></i> ${isBm?'Kongsi':'Share'}</button>
   <button type="button" class="btn btn-outline btn-sm no-print" title="${isBm?'Urus pautan dikongsi':'Manage shared links'}" onclick="${guard}RPTShare.openManage('${reportType}')"><i class="ti ti-link"></i></button>`
 }
 function _repPrint(reportCode, dateOpts) {
@@ -40740,7 +40740,7 @@ if('serviceWorker' in navigator){
 <script src="./booking-inbox2.js?v=4"></script>
 <script src="./booking-notif-set.js?v=1"></script>
 <script src="./ffm-core.js?v=10"></script>
-<script src="./ffm-hub.js?v=11"></script>
+<script src="./ffm-hub.js?v=12"></script>
 <script src="./ffm-do.js?v=10"></script>
 <script src="./ffm-po.js?v=10"></script>
 <script src="./dk-cards.js?v=5"></script>
@@ -40752,6 +40752,7 @@ if('serviceWorker' in navigator){
 <script src="./dk-purch.js?v=1"></script>
 <script src="./dk-ops.js?v=1"></script>
 <script src="./dk-acct.js?v=2"></script>
+<script src="./dk-ffm.js?v=1"></script>
 <script src="./report-share.js?v=1"></script>
 <script src="./hr-profile.js?v=1"></script>
 <script src="./hr-import.js?v=1"></script>
