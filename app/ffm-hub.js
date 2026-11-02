@@ -198,7 +198,7 @@
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px">' + acctPicker(accts, acct.id) +
         '<button type="button" class="btn btn-primary btn-sm" id="ffm-sync"' + (nBc ? '' : ' disabled') + '><i class="ti ti-refresh"></i> ' + esc(t('Sync products with barcode', 'Segerak produk berbarkod')) + ' (' + nBc + ')</button>' +
         (noBc ? '<span class="ffm-muted">' + esc(t(noBc + ' product(s) without barcode are skipped', noBc + ' produk tanpa barkod dilangkau')) + '</span>' : '') + '</div>' +
-        '<p class="ffm-muted" style="margin:0 0 10px">' + esc(t('Barcode and pcs per unit are set per FFM account. M-Core quantities are pcs; FFM counts units (e.g. 1 carton = 24 pcs).', 'Barkod dan pcs seunit ditetapkan ikut akaun FFM. Kuantiti M-Core dalam pcs; FFM kira unit (cth. 1 karton = 24 pcs).')) + '</p>' +
+        '<p class="ffm-muted" style="margin:0 0 10px">' + esc(t('Barcode and pcs per unit are set per FFM account. FFM usually reports stock in the product’s own base unit (bottle, pcs, etc) — only raise “Pcs / unit” above 1 if you’ve confirmed with FFM that this barcode is tracked by carton/box.', 'Barkod dan pcs seunit ditetapkan ikut akaun FFM. FFM biasanya laporkan stok dalam unit asas produk itu sendiri (botol, pcs, dll) — naikkan “Pcs / unit” melebihi 1 hanya jika anda telah sahkan dengan FFM bahawa barkod ini dikira ikut karton/kotak.')) + '</p>' +
         (prods.length ? '<div class="ffm-tbl"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th><th>' + esc(t('FFM barcode', 'Barkod FFM')) + '</th><th>' + esc(t('Pcs / unit', 'Pcs / unit')) + '</th><th>' + esc(t('FFM', 'FFM')) + '</th><th></th></tr></thead><tbody>' +
           prods.map(function (p) {
             var l = links[String(p.id)], bc = bcOf(p);
@@ -229,7 +229,7 @@
       var html = '<div class="ffm-muted" style="margin-bottom:10px">' + esc((typeof prodName === 'function' ? prodName(p) : p.name_en) + ' · ' + acct.label) + '</div>' +
         '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-no-titlecase="1"') +
         inp('fl-ppu', t('Pcs per FFM unit', 'Pcs seunit FFM'), String(ppu), 'type="number" min="1" step="1" inputmode="numeric"') + '</div>' +
-        '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-warn" role="status"></div>';
+        '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-ppu-warn" role="status"></div><div class="ffm-warn" id="fl-warn" role="status"></div>';
       var ov = F.modal(t('FFM barcode & pack size', 'Barkod FFM & saiz pek'), html, t('Save', 'Simpan'), async function (ov, btn) {
         var nb = ov.querySelector('#fl-bc').value.trim(), np = Number(ov.querySelector('#fl-ppu').value);
         if (!F.barcodeOk(nb)) return F.modalErr(t('Barcode: letters and digits only (max 40).', 'Barkod: huruf dan digit sahaja (maks 40).'));
@@ -244,7 +244,14 @@
           reload('products', { account: acct.id });
         } catch (e) { F.busy(btn, false); F.modalErr(e.message); }
       });
-      var hint = function () { var n = Number(ov.querySelector('#fl-ppu').value); ov.querySelector('#fl-hint').textContent = n >= 1 && Math.floor(n) === n ? t('1 FFM unit = ' + n + ' pcs. Example: 36 units = ' + (36 * n) + ' pcs.', '1 unit FFM = ' + n + ' pcs. Contoh: 36 unit = ' + (36 * n) + ' pcs.') : ''; };
+      var hint = function () {
+        var n = Number(ov.querySelector('#fl-ppu').value), ok = n >= 1 && Math.floor(n) === n;
+        ov.querySelector('#fl-hint').textContent = ok ? t('1 FFM unit = ' + n + ' pcs. Example: 36 units = ' + (36 * n) + ' pcs.', '1 unit FFM = ' + n + ' pcs. Contoh: 36 unit = ' + (36 * n) + ' pcs.') : '';
+        // M-Core cannot read FFM's own packing/unit setting from the current API scope — this is a
+        // reminder, not a value fetched from FFM. Wrong pcs_per_unit silently multiplies every
+        // Stock/Reconciliation figure for this barcode (root cause of the KRV-HM-003 860-vs-20,640 bug).
+        ov.querySelector('#fl-ppu-warn').textContent = (ok && n > 1) ? t('Pcs / unit is above 1 — double-check in the FFM merchant portal that this barcode is really tracked by carton/box there, not by the base unit. If unsure, use 1.', 'Pcs / unit melebihi 1 — sahkan semula dalam portal peniaga FFM barkod ini memang dikira ikut karton/kotak di sana, bukan unit asas. Jika tak pasti, guna 1.') : '';
+      };
       ov.querySelector('#fl-ppu').oninput = hint; ov.querySelector('#fl-bc').oninput = function () { ov.querySelector('#fl-warn').textContent = ''; warned = ''; }; hint();
     }
 
