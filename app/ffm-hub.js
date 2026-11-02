@@ -265,7 +265,9 @@
       var pm = {}; (pr.data || []).forEach(function (p) { pm[String(p.id)] = p; });
       var rows = {}; st.forEach(function (s) { var k = String(s.product_id || s.barcode); (rows[k] = rows[k] || { p: pm[String(s.product_id)], bc: s.barcode, by: {} }).by[String(s.account_id)] = s; });
       var keys = Object.keys(rows);
+      var shareTitle = t('FFM Stock', 'Stok FFM');
       body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px"><button type="button" class="btn btn-primary btn-sm" id="ffm-pull"><i class="ti ti-refresh"></i> ' + esc(t('Refresh from FFM', 'Muat semula dari FFM')) + '</button>' +
+        (keys.length && typeof _repShareToolbar === 'function' ? _repShareToolbar('ffm_stock', shareTitle) : '') +
         '<span class="ffm-muted">' + esc(t('Auto every 30 min. FFM stock is kept separate — M-Core stock is not changed.', 'Auto setiap 30 min. Stok FFM diasingkan — stok M-Core tidak diubah.')) + '</span></div>' +
         (keys.length ? '<div class="ffm-tbl" id="ffm-stock-wrap"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th>' + accts.map(function (a) { return '<th>' + esc(a.label) + '<div class="ffm-muted" style="text-transform:none">' + esc(t('avail / total', 'tersedia / jumlah')) + '</div></th>'; }).join('') + '<th>' + esc(t('M-Core stock', 'Stok M-Core')) + '</th><th>' + esc(t('Status', 'Keadaan')) + '</th></tr></thead><tbody>' +
           keys.map(function (k) {
@@ -279,6 +281,21 @@
             return '<tr><td>' + esc(p ? (typeof prodName === 'function' ? prodName(p) : p.name_en) : r.bc) + '<div class="ffm-muted">' + esc(r.bc) + '</div></td>' + acctTds + '<td>' + esc(p ? p.stock_qty + ' pcs' : '-') + '</td><td>' + (anyLow ? '<span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>'
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-box"></i><h3>' + esc(t('No FFM stock yet', 'Belum ada stok FFM')) + '</h3><p>' + esc(t('Sync products first, then refresh.', 'Segerak produk dahulu, kemudian muat semula.')) + '</p></div>') + '</div>';
+      if (keys.length && window.RPTShare) RPTShare.setSnapshot('ffm_stock', {
+        kind: 'table', title: shareTitle, company: (APP.tenant && APP.tenant.name) || 'Company',
+        table: {
+          headers: [t('Product', 'Produk')].concat(accts.map(function (a) { return a.label + ' ' + t('(avail/total)', '(tersedia/jumlah)'); })).concat([t('M-Core stock', 'Stok M-Core')]),
+          rows: keys.map(function (k) {
+            var r = rows[k], p = r.p, name = p ? (typeof prodName === 'function' ? prodName(p) : (APP.language === 'bm' ? (p.name_bm || p.name_en) : p.name_en)) : r.bc;
+            var accVals = accts.map(function (a) {
+              var s = r.by[String(a.id)]; if (!s) return '-';
+              var kk = ppu[a.id + ':' + s.product_id] || 1;
+              return F.qty(s.available_qty, kk) + ' / ' + F.qty(s.total_qty, kk);
+            });
+            return [name].concat(accVals).concat([p ? p.stock_qty + ' pcs' : '-']);
+          })
+        }
+      });
       var b = document.getElementById('ffm-pull');
       b.onclick = async function () {
         F.busy(b, true, t('Refreshing…', 'Memuat semula…'));
