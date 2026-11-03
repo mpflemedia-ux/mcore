@@ -13,7 +13,9 @@
       SP.fetchAll('sales_plan_milestones', '*', by).catch(none),
       SP.fetchAll('sales_plan_repayments', '*', by).catch(none),
       SP.fetchAll('sales_plan_alerts', 'id,plan_id,kind,ref_id,alert_date,severity,resolved_at,created_at', by).catch(none),
-      SP.fetchAll('chart_of_accounts', 'id,code,name_en,account_type,is_active').catch(none)
+      SP.fetchAll('chart_of_accounts', 'id,code,name_en,account_type,is_active').catch(none),
+      // Funded FFM accounts only — the ones a batch's revenue-basis fee can auto-pull sales from.
+      SP.fetchAll('ffm_accounts', 'id,label,is_funded,is_active', function (q) { return q.eq('is_funded', true); }).catch(none)
     ]);
     st.weeks = r[0].sort(SP.sortRows);
     st.batches = r[1].sort(byCode);
@@ -21,6 +23,7 @@
     st.repays = r[3].sort(function (a, b) { return String(a.repaid_on).localeCompare(String(b.repaid_on)); });
     st.alertLog = r[4];
     st.accounts = r[5].filter(function (a) { return a.is_active !== false; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || '')); });
+    st.ffmAccounts = r[6].filter(function (a) { return a.is_active !== false; });
     st.counts = { batches: st.batches.length, milestones: st.miles.length };
     st.auto = null; st.autoErr = null;
     st.canEdit = SP.isAdmin() ? true : await SP.checkPic(id);
@@ -56,6 +59,23 @@
   SP.acctLabel = function (id) {
     var a = (st.accounts || (st.refs && st.refs.accounts) || []).find(function (x) { return SP.same(x.id, id); });
     return a ? (a.code ? a.code + ' — ' : '') + (a.name_en || '') : '';
+  };
+  SP.ffmAcctLabel = function (id) { var a = (st.ffmAccounts || []).find(function (x) { return SP.same(x.id, id); }); return a ? a.label : ''; };
+  /** Sum of a Funded FFM account's shipment sales (status != returned) from `fromDate` up to the NEXT
+      batch's actual_inbound on the same account (if any) — avoids double-counting revenue across batches
+      that share one FFM account. No upper bound when this is the latest/only batch on that account. */
+  SP.ffmAutoRevenue = async function (accountId, fromDate) {
+    if (!accountId || !fromDate) throw new Error(t('Pick the FFM account and actual inbound date first.', 'Pilih akaun FFM dan tarikh masuk sebenar dahulu.'));
+    var toDate = null;
+    (st.batches || []).forEach(function (bb) {
+      if (SP.same(bb.ffm_account_id, accountId) && bb.actual_inbound && bb.actual_inbound > fromDate && (!toDate || bb.actual_inbound < toDate)) toDate = bb.actual_inbound;
+    });
+    var q = sb.from('ffm_shipments').select('total_amount,status,shipped_at').eq('tenant_id', SP.tid()).eq('account_id', accountId).is('deleted_at', null).not('shipped_at', 'is', null).gte('shipped_at', fromDate);
+    if (toDate) q = q.lt('shipped_at', toDate);
+    var r = await q;
+    if (r.error) throw r.error;
+    var sum = 0; (r.data || []).forEach(function (s) { if (s.status !== 'returned') sum += Number(s.total_amount || 0); });
+    return SP.r2(sum);
   };
   /* ---------- computed alerts (Overview panel, 2d notifications) ---------- */
   function sev(k) { return k === 'week_off_track' || k === 'milestone_overdue' || k === 'repayment_overdue' ? 'danger' : 'warning'; }

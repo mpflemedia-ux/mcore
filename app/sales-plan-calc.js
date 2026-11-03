@@ -81,7 +81,10 @@
     var fin = num(b.financed_pct) > 0, drawn = b.actual_principal != null && b.actual_principal !== '';
     var cost = b.actual_cost != null && b.actual_cost !== '' ? num(b.actual_cost) : num(b.target_cost), feeP = num(b.fee_pct);
     var principal = drawn ? num(b.actual_principal) : (b.target_principal != null ? num(b.target_principal) : SP.r2(num(b.target_cost) * num(b.financed_pct) / 100));
-    var due = drawn ? (b.repayment_due != null ? num(b.repayment_due) : SP.r2(principal * (1 + feeP / 100))) : (b.target_repayment != null ? num(b.target_repayment) : SP.r2(principal * (1 + feeP / 100)));
+    // 'revenue' fee basis (e.g. FundedHere: fee = fee% x actual sales revenue, not x principal) — principal itself is unaffected.
+    var revBasis = b.fee_basis === 'revenue', revenue = revBasis ? num(b.actual_revenue) : null;
+    var feeCalc = function () { return revBasis ? SP.r2(principal + revenue * feeP / 100) : SP.r2(principal * (1 + feeP / 100)); };
+    var due = drawn ? (b.repayment_due != null ? num(b.repayment_due) : feeCalc()) : (b.target_repayment != null ? num(b.target_repayment) : feeCalc());
     var rp = SP.batchRepays(c, b), repaid = SP.r2(sumF(rp, 'amount')), paidP = SP.r2(sumF(rp, 'principal_portion')), paidF = SP.r2(sumF(rp, 'fee_portion'));
     var fee = SP.r2(due - principal), out = drawn ? Math.max(0, SP.r2(due - repaid)) : 0;
     var dueDate = d10(b.due_date || b.target_due_date), st;
@@ -92,7 +95,7 @@
     else st = num(b.actual_qty) > 0 && num(b.units_sold) / num(b.actual_qty) >= 0.6 ? 'on' : 'watch';
     return { fin: fin, drawn: drawn, cost: cost, principal: principal, fee: fee, due: due, repaid: repaid, outstanding: out,
       outP: Math.max(0, SP.r2(principal - paidP)), outF: Math.max(0, SP.r2(fee - paidF)), dueDate: dueDate, status: st, repays: rp,
-      pctRepaid: due > 0 ? Math.min(100, repaid / due * 100) : 0 };
+      pctRepaid: due > 0 ? Math.min(100, repaid / due * 100) : 0, revBasis: revBasis, revenue: revenue };
   };
   SP.finSummary = function (c) {
     var out = 0, next = null;

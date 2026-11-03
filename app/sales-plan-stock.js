@@ -29,7 +29,7 @@
       h += row(t('Financing', 'Pembiayaan'), t('Not financed', 'Tiada pembiayaan'), true);
     } else {
       h += row(t('Stock cost', 'Kos stok'), SP.money(k.cost, cur), true) + row(t('Principal', 'Prinsipal') + ' (' + num(b.financed_pct) + '%)' + (k.drawn ? ' · ' + t('drawn ', 'dikeluarkan ') + SP.fmtDate(b.drawn_date) : ''), SP.money(k.principal, cur), true) +
-        row(t('Fee ', 'Fi ') + num(b.fee_pct) + '%', SP.money(k.fee, cur), true) + row(t('Repayment', 'Bayaran balik') + (k.dueDate ? ' · ' + t('due ', 'tamat ') + SP.fmtDate(k.dueDate) : ''), SP.money(k.due, cur), true);
+        row(t('Fee ', 'Fi ') + num(b.fee_pct) + '%' + (k.revBasis ? ' ' + t('of revenue', 'daripada revenue') + ' (' + SP.money(k.revenue, cur) + ')' : ''), SP.money(k.fee, cur), true) + row(t('Repayment', 'Bayaran balik') + (k.dueDate ? ' · ' + t('due ', 'tamat ') + SP.fmtDate(k.dueDate) : ''), SP.money(k.due, cur), true);
       if (k.drawn) h += '<div class="sp-brepaid"><div class="sp-brow sp-hint"><span>' + esc(t('Repaid ', 'Dibayar ') + SP.money(k.repaid, cur) + t(' of ', ' daripada ') + SP.money(k.due, cur)) + '</span><span>' + esc(SP.pct1(k.pctRepaid).replace('.0%', '%')) + '</span></div>' +
         '<div class="sp-bar"><i style="width:' + k.pctRepaid.toFixed(1) + '%;background:var(--success)"></i></div></div>';
       if (k.drawn && c.plan.currency !== 'MYR' && b.fx_rate_to_myr) h += '<div class="sp-hint">' + esc('FX 1 ' + c.plan.currency + ' = ' + num(b.fx_rate_to_myr) + ' MYR') + '</div>';

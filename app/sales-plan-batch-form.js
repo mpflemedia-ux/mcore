@@ -7,6 +7,7 @@
   function nIn(id, v, dis, step) { return '<input id="' + id + '" class="form-input" type="number" inputmode="decimal" min="0" step="' + (step || 'any') + '" value="' + esc(v == null ? '' : v) + '"' + (dis ? ' disabled' : '') + '>'; }
   function dIn(id, v, dis) { return '<input id="' + id + '" class="form-input" type="date" value="' + esc(d10(v) || '') + '"' + (dis ? ' disabled' : '') + '>'; }
   function tIn(id, v, extra) { return '<input id="' + id + '" class="form-input" data-no-titlecase="1" value="' + esc(v == null ? '' : v) + '"' + (extra || '') + '>'; }
+  function selIn(id, opts, val, dis) { return '<select id="' + id + '" class="form-select"' + (dis ? ' disabled' : '') + '>' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(val == null ? '' : val) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>'; }
   function row2(a, b) { return '<div class="form-row">' + a + b + '</div>'; }
   SP.parseMix = function (s) {
     return String(s || '').split(/\n|;|\+|·/).map(function (x) { return x.trim(); }).filter(Boolean).map(function (x) {
@@ -18,7 +19,7 @@
   function nextCode() { var used = st.batches.map(function (b) { return String(b.code).toUpperCase(); }); for (var i = 0; i < 26; i++) { var c = String.fromCharCode(65 + i); if (used.indexOf(c) < 0) return c; } return 'B' + (st.batches.length + 1); }
   SP.batchModal = function (b) {
     var admin = SP.isAdmin(), isNew = !b, p = st.plan;
-    b = b || { code: nextCode(), financed_pct: p.financing_enabled ? p.financed_pct : 0, fee_pct: p.financing_enabled ? p.fee_pct : 0, tenure_days: p.tenure_days, product_mix: [] };
+    b = b || { code: nextCode(), financed_pct: p.financing_enabled ? p.financed_pct : 0, fee_pct: p.financing_enabled ? p.fee_pct : 0, tenure_days: p.tenure_days, fee_basis: 'principal', product_mix: [] };
     var drawn = b.actual_principal != null && b.actual_principal !== '', lockFin = drawn || !admin;
     var body = '';
     if (admin) {
@@ -28,6 +29,8 @@
         row2(fg('sp-bt-tcost', t('Target stock cost', 'Sasaran kos stok') + ' (' + SP.curSym(p.currency) + ')', nIn('sp-bt-tcost', b.target_cost)), fg('sp-bt-tdue', t('Target repayment date', 'Sasaran tarikh bayar'), dIn('sp-bt-tdue', b.target_due_date))) +
         '<div class="sp-sub">' + esc(t('Financing', 'Pembiayaan')) + '</div>' +
         row2(fg('sp-bt-fin', t('Financed %', 'Dibiayai %'), nIn('sp-bt-fin', b.financed_pct, lockFin), t('0 = self-funded', '0 = modal sendiri')), fg('sp-bt-fee', t('Fee %', 'Fi %'), nIn('sp-bt-fee', b.fee_pct, lockFin))) +
+        row2(fg('sp-bt-feebasis', t('Fee basis', 'Asas fi'), selIn('sp-bt-feebasis', [['principal', t('% of principal', '% prinsipal')], ['revenue', t('% of revenue', '% revenue')]], b.fee_basis || 'principal', lockFin), t('Revenue = fee % of actual sales (revenue-share financiers)', 'Revenue = fi % daripada jualan sebenar (pembiaya revenue-share)')),
+          fg('sp-bt-ffmacct', t('FFM account (for revenue)', 'Akaun FFM (untuk revenue)'), selIn('sp-bt-ffmacct', [['', t('— none —', '— tiada —')]].concat((st.ffmAccounts || []).map(function (a) { return [a.id, a.label]; })), b.ffm_account_id, lockFin))) +
         row2(fg('sp-bt-ten', t('Tenure (days)', 'Tempoh (hari)'), nIn('sp-bt-ten', b.tenure_days, lockFin, '1')), drawn ? fg('sp-bt-due', t('Repayment due date', 'Tarikh bayar balik'), dIn('sp-bt-due', b.due_date)) : '') +
         (drawn ? '<div class="sp-note"><i class="ti ti-lock"></i><span>' + esc(t('Funding is drawn and posted — financing terms are locked.', 'Pembiayaan telah dikeluarkan dan disiarkan — terma pembiayaan dikunci.')) + '</span></div>' : '');
     } else {
@@ -36,20 +39,33 @@
     body += '<div class="sp-sub">' + esc(t('Stock actuals', 'Stok sebenar')) + '</div>' +
       row2(fg('sp-bt-ain', t('Actual inbound', 'Tarikh masuk sebenar'), dIn('sp-bt-ain', b.actual_inbound)), fg('sp-bt-aqty', t('Actual qty', 'Kuantiti sebenar'), nIn('sp-bt-aqty', b.actual_qty))) +
       row2(fg('sp-bt-acost', t('Actual stock cost', 'Kos stok sebenar'), nIn('sp-bt-acost', b.actual_cost)), fg('sp-bt-sold', t('Units sold', 'Unit terjual'), nIn('sp-bt-sold', b.units_sold))) +
+      fg('sp-bt-arev', t('Actual revenue (RM)', 'Revenue sebenar (RM)'), nIn('sp-bt-arev', b.actual_revenue) + ' <button type="button" class="btn btn-outline btn-sm" id="sp-bt-arev-auto" style="margin-top:8px"><i class="ti ti-refresh"></i> ' + esc(t('Auto-fill from FFM', 'Auto isi dari FFM')) + '</button>', t('Used only when Fee basis = % of revenue', 'Dipakai hanya bila Asas fi = % revenue')) +
       fg('sp-bt-notes', t('Notes', 'Nota'), '<textarea id="sp-bt-notes" class="form-input" rows="2" maxlength="500" data-no-titlecase="1">' + esc(b.notes || '') + '</textarea>');
-    SP.openModal(isNew ? t('Add batch', 'Tambah batch') : t('Edit ', 'Ubah ') + SP.batchName(b), body, t('Save', 'Simpan'), function (o, btn) { SP.batchSave(o, btn, isNew ? null : b); });
+    var ov = SP.openModal(isNew ? t('Add batch', 'Tambah batch') : t('Edit ', 'Ubah ') + SP.batchName(b), body, t('Save', 'Simpan'), function (o, btn) { SP.batchSave(o, btn, isNew ? null : b); });
+    var autoBtn = ov.querySelector('#sp-bt-arev-auto');
+    if (autoBtn) autoBtn.onclick = async function () {
+      var acctEl = ov.querySelector('#sp-bt-ffmacct'), accountId = acctEl ? acctEl.value : (b && b.ffm_account_id);
+      var ainEl = ov.querySelector('#sp-bt-ain'), fromDate = ainEl ? ainEl.value : (b && b.actual_inbound);
+      autoBtn.disabled = true;
+      try {
+        var rev = await SP.ffmAutoRevenue(accountId, fromDate);
+        var el = ov.querySelector('#sp-bt-arev'); if (el) el.value = rev.toFixed(2);
+        SP.toast(t('Pulled RM' + SP.fmtNum(rev, 2) + ' from FFM sales', 'Tarik RM' + SP.fmtNum(rev, 2) + ' dari jualan FFM'), 'success');
+      } catch (e) { SP.toast(t('Could not pull from FFM: ', 'Gagal tarik dari FFM: ') + SP.errMsg(e), 'error'); }
+      autoBtn.disabled = false;
+    };
   };
   function v(ov, id) { var e = ov.querySelector('#' + id); return e ? String(e.value == null ? '' : e.value).trim() : ''; }
   function n(ov, id) { var s = v(ov, id).replace(/,/g, ''); if (s === '') return null; var x = Number(s); return isFinite(x) && x >= 0 ? SP.r2(x) : NaN; }
   SP.batchSave = async function (ov, btn, b) {
     if (st.busy) return;
     var admin = SP.isAdmin(), row = {}, err = null, drawn = b && b.actual_principal != null && b.actual_principal !== '';
-    var act = { actual_inbound: v(ov, 'sp-bt-ain') || null, actual_qty: n(ov, 'sp-bt-aqty'), actual_cost: n(ov, 'sp-bt-acost'), units_sold: n(ov, 'sp-bt-sold'), notes: v(ov, 'sp-bt-notes') || null };
-    if ([act.actual_qty, act.actual_cost, act.units_sold].some(Number.isNaN)) err = t('Use numbers of 0 or more', 'Guna nombor 0 atau lebih');
+    var act = { actual_inbound: v(ov, 'sp-bt-ain') || null, actual_qty: n(ov, 'sp-bt-aqty'), actual_cost: n(ov, 'sp-bt-acost'), units_sold: n(ov, 'sp-bt-sold'), actual_revenue: n(ov, 'sp-bt-arev'), notes: v(ov, 'sp-bt-notes') || null };
+    if ([act.actual_qty, act.actual_cost, act.units_sold, act.actual_revenue].some(Number.isNaN)) err = t('Use numbers of 0 or more', 'Guna nombor 0 atau lebih');
     if (admin && !err) {
       var code = v(ov, 'sp-bt-code').toUpperCase();
       row = { code: code, label: v(ov, 'sp-bt-label') || null, product_mix: SP.parseMix(v(ov, 'sp-bt-mix')), target_inbound: v(ov, 'sp-bt-tin') || null, target_qty: n(ov, 'sp-bt-tqty'), target_cost: n(ov, 'sp-bt-tcost'), target_due_date: v(ov, 'sp-bt-tdue') || null };
-      if (!drawn) { row.financed_pct = n(ov, 'sp-bt-fin') || 0; row.fee_pct = n(ov, 'sp-bt-fee') || 0; row.tenure_days = Math.round(n(ov, 'sp-bt-ten') || 0); }
+      if (!drawn) { row.financed_pct = n(ov, 'sp-bt-fin') || 0; row.fee_pct = n(ov, 'sp-bt-fee') || 0; row.tenure_days = Math.round(n(ov, 'sp-bt-ten') || 0); row.fee_basis = v(ov, 'sp-bt-feebasis') || 'principal'; row.ffm_account_id = v(ov, 'sp-bt-ffmacct') || null; }
       else row.due_date = v(ov, 'sp-bt-due') || null;
       if (!code) err = t('Batch code is required', 'Kod batch diperlukan');
       else if (st.batches.some(function (x) { return String(x.code).toUpperCase() === code && (!b || !SP.same(x.id, b.id)); })) err = t('Batch ' + code + ' already exists in this plan', 'Batch ' + code + ' sudah wujud dalam pelan ini');
