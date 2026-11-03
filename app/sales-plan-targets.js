@@ -17,9 +17,12 @@
     }
   };
   SP.sumOf = function (rows, f) { return rows.reduce(function (s, r) { return s + num(r[f]); }, 0); };
-  function totals(rows, extra) {
+  function statBox(l, v) { return '<div class="card sp-wsum"><div class="sp-kpi-l">' + esc(l) + '</div><div class="sp-kpi-v"><b>' + esc(v) + '</b></div></div>'; }
+  function totals(rows) {
     var cur = st.plan.currency;
-    return '<td colspan="4"><b>' + esc(t('Total', 'Jumlah')) + '</b></td><td class="sp-num"><b>' + esc(SP.money(SP.sumOf(rows, 'gmv_target'), cur)) + '</b></td><td class="sp-num"><b>' + esc(SP.fmtNum(SP.sumOf(rows, 'units_target'))) + '</b></td><td class="sp-num"><b>' + esc(SP.fmtNum(SP.sumOf(rows, 'orders_target'))) + '</b></td>' + (extra || '');
+    return '<div class="sp-tgtot">' + statBox(t('Total GMV target', 'Jumlah sasaran GMV'), SP.money(SP.sumOf(rows, 'gmv_target'), cur)) +
+      statBox(t('Total units target', 'Jumlah sasaran unit'), SP.fmtNum(SP.sumOf(rows, 'units_target'))) +
+      statBox(t('Total orders target', 'Jumlah sasaran order'), SP.fmtNum(SP.sumOf(rows, 'orders_target'))) + '</div>';
   }
   function warningsHtml() {
     var E = st.edit, out = [], cur = st.plan.currency, i;
@@ -34,7 +37,7 @@
   }
   SP.refreshTotals = function () {
     var E = st.edit, a = document.getElementById('sp-ptot'), b = document.getElementById('sp-wtot'), c = document.getElementById('sp-twarn');
-    if (a) a.innerHTML = totals(E.periods, '<td></td>');
+    if (a) a.innerHTML = totals(E.periods);
     if (b) b.innerHTML = totals(E.weeks);
     if (c) c.innerHTML = warningsHtml();
     document.querySelectorAll('.sp-root [data-wper]').forEach(function (td) { var w = E.weeks[+td.getAttribute('data-wper')], p = w && SP.periodFor(w, E.periods); td.textContent = p ? p.label : '—'; });
@@ -44,28 +47,31 @@
     return '<input class="form-input sp-tin' + (type === 'date' ? ' sp-tdate' : '') + '" type="' + type + '"' + (isNum ? ' inputmode="decimal" min="0" step="any"' : type === 'text' ? ' maxlength="40" data-no-titlecase="1"' : '') +
       ' data-tk="' + kind + '" data-i="' + i + '" data-tf="' + f + '" value="' + esc(v) + '"' + (ro ? ' disabled' : '') + ' aria-label="' + esc(label) + '">';
   }
-  function heads(first, second, cur, extra) {
-    return '<thead><tr><th>' + esc(first) + '</th><th>' + esc(second) + '</th><th>' + esc(t('Start', 'Mula')) + '</th><th>' + esc(t('End', 'Tamat')) + '</th><th class="sp-num">' + esc(t('GMV target', 'Sasaran GMV')) + ' (' + esc(SP.curSym(cur)) + ')</th><th class="sp-num">' + esc(t('Units target', 'Sasaran unit')) + '</th><th class="sp-num">' + esc(t('Orders target', 'Sasaran order')) + '</th>' + (extra || '') + '</tr></thead>';
-  }
   function btn(act, icon, label) { return '<button type="button" class="btn btn-outline btn-sm" data-act="' + act + '"><i class="ti ' + icon + '"></i>' + esc(label) + '</button>'; }
-  function numCells(k, i, r, ro, code) {
+  function numRows(k, i, r, ro, code) {
     return ['gmv_target', 'units_target', 'orders_target'].map(function (f, j) {
-      return '<td>' + fld(k, i, f, r[f], ro, code + ' — ' + [t('GMV target', 'Sasaran GMV'), t('Units target', 'Sasaran unit'), t('Orders target', 'Sasaran order')][j], 'number') + '</td>';
+      var lbl = [t('GMV target', 'Sasaran GMV'), t('Units target', 'Sasaran unit'), t('Orders target', 'Sasaran order')][j];
+      return '<div class="sp-brow"><span>' + esc(lbl) + '</span>' + fld(k, i, f, r[f], ro, code + ' — ' + lbl, 'number') + '</div>';
     }).join('');
   }
   SP.targetsEditorHtml = function (pageMode) {
-    var E = st.edit, admin = SP.isAdmin(), ro = !admin, cur = st.plan.currency, S = t('Start date', 'Tarikh mula'), N = t('End date', 'Tarikh tamat');
-    var pRows = E.periods.map(function (p, i) {
-      return '<tr><td>' + (ro ? esc(p.label) : fld('p', i, 'label', p.label, ro, t('Period name', 'Nama tempoh'), 'text')) + '</td>' +
-        '<td><span class="badge ' + (p.kind === 'custom' ? 'badge-blue' : 'badge-gray') + '">' + esc(p.kind === 'custom' ? t('Custom', 'Khas') : t('Month', 'Bulan')) + '</span></td>' +
-        '<td>' + fld('p', i, 'start_date', p.start_date, ro, p.label + ' — ' + S, 'date') + '</td><td>' + fld('p', i, 'end_date', p.end_date, ro, p.label + ' — ' + N, 'date') + '</td>' +
-        numCells('p', i, p, ro, p.label) + '<td>' + (ro ? '' : '<button type="button" class="sp-iconbtn sp-del" data-act="tg-del-period" data-i="' + i + '" aria-label="' + esc(t('Remove period', 'Buang tempoh')) + '" title="' + esc(t('Remove period', 'Buang tempoh')) + '"><i class="ti ti-trash"></i></button>') + '</td></tr>';
-    }).join('') || '<tr><td colspan="8" class="sp-t2">' + esc(t('No periods yet.', 'Belum ada tempoh.')) + '</td></tr>';
-    var wRows = E.weeks.map(function (w, i) {
+    var E = st.edit, admin = SP.isAdmin(), ro = !admin, S = t('Start date', 'Tarikh mula'), N = t('End date', 'Tarikh tamat');
+    var pCards = E.periods.map(function (p, i) {
+      return '<div class="card sp-bcard sp-tgcard"><div class="sp-bcard-h"><div class="sp-bcard-t">' + (ro ? esc(p.label) : fld('p', i, 'label', p.label, ro, t('Period name', 'Nama tempoh'), 'text')) + '</div>' +
+        '<span class="badge ' + (p.kind === 'custom' ? 'badge-blue' : 'badge-gray') + '">' + esc(p.kind === 'custom' ? t('Custom', 'Khas') : t('Month', 'Bulan')) + '</span>' +
+        (ro ? '' : '<button type="button" class="sp-iconbtn sp-del" data-act="tg-del-period" data-i="' + i + '" aria-label="' + esc(t('Remove period', 'Buang tempoh')) + '" title="' + esc(t('Remove period', 'Buang tempoh')) + '"><i class="ti ti-trash"></i></button>') + '</div>' +
+        '<div class="sp-brow"><span>' + esc(S) + '</span>' + fld('p', i, 'start_date', p.start_date, ro, p.label + ' — ' + S, 'date') + '</div>' +
+        '<div class="sp-brow"><span>' + esc(N) + '</span>' + fld('p', i, 'end_date', p.end_date, ro, p.label + ' — ' + N, 'date') + '</div>' +
+        numRows('p', i, p, ro, p.label) + '</div>';
+    }).join('') || '<div class="sp-t2">' + esc(t('No periods yet.', 'Belum ada tempoh.')) + '</div>';
+    var wCards = E.weeks.map(function (w, i) {
       var p = SP.periodFor(w, E.periods);
-      return '<tr><td><b>' + esc(w.code) + '</b></td><td class="sp-t2" data-wper="' + i + '">' + esc(p ? p.label : '—') + '</td>' +
-        '<td>' + fld('w', i, 'start_date', w.start_date, ro, w.code + ' — ' + S, 'date') + '</td><td>' + fld('w', i, 'end_date', w.end_date, ro, w.code + ' — ' + N, 'date') + '</td>' + numCells('w', i, w, ro, w.code) + '</tr>';
-    }).join('') || '<tr><td colspan="7" class="sp-t2">' + esc(t('No weeks yet.', 'Belum ada minggu.')) + '</td></tr>';
+      return '<div class="card sp-bcard sp-tgcard"><div class="sp-bcard-h"><div class="sp-bcard-t"><b>' + esc(w.code) + '</b></div>' +
+        '<span class="sp-t2" data-wper="' + i + '">' + esc(p ? p.label : '—') + '</span></div>' +
+        '<div class="sp-brow"><span>' + esc(S) + '</span>' + fld('w', i, 'start_date', w.start_date, ro, w.code + ' — ' + S, 'date') + '</div>' +
+        '<div class="sp-brow"><span>' + esc(N) + '</span>' + fld('w', i, 'end_date', w.end_date, ro, w.code + ' — ' + N, 'date') + '</div>' +
+        numRows('w', i, w, ro, w.code) + '</div>';
+    }).join('') || '<div class="sp-t2">' + esc(t('No weeks yet.', 'Belum ada minggu.')) + '</div>';
     var foot = '';
     if (admin) {
       var draft = st.plan.status === 'draft';
@@ -79,13 +85,11 @@
       '<div class="card sp-tcard"><div class="sp-tcard-h"><div class="card-title sp-sec-title"><i class="ti ti-calendar-stats"></i>' + esc(t('Periods & targets', 'Tempoh & sasaran')) + '</div>' +
       (admin ? '<div class="sp-tactions">' + btn('tg-add-period', 'ti-plus', t('Add custom period', 'Tambah tempoh khas')) + btn('tg-regen-months', 'ti-refresh', t('Regenerate months', 'Jana semula bulan')) + '</div>' : '') + '</div>' +
       '<div class="sp-hint sp-mb">' + esc(t('Months follow the plan dates. Add custom periods (e.g. Raya Sprint) with their own dates.', 'Bulan ikut tarikh pelan. Tambah tempoh khas (cth. Raya Sprint) dengan tarikh sendiri.')) + '</div>' +
-      '<div class="sp-tscroll"><table class="sp-ttable sp-ttable-p">' + heads(t('Period', 'Tempoh'), t('Type', 'Jenis'), cur, '<th><span class="sp-sr">' + esc(t('Actions', 'Tindakan')) + '</span></th>') +
-      '<tbody>' + pRows + '</tbody><tfoot><tr id="sp-ptot">' + totals(E.periods, '<td></td>') + '</tr></tfoot></table></div></div>' +
+      '<div class="sp-pgrid">' + pCards + '</div><div id="sp-ptot">' + totals(E.periods) + '</div></div>' +
       '<div class="card sp-tcard"><div class="sp-tcard-h"><div class="card-title sp-sec-title"><i class="ti ti-calendar-week"></i>' + esc(t('Weekly targets', 'Sasaran mingguan')) + '</div>' +
       (admin ? '<div class="sp-tactions">' + btn('tg-distribute', 'ti-arrows-split', t('Split period targets into weeks', 'Bahagi sasaran tempoh ikut minggu')) + btn('tg-regen-weeks', 'ti-refresh', t('Regenerate weeks', 'Jana semula minggu')) + '</div>' : '') + '</div>' +
       '<div class="sp-hint sp-mb">' + esc(t('Weeks run Monday–Sunday, cut at the plan start and end. Dates can be edited.', 'Minggu bermula Isnin–Ahad, dipotong pada tarikh mula dan tamat pelan. Tarikh boleh diubah.')) + '</div>' +
-      '<div class="sp-tscroll"><table class="sp-ttable sp-ttable-w">' + heads(t('Week', 'Minggu'), t('Period', 'Tempoh'), cur) +
-      '<tbody>' + wRows + '</tbody><tfoot><tr id="sp-wtot">' + totals(E.weeks) + '</tr></tfoot></table></div>' +
+      '<div class="sp-wgrid">' + wCards + '</div><div id="sp-wtot">' + totals(E.weeks) + '</div>' +
       '<div id="sp-twarn">' + warningsHtml() + '</div></div>' + foot;
   };
   SP.targetsPageHtml = function () {

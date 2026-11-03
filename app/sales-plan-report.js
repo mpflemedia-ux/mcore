@@ -6,8 +6,17 @@
   function pc(v) { return v == null ? '—' : SP.pct1(v); }
   function lab(k) { var x = SP.KPI[k] || SP.KPI.nu; return '<span class="sp-rs sp-rs-' + esc(k) + '">' + esc(t(x.en, x.bm)) + '</span>'; }
   function tbl(head, rows, cls) {
-    return '<div class="sp-rpt-tw"><table class="sp-rpt-t' + (cls ? ' ' + cls : '') + '"><thead><tr>' + head.map(function (h, i) { return '<th' + (i ? ' class="r"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+    return '<div class="sp-rpt-tw print-only"><table class="sp-rpt-t' + (cls ? ' ' + cls : '') + '"><thead><tr>' + head.map(function (h, i) { return '<th' + (i ? ' class="r"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       rows.map(function (r) { return '<tr>' + r.map(function (c, i) { return '<td' + (i ? ' class="r"' : '') + '>' + c + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+  }
+  /* Mobile/screen view of the same rows as sp-bcard cards — first column = title, last = status badge
+     (every tbl() call site here follows that shape), table above stays print-only/unchanged for PDF/paper. */
+  function cardGrid(head, rows) {
+    if (!rows.length) return '';
+    return '<div class="sp-bgrid no-print">' + rows.map(function (r) {
+      var mid = head.slice(1, -1).map(function (h, i) { return '<div class="sp-brow"><span>' + esc(h) + '</span><span class="sp-bval">' + r[i + 1] + '</span></div>'; }).join('');
+      return '<div class="card sp-bcard"><div class="sp-bcard-h"><div class="sp-bcard-t"><b>' + r[0] + '</b></div>' + r[r.length - 1] + '</div>' + mid + '</div>';
+    }).join('') + '</div>';
   }
   SP.reportWeek = function (c, code, today) {
     var w = code && c.weeks.find(function (x) { return x.code === code; });
@@ -34,18 +43,22 @@
     var kpis = '<section class="sp-rpt-kp">' + kp.map(function (k) { return '<div><span>' + esc(k[0]) + '</span><b>' + esc(k[1]) + '</b><small>' + esc(k[2]) + '</small></div>'; }).join('') +
       (wk ? '<div class="sp-rpt-st"><span>' + esc(t('Week status', 'Status minggu')) + '</span>' + lab(wk.status) + '</div>' : '') + '</section>';
     var s = function (title, body) { return '<section class="sp-rpt-s"><h2>' + esc(title) + '</h2>' + body + '</section>'; };
-    var weeks = s(t('Weekly performance', 'Prestasi mingguan'), upto.length ? tbl([t('Week', 'Minggu'), t('Target', 'Sasaran'), t('Actual', 'Sebenar'), t('Ach.', 'Capai'), t('Units', 'Unit'), t('Orders', 'Pesanan'), t('Status', 'Status')],
-      upto.map(function (x) { var k = SP.weekCalc(c, x); return [esc(x.code + ' · ' + SP.shortRange(x.start_date, x.end_date)), esc(M(k.target)), esc(M(k.gmv)), esc(pc(k.ach)), esc(N(k.units)), esc(N(k.orders)), lab(k.status)]; })) : '<p class="sp-rpt-e">' + esc(t('No weeks yet.', 'Tiada minggu lagi.')) + '</p>');
-    var months = c.periods.length ? s(t('Monthly KPI', 'KPI bulanan'), tbl([t('Period', 'Tempoh'), t('GMV target', 'Sasaran GMV'), t('GMV actual', 'GMV sebenar'), t('Ach.', 'Capai'), t('Units', 'Unit'), t('Status', 'Status')],
-      c.periods.map(function (x) { var k = SP.periodCalc(c, x, today); return [esc(x.label || SP.fmtRange(x.start_date, x.end_date)), esc(M(k.target)), esc(M(k.gmv)), esc(pc(k.ach)), esc(N(k.units) + (k.unitsT ? ' / ' + N(k.unitsT) : '')), lab(k.status)]; }))) : '';
-    var miles = c.miles.length ? s(t('Milestones', 'Milestone'), tbl([t('Milestone', 'Milestone'), t('Due', 'Tarikh'), t('Target', 'Sasaran'), t('Actual', 'Sebenar'), t('Status', 'Status')],
-      c.miles.map(function (m) { var k = SP.mileCalc(c, m, today); return [esc(m.code + ' · ' + m.title), esc(SP.fmtDate(m.due_date)), esc(SP.mileFmt(c, m, k.target)), esc(SP.mileFmt(c, m, k.actual)), lab(k.status)]; }))) : '';
+    var weekHead = [t('Week', 'Minggu'), t('Target', 'Sasaran'), t('Actual', 'Sebenar'), t('Ach.', 'Capai'), t('Units', 'Unit'), t('Orders', 'Pesanan'), t('Status', 'Status')];
+    var weekRows = upto.map(function (x) { var k = SP.weekCalc(c, x); return [esc(x.code + ' · ' + SP.shortRange(x.start_date, x.end_date)), esc(M(k.target)), esc(M(k.gmv)), esc(pc(k.ach)), esc(N(k.units)), esc(N(k.orders)), lab(k.status)]; });
+    var weeks = s(t('Weekly performance', 'Prestasi mingguan'), weekRows.length ? tbl(weekHead, weekRows) + cardGrid(weekHead, weekRows) : '<p class="sp-rpt-e">' + esc(t('No weeks yet.', 'Tiada minggu lagi.')) + '</p>');
+    var monthsHead = [t('Period', 'Tempoh'), t('GMV target', 'Sasaran GMV'), t('GMV actual', 'GMV sebenar'), t('Ach.', 'Capai'), t('Units', 'Unit'), t('Status', 'Status')];
+    var monthsRows = c.periods.map(function (x) { var k = SP.periodCalc(c, x, today); return [esc(x.label || SP.fmtRange(x.start_date, x.end_date)), esc(M(k.target)), esc(M(k.gmv)), esc(pc(k.ach)), esc(N(k.units) + (k.unitsT ? ' / ' + N(k.unitsT) : '')), lab(k.status)]; });
+    var months = c.periods.length ? s(t('Monthly KPI', 'KPI bulanan'), tbl(monthsHead, monthsRows) + cardGrid(monthsHead, monthsRows)) : '';
+    var milesHead = [t('Milestone', 'Milestone'), t('Due', 'Tarikh'), t('Target', 'Sasaran'), t('Actual', 'Sebenar'), t('Status', 'Status')];
+    var milesRows = c.miles.map(function (m) { var k = SP.mileCalc(c, m, today); return [esc(m.code + ' · ' + m.title), esc(SP.fmtDate(m.due_date)), esc(SP.mileFmt(c, m, k.target)), esc(SP.mileFmt(c, m, k.actual)), lab(k.status)]; });
+    var miles = c.miles.length ? s(t('Milestones', 'Milestone'), tbl(milesHead, milesRows) + cardGrid(milesHead, milesRows)) : '';
     var fin = '';
     if (p.financing_enabled && c.batches.length) {
       var fs = SP.finSummary(c);
+      var finHead = [t('Batch', 'Batch'), t('Sold', 'Terjual'), t('Repayment', 'Bayaran balik'), t('Repaid', 'Dibayar'), t('Due', 'Tarikh'), t('Status', 'Status')];
+      var finRows = c.batches.map(function (b) { var k = SP.batchCalc(c, b, today); return [esc(SP.batchName ? SP.batchName(b) : b.code), esc(N(b.units_sold) + ' / ' + N(b.actual_qty || b.target_qty)), esc(k.fin ? M(k.due) : '—'), esc(k.fin ? M(k.repaid) : '—'), esc(k.fin && k.dueDate ? SP.fmtDate(k.dueDate) : '—'), lab(k.status)]; });
       fin = s(t('Stock & financing', 'Stok & pembiayaan'), '<p class="sp-rpt-n">' + esc(t('Outstanding ', 'Baki ') + M(fs.outstanding) + (fs.next ? ' · ' + t('next due ', 'tamat seterusnya ') + SP.fmtDate(fs.next.date) : '')) + '</p>' +
-        tbl([t('Batch', 'Batch'), t('Sold', 'Terjual'), t('Repayment', 'Bayaran balik'), t('Repaid', 'Dibayar'), t('Due', 'Tarikh'), t('Status', 'Status')],
-          c.batches.map(function (b) { var k = SP.batchCalc(c, b, today); return [esc(SP.batchName ? SP.batchName(b) : b.code), esc(N(b.units_sold) + ' / ' + N(b.actual_qty || b.target_qty)), esc(k.fin ? M(k.due) : '—'), esc(k.fin ? M(k.repaid) : '—'), esc(k.fin && k.dueDate ? SP.fmtDate(k.dueDate) : '—'), lab(k.status)]; })));
+        tbl(finHead, finRows) + cardGrid(finHead, finRows));
     }
     var al = SP.computeAlerts(c, today), bm = SP.bm();
     var alerts = s(t('Alerts', 'Amaran'), al.length ? '<ul class="sp-rpt-al">' + al.map(function (a) { return '<li class="sp-rpt-' + esc(a.severity) + '"><b>' + esc(bm ? a.title_bm : a.title_en) + '</b> — ' + esc(bm ? a.body_bm : a.body_en) + '</li>'; }).join('') + '</ul>' : '<p class="sp-rpt-e">' + esc(t('No alerts.', 'Tiada amaran.')) + '</p>');

@@ -43,7 +43,7 @@
     var E = st.edit, a = d10(st.plan.start_date), b = d10(st.plan.end_date);
     E.periods.push(z({ id: null, kind: 'custom', label: t('Custom period', 'Tempoh khas') + ' ' + (E.periods.filter(function (p) { return p.kind === 'custom'; }).length + 1), start_date: a, end_date: SP.addDays(a, 13) > b ? b : SP.addDays(a, 13) }));
     mark(); rerender();
-    var ins = document.querySelectorAll('.sp-root .sp-ttable-p input[data-tf="label"]'); if (ins.length) ins[ins.length - 1].focus();
+    var ins = document.querySelectorAll('.sp-root .sp-pgrid input[data-tf="label"]'); if (ins.length) ins[ins.length - 1].focus();
   };
   A['tg-del-period'] = function (b) {
     var E = st.edit, i = +b.getAttribute('data-i'), p = E.periods[i]; if (!p) return;
