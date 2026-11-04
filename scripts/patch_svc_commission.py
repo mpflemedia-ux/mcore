@@ -5,13 +5,21 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '1'  # svc-commission.js: Service Log + payslip lines (Gaji asas / Komisen servis / Komisen produk / Bonus)
+VER = '2'  # svc-commission.js v2: statement logo/address via _pdocGetTenant, totals detail lines, BM /kepala
+DK_VER = 4  # dk-doc.js v4: totals labels wrap (+ optional t.sub) instead of being cut with '.'; only ever bumped up
 TAG = '<script src="./svc-commission.js?v=%s"></script>' % VER
 ANCHOR = re.compile(r'<script src="\./hr-import\.js\?v=\d+"></script>')
+def bump_dk(html):
+    def up(mo):
+        return mo.group(1) + '?v=' + str(max(int(mo.group(2)), DK_VER))
+    return re.sub(r'(\./dk-doc\.js)\?v=(\d+)', up, html)
 def main():
     if not INDEX.exists():
         print('ERROR: missing', INDEX, file=sys.stderr); sys.exit(1)
-    html = INDEX.read_text(encoding='utf-8')
+    orig = INDEX.read_text(encoding='utf-8')
+    html = bump_dk(orig)
+    if html != orig:
+        INDEX.write_text(html, encoding='utf-8'); print('bumped dk-doc.js to v=%s' % DK_VER)
     if 'svc-commission.js?v=' in html:
         new = re.sub(r'(\./svc-commission\.js)\?v=\d+', r'\g<1>?v=' + VER, html)
         if new == html:
