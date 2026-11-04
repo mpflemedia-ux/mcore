@@ -76,7 +76,7 @@
       if (d.closest('.pdoc-header,.pdoc-band,table,.no-print,.pdoc-pay-block')) return;
       var sp = d.children; if (sp.length !== 2 || sp[0].tagName !== 'SPAN' || sp[1].tagName !== 'SPAN') return;
       if (!/space-between/.test(d.getAttribute('style') || '')) return;
-      m.tots.push({ k: txt(sp[0]), v: txt(sp[1]), g: /border-top/.test(d.getAttribute('style') || '') });
+      var sm = sp[0].querySelector('small'), kk = sm ? txt(sp[0]).replace(txt(sm), '').trim() : txt(sp[0]); m.tots.push({ k: kk, v: txt(sp[1]), g: /border-top/.test(d.getAttribute('style') || ''), sub: sm ? txt(sm) : '' });
     });
     var pay = p.querySelector('.pdoc-pay-block');
     if (pay) { var q = pay.querySelector('img'); m.notes.push({ k: txt(pay.firstElementChild) || L('Payment', 'Pembayaran'), v: Array.prototype.slice.call(pay.children, 1).filter(function (x) { return x.tagName !== 'IMG'; }).map(txt).filter(Boolean).join('\n'), img: q ? q.getAttribute('src') : '' }); }
@@ -108,7 +108,7 @@
       (meta.length ? '<div class="dk-doc-meta">' + meta.map(function (x) { return '<div><span>' + esc(x.k) + '</span><b>' + esc(x.v) + '</b></div>'; }).join('') + '</div>' : '') + '</div>';
     if (m.party && (m.party.name || m.party.lines.length)) h += '<div class="dk-doc-card dk-doc-party"><div class="dk-doc-lb">' + esc(o.partyLabel || L('Bill to', 'Kepada')) + '</div><b>' + esc(m.party.name) + '</b>' + m.party.lines.map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('') + '</div>';
     h += itemsHtml(m);
-    if (m.tots.length) h += '<div class="dk-doc-card">' + m.tots.map(function (t) { return '<div class="dk-doc-tot' + (t.g ? ' g' : '') + '"><span>' + esc(t.k) + '</span><span>' + esc(t.v) + '</span></div>'; }).join('') + '</div>';
+    if (m.tots.length) h += '<div class="dk-doc-card">' + m.tots.map(function (t) { return '<div class="dk-doc-tot' + (t.g ? ' g' : '') + '"><span>' + esc(t.k) + (t.sub ? '<small style="display:block;font-size:11px;font-weight:400;color:var(--text-3)">' + esc(t.sub) + '</small>' : '') + '</span><span>' + esc(t.v) + '</span></div>'; }).join('') + '</div>';
     (m.notes || []).forEach(function (n) { h += '<div class="dk-doc-card"><div class="dk-doc-lb">' + esc(n.k) + '</div>' + (n.img ? '<div class="dk-doc-note"><img src="' + esc(n.img) + '" alt="QR"></div>' : '') + '<div class="dk-doc-note">' + esc(n.v) + '</div></div>'; });
     if (o.extraHtml) h += o.extraHtml;
     h += '<div class="dk-doc-sign"></div><div class="dk-doc-tl"></div>';
@@ -236,9 +236,14 @@
       if (m.tots.length) {
         need(18 * m.tots.length + 14); y -= 10; var tx0 = R - 240;
         m.tots.forEach(function (t) {
+          // label wraps (max 3 lines) beside the amount instead of being cut with "."; optional t.sub = smaller detail line
+          var sz = t.g ? 11.5 : 9.5, f = t.g ? B : F, lw = Math.max(80, (R - tx0) - f.widthOfTextAtSize(clean(t.v), sz) - 10);
+          var kl = wrap(t.k, sz, f, lw).slice(0, 3), sb = t.sub ? wrap(t.sub, 8, F, lw).slice(0, 2) : [];
+          need((kl.length - 1) * 12 + sb.length * 10 + 22);
           if (t.g) { pg.drawLine({ start: { x: tx0, y: y - 2 }, end: { x: R, y: y - 2 }, thickness: 1.5, color: acc }); y -= 6; }
-          y -= t.g ? 16 : 14; tx(fit(t.k, t.g ? 11.5 : 9.5, t.g ? B : F, 140), tx0, y, t.g ? 11.5 : 9.5, t.g ? B : F, t.g ? ink : mut);
-          rt(t.v, R, y, t.g ? 11.5 : 9.5, t.g ? B : F, t.g ? acc : ink);
+          y -= t.g ? 16 : 14; rt(t.v, R, y, sz, f, t.g ? acc : ink);
+          kl.forEach(function (s, i) { if (i) y -= sz + 2.5; tx(s, tx0, y, sz, f, t.g ? ink : mut); });
+          sb.forEach(function (s) { y -= 10; tx(s, tx0, y, 8, F, mut); }); if (sb.length) y -= 2;
         });
       }
       // notes (payment block, terms)
@@ -280,7 +285,7 @@
     var cols = m.cols || [];
     if (cols.length) h += '<table class="pdoc-table" style="width:100%;border-collapse:collapse"><thead><tr>' + cols.map(function (c, i) { return '<th' + (i ? ' class="r"' : '') + '>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       (m.rows || []).map(function (r) { return '<tr>' + cols.map(function (c, i) { return '<td' + (i ? ' class="r"' : '') + '>' + esc(r[i] == null ? '' : r[i]) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>';
-    if ((m.tots || []).length) h += '<div class="dk-ptot">' + m.tots.map(function (t) { return '<div class="' + (t.g ? 'g' : '') + '" style="display:flex;justify-content:space-between' + (t.g ? ';border-top:2px solid var(--pdoc-accent)' : '') + '"><span>' + esc(t.k) + '</span><span>' + esc(t.v) + '</span></div>'; }).join('') + '</div>';
+    if ((m.tots || []).length) h += '<div class="dk-ptot">' + m.tots.map(function (t) { return '<div class="' + (t.g ? 'g' : '') + '" style="display:flex;justify-content:space-between' + (t.g ? ';border-top:2px solid var(--pdoc-accent)' : '') + '"><span style="min-width:0">' + esc(t.k) + (t.sub ? '<small style="display:block;font-size:10px;font-weight:400;opacity:.75">' + esc(t.sub) + '</small>' : '') + '</span><span style="white-space:nowrap">' + esc(t.v) + '</span></div>'; }).join('') + '</div>';
     (m.notes || []).forEach(function (n) { if (n && n.v) h += '<div class="pdoc-notes" data-dk-note="' + esc(n.k || '') + '"><strong>' + esc(n.k || '') + '</strong>\n<span class="dk-nv">' + esc(n.v) + '</span></div>'; });
     if (m.foot) h += '<div class="pdoc-footer-note">' + esc(m.foot) + '</div>';
     var d = document.createElement('div'); d.className = 'pdoc dk-gen' + (o.cls ? ' ' + o.cls : '');
