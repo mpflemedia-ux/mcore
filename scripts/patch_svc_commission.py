@@ -5,8 +5,8 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '2'  # svc-commission.js v2: statement logo/address via _pdocGetTenant, totals detail lines, BM /kepala
-DK_VER = 4  # dk-doc.js v4: totals labels wrap (+ optional t.sub) instead of being cut with '.'; only ever bumped up
+VER = '3'  # svc-commission.js v3: signatures (Prepared by staff / Approved by Owner/HR) + WhatsApp share (svc_commission_02.sql, public-svc.html)
+DK_VER = 5  # dk-doc.js v5: drawn signature images in sig boxes + PDF (v4: totals labels wrap); only ever bumped up
 TAG = '<script src="./svc-commission.js?v=%s"></script>' % VER
 ANCHOR = re.compile(r'<script src="\./hr-import\.js\?v=\d+"></script>')
 def bump_dk(html):
