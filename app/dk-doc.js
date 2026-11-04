@@ -1,6 +1,6 @@
 /* dk-doc.js — M-Core document kit (window.DKD). Reads the final .pdoc paper markup into a model, renders it as an
    on-screen card view (all widths) with a sticky action footer, keeps the paper hidden on screen (.dk-src) but printed
-   (light A4, "like SD"), adds print signature boxes, and builds an A4 PDF with pdf-lib. Tokens only on screen. v3 (docked sticky action bar) */
+   (light A4, "like SD"), adds print signature boxes, and builds an A4 PDF with pdf-lib. Tokens only on screen. v3 (docked sticky action bar) · v5: optional sigs[].img (drawn signature) on paper + PDF */
 (function () {
   if (window.DKD) return;
   function bm() { try { return APP.language === 'bm'; } catch (e) { return false; } }
@@ -161,10 +161,13 @@
     if (!slots || !slots.length) return;
     var cells = slots.map(function (s) {
       return '<td style="text-align:center;vertical-align:top;padding:0 10px;border:none;background:transparent">' +
-        '<div style="height:44px;font-size:10px;color:#64748B;display:flex;align-items:flex-end;justify-content:center">' + (s.at ? esc(s.at) : '') + '</div>' +
+        // optional s.img (data: or https URL of the drawn signature) sits on the line; the date then moves under the label
+        (s.img ? '<div style="height:44px;display:flex;align-items:flex-end;justify-content:center"><img src="' + esc(s.img) + '" alt="" style="max-height:42px;max-width:140px;object-fit:contain"></div>'
+          : '<div style="height:44px;font-size:10px;color:#64748B;display:flex;align-items:flex-end;justify-content:center">' + (s.at ? esc(s.at) : '') + '</div>') +
         '<div style="width:140px;margin:0 auto 6px;border-top:1.5px solid #334155;height:0"></div>' +
         '<div style="font-size:12px;font-weight:600;color:#0F172A;min-height:15px">' + esc(s.name || '') + '</div>' +
-        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">' + esc(s.label || '') + '</div></td>';
+        '<div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748B">' + esc(s.label || '') + '</div>' +
+        (s.img && s.at ? '<div style="font-size:9px;color:#64748B;margin-top:2px">' + esc(s.at) + '</div>' : '') + '</td>';
     }).join('');
     var t = document.createElement('table'); t.className = 'dk-sigbox pdoc-sig-print-table';
     t.style.cssText = 'width:100%;margin:20px 0 8px;border-collapse:collapse;table-layout:fixed'; t.innerHTML = '<tr>' + cells + '</tr>';
@@ -255,15 +258,19 @@
       }
       // signature boxes
       if (m.sigs && m.sigs.length) {
-        need(90); y -= 54; var sw = (R - X) / m.sigs.length;
+        var sImgs = [], anyImg = false;
+        for (var si = 0; si < m.sigs.length; si++) { sImgs[si] = m.sigs[si].img ? await embedImg(doc, m.sigs[si].img) : null; if (sImgs[si]) anyImg = true; }
+        need(anyImg ? 100 : 90); y -= 54; var sw = (R - X) / m.sigs.length;
         m.sigs.forEach(function (s, i) {
-          var cx = X + sw * i + sw / 2, lw = Math.min(140, sw - 20);
-          if (s.at) { var a = clean(s.at); tx(a, cx - F.widthOfTextAtSize(a, 8) / 2, y + 8, 8, F, mut); }
+          var cx = X + sw * i + sw / 2, lw = Math.min(140, sw - 20), im = sImgs[i];
+          if (im) { var sc = Math.min(40 / im.height, lw / im.width, 1), iw = im.width * sc, ih = im.height * sc; pg.drawImage(im, { x: cx - iw / 2, y: y + 2, width: iw, height: ih }); }
+          else if (s.at) { var a = clean(s.at); tx(a, cx - F.widthOfTextAtSize(a, 8) / 2, y + 8, 8, F, mut); }
           pg.drawLine({ start: { x: cx - lw / 2, y: y }, end: { x: cx + lw / 2, y: y }, thickness: 1, color: ink });
           var nm = fit(s.name || '', 10, B, sw - 10); tx(nm, cx - B.widthOfTextAtSize(nm, 10) / 2, y - 14, 10, B, ink);
           var lb = fit(String(s.label || '').toUpperCase(), 7.5, B, sw - 10); tx(lb, cx - B.widthOfTextAtSize(lb, 7.5) / 2, y - 26, 7.5, B, mut);
+          if (im && s.at) { var a2 = clean(s.at); tx(a2, cx - F.widthOfTextAtSize(a2, 7.5) / 2, y - 37, 7.5, F, mut); }
         });
-        y -= 34;
+        y -= anyImg ? 44 : 34;
       }
       if (m.foot) { var fw = F.widthOfTextAtSize(fit(m.foot, 8, F, R - X), 8); tx(fit(m.foot, 8, F, R - X), (W - fw) / 2, 30, 8, F, mut); }
     }
