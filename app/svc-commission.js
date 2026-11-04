@@ -169,7 +169,7 @@
   }
   function empName() { var e = ST.emps.filter(function (x) { return String(x.id) === String(ST.emp); })[0]; return (e && e.name) || (ST.empRow && ST.empRow.name) || ''; }
   function schemeText(r) {
-    return L(r.svc_rate_pct + '% per head' + (r.svc_cap !== null ? ', max ' + rm(r.svc_cap) + '/head' : ''), r.svc_rate_pct + '% sehead' + (r.svc_cap !== null ? ', maks ' + rm(r.svc_cap) + '/head' : ''));
+    return L(r.svc_rate_pct + '% per head' + (r.svc_cap !== null ? ', max ' + rm(r.svc_cap) + '/head' : ''), r.svc_rate_pct + '% sekepala' + (r.svc_cap !== null ? ', maks ' + rm(r.svc_cap) + '/kepala' : ''));
   }
   function paint() {
     var W = $('svc-wrap'); if (!W) return;
@@ -183,7 +183,7 @@
     if (ST.cfgRow && ST.cfgRow.enabled === false) h += '<div class="svc-card"><div class="svc-body svc-flag">' + esc(L('Service commission is switched off for this employee.', 'Komisen servis dimatikan untuk pekerja ini.')) + '</div></div>';
     if (!ST.cfgRow && ST.hr) h += '<div class="svc-card"><div class="svc-body svc-hint" style="margin:0">' + esc(L('No scheme saved for this employee yet — default rates shown. Save the scheme below.', 'Tiada skim disimpan untuk pekerja ini — kadar lalai ditunjukkan. Simpan skim di bawah.')) + '</div></div>';
     h += '<div class="svc-stats">' +
-      stat(L('NM heads', 'Head NM'), String(c.heads), L(c.rows + ' logs', c.rows + ' log')) +
+      stat(L('NM heads', 'Kepala NM'), String(c.heads), L(c.rows + ' logs', c.rows + ' log')) +
       stat(L('Service comm.', 'Komisen servis'), rm(c.svc_commission), schemeText(r)) +
       stat(L('Product comm.', 'Komisen produk'), rm(c.prod_commission), r.prod_rate_pct + '% × ' + rm(c.product_sales)) +
       stat(L('KPI bonus', 'Bonus KPI'), rm(c.bonus), mon.bonus_on ? L('On', 'Aktif') : L('Off', 'Tidak aktif')) +
@@ -203,7 +203,7 @@
   function slipCard(c) {
     var r = c.rates, rows = [];
     if (ST.basic !== null) rows.push([L('Basic pay', 'Gaji asas'), '', ST.basic]);
-    rows.push([L('Service commission', 'Komisen servis'), L(c.heads + ' heads NM, ', c.heads + ' head NM, ') + schemeText(r), c.svc_commission]);
+    rows.push([L('Service commission', 'Komisen servis'), L(c.heads + ' heads NM, ', c.heads + ' kepala NM, ') + schemeText(r), c.svc_commission]);
     rows.push([L('Product commission', 'Komisen produk'), r.prod_rate_pct + '% × ' + rm(c.product_sales), c.prod_commission]);
     rows.push([L('Conversion bonus', 'Bonus conversion'), c.bonus > 0 ? L('KPI met', 'KPI dicapai') : L('Not awarded', 'Tidak diberi'), c.bonus]);
     var tot = (ST.basic || 0) + c.commission_total;
@@ -240,7 +240,7 @@
     var g = {}; ST.logs.forEach(function (x) { var w = weekOf(x); (g[w] = g[w] || []).push(x); });
     return Object.keys(g).sort(function (a, b) { return a - b; }).map(function (w) {
       var rows = g[w], c = S.calc(rows, ST.cfgRow || {}, {}), sum = rows.reduce(function (s, x) { return s + num(x.price); }, 0);
-      return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Week ', 'Minggu ')) + w + '</span><span class="m">' + esc(L(rows.length + ' logs · ' + c.heads + ' NM heads · sales ', rows.length + ' log · ' + c.heads + ' head NM · jualan ')) + esc(rm(sum)) + ' · <b style="color:var(--success)">' + esc(rm(c.svc_commission)) + '</b></span></div>' +
+      return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Week ', 'Minggu ')) + w + '</span><span class="m">' + esc(L(rows.length + ' logs · ' + c.heads + ' NM heads · sales ', rows.length + ' log · ' + c.heads + ' kepala NM · jualan ')) + esc(rm(sum)) + ' · <b style="color:var(--success)">' + esc(rm(c.svc_commission)) + '</b></span></div>' +
         rows.map(function (x) { return rowHtml(x, edit); }).join('') + '</div>';
     }).join('');
   }
@@ -263,14 +263,14 @@
       '<div class="svc-grid">' +
       '<div><label class="form-label" for="svc-s-pb">' + esc(L('Pay basis', 'Asas gaji')) + '</label><select class="form-input" id="svc-s-pb">' + opt('monthly_fixed', s.pay_basis || 'monthly_fixed', L('Monthly fixed', 'Tetap bulanan')) + opt('daily', s.pay_basis, L('Daily', 'Harian')) + opt('hourly', s.pay_basis, L('Hourly', 'Jam')) + opt('commission_only', s.pay_basis, L('Commission only', 'Komisen sahaja')) + '</select></div>' +
       '<div><label class="form-label" for="svc-s-wm">' + esc(L('Work mode', 'Mod kerja')) + '</label><select class="form-input" id="svc-s-wm">' + opt('wfh', s.work_mode || 'wfh', 'WFH') + opt('onsite', s.work_mode, L('On-site', 'Di premis')) + opt('hybrid', s.work_mode, 'Hybrid') + '</select></div>' +
-      '<div><label class="form-label" for="svc-s-rate">' + esc(L('Service % per head', '% servis sehead')) + '</label><input class="form-input" id="svc-s-rate" type="number" min="0" max="100" step="0.01" value="' + esc(r.svc_rate_pct) + '"></div>' +
-      '<div><label class="form-label" for="svc-s-cap">' + esc(L('Cap per head (RM, blank = none)', 'Had sehead (RM, kosong = tiada)')) + '</label><input class="form-input" id="svc-s-cap" type="number" min="0" step="0.01" value="' + esc(r.svc_cap == null ? '' : r.svc_cap) + '"></div>' +
+      '<div><label class="form-label" for="svc-s-rate">' + esc(L('Service % per head', '% servis sekepala')) + '</label><input class="form-input" id="svc-s-rate" type="number" min="0" max="100" step="0.01" value="' + esc(r.svc_rate_pct) + '"></div>' +
+      '<div><label class="form-label" for="svc-s-cap">' + esc(L('Cap per head (RM, blank = none)', 'Had sekepala (RM, kosong = tiada)')) + '</label><input class="form-input" id="svc-s-cap" type="number" min="0" step="0.01" value="' + esc(r.svc_cap == null ? '' : r.svc_cap) + '"></div>' +
       '<div><label class="form-label" for="svc-s-st">' + esc(L('Eligible status', 'Status layak')) + '</label><select class="form-input" id="svc-s-st">' + opt('NM', r.eligible_status, 'NM') + opt('M', r.eligible_status, 'M') + '</select></div>' +
       '<div><label class="form-label" for="svc-s-ld">' + esc(L('Eligible leads', 'Lead layak')) + '</label><input class="form-input" id="svc-s-ld" value="' + esc(r.eligible_leads.join(', ')) + '" placeholder="TT, ADS"></div>' +
       '<div><label class="form-label" for="svc-s-pr">' + esc(L('Product %', '% produk')) + '</label><input class="form-input" id="svc-s-pr" type="number" min="0" max="100" step="0.01" value="' + esc(r.prod_rate_pct) + '"></div>' +
       '<div><label class="form-label" for="svc-s-bo">' + esc(L('KPI bonus (RM)', 'Bonus KPI (RM)')) + '</label><input class="form-input" id="svc-s-bo" type="number" min="0" step="0.01" value="' + esc(r.bonus_amount) + '"></div>' +
       '</div><div style="margin-top:10px"><label class="form-label" for="svc-s-no">' + esc(L('Notes', 'Nota')) + '</label><input class="form-input" id="svc-s-no" maxlength="300" value="' + esc(s.notes || '') + '"></div>' +
-      '<div class="svc-hint">' + esc(L('Basic pay stays on the employee record (Gaji Pokok). M heads and rows without a price earn nothing.', 'Gaji asas kekal di rekod pekerja (Gaji Pokok). Head M dan baris tanpa harga tiada komisen.')) + '</div>' +
+      '<div class="svc-hint">' + esc(L('Basic pay stays on the employee record (Gaji Pokok). M heads and rows without a price earn nothing.', 'Gaji asas kekal di rekod pekerja (Gaji Pokok). Kepala M dan baris tanpa harga tiada komisen.')) + '</div>' +
       '<div class="svc-act" style="margin-top:10px"><button type="button" class="btn btn-primary btn-sm" id="svc-s-save"><i class="ti ti-device-floppy"></i> ' + esc(L('Save scheme', 'Simpan skim')) + '</button></div></div></div>';
   }
 
@@ -413,27 +413,33 @@
       toast(L(rows.length + ' logs imported', rows.length + ' log diimport')); await refresh(); return true;
     });
     var ta = o.querySelector('#svc-csv'), pv = o.querySelector('#svc-csv-p');
-    ta.oninput = function () { var p = S.parseCsv(ta.value, ST.m, ST.y), c = S.calc(p.rows, ST.cfgRow || {}, {}); pv.textContent = L(p.rows.length + ' ok · ' + c.heads + ' NM heads · ' + rm(c.svc_commission), p.rows.length + ' ok · ' + c.heads + ' head NM · ' + rm(c.svc_commission)) + (p.bad.length ? L(' · bad lines: ', ' · baris salah: ') + p.bad.join(', ') : ''); };
+    ta.oninput = function () { var p = S.parseCsv(ta.value, ST.m, ST.y), c = S.calc(p.rows, ST.cfgRow || {}, {}); pv.textContent = L(p.rows.length + ' ok · ' + c.heads + ' NM heads · ' + rm(c.svc_commission), p.rows.length + ' ok · ' + c.heads + ' kepala NM · ' + rm(c.svc_commission)) + (p.bad.length ? L(' · bad lines: ', ' · baris salah: ') + p.bad.join(', ') : ''); };
   }
 
   /* ---------- statement (A4 light, signature boxes) ---------- */
   function ddmmyyyy(d) { d = d || new Date(); return pad(d.getDate()) + pad(d.getMonth() + 1) + d.getFullYear(); }
-  function stModel() {
+  // tenant header — same source as dk-staff/dk-ops/dk-purch (_pdocGetTenant → logo_url + _pdocAddressLine + phone)
+  function tenant() { try { return typeof _pdocGetTenant === 'function' ? Promise.resolve(_pdocGetTenant()).catch(function () { return APP.tenant || {}; }) : Promise.resolve(APP.tenant || {}); } catch (e) { return Promise.resolve({}); } }
+  function coSub(t) { var a = ''; try { a = typeof _pdocAddressLine === 'function' ? _pdocAddressLine(t) : (t.address || ''); } catch (e) {} return [a, t.phone].filter(Boolean).join(' · '); }
+  function stModel(t) {
+    t = t || APP.tenant || {};
     var mon = ST.mon || {}, c = S.calc(ST.logs, ST.cfgRow || {}, { product_sales: mon.product_sales, bonus_on: mon.bonus_on }), r = c.rates;
     var code = String((APP.tenant && APP.tenant.code) || 'MCORE').replace(/[^\w]+/g, '').toUpperCase();
     var ref = 'SC' + ST.y + pad(ST.m) + '-' + String(ST.emp).slice(0, 4).toUpperCase();
-    var m = { co: (APP.tenant && APP.tenant.name) || '', sub: '', logo: (APP.tenant && (APP.tenant.logo_url || (APP.tenant.config && APP.tenant.config.logo_url))) || '',
+    var coName = t.name || (APP.tenant && APP.tenant.name) || '';
+    var m = { co: coName, sub: coSub(t), logo: t.logo_url || '',
       title: L('SERVICE COMMISSION STATEMENT', 'PENYATA KOMISEN SERVIS'),
       meta: [{ k: L('Ref', 'Ruj.'), v: ref }, { k: L('Period', 'Tempoh'), v: mlabel(ST.m, ST.y) }, { k: L('Status', 'Status'), v: ({ draft: L('Draft', 'Draf'), submitted: L('Submitted', 'Dihantar'), approved: L('Approved', 'Diluluskan') })[mon.status || 'draft'] }],
       party: { name: empName(), lines: [ST.empRow && ST.empRow.position || '', L('Scheme: ', 'Skim: ') + schemeText(r) + ' · ' + r.eligible_status + ' + ' + r.eligible_leads.join('/') + ' · ' + L('product ', 'produk ') + r.prod_rate_pct + '%'].filter(Boolean) },
-      cols: [L('Date', 'Tarikh'), L('Service', 'Servis'), L('Price', 'Harga'), L('Client', 'Pelanggan'), 'Lead', L('Commission', 'Komisen')],
-      rows: ST.logs.map(function (x) { var rc = rowCalc(x, r); return [dmy(x.log_date), x.service + (rc.flag ? ' (' + flagText(rc.flag) + ')' : ''), x.price == null ? '—' : rm(x.price), x.client_status || '—', x.lead_source || '—', rc.ok ? rm(rc.cents / 100) : '—']; }),
-      tots: [], notes: [], sigs: [], foot: L('Computer-generated statement', 'Penyata janaan komputer') + ' · ' + ((APP.tenant && APP.tenant.name) || ''),
+      cols: [L('Date · Service', 'Tarikh · Servis'), L('Price', 'Harga'), L('Client', 'Pelanggan'), 'Lead', L('Commission', 'Komisen')],
+      rows: ST.logs.map(function (x) { var rc = rowCalc(x, r); return [dmy(x.log_date) + ' · ' + x.service + (rc.flag ? ' (' + flagText(rc.flag) + ')' : ''), x.price == null ? '—' : rm(x.price), x.client_status || '—', x.lead_source || '—', rc.ok ? rm(rc.cents / 100) : '—']; }),
+      tots: [], notes: [], sigs: [], foot: L('Computer-generated statement', 'Penyata janaan komputer') + ' · ' + coName,
       file: 'SVC-' + code + '-' + ref + '-' + ddmmyyyy() };
-    if (!m.rows.length) m.rows.push(['—', L('No logs', 'Tiada log'), '', '', '', '']);
+    if (!m.rows.length) m.rows.push([L('No logs this month', 'Tiada log bulan ini'), '', '', '', '']);
     if (ST.basic !== null) m.tots.push({ k: L('Basic pay', 'Gaji asas'), v: rm(ST.basic) });
-    m.tots.push({ k: L('Service commission (' + c.heads + ' NM heads)', 'Komisen servis (' + c.heads + ' head NM)'), v: rm(c.svc_commission) });
-    m.tots.push({ k: L('Product commission (', 'Komisen produk (') + r.prod_rate_pct + '% × ' + rm(c.product_sales) + ')', v: rm(c.prod_commission) });
+    // short label + detail line (dk-doc wraps both; nothing is cut with "." any more)
+    m.tots.push({ k: L('Service commission', 'Komisen servis'), sub: L(c.heads + ' NM heads · ', c.heads + ' kepala NM · ') + schemeText(r), v: rm(c.svc_commission) });
+    m.tots.push({ k: L('Product commission', 'Komisen produk'), sub: r.prod_rate_pct + '% × ' + rm(c.product_sales), v: rm(c.prod_commission) });
     m.tots.push({ k: L('Conversion bonus', 'Bonus conversion'), v: rm(c.bonus) });
     m.tots.push({ k: L('Total', 'Jumlah'), v: rm((ST.basic || 0) + c.commission_total), g: true });
     if (mon.product_note) m.notes.push({ k: L('Products', 'Produk'), v: mon.product_note });
@@ -446,7 +452,7 @@
   S.model = stModel;
   async function statement(how) {
     if (!window.DKD) return toast(L('Document kit not loaded', 'Kit dokumen belum dimuat'), 'error');
-    var m = stModel();
+    var m = stModel(await tenant());
     if (how === 'pdf') return DKD.file(m, m.file + '.pdf').then(DKD.download);
     var p = DKD.paper(m, { cls: 'dk-tmp' }); DKD.sigBoxes(p, m.sigs); ($('main') || document.body).appendChild(p);
     var gone = false, rmv = function () { if (gone) return; gone = true; p.remove(); window.removeEventListener('afterprint', rmv); };
@@ -542,7 +548,7 @@
     var B = function (en, b) { return isBm ? b : en; };
     var row = function (lbl, amt) { return '<tr><td>' + esc(lbl) + '</td><td style="' + mm[2] + '">+ ' + esc(rm(amt)) + '</td></tr>'; };
     var out = '';
-    if (num(x.svc_commission) > 0) out += row(B('Service commission (' + num(x.svc_heads) + ' heads NM, ' + pct + '%' + (cap != null ? ' max ' + rm(cap) + '/head' : '') + ')', 'Komisen servis (' + num(x.svc_heads) + ' head NM, ' + pct + '%' + (cap != null ? ' maks ' + rm(cap) + '/head' : '') + ')'), x.svc_commission);
+    if (num(x.svc_commission) > 0) out += row(B('Service commission (' + num(x.svc_heads) + ' heads NM, ' + pct + '%' + (cap != null ? ' max ' + rm(cap) + '/head' : '') + ')', 'Komisen servis (' + num(x.svc_heads) + ' kepala NM, ' + pct + '%' + (cap != null ? ' maks ' + rm(cap) + '/kepala' : '') + ')'), x.svc_commission);
     if (num(x.prod_commission) > 0) out += row(B('Product commission (' + pp + '% × ' + rm(x.product_sales) + ')', 'Komisen produk (' + pp + '% × ' + rm(x.product_sales) + ')'), x.prod_commission);
     if (num(x.bonus) > 0) out += row(B('Conversion bonus', 'Bonus conversion'), x.bonus);
     var rest = Math.round((num(rec.commission) - num(x.commission_total)) * 100) / 100;
