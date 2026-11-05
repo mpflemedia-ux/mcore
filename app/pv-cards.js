@@ -40,7 +40,7 @@
       '.pvc-grid .form-group{margin:0;min-width:0}' +
       '.pvc-grid .form-input,.pvc-grid .form-select{width:100%;min-height:36px}' +
       '.pvc-cap{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);font-weight:600;margin:0 0 3px}' +
-      '.pvc-val{font-size:13px;overflow-wrap:anywhere;color:var(--text)}' +
+      '.pvc-val{font-size:13px;overflow-wrap:anywhere;white-space:pre-line;line-height:1.5;color:var(--text)}' +
       '.pvc-val.pvc-mono{font-family:"Space Grotesk",var(--font)}' +
       '.pvc-acts,.pvc-tools,.pvc-hacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}' +
       '.pvc-acts{margin-top:10px}' +

@@ -25,6 +25,12 @@
   }
   function docTitle(kind) { return kind === 'pvd' ? L('PAYMENT VOUCHER DISBURSEMENT', 'PENYALURAN BAUCAR BAYARAN') : L('PAYMENT VOUCHER', 'BAUCAR BAYARAN'); }
   function fname(d) { var s = function (x) { try { return _pdocSlug(x); } catch (e) { return String(x || '').replace(/[^a-zA-Z0-9-]/g, ''); } }; return (d.kind === 'pvd' ? 'PVD' : 'PV') + '_' + s(d.ref) + (d.kind === 'pv' ? '_' + s(d.title) : '') + '.pdf'; }
+  /* split a description into tidy lines: real newlines first; legacy one-line SVC text split before known labels */
+  function descLines(s) {
+    s = String(s == null ? '' : s).replace(/\r\n?/g, '\n');
+    if (s.indexOf('\n') < 0) s = s.replace(/\s*(Komisen servis:|Komisen produk:|Bonus[^:]{0,20}:|Tempoh:|Service commission:|Product commission:|Period:)/gi, '\n$1');
+    return s.split('\n').map(function (x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  }
   function bankOf(l) { return [l.bank_name, l.bank_account_no].filter(Boolean).join(' · '); }
   function payOf(l) { return X.methodLabel(l.payment_method) + (l.cheque_no ? ' · ' + l.cheque_no : '') + (l.pay_ref ? ' · ' + l.pay_ref : ''); }
 
@@ -43,7 +49,7 @@
       '.pvp-sum div{border:1px solid var(--border);border-radius:6px;padding:6px 8px}.pvp-sum span{display:block;font-size:9px;color:var(--text-3);text-transform:uppercase}.pvp-sum b{font-size:12px}' +
       '.pvp-t{width:100%;border-collapse:collapse;margin:0 0 10px}.pvp-t th{background:var(--bg-hover);font-size:9px;text-transform:uppercase;text-align:left;padding:6px;border-bottom:1px solid var(--border)}' +
       '.pvp-t td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top}.pvp-t .pvp-r{text-align:right;white-space:nowrap}.pvp-t tfoot td{font-weight:800;border-top:2px solid var(--text)}' +
-      '.pvp-mu{color:var(--text-3);font-size:10px}.pvp-note{font-size:10px;color:var(--text-2);margin:0 0 14px}' +
+      '.pvp-mu{color:var(--text-3);font-size:10px}.pvp-desc{margin:3px 0 0;line-height:1.5;white-space:pre-line;overflow-wrap:anywhere}.pvp-note{font-size:10px;color:var(--text-2);margin:0 0 14px;white-space:pre-line}' +
       '.pvp-sgrid{display:grid;gap:12px;margin:22px 0 0;page-break-inside:avoid;break-inside:avoid}' +
       '.pvp-sg{text-align:center;min-width:0}.pvp-sgi{height:52px;display:flex;align-items:flex-end;justify-content:center}.pvp-sgi img{max-height:50px;max-width:100%;object-fit:contain}' +
       '.pvp-sgl{border-top:1px solid var(--text);margin:2px 6px 4px}.pvp-sgn{font-weight:700;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
@@ -57,7 +63,7 @@
     var tn = d.tn || {}, acc = ''; try { acc = _pdocAccentGet('pv'); } catch (e) {}
     var addr = ''; try { addr = _pdocAddressLine(tn); } catch (e) {}
     var rows = d.lines.map(function (l, i) {
-      return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(l.payee_name || '') + '</b>' + (l.description ? '<div class="pvp-mu">' + esc(l.description) + '</div>' : '') + '</td>' +
+      return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(l.payee_name || '') + '</b>' + (l.description ? '<div class="pvp-mu pvp-desc">' + esc(descLines(l.description).join('\n')) + '</div>' : '') + '</td>' +
         '<td>' + esc(bankOf(l) || '—') + '</td><td>' + esc(payOf(l)) + '</td><td>' + esc(X.catLabel(l.category) || '') + '</td><td class="pvp-r">' + esc(rm(l.amount)) + '</td></tr>';
     }).join('');
     var sig = ''; try { sig = window.PVS ? await PVS.printHtml(d.kind, docId, d.total) : ''; } catch (e) {}
@@ -123,6 +129,15 @@
     var tx = function (s, x, yy, sz, f, c) { s = clean(s); if (s) pg.drawText(s, { x: x, y: yy, size: sz, font: f || F, color: c || ink }); };
     var rt = function (s, x, yy, sz, f, c) { s = clean(s); tx(s, x - (f || F).widthOfTextAtSize(s, sz), yy, sz, f, c); };
     var fit = function (s, sz, f, max) { s = clean(s); while (s.length > 1 && (f || F).widthOfTextAtSize(s, sz) > max) s = s.slice(0, -2) + '.'; return s; };
+    var wrap = function (s, sz, f, max) {
+      var out = [];
+      descLines(s).forEach(function (ln) {
+        var ws = clean(ln).split(' '), cur = '';
+        ws.forEach(function (w) { var t = cur ? cur + ' ' + w : w; if (cur && (f || F).widthOfTextAtSize(t, sz) > max) { out.push(cur); cur = w; } else cur = t; });
+        if (cur) out.push(fit(cur, sz, f, max));
+      });
+      return out.slice(0, 12);
+    };
     var hline = function (yy, t) { pg.drawLine({ start: { x: x0, y: yy }, end: { x: x1, y: yy }, thickness: t || 0.6, color: line }); };
     var tn = d.tn || {}, lx = x0;
     var logo = await embed(doc, await fetchBuf(tn.logo_url));
@@ -145,7 +160,8 @@
     };
     head();
     d.lines.forEach(function (l, i) {
-      var hgt = l.description ? 26 : 16;
+      var dls = l.description ? wrap(l.description, 7.5, F, RX - 70 - C[1]) : [], DLH = 10;
+      var hgt = 16 + (dls.length ? dls.length * DLH + 2 : 0);
       if (y - hgt < 170 && i < d.lines.length - 1) { pg = doc.addPage([W, H]); y = H - 50; head(); }
       tx(String(i + 1), C[0], y, 9, F, mut);
       tx(fit(l.payee_name || '', 9, B, C[2] - C[1] - 6), C[1], y, 9, B, ink);
@@ -153,13 +169,13 @@
       tx(fit(payOf(l), 8.5, F, C[4] - C[3] - 6), C[3], y, 8.5, F, ink);
       tx(fit(X.catLabel(l.category) || '', 8.5, F, RX - 70 - C[4]), C[4], y, 8.5, F, ink);
       rt(rm(l.amount).replace(/^RM\s*/, ''), RX, y, 9, F, ink);
-      if (l.description) tx(fit(l.description, 7.5, F, C[3] - C[1] - 6), C[1], y - 10, 7.5, F, mut);
+      dls.forEach(function (t, k) { tx(t, C[1], y - 12 - k * DLH, 7.5, F, mut); });
       y -= hgt - 4; hline(y + 4); y -= 8;
     });
     pg.drawLine({ start: { x: x0, y: y + 8 }, end: { x: x1, y: y + 8 }, thickness: 1.2, color: ink });
     tx(L('TOTAL', 'JUMLAH'), C[1], y - 4, 10, B, ink); rt(rm(d.total), RX, y - 4, 10, B, ink);
     y -= 30;
-    if (d.kind === 'pvd' && d.note) { tx(fit(d.note, 8.5, F, x1 - x0), x0, y, 8.5, F, mut); y -= 16; }
+    if (d.kind === 'pvd' && d.note) { wrap(d.note, 8.5, F, x1 - x0).forEach(function (t) { tx(t, x0, y, 8.5, F, mut); y -= 11; }); y -= 5; }
     // signatures
     var cells = [];
     try {
