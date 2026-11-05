@@ -1,139 +1,89 @@
-/* Payment Vouchers — bulk WhatsApp share v1 (loads after pv-core.js, pv-signatures.js).
-   PV list only renders a plain <table> (index.html renderPVList/_pvRenderListTable); mobile
-   card look comes from dk-cards.js auto-converting it client-side, so this patches the table
-   render, not a dedicated card component.
-   Adds a checkbox per draft/shared row + a sticky action bar: pick one signature role, generate
-   a pv_sign_link_create token for every selected PV (same RPC the single-PV Share button uses —
-   requires the real signed-in session, same as every other PV flow), and open ONE WhatsApp
-   compose with all links in one message instead of one link per PV. */
+/* Payment Vouchers — bulk WhatsApp share v2 (loads after pv-core.js, pv-signatures.js, dk-cards.js).
+   v1 injected a checkbox <td> into the PV list <table> itself — that shifted every column index by
+   one and broke dk-cards.js's column->field mapping for the whole list (payee name, status, amount
+   all read the wrong cell). dk-cards.js already HAS its own generic multi-select ("Select" toggle +
+   checkboxes on each card + a bulk-actions bar) via DK.list({..., bulkActions:[{label,icon,cls,run}]})
+   — exactly how AR Aging's "WhatsApp reminders" bulk action works (dk-acct.js). This version adds a
+   bulkActions entry to the EXISTING 'pv' registration (also from dk-acct.js) instead of touching the
+   table, so the table's real column layout is never disturbed.
+   Action: pick one signature role, generate a pv_sign_link_create token for every selected PV (same
+   RPC the single-PV Share button already uses), open ONE WhatsApp compose with all the links. */
 (function () {
-  if (window.PVBS || !window.PVX) return;
+  if (window.PVBS) return;
   window.PVBS = true;
-  var X = window.PVX, L = X.L, esc = X.esc, rm = X.rm;
-  var SEL = {};
 
-  function selIds() { return Object.keys(SEL); }
-
-  function idFromRow(tr) {
-    var m = /id:'([0-9a-f-]{36})'/.exec(tr.getAttribute('onclick') || '');
-    return m ? m[1] : null;
+  function boot() {
+    if (!window.DK || typeof DK.list !== 'function' || !window.PVX) return setTimeout(boot, 300);
+    var existing = (DK.lists || []).filter(function (c) { return c.key === 'pv'; })[0];
+    if (!existing) return setTimeout(boot, 300); // wait for dk-acct.js's own 'pv' registration first
+    if (existing.__pvbs) return; // already patched
+    var cfg = {}; for (var k in existing) cfg[k] = existing[k];
+    cfg.bulkActions = (existing.bulkActions || []).concat([{
+      label: X.L('Share for signing', 'Kongsi untuk tandatangan'), icon: 'ti-brand-whatsapp', cls: 'btn-outline dk-wa',
+      run: run
+    }]);
+    cfg.__pvbs = true;
+    DK.list(cfg);
   }
 
-  function paintChecks() {
-    document.querySelectorAll('#pv-list-wrap input[data-pvbs]').forEach(function (cb) {
-      cb.checked = !!SEL[cb.dataset.pvbs];
+  var X, L, esc, rm;
+  function initX() { X = window.PVX; L = X.L; esc = X.esc; rm = X.rm; }
+
+  function pickRole() {
+    return new Promise(function (resolve) {
+      var ov = document.createElement('div'); ov.className = 'modal-overlay active';
+      ov.innerHTML = '<div class="modal-box" style="max-width:380px" role="dialog" aria-modal="true">' +
+        '<div class="modal-box-header"><i class="ti ti-signature"></i> ' + esc(L('Share for signing as…', 'Kongsi untuk tandatangan sebagai…')) + '</div>' +
+        '<div class="modal-box-body"><div class="form-group" style="margin:0"><select id="pvbs-role-pick" class="form-select">' +
+        X.ROLES.map(function (r) { return '<option value="' + r.r + '">' + esc(X.roleLabel(r.r)) + '</option>'; }).join('') +
+        '</select></div></div>' +
+        '<div class="modal-box-footer"><button type="button" class="btn btn-outline" data-x>' + esc(L('Cancel', 'Batal')) + '</button>' +
+        '<button type="button" class="btn btn-primary" data-ok>' + esc(L('Continue', 'Teruskan')) + '</button></div></div>';
+      document.body.appendChild(ov);
+      function close(v) { ov.remove(); resolve(v); }
+      ov.querySelector('[data-x]').onclick = function () { close(null); };
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(null); });
+      ov.querySelector('[data-ok]').onclick = function () { close(ov.querySelector('#pvbs-role-pick').value); };
     });
   }
 
-  function clearSel() { SEL = {}; paintBar(); paintChecks(); }
-
-  function barHtml() {
-    var n = selIds().length;
-    if (!n) return '';
-    return '<div id="pvbs-bar" style="position:sticky;bottom:10px;z-index:5;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:10px 14px;margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
-      '<b>' + n + ' ' + esc(L('selected', 'dipilih')) + '</b>' +
-      '<select id="pvbs-role" class="form-select" style="width:auto">' + X.ROLES.map(function (r) { return '<option value="' + r.r + '">' + esc(X.roleLabel(r.r)) + '</option>'; }).join('') + '</select>' +
-      '<button type="button" class="btn btn-primary btn-sm" id="pvbs-go"><i class="ti ti-brand-whatsapp"></i> ' + esc(L('Share all for signing', 'Kongsi semua untuk tandatangan')) + '</button>' +
-      '<button type="button" class="btn btn-outline btn-sm" id="pvbs-clear">' + esc(L('Clear', 'Kosongkan')) + '</button>' +
-      '</div>';
-  }
-
-  function paintBar() {
-    var wrap = document.getElementById('pv-list-wrap');
-    if (!wrap) return;
-    var old = document.getElementById('pvbs-bar');
-    if (old) old.remove();
-    var html = barHtml();
-    if (!html) return;
-    wrap.insertAdjacentHTML('afterend', html);
-    document.getElementById('pvbs-go').onclick = go;
-    document.getElementById('pvbs-clear').onclick = clearSel;
-  }
-
-  function injectCheckboxes() {
-    var table = document.querySelector('#pv-list-wrap table');
-    if (!table) { paintBar(); return; }
-    var thead = table.querySelector('thead tr');
-    if (thead && !thead.querySelector('[data-pvbs-h]')) {
-      var th = document.createElement('th'); th.setAttribute('data-pvbs-h', '1'); th.style.width = '28px';
-      thead.insertBefore(th, thead.firstChild);
-    }
-    var byId = {}; (window._pvListCache || []).forEach(function (v) { byId[v.id] = v; });
-    table.querySelectorAll('tbody tr').forEach(function (tr) {
-      if (tr.querySelector('[data-pvbs]')) return;
-      var id = idFromRow(tr);
-      var v = id && byId[id];
-      var st = v ? String(v.status || 'draft').toLowerCase() : '';
-      var td = document.createElement('td');
-      td.onclick = function (e) { e.stopPropagation(); };
-      if (v && (st === 'draft' || st === 'shared')) {
-        td.innerHTML = '<input type="checkbox" data-pvbs="' + id + '" style="width:16px;height:16px">';
-      }
-      tr.insertBefore(td, tr.firstChild);
-      if (v && (st === 'draft' || st === 'shared')) {
-        td.querySelector('input').onchange = function (e) {
-          if (e.target.checked) SEL[id] = v; else delete SEL[id];
-          paintBar();
-        };
-      }
-    });
-    paintChecks();
-    paintBar();
-  }
-
-  var E_SEP = '\n  ';
   function roleText(lines, role, lang, co) {
     var en = lang !== 'bm', who = en ? X.ROLES.filter(function (x) { return x.r === role; })[0].en : X.ROLES.filter(function (x) { return x.r === role; })[0].bm;
     var head = en ? 'Hi, please review and sign ' + lines.length + ' Payment Vouchers as ' + who + ' (no login needed):'
       : 'Salam, sila semak dan tandatangan ' + lines.length + ' Baucar Bayaran sebagai ' + who + ' (tiada log masuk):';
-    var body = lines.map(function (l) { return '• ' + l.ref + ' — ' + l.payee + ' — ' + rm(l.amount) + E_SEP + l.url; }).join('\n\n');
+    var body = lines.map(function (l) { return '• ' + l.ref + ' — ' + l.payee + ' — ' + rm(l.amount) + '\n  ' + l.url; }).join('\n\n');
     return head + '\n\n' + body + '\n\n' + (en ? 'Thank you. – ' : 'Terima kasih. – ') + co;
   }
 
-  async function go() {
+  async function run(ids, its) {
     if (!window.WAD || typeof WAD.base !== 'function') { X.toast(L('WhatsApp share is not available.', 'Kongsi WhatsApp tidak tersedia.'), 'error'); return; }
-    var sel = document.getElementById('pvbs-role'), role = sel ? sel.value : 'first';
-    var ids = selIds();
-    if (!ids.length) return;
-    var btn = document.getElementById('pvbs-go');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span>'; }
+    var role = await pickRole();
+    if (!role) return;
     var lines = [], failed = [];
-    for (var i = 0; i < ids.length; i++) {
-      var id = ids[i], v = SEL[id];
+    for (var i = 0; i < its.length; i++) {
+      var it = its[i];
       try {
-        var r = await sb.rpc('pv_sign_link_create', { p_kind: 'pv', p_doc: id, p_role: role });
+        var r = await sb.rpc('pv_sign_link_create', { p_kind: 'pv', p_doc: it.id, p_role: role });
         if (r.error) throw r.error;
-        var link = r.data, th = (window.WAD && typeof WAD.theme === 'function') ? WAD.theme() : null;
+        var link = r.data, th = (typeof WAD.theme === 'function') ? WAD.theme() : null;
         var url = WAD.base() + 'public-pv.html?pv_sign=' + encodeURIComponent(link.token) + (APP.language === 'bm' ? '&lang=bm' : '') + (th ? '&theme=' + th : '');
-        lines.push({ ref: v.ref_no || '', payee: v.payee_name || '', amount: v.amount, url: url });
-        if (String(v.status || 'draft').toLowerCase() === 'draft') { try { X.notify('pv_submitted', { kind: 'pv', id: id }); } catch (e) {} }
+        lines.push({ ref: it.title || '', payee: it.sub || '', amount: it.amtN || 0, url: url });
+        if (/^draf/i.test(it.st || '')) { try { X.notify('pv_submitted', { kind: 'pv', id: it.id }); } catch (e) {} }
       } catch (e) {
-        failed.push((v && v.ref_no) || id);
+        failed.push(it.title || it.id);
       }
     }
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-brand-whatsapp"></i> ' + esc(L('Share all for signing', 'Kongsi semua untuk tandatangan')); }
     if (!lines.length) { X.toast(L('Could not create any signing links.', 'Gagal cipta sebarang pautan tandatangan.'), 'error'); return; }
-    var text = roleText(lines, role, APP.language, (window.WAD && typeof WAD.company === 'function') ? WAD.company() : (APP.tenant && APP.tenant.name) || 'M-Core');
+    var text = roleText(lines, role, APP.language, (typeof WAD.company === 'function') ? WAD.company() : (APP.tenant && APP.tenant.name) || 'M-Core');
     window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
     if (failed.length) X.toast(L('Shared ' + lines.length + ' · skipped: ', 'Dikongsi ' + lines.length + ' · dilangkau: ') + failed.join(', '), 'warning');
     else X.toast(L('WhatsApp opened with ' + lines.length + ' links.', 'WhatsApp dibuka dengan ' + lines.length + ' pautan.'), 'success');
-    clearSel();
-    if (typeof window.renderPVList === 'function') renderPVList();
   }
 
-  var origTable = window._pvRenderListTable;
-  if (typeof origTable === 'function') {
-    window._pvRenderListTable = function () {
-      var r = origTable.apply(this, arguments);
-      setTimeout(injectCheckboxes, 0);
-      return r;
-    };
+  function start() {
+    if (!window.PVX) return setTimeout(start, 300);
+    initX();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   }
-  var origList = window.renderPVList;
-  if (typeof origList === 'function') {
-    window.renderPVList = function () {
-      SEL = {};
-      return origList.apply(this, arguments);
-    };
-  }
+  start();
 })();
