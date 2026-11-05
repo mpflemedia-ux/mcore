@@ -1,33 +1,33 @@
-/* Payment Vouchers — bulk WhatsApp share v2 (loads after pv-core.js, pv-signatures.js, dk-cards.js).
-   v1 injected a checkbox <td> into the PV list <table> itself — that shifted every column index by
-   one and broke dk-cards.js's column->field mapping for the whole list (payee name, status, amount
-   all read the wrong cell). dk-cards.js already HAS its own generic multi-select ("Select" toggle +
-   checkboxes on each card + a bulk-actions bar) via DK.list({..., bulkActions:[{label,icon,cls,run}]})
-   — exactly how AR Aging's "WhatsApp reminders" bulk action works (dk-acct.js). This version adds a
-   bulkActions entry to the EXISTING 'pv' registration (also from dk-acct.js) instead of touching the
-   table, so the table's real column layout is never disturbed.
-   Action: pick one signature role, generate a pv_sign_link_create token for every selected PV (same
-   RPC the single-PV Share button already uses), open ONE WhatsApp compose with all the links. */
+/* Payment Vouchers — bulk WhatsApp share v3 (loads after pv-core.js; dk-cards.js/dk-acct.js may load
+   later in the script list — this does not assume load order).
+   v1 injected a checkbox <td> into the PV list <table>, which shifted dk-acct.js's column->field
+   index mapping (title:0, date:1, sub(payee):2, amount:4, status:5) for the whole list.
+   v2 tried to patch dk-acct.js's DK.list({key:'pv', ...}) registration once at boot, racing against
+   dk-acct.js's own registration — unreliable.
+   This patches window._pvRenderListTable directly (same function dk-acct.js wraps for dk-cards'
+   schedule()) so the registry gets one bulkActions entry added every time the PV list actually
+   renders, however the two scripts end up ordered — no boot-time race. dk-cards.js already has its
+   own generic multi-select ("Select" toggle + per-card checkboxes + bulk-actions bar); same
+   mechanism AR Aging uses for "WhatsApp reminders" (dk-acct.js). Action: pick one signature role,
+   generate a pv_sign_link_create token for every selected PV (same RPC the single-PV Share button
+   uses), open ONE WhatsApp compose with all the links. */
 (function () {
   if (window.PVBS) return;
   window.PVBS = true;
+  var X, L, esc, rm;
 
-  function boot() {
-    if (!window.DK || typeof DK.list !== 'function' || !window.PVX) return setTimeout(boot, 300);
+  function patchRegistry() {
+    if (!window.DK || typeof DK.list !== 'function' || !X) return;
     var existing = (DK.lists || []).filter(function (c) { return c.key === 'pv'; })[0];
-    if (!existing) return setTimeout(boot, 300); // wait for dk-acct.js's own 'pv' registration first
-    if (existing.__pvbs) return; // already patched
+    if (!existing || existing.__pvbs) return;
     var cfg = {}; for (var k in existing) cfg[k] = existing[k];
     cfg.bulkActions = (existing.bulkActions || []).concat([{
       label: X.L('Share for signing', 'Kongsi untuk tandatangan'), icon: 'ti-brand-whatsapp', cls: 'btn-outline dk-wa',
-      run: run
+      run: shareSelected
     }]);
     cfg.__pvbs = true;
     DK.list(cfg);
   }
-
-  var X, L, esc, rm;
-  function initX() { X = window.PVX; L = X.L; esc = X.esc; rm = X.rm; }
 
   function pickRole() {
     return new Promise(function (resolve) {
@@ -55,7 +55,7 @@
     return head + '\n\n' + body + '\n\n' + (en ? 'Thank you. – ' : 'Terima kasih. – ') + co;
   }
 
-  async function run(ids, its) {
+  async function shareSelected(ids, its) {
     if (!window.WAD || typeof WAD.base !== 'function') { X.toast(L('WhatsApp share is not available.', 'Kongsi WhatsApp tidak tersedia.'), 'error'); return; }
     var role = await pickRole();
     if (!role) return;
@@ -80,10 +80,20 @@
     else X.toast(L('WhatsApp opened with ' + lines.length + ' links.', 'WhatsApp dibuka dengan ' + lines.length + ' pautan.'), 'success');
   }
 
+  function hookRender() {
+    if (typeof window._pvRenderListTable !== 'function') { setTimeout(hookRender, 300); return; }
+    if (window._pvRenderListTable.__pvbsHooked) return;
+    var orig = window._pvRenderListTable;
+    var wrapped = function () { var r = orig.apply(this, arguments); patchRegistry(); return r; };
+    wrapped.__pvbsHooked = true;
+    window._pvRenderListTable = wrapped;
+  }
+
   function start() {
-    if (!window.PVX) return setTimeout(start, 300);
-    initX();
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+    if (!window.PVX) { setTimeout(start, 300); return; }
+    X = window.PVX; L = X.L; esc = X.esc; rm = X.rm;
+    patchRegistry(); // in case dk-acct.js already registered 'pv' by the time we get here
+    hookRender(); // re-patch every time the list actually renders, whatever the load order was
   }
   start();
 })();
