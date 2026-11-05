@@ -23,7 +23,16 @@
   function today() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function dmy(iso) { if (!iso) return ''; var d = new Date(String(iso).length <= 10 ? iso + 'T00:00:00' : iso); if (isNaN(d)) return ''; return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); }
   function errMsg(e) { return String((e && (e.message || e.error_description)) || e || ''); }
-  X.bm = bm; X.L = L; X.esc = esc; X.tid = tid; X.uid = uid; X.role = role; X.me = me; X.rm = rm; X.toast = toast; X.r2 = r2; X.today = today; X.dmy = dmy; X.errMsg = errMsg;
+  // description can be plain text (most PVs), or JSON {en,bm} when a flow wrote per-language remarks (e.g. Service Commission "Buat PV" breakdown) — picks the current UI language, old plain text untouched.
+  function descText(raw) {
+    if (!raw) return raw;
+    try {
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object' && (typeof o.en === 'string' || typeof o.bm === 'string')) return (bm() ? o.bm : o.en) || o.en || o.bm || '';
+    } catch (e) {}
+    return raw;
+  }
+  X.bm = bm; X.L = L; X.esc = esc; X.tid = tid; X.uid = uid; X.role = role; X.me = me; X.rm = rm; X.toast = toast; X.r2 = r2; X.today = today; X.dmy = dmy; X.errMsg = errMsg; X.descText = descText;
 
   X.isApprover = function () {
     if (['owner', 'admin', 'finance', 'accountant', 'manager', 'platform_admin'].indexOf(role()) >= 0) return true;

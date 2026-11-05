@@ -16,6 +16,15 @@
       as: 'Sign as', sub: 'Review the voucher above, then sign below. No login needed.', st: 'Signature status', you: 'you', signed: 'Signed', pend: 'Pending', opt: 'Optional', of: 'signed', name: 'Your name', draw: 'Draw your signature', clear: 'Clear', att: 'Attachment (optional): photo or PDF of the signed document', cam: 'Camera', pick: 'Choose file', send: 'Submit signature', wait: 'Sending…', needName: 'Please enter your name.', needSig: 'Please draw your signature first.', big: 'File too large (max 10 MB)', type: 'Unsupported file type', ok: 'Thank you! Your signature has been recorded.', mine: 'This slot was signed by {n} on {d}.', all: 'Approved — signatures complete.', fail: 'Could not send. Please try again.', failLink: 'Link expired or revoked — ask the sender for a new link.', failNet: 'Network error. Check connection and try again.', taken: 'This slot is already signed.', locked: 'This voucher is already approved and locked.', rm: 'Remove', unavailable: 'Link unavailable', missing: 'Missing token.', conf: 'CONFIDENTIAL — For internal approval', st_draft: 'Draft', st_shared: 'Shared', st_pending: 'Pending', st_approved: 'Approved', st_converted: 'Converted', st_paid: 'Paid', st_void: 'Void' };
   var OKT = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/i, EXT = /\.(jpe?g|png|webp|heic|heif|pdf)$/i;
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  // description can be plain text (most PVs), or JSON {en,bm} when a flow wrote per-language remarks — picks ?lang=, old plain text untouched.
+  function descText(raw) {
+    if (!raw) return raw;
+    try {
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object' && (typeof o.en === 'string' || typeof o.bm === 'string')) return (bm ? o.bm : o.en) || o.en || o.bm || '';
+    } catch (e) {}
+    return raw;
+  }
   function rl(r) { for (var i = 0; i < ROLES.length; i++) if (ROLES[i][0] === r) return bm ? ROLES[i][2] : ROLES[i][1]; return r; }
   function fmt(v) { try { return new Date(v).toLocaleDateString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }); } catch (e) { return ''; } }
   function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (v) { return ('0' + v.toString(16)).slice(-2); }).join(''); }
@@ -66,11 +75,11 @@
   function docHtml(b) {
     var rows = b.rows || [], kind = b.kind === 'pvd' ? T.pvd : T.pv;
     var table = rows.length ? rows.map(function (r) {
-      return '<tr><td>' + esc(r.payee) + (r.description ? '<div class="ppv-desc">' + esc(r.description) + '</div>' : '') + '</td><td>' + esc(r.bank || '—') + '</td><td>' + esc(r.method || '') + '</td><td class="num psd-net">' + rm(r.amount) + '</td></tr>';
+      return '<tr><td>' + esc(r.payee) + (r.description ? '<div class="ppv-desc">' + esc(descText(r.description)) + '</div>' : '') + '</td><td>' + esc(r.bank || '—') + '</td><td>' + esc(r.method || '') + '</td><td class="num psd-net">' + rm(r.amount) + '</td></tr>';
     }).join('') : '<tr><td colspan="4">' + esc(T.none) + '</td></tr>';
     var cards = rows.length ? rows.map(function (r) {
       return '<article class="psd-card"><div class="psd-card-name">' + esc(r.payee) + '</div>' +
-        (r.description ? '<div class="ppv-desc" style="margin:-6px 0 8px">' + esc(r.description) + '</div>' : '') +
+        (r.description ? '<div class="ppv-desc" style="margin:-6px 0 8px">' + esc(descText(r.description)) + '</div>' : '') +
         '<div class="psd-row"><span class="k">' + esc(T.bank) + '</span><span class="v">' + esc(r.bank || '—') + '</span></div>' +
         '<div class="psd-row"><span class="k">' + esc(T.method) + '</span><span class="v">' + esc(r.method || '') + '</span></div>' +
         '<div class="psd-row psd-net-row"><span class="k">' + esc(T.amt) + '</span><span class="v">' + rm(r.amount) + '</span></div></article>';

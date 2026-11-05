@@ -63,7 +63,7 @@
     var tn = d.tn || {}, acc = ''; try { acc = _pdocAccentGet('pv'); } catch (e) {}
     var addr = ''; try { addr = _pdocAddressLine(tn); } catch (e) {}
     var rows = d.lines.map(function (l, i) {
-      return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(l.payee_name || '') + '</b>' + (l.description ? '<div class="pvp-mu pvp-desc">' + esc(descLines(l.description).join('\n')) + '</div>' : '') + '</td>' +
+      return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(l.payee_name || '') + '</b>' + (l.description ? '<div class="pvp-mu pvp-desc">' + esc(descLines(X.descText(l.description)).join('\n')) + '</div>' : '') + '</td>' +
         '<td>' + esc(bankOf(l) || '—') + '</td><td>' + esc(payOf(l)) + '</td><td>' + esc(X.catLabel(l.category) || '') + '</td><td class="pvp-r">' + esc(rm(l.amount)) + '</td></tr>';
     }).join('');
     var sig = ''; try { sig = window.PVS ? await PVS.printHtml(d.kind, docId, d.total) : ''; } catch (e) {}
@@ -160,7 +160,7 @@
     };
     head();
     d.lines.forEach(function (l, i) {
-      var dls = l.description ? wrap(l.description, 7.5, F, RX - 70 - C[1]) : [], DLH = 10;
+      var dls = l.description ? wrap(X.descText(l.description), 7.5, F, RX - 70 - C[1]) : [], DLH = 10;
       var hgt = 16 + (dls.length ? dls.length * DLH + 2 : 0);
       if (y - hgt < 170 && i < d.lines.length - 1) { pg = doc.addPage([W, H]); y = H - 50; head(); }
       tx(String(i + 1), C[0], y, 9, F, mut);

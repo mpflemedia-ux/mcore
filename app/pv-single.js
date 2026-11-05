@@ -77,7 +77,7 @@
       ro(L('Phone', 'Telefon'), v.phone) + ro(L('Cheque / ref no.', 'No. cek / rujukan'), v.cheque_no) +
       ro(L('Category', 'Kategori'), X.catLabel(v.category)) +
       ro(L('GL account', 'Akaun GL'), glName(v.gl_account_id) || (v.category === 'salary' ? L('Payroll journal', 'Jurnal gaji') : L('Default for category', 'Lalai mengikut kategori'))) +
-      ro(L('Description', 'Keterangan'), v.description, false, true) + '</div>';
+      ro(L('Description', 'Keterangan'), X.descText(v.description), false, true) + '</div>';
   }
   function payHtml(v) {
     var st = v.status;

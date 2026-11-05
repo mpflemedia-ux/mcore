@@ -338,7 +338,7 @@
       ro(L('Bank', 'Bank'), l.bank_name) + ro(L('Account no.', 'No. akaun'), l.bank_account_no, true) +
       ro(L('Phone', 'Telefon'), l.phone) + ro(L('Method', 'Kaedah'), X.methodLabel(l.payment_method) + (l.cheque_no ? ' · ' + l.cheque_no : '')) +
       ro(L('Category', 'Kategori'), X.catLabel(l.category)) + ro(L('GL account', 'Akaun GL'), glName(l.gl_account_id) || (l.category === 'salary' ? L('Payroll journal', 'Jurnal gaji') : L('Default for category', 'Lalai mengikut kategori'))) +
-      ro(L('Description', 'Keterangan'), l.description, false, true) + '</div>';
+      ro(L('Description', 'Keterangan'), X.descText(l.description), false, true) + '</div>';
     if (payPhase()) h += payHtml(l, i);
     return h;
   }
