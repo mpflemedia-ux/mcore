@@ -6,7 +6,7 @@
      payslip lines preview, Submit → Approve (server recompute, locks logs) → Reopen. A4 statement print + PDF via DKD.
    - Payroll: APPROVED commission_total is added to _scCommissionTotal() payout mode → Salary Disbursement commission → net pay.
    - Payslip: the commission line is split into Komisen servis / Komisen produk / Bonus when an approved month exists.
-   - Signatures + WhatsApp (svc_commission_02.sql, same concept as SD): Prepared by (staff) + Approved by (Owner/HR), draw pad in app or
+   - Signatures + WhatsApp (svc_commission_02.sql, same concept as SD): Prepared by + Approved by (free-text names like SD, svc_commission_03.sql), draw pad in app or
      public-svc.html?svc_sign=<token> via the shared WAD sheet; signed names / dates / PNGs on the A4 statement + PDF (dk-doc v5).
    Soft-fails before supabase/svc_commission_01.sql (and _02 for signatures) is run. EN/BM, existing tokens only. */
 (function () {
@@ -76,7 +76,7 @@
   function css() {
     if ($('svc-css')) return;
     var s = document.createElement('style'); s.id = 'svc-css';
-    s.textContent = '.svc-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.svc-bar .btn{white-space:nowrap;flex:0 0 auto}' +
+    s.textContent = '.svc-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.svc-bar .btn{white-space:nowrap;flex:0 0 auto}.svc-docbar .btn{flex:1 1 0;min-width:130px;max-width:260px;justify-content:center}' +
       '.svc-bar select.form-input{width:auto;min-width:0;max-width:100%;flex:1 1 180px;padding:7px 10px;font-size:13px}' +
       '.svc-mon{display:flex;align-items:center;gap:6px;flex:0 0 auto}.svc-mon b{min-width:84px;text-align:center;font-size:14px;color:var(--text);white-space:nowrap}' +
       '.svc-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}' +
@@ -101,7 +101,7 @@
       '.svc-hint{font-size:11px;color:var(--text-3);margin-top:4px}.svc-act{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.svc-act .btn{white-space:nowrap;flex:0 0 auto}' +
       '.svc-tog{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);white-space:nowrap}' +
       '.svc-empty{padding:28px 14px;text-align:center;color:var(--text-3);font-size:13px}' +
-      '.svc-sgr .o{flex-wrap:wrap;justify-content:flex-end}.svc-sgi{flex:0 0 auto;height:40px;max-width:120px;object-fit:contain;background:white;border:1px solid var(--border);border-radius:6px;padding:2px}' +
+      '.svc-sgr .o{flex-wrap:wrap;justify-content:flex-end}.svc-sgu{flex-wrap:wrap}.svc-sgu .x{flex:1 1 100%}.svc-sgu .n{display:block}.svc-sgu .o{width:100%;justify-content:flex-end}.svc-sgn{width:100%;margin-top:6px;box-sizing:border-box}.svc-sgn-ro{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);overflow-wrap:anywhere}.svc-sgi{flex:0 0 auto;height:40px;max-width:120px;object-fit:contain;background:white;border:1px solid var(--border);border-radius:6px;padding:2px}' +
       '.svc-pad{display:block;width:100%;height:160px;border:1px solid var(--border);border-radius:8px;background:white;touch-action:none;cursor:crosshair}' +
       '.svc-modal .modal-box{max-width:460px}.svc-modal textarea.form-input{min-height:150px;font-family:monospace;font-size:12px}' +
       '@media(max-width:480px){.svc-row{flex-wrap:wrap}.svc-row .x{flex-basis:calc(100% - 140px)}.svc-row .o{width:100%;justify-content:flex-end}.svc-stat .v{font-size:16px}}';
@@ -197,10 +197,10 @@
     h += slipCard(c);
     h += actionCard(c, st, lk);
     h += sigCard();
-    h += '<div class="svc-bar">' + (edit ? '<button type="button" class="btn btn-primary btn-sm" id="svc-add"><i class="ti ti-plus"></i> ' + esc(L('Add log', 'Tambah log')) + '</button>' +
-      '<button type="button" class="btn btn-outline btn-sm" id="svc-imp"><i class="ti ti-clipboard-text"></i> ' + esc(L('Paste CSV', 'Tampal CSV')) + '</button>' : '') +
-      '<button type="button" class="btn btn-outline btn-sm" id="svc-print"><i class="ti ti-printer"></i> ' + esc(L('Statement', 'Penyata')) + '</button>' +
-      '<button type="button" class="btn btn-outline btn-sm" id="svc-pdf"><i class="ti ti-file-download"></i> PDF</button>' +
+    if (edit) h += '<div class="svc-bar"><button type="button" class="btn btn-primary btn-sm" id="svc-add"><i class="ti ti-plus"></i> ' + esc(L('Add log', 'Tambah log')) + '</button>' +
+      '<button type="button" class="btn btn-outline btn-sm" id="svc-imp"><i class="ti ti-clipboard-text"></i> ' + esc(L('Paste CSV', 'Tampal CSV')) + '</button></div>';
+    // statement row: PDF (A4 statement) + WhatsApp, equal width (the separate Statement/print button was removed — PDF covers it)
+    h += '<div class="svc-bar svc-docbar"><button type="button" class="btn btn-outline btn-sm" id="svc-pdf"><i class="ti ti-file-download"></i> ' + esc(L('PDF statement', 'PDF penyata')) + '</button>' +
       (ST.hr && SG.ready ? '<button type="button" class="btn btn-outline btn-sm" id="svc-wa"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>' : '') + '</div>';
     if (lk) h += '<div class="svc-hint" style="margin:-4px 0 10px">' + esc(L('Approved — logs are locked. Owner/HR can reopen to change.', 'Diluluskan — log dikunci. Owner/HR boleh buka semula untuk ubah.')) + '</div>';
     h += weeksHtml(edit);
@@ -290,7 +290,7 @@
     var se = $('svc-emp'); if (se) se.onchange = function () { openPage('hr', { view: 'my-payslips', svc: 'log', emp: se.value, m: ST.m, y: ST.y }); };
     on('svc-prev', function () { go(-1); }); on('svc-next', function () { go(1); });
     on('svc-add', function () { editModal(null); }); on('svc-imp', importModal);
-    on('svc-print', function (b) { busy(b, statement('print')); }); on('svc-pdf', function (b) { busy(b, statement('pdf')); });
+    on('svc-pdf', function (b) { busy(b, statement('pdf')); });
     on('svc-saveps', function (b) { busy(b, saveMonth().then(function (ok) { if (ok) { toast(L('Saved', 'Disimpan')); return refresh(); } })); });
     on('svc-submit', function (b) { busy(b, rpc('svc_comm_submit', {}, L('Submitted to Owner/HR', 'Dihantar kepada Owner/HR'))); });
     on('svc-approve', function (b) {
@@ -429,9 +429,45 @@
      WhatsApp link → public-svc.html?svc_sign=<token>. Shared WAD sheet (wa-doc-core/sheet) logs to doc_shares. */
   var SG = { ready: true, rows: {}, imgs: {}, link: {} };
   S._sig = SG;
-  var ROLES = [{ r: 'prepared', en: 'Prepared by (staff)', bm: 'Disediakan oleh (staf)' }, { r: 'approved', en: 'Approved by (Owner/HR)', bm: 'Diluluskan oleh (Owner/HR)' }];
+  var ROLES = [{ r: 'prepared', en: 'Prepared by', bm: 'Disediakan oleh', col: 'prepared_by_name' }, { r: 'approved', en: 'Approved by', bm: 'Diluluskan oleh', col: 'approved_by_name' }];
   function roleOf(r) { return ROLES.filter(function (x) { return x.r === r; })[0] || ROLES[0]; }
   function sigN() { return ROLES.filter(function (x) { return !!SG.rows[x.r]; }).length; }
+  /* free-text names per slot (like SD's name inputs): svc_comm_months.prepared_by_name / approved_by_name via svc_sign_names
+     (svc_commission_03.sql); before that SQL is run they are kept on this device only. Who may SIGN is unchanged. */
+  SG.names = {}; SG.namesDb = true; SG.nmT = null; SG.nmKey = '';
+  function meName() { try { return String(APP.user.name || APP.user.full_name || '').trim(); } catch (e) { return ''; } }
+  function nmLsKey() { return 'svc-signame:' + tid() + ':' + ST.emp + ':' + ST.y + '-' + ST.m; }
+  function canName(role) { return SG.ready && !SG.rows[role] && (ST.hr || (role === 'prepared' && isSelfEmp())); }
+  function loadNames() {
+    var key = nmLsKey(); if (SG.nmKey === key) return; SG.nmKey = key;
+    var mon = ST.mon || {}, ls = {}; try { ls = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) {}
+    SG.names = {};
+    ROLES.forEach(function (x) {
+      var v = mon[x.col] != null && mon[x.col] !== '' ? mon[x.col] : ls[x.r];
+      if (v == null) v = x.r === 'prepared' ? empName() : (ST.hr ? meName() : '');
+      SG.names[x.r] = String(v || '');
+    });
+  }
+  // the name shown / passed for a slot: signed name wins, else what was typed
+  function slotName(role) { var g = SG.rows[role]; if (g) return g.signer_name || ''; loadNames(); return String(SG.names[role] || '').trim(); }
+  function saveNames(now) {
+    try { localStorage.setItem(nmLsKey(), JSON.stringify(SG.names)); } catch (e) {}
+    clearTimeout(SG.nmT);
+    var run = function () {
+      if (!SG.namesDb || !(ST.hr || isSelfEmp())) return Promise.resolve();
+      var a = Object.assign(base(), { p_prepared: canName('prepared') ? String(SG.names.prepared || '') : null, p_approved: ST.hr && canName('approved') ? String(SG.names.approved || '') : null });
+      if (a.p_prepared === null && a.p_approved === null) return Promise.resolve();
+      return Promise.resolve(sb.rpc('svc_sign_names', a)).then(function (r) {
+        if (r && r.error) { if (missing(r.error) || /svc_sign_names/i.test(String(r.error.message || ''))) SG.namesDb = false; else console.warn('[svc] names', r.error); return; }
+        SG.dirtyKey = '';
+        var d = r && r.data; if (d && ST.mon && String(ST.mon.id) === String(d.month_id)) { ST.mon.prepared_by_name = d.prepared_by_name; ST.mon.approved_by_name = d.approved_by_name; }
+        else if (d && !ST.mon) ST.mon = { id: d.month_id, status: 'draft', prepared_by_name: d.prepared_by_name, approved_by_name: d.approved_by_name };
+      }, function (e) { console.warn('[svc] names', e); });
+    };
+    if (now) return run();
+    SG.nmT = setTimeout(run, 700); return Promise.resolve();
+  }
+  function setName(role, v) { loadNames(); SG.names[role] = String(v || '').slice(0, 120); SG.dirtyKey = nmLsKey(); }
   function isSelfEmp() { return !!(ST.self && String(ST.self.id) === String(ST.emp)); }
   function stNow() { return (ST.mon && ST.mon.status) || 'draft'; }
   function gateOk(role) { var s = stNow(); return role === 'prepared' ? (s === 'submitted' || s === 'approved') : s === 'approved'; }
@@ -450,7 +486,7 @@
     return errMsg(e);
   }
   async function loadSigs() {
-    SG.rows = {};
+    SG.rows = {}; if (SG.dirtyKey !== nmLsKey()) SG.nmKey = '';
     var mid = ST.mon && ST.mon.id;
     var r = await sb.from('svc_signatures').select('id,role,signer_name,signed_at,signed_via,storage_path').eq('tenant_id', tid())
       .eq('month_id', mid || '00000000-0000-0000-0000-000000000000').is('voided_at', null);
@@ -482,6 +518,7 @@
   }
   function viaText(v) { return v === 'link' ? L('via WhatsApp link', 'melalui pautan WhatsApp') : L('in app', 'dalam aplikasi'); }
   function sigCard() {
+    loadNames();
     var st = stNow(), self = isSelfEmp(), h = '<div class="svc-card" id="svc-sig"><div class="svc-hd"><span><i class="ti ti-signature"></i> ' + esc(L('Signatures', 'Tandatangan')) + '</span><span class="m">' + sigChip() + '</span></div>';
     if (!SG.ready) return h + '<div class="svc-body svc-hint" style="margin:0">' + esc(ST.hr ? L('Signatures & WhatsApp share are not set up yet. Run supabase/svc_commission_02.sql in Supabase.', 'Tandatangan & kongsi WhatsApp belum disediakan. Jalankan supabase/svc_commission_02.sql di Supabase.') : L('Signatures are not enabled yet.', 'Tandatangan belum diaktifkan.')) + '</div></div>';
     ROLES.forEach(function (x) {
@@ -496,8 +533,11 @@
       if (ST.hr && (gateOk(x.r) || (x.r === 'prepared' && st === 'draft'))) btn += '<button type="button" class="btn btn-outline btn-sm" data-svc-wa="' + x.r + '"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>';
       if (gateOk(x.r) && (x.r === 'prepared' ? (ST.hr && !self) : (ST.hr || self))) btn += '<button type="button" class="btn btn-outline btn-sm" data-svc-req="' + x.r + '"><i class="ti ti-bell-ringing"></i> ' + esc(L('Request', 'Minta')) + '</button>';
       var wait = x.r === 'approved' && !gateOk('approved') ? L('After approval', 'Selepas kelulusan') : (x.r === 'prepared' && st === 'draft' ? L('After submit', 'Selepas dihantar') : L('Pending', 'Menunggu'));
-      h += '<div class="svc-row svc-sgr"><div class="x"><div class="n">' + esc(L(x.en, x.bm)) + '</div><div class="t"><span class="svc-chip w">' + esc(wait) + '</span>' +
-        (x.r === 'prepared' ? '<span class="svc-hint" style="margin:0">' + esc(empName()) + '</span>' : '') + '</div></div>' + (btn ? '<div class="o">' + btn + '</div>' : '') + '</div>';
+      var nmv = slotName(x.r), id = 'svc-sgn-' + x.r;
+      h += '<div class="svc-row svc-sgr svc-sgu"><div class="x"><label class="n" for="' + id + '">' + esc(L(x.en, x.bm)) + '</label>' +
+        (canName(x.r) ? '<input id="' + id + '" class="form-input svc-sgn" data-svc-nm="' + x.r + '" maxlength="120" autocomplete="off" data-no-titlecase="1" placeholder="' + esc(L('Name', 'Nama')) + '" value="' + esc(nmv) + '">'
+          : '<div class="svc-sgn svc-sgn-ro" id="' + id + '">' + (nmv ? esc(nmv) : '<span class="svc-hint" style="margin:0">—</span>') + '</div>') +
+        '<div class="t"><span class="svc-chip w">' + esc(wait) + '</span></div></div>' + (btn ? '<div class="o">' + btn + '</div>' : '') + '</div>';
     });
     h += '<div class="svc-body" style="padding-top:8px"><div class="svc-hint" style="margin:0">' + esc(L('Signatures are voided when the month is reopened or the approved total changes. Links expire in 30 days.', 'Tandatangan dibatalkan jika bulan dibuka semula atau jumlah diluluskan berubah. Pautan tamat dalam 30 hari.')) + '</div>' +
       (ST.hr && sigN() ? '<div class="svc-act" style="margin-top:8px"><button type="button" class="btn btn-outline btn-sm" id="svc-sig-reset"><i class="ti ti-rotate"></i> ' + esc(L('Reset signatures', 'Set semula tandatangan')) + '</button></div>' : '') + '</div>';
@@ -513,27 +553,27 @@
   }
   function addI18n() {
     var S2 = window.__WAD_S; if (!S2 || !S2.en || S2.en.svcSend) return;
-    S2.en.svcSend = 'Statement + sign link'; S2.en.svcSendD = 'Commission summary to the staff, view & sign as Prepared by';
+    S2.en.svcSend = 'Statement + sign link'; S2.en.svcSendD = 'Commission summary, view & sign as Prepared by';
     S2.en.svcRemind = 'Reminder to sign'; S2.en.svcRemindD = 'Gentle nudge with the same sign link';
-    S2.en.svcSign = 'Approval sign request'; S2.en.svcSignD = 'Owner/HR reviews and signs as Approved by';
-    S2.bm.svcSend = 'Penyata + pautan tandatangan'; S2.bm.svcSendD = 'Ringkasan komisen kepada staf, semak & tandatangan sebagai Disediakan oleh';
+    S2.en.svcSign = 'Approval sign request'; S2.en.svcSignD = 'Reviewer signs as Approved by';
+    S2.bm.svcSend = 'Penyata + pautan tandatangan'; S2.bm.svcSendD = 'Ringkasan komisen, semak & tandatangan sebagai Disediakan oleh';
     S2.bm.svcRemind = 'Peringatan tandatangan'; S2.bm.svcRemindD = 'Peringatan dengan pautan tandatangan yang sama';
-    S2.bm.svcSign = 'Permintaan tandatangan kelulusan'; S2.bm.svcSignD = 'Owner/HR semak dan tandatangan sebagai Diluluskan oleh';
+    S2.bm.svcSign = 'Permintaan tandatangan kelulusan'; S2.bm.svcSignD = 'Penyemak tandatangan sebagai Diluluskan oleh';
   }
   function waText(k, lang, url) {
     var en = lang !== 'bm', mon = ST.mon || {}, live = stNow() === 'draft';
     var c = live ? S.calc(ST.logs, ST.cfgRow || {}, { product_sales: mon.product_sales, bonus_on: mon.bonus_on }) : null;
     var heads = live ? c.heads : num(mon.svc_heads), tot = live ? c.commission_total : num(mon.commission_total);
-    var per = (en ? MEN : MBM)[ST.m - 1] + ' ' + ST.y, nm = empName(), first = String(nm).split(/\s+/)[0] || nm;
+    var per = (en ? MEN : MBM)[ST.m - 1] + ' ' + ST.y, nm = empName(), pn = slotName('prepared') || nm, first = String(pn).split(/\s+/)[0] || pn, an = slotName('approved');
     var co = (window.WAD && WAD.company && WAD.company()) || (APP.tenant && APP.tenant.name) || 'M-Core', money = rm(tot);
     if (k === 'svc_sign') return en
-      ? 'Hi, please review the Service Commission statement of ' + nm + ' for ' + per + ' (' + heads + ' NM heads, total commission ' + money + ') and sign as Approved by via the link below (no login needed).\nView & sign: ' + url + '\nThank you. – ' + co
-      : 'Salam, sila semak Penyata Komisen Servis ' + nm + ' bagi ' + per + ' (' + heads + ' kepala NM, jumlah komisen ' + money + ') dan tandatangan sebagai Diluluskan oleh melalui pautan di bawah (tiada log masuk).\nSemak & tandatangan: ' + url + '\nTerima kasih. – ' + co;
+      ? 'Hi' + (an ? ' ' + an : '') + ', please review the Service Commission statement of ' + nm + ' for ' + per + ' (' + heads + ' NM heads, total commission ' + money + ') and sign as Approved by via the link below (no login needed).\nView & sign: ' + url + '\nThank you. – ' + co
+      : 'Salam' + (an ? ' ' + an : '') + ', sila semak Penyata Komisen Servis ' + nm + ' bagi ' + per + ' (' + heads + ' kepala NM, jumlah komisen ' + money + ') dan tandatangan sebagai Diluluskan oleh melalui pautan di bawah (tiada log masuk).\nSemak & tandatangan: ' + url + '\nTerima kasih. – ' + co;
     var signed = !!SG.rows.prepared, rem = k === 'svc_remind';
     return en
-      ? (rem ? 'Hi ' + first + ', reminder: ' : 'Hi ' + first + ', ') + 'your Service Commission statement for ' + per + ' is ready.\nNM heads: ' + heads + '\nTotal commission: ' + money + '\n\n' +
+      ? (rem ? 'Hi ' + first + ', reminder: ' : 'Hi ' + first + ', ') + (pn === nm ? 'your Service Commission statement' : 'the Service Commission statement of ' + nm) + ' for ' + per + ' is ready.\nNM heads: ' + heads + '\nTotal commission: ' + money + '\n\n' +
         (signed ? 'View statement: ' : 'Review & sign as Prepared by (no login needed): ') + url + '\nThank you. – ' + co
-      : (rem ? 'Salam ' + first + ', peringatan: ' : 'Salam ' + first + ', ') + 'penyata Komisen Servis anda bagi ' + per + ' sudah sedia.\nKepala NM: ' + heads + '\nJumlah komisen: ' + money + '\n\n' +
+      : (rem ? 'Salam ' + first + ', peringatan: ' : 'Salam ' + first + ', ') + (pn === nm ? 'penyata Komisen Servis anda' : 'penyata Komisen Servis ' + nm) + ' bagi ' + per + ' sudah sedia.\nKepala NM: ' + heads + '\nJumlah komisen: ' + money + '\n\n' +
         (signed ? 'Lihat penyata: ' : 'Semak & tandatangan sebagai Disediakan oleh (tiada log masuk): ') + url + '\nTerima kasih. – ' + co;
   }
   async function share(role, btn) {
@@ -548,11 +588,12 @@
     if (!ST.mon || !ST.mon.id) return toast(L('Submit the month first.', 'Hantar bulan ini dahulu.'), 'error');
     if (typeof W.ready === 'function') { var okL = await Promise.resolve(W.ready()).catch(function () { return true; }); if (okL === false) return toast(L('WhatsApp share log is not set up yet.', 'Log kongsi WhatsApp belum disediakan.'), 'warning'); }
     addI18n();
+    await saveNames(true);
     var mid = ST.mon.id, ref = 'SC' + ST.y + pad(ST.m) + '-' + String(ST.emp).slice(0, 4).toUpperCase(), key = mid + ':' + role;
     var pdfP = null;
     var o = {
       docType: 'svc', docId: mid, docRef: L('Service commission', 'Komisen servis') + ' · ' + ref + ' · ' + empName(), recipientKind: 'other',
-      to: role === 'prepared' ? empName() : L('Owner / HR', 'Owner / HR'), phone: role === 'prepared' ? ((ST.empRow && ST.empRow.phone) || '') : '',
+      to: slotName(role) || (role === 'prepared' ? empName() : L('Approver', 'Pelulus')), phone: role === 'prepared' && (slotName('prepared') || empName()) === empName() ? ((ST.empRow && ST.empRow.phone) || '') : '',
       k: role === 'prepared' ? 'svc_send' : 'svc_sign',
       tpls: role === 'prepared' ? [{ k: 'svc_send', label: 'svcSend', desc: 'svcSendD' }, { k: 'svc_remind', label: 'svcRemind', desc: 'svcRemindD' }] : [{ k: 'svc_sign', label: 'svcSign', desc: 'svcSignD' }],
       file: function () { return pdfP || (pdfP = (window.DKD ? (async function () { await loadImgs(); var m = stModel(await tenant()); return DKD.file(m, m.file + '.pdf'); })() : Promise.resolve(null)).catch(function () { return null; })); },
@@ -591,8 +632,8 @@
   function openSign(role) {
     if (!canSign(role)) return;
     closeSign();
-    var x = roleOf(role), nm = role === 'prepared' ? (isSelfEmp() || !ST.hr ? empName() : '') : String((APP.user && (APP.user.name || APP.user.full_name)) || '').trim();
-    if (role === 'prepared' && !nm) nm = empName();
+    var x = roleOf(role), nm = slotName(role);
+    if (!nm) nm = role === 'prepared' ? empName() : meName();
     var ov = document.createElement('div');
     ov.id = 'svc-sg-modal'; ov.className = 'modal-overlay active svc-modal';
     ov.innerHTML = '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="svc-sg-t">' +
@@ -648,11 +689,13 @@
     if (!name) return fail(L('Enter your name.', 'Masukkan nama anda.'));
     if (!SP || !SP.ink) return fail(L('Draw your signature first.', 'Lukis tandatangan anda dahulu.'));
     btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> ' + esc(L('Saving…', 'Menyimpan…'));
+    setName(role, name);
     if (er) er.textContent = '';
     try {
       var blob = await padBlob();
       if (!blob) throw new Error(L('Could not read the signature.', 'Tandatangan tidak dapat dibaca.'));
       if (!(await ensureSubmitted(role)) || !ST.mon || !ST.mon.id) throw new Error(L('Submit the month first.', 'Hantar bulan ini dahulu.'));
+      await saveNames(true);
       var path = tid() + '/svc-signatures/' + ST.mon.id + '/' + role + '-' + Date.now() + '.png';
       var up = await sb.storage.from('doc-files').upload(path, blob, { contentType: 'image/png', upsert: false });
       if (up.error) throw up.error;
@@ -666,6 +709,11 @@
   }
   function wireSig() {
     var W = $('svc-wrap'); if (!W) return;
+    W.querySelectorAll('[data-svc-nm]').forEach(function (el) {
+      var r = el.getAttribute('data-svc-nm');
+      el.oninput = function () { setName(r, el.value); saveNames(false); };
+      el.onchange = function () { setName(r, el.value.trim()); saveNames(true); };
+    });
     W.querySelectorAll('[data-svc-sign]').forEach(function (el) { el.onclick = function () { openSign(el.getAttribute('data-svc-sign')); }; });
     W.querySelectorAll('[data-svc-wa]').forEach(function (el) { el.onclick = function () { busy(el, share(el.getAttribute('data-svc-wa'), el)); }; });
     W.querySelectorAll('[data-svc-req]').forEach(function (el) { el.onclick = function () { busy(el, request(el.getAttribute('data-svc-req'), el)); }; });
@@ -679,7 +727,7 @@
     }
     loadImgs();
   }
-  S.sign = { open: openSign, share: share, request: request, reset: resetSigs, load: loadSigs, card: sigCard, chip: sigChip };
+  S.sign = { names: function () { loadNames(); return SG.names; }, setName: setName, saveNames: saveNames, open: openSign, share: share, request: request, reset: resetSigs, load: loadSigs, card: sigCard, chip: sigChip };
 
   /* ---------- statement (A4 light, signature boxes) ---------- */
   function ddmmyyyy(d) { d = d || new Date(); return pad(d.getDate()) + pad(d.getMonth() + 1) + d.getFullYear(); }
@@ -712,8 +760,8 @@
     m.notes.push({ k: L('Note', 'Nota'), v: L('Statutory deductions are applied in the payslip. Only approved months are paid.', 'Potongan berkanun dikira dalam slip gaji. Hanya bulan diluluskan dibayar.') });
     // signed slots: signer name + signed date + drawn PNG (dk-doc v5 sigs[].img); unsigned keep the old fallback
     var gP = SG.rows.prepared, gA = SG.rows.approved;
-    m.sigs = [{ label: L('Prepared by (staff)', 'Disediakan oleh (staf)'), name: gP ? gP.signer_name : empName(), at: gP ? fdt(gP.signed_at) : (mon.submitted_at ? fdt(mon.submitted_at) : ''), img: gP ? SG.imgs[gP.storage_path] || '' : '' },
-      { label: L('Approved by (Owner/HR)', 'Diluluskan oleh (Owner/HR)'), name: gA ? gA.signer_name : '', at: gA ? fdt(gA.signed_at) : (mon.approved_at ? fdt(mon.approved_at) : ''), img: gA ? SG.imgs[gA.storage_path] || '' : '' }];
+    m.sigs = [{ label: L('Prepared by', 'Disediakan oleh'), name: gP ? gP.signer_name : (slotName('prepared') || empName()), at: gP ? fdt(gP.signed_at) : (mon.submitted_at ? fdt(mon.submitted_at) : ''), img: gP ? SG.imgs[gP.storage_path] || '' : '' },
+      { label: L('Approved by', 'Diluluskan oleh'), name: gA ? gA.signer_name : slotName('approved'), at: gA ? fdt(gA.signed_at) : (mon.approved_at ? fdt(mon.approved_at) : ''), img: gA ? SG.imgs[gA.storage_path] || '' : '' }];
     return m;
   }
   S.model = stModel;

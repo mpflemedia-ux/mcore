@@ -1,4 +1,4 @@
-/* M-Core Service Commission — public per-role signing (public-svc.html?svc_sign=<token>). v1
+/* M-Core Service Commission — public per-role signing (public-svc.html?svc_sign=<token>). v2 (labels without staff/Owner-HR suffix; name prefilled from the typed slot name, svc_commission_03.sql)
    Same concept as public-sd.html / public-pv.html: one WhatsApp link = one role (Prepared by = staff, Approved by = Owner/HR)
    on one employee-month. Shows the statement (service log rows, NM heads, commission lines + total from the submitted /
    approved snapshot), the status of both slots and a draw pad. No login. No basic pay / IC / bank details.
@@ -9,7 +9,7 @@
   if (window.__svcSignPub) return; window.__svcSignPub = 1;
   var bm = Q.get('lang') === 'bm', sb = window.sb;
   document.documentElement.lang = bm ? 'ms' : 'en';
-  var ROLES = [['prepared', 'Prepared by (staff)', 'Disediakan oleh (staf)'], ['approved', 'Approved by (Owner/HR)', 'Diluluskan oleh (Owner/HR)']];
+  var ROLES = [['prepared', 'Prepared by', 'Disediakan oleh'], ['approved', 'Approved by', 'Diluluskan oleh']];
   var MEN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var MBM = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember'];
   var T = bm ? { doc: 'Penyata Komisen Servis', period: 'Tempoh', date: 'Tarikh', svc: 'Servis', price: 'Harga', st: 'Status', lead: 'Lead', comm: 'Komisen', none: 'Tiada log bulan ini',
@@ -111,7 +111,7 @@
     else if (!gateOk(b)) h += '<div class="psd-ap-err" style="display:block">' + esc(T.gate) + '</div>' + slotsHtml(b);
     else {
       h += '<div class="psd-ap-sub">' + esc(T.sub) + '</div>' + slotsHtml(b) +
-        '<label class="psd-ap-lb" style="display:block;margin-top:14px">' + esc(T.name) + '<input data-nm maxlength="120" data-no-titlecase="1" autocomplete="name" class="psd-ap-in" value="' + esc(b.role === 'prepared' ? (b.employee_name || '') : '') + '"></label>' +
+        '<label class="psd-ap-lb" style="display:block;margin-top:14px">' + esc(T.name) + '<input data-nm maxlength="120" data-no-titlecase="1" autocomplete="name" class="psd-ap-in" value="' + esc(s.name || (b.role === 'prepared' ? (b.employee_name || '') : '')) + '"></label>' +
         '<div class="psd-ap-lb">' + esc(T.draw) + '</div><canvas data-sigcv style="margin-top:4px"></canvas>' +
         '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px"><button type="button" data-clr class="psd-ap-btn psd-ap-btn-outline" style="flex:0 0 auto">' + esc(T.clear) + '</button></div>' +
         '<div data-e role="alert" class="psd-ap-err"></div>' +
