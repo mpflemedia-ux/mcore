@@ -128,7 +128,7 @@
     ST.pv = null;
     try {
       if (ST.mon && ST.mon.id) {
-        var pr = await sb.from('payment_vouchers').select('id,ref_no,amount,status').eq('tenant_id', t).eq('source', 'svc').eq('source_ref', ST.mon.id).is('deleted_at', null).maybeSingle();
+        var pr = await sb.from('payment_vouchers').select('id,ref_no,amount,status').eq('tenant_id', t).eq('source', 'svc').eq('source_ref', ST.mon.id).is('deleted_at', null).neq('status', 'void').maybeSingle();
         if (pr.error) { if (!missing(pr.error)) console.warn('[svc] pv', pr.error); }
         else ST.pv = pr.data || null;
       }
@@ -304,7 +304,7 @@
       '<div><label class="form-label" for="svc-s-pr">' + esc(L('Product %', '% produk')) + '</label><input class="form-input" id="svc-s-pr" type="number" min="0" max="100" step="0.01" value="' + esc(r.prod_rate_pct) + '"></div>' +
       '<div><label class="form-label" for="svc-s-bo">' + esc(L('KPI bonus (RM)', 'Bonus KPI (RM)')) + '</label><input class="form-input" id="svc-s-bo" type="number" min="0" step="0.01" value="' + esc(r.bonus_amount) + '"></div>' +
       '</div><div style="margin-top:10px"><label class="form-label" for="svc-s-no">' + esc(L('Notes', 'Nota')) + '</label><input class="form-input" id="svc-s-no" maxlength="300" value="' + esc(s.notes || '') + '"></div>' +
-      '<div class="svc-hint">' + esc(L('Basic pay stays on the employee record (Gaji Pokok). M heads and rows without a price earn nothing.', 'Gaji asas kekal di rekod pekerja (Gaji Pokok). Kepala M dan baris tanpa harga tiada komisen.')) + '</div>' +
+      '<div class="svc-hint">' + esc(L('Basic pay stays on the employee record (Gaji Pokok). ' + (r.eligible_status === 'M' ? 'NM' : 'M') + ' heads and rows without a price earn nothing.', 'Gaji asas kekal di rekod pekerja (Gaji Pokok). Kepala ' + (r.eligible_status === 'M' ? 'NM' : 'M') + ' dan baris tanpa harga tiada komisen.')) + '</div>' +
       '<div class="svc-act" style="margin-top:10px"><button type="button" class="btn btn-primary btn-sm" id="svc-s-save"><i class="ti ti-device-floppy"></i> ' + esc(L('Save scheme', 'Simpan skim')) + '</button></div></div></div>';
   }
 
