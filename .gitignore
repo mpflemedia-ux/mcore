@@ -1,0 +1,2 @@
+supabase/migrations/local/*
+!supabase/migrations/local/README.md
