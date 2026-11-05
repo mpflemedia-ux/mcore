@@ -5,7 +5,7 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '3'  # svc-commission.js v3: signatures (Prepared by staff / Approved by Owner/HR) + WhatsApp share (svc_commission_02.sql, public-svc.html)
+VER = '4'  # svc-commission.js v4: free-text signatory names like SD (svc_commission_03.sql); v3: signatures + WhatsApp share
 DK_VER = 5  # dk-doc.js v5: drawn signature images in sig boxes + PDF (v4: totals labels wrap); only ever bumped up
 TAG = '<script src="./svc-commission.js?v=%s"></script>' % VER
 ANCHOR = re.compile(r'<script src="\./hr-import\.js\?v=\d+"></script>')
