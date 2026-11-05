@@ -65,7 +65,7 @@
       fld('cheque_no', L('Cheque / ref no.', 'No. cek / rujukan'), v.cheque_no, 'maxlength="40"') +
       sel('category', L('Category', 'Kategori'), C.catOpts(v.category)) +
       sel('gl_account_id', L('GL account', 'Akaun GL'), C.glOpts(v.gl_account_id, S.accs)) +
-      '<div class="form-group pvc-full"><label class="form-label" for="pvsg-description">' + esc(L('Description / purpose', 'Keterangan / tujuan')) + '</label><textarea id="pvsg-description" class="form-input" data-f="description" rows="5" maxlength="500">' + esc(v.description || '') + '</textarea></div>' +
+      '<div class="form-group pvc-full"><label class="form-label" for="pvsg-description">' + esc(L('Description / purpose', 'Keterangan / tujuan')) + '</label><textarea id="pvsg-description" class="form-input" data-f="description" data-no-titlecase="1" rows="5" maxlength="500">' + esc(X.descText(v.description) || '') + '</textarea></div>' +
       (v.category === 'salary' ? '<div class="pvc-full" style="font-size:11px;color:var(--text-3)">' + esc(L('Salary is already expensed by the payroll journal — paying this posts no second expense.', 'Gaji sudah direkod oleh jurnal gaji — bayaran ini tidak merekod perbelanjaan kedua.')) + '</div>' : '') +
       '</div>';
   }

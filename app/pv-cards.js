@@ -327,7 +327,7 @@
       (l.payment_method === 'Cheque' ? fld(i, 'cheque_no', L('Cheque no.', 'No. cek'), l.cheque_no, 'maxlength="40"') : '') +
       '<div class="form-group"><label class="form-label" for="pvc-category-' + i + '">' + esc(L('Category', 'Kategori')) + '</label><select id="pvc-category-' + i + '" class="form-select" data-f="category" data-i="' + i + '">' + catOpts(l.category) + '</select></div>' +
       '<div class="form-group"><label class="form-label" for="pvc-gl_account_id-' + i + '">' + esc(L('GL account', 'Akaun GL')) + '</label><select id="pvc-gl_account_id-' + i + '" class="form-select" data-f="gl_account_id" data-i="' + i + '">' + glOpts(l.gl_account_id, S.accs) + '</select></div>' +
-      fld(i, 'description', L('Description', 'Keterangan'), l.description, 'maxlength="300"', true) +
+      fld(i, 'description', L('Description', 'Keterangan'), X.descText(l.description), 'maxlength="300" data-no-titlecase="1"', true) +
       (l.category === 'salary' ? '<div class="pvc-full" style="font-size:11px;color:var(--text-3)">' + esc(L('Salary is already expensed by the payroll journal — paying this line posts no second expense.', 'Gaji sudah direkod oleh jurnal gaji — bayaran baris ini tidak merekod perbelanjaan kedua.')) + '</div>' : '') +
       '</div><div class="pvc-acts"><button type="button" class="btn btn-outline btn-sm pvc-danger" data-a="rm" data-i="' + i + '"><i class="ti ti-trash"></i> ' + esc(L('Remove payee', 'Buang penerima')) + '</button></div>';
   }
