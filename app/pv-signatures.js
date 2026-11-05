@@ -276,7 +276,7 @@
     var cells = await P.images(kind, id);
     cells = cells.filter(function (c) { return !!c.name; });
     if (!cells.length) return '';
-    return '<div class="pvp-sgrid" style="grid-template-columns:repeat(' + cells.length + ',minmax(0,1fr))">' + cells.map(function (c) {
+    return '<div class="pvp-sgrid" style="grid-template-columns:repeat(' + cells.length + ',170px);justify-content:center">' + cells.map(function (c) {
       return '<div class="pvp-sg"><div class="pvp-sgi">' + (c.img ? '<img alt="" src="' + c.img + '">' : '') + '</div><div class="pvp-sgl"></div>' +
         '<div class="pvp-sgn">' + esc(c.name || '\u00a0') + '</div><div class="pvp-sgr">' + esc(c.label) + '</div>' +
         '<div class="pvp-sgd">' + esc(L('Date', 'Tarikh') + ': ' + (c.date || '')) + '</div></div>';

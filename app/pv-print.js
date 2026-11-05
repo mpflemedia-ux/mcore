@@ -184,9 +184,9 @@
     } catch (e) {}
     if (cells.length) {
       if (y < 120) { pg = doc.addPage([W, H]); y = H - 60; }
-      var cw = (x1 - x0) / cells.length;
+      var cw = (x1 - x0) / X.ROLES.length, rowX0 = x0 + ((x1 - x0) - cw * cells.length) / 2;
       for (var i = 0; i < cells.length; i++) {
-        var c = cells[i], cx = x0 + cw * i, by = y - 56;
+        var c = cells[i], cx = rowX0 + cw * i, by = y - 56;
         if (c.img) {
           var im = null; try { im = /^data:image\/png/.test(c.img) ? await doc.embedPng(b64(c.img)) : await doc.embedJpg(b64(c.img)); } catch (e) { im = null; }
           if (im) { var s2 = Math.min((cw - 20) / im.width, 46 / im.height); pg.drawImage(im, { x: cx + (cw - im.width * s2) / 2, y: by + 4, width: im.width * s2, height: im.height * s2 }); }
