@@ -4,14 +4,17 @@
    - Service Log page: openPage('hr',{view:'my-payslips', svc:'log', emp, m, y}) — rides the existing 'my-payslips' view so
      RBAC (hr_attendance) lets staff in. Month cards by week, add / edit / delete (soft), CSV paste import, flags, totals,
      payslip lines preview, Submit → Approve (server recompute, locks logs) → Reopen. A4 statement print + PDF via DKD.
-   - Payroll: APPROVED commission_total is added to _scCommissionTotal() payout mode → Salary Disbursement commission → net pay.
+   - Payroll: APPROVED commission_total is added to _scCommissionTotal() payout mode → Salary Disbursement commission → net pay,
+     UNLESS scheme flag pay_via_pv ("Bayar via PV") or a source=svc PV already exists for that emp-month (then SD is skipped — no double pay).
+   - Payment Voucher (svc_commission_04.sql): after Approve, HR Buat PV → ONE draft PV for full part-time pay
+     (basic + commission breakdown = slip Total), category=other, source=svc, source_ref=svc_comm_months.id.
    - Payslip: the commission line is split into Komisen servis / Komisen produk / Bonus when an approved month exists.
    - Signatures + WhatsApp (svc_commission_02.sql, same concept as SD): Prepared by + Approved by (free-text names like SD, svc_commission_03.sql), draw pad in app or
      public-svc.html?svc_sign=<token> via the shared WAD sheet; signed names / dates / PNGs on the A4 statement + PDF (dk-doc v5).
    Soft-fails before supabase/svc_commission_01.sql (and _02 for signatures) is run. EN/BM, existing tokens only. */
 (function () {
   if (window.SVC) return;
-  var S = window.SVC = { v: 2 };
+  var S = window.SVC = { v: 3 };
   function bm() { try { return APP.language === 'bm'; } catch (e) { return false; } }
   function L(en, b) { return bm() ? b : en; }
   function tid() { try { return APP.tenant.id; } catch (e) { return null; } }
@@ -24,7 +27,7 @@
   function uuid(v) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '')); }
   function canHR() { try { return (typeof canManageHR === 'function' && canManageHR()) || (typeof isPlatformAdmin === 'function' && isPlatformAdmin()); } catch (e) { return false; } }
   function missing(err) { var m = String((err && (err.code + ' ' + err.message + ' ' + (err.details || ''))) || ''); return /42P01|PGRST205|PGRST202|42883|does not exist|schema cache/i.test(m); }
-  function errMsg(e) { var m = String((e && (e.message || e.details)) || e || ''); if (/not allowed|42501|row-level security|permission denied/i.test(m)) return L('Not allowed for your role.', 'Tidak dibenarkan untuk peranan anda.'); if (/already approved/i.test(m)) return L('This month is already approved.', 'Bulan ini sudah diluluskan.'); return m; }
+  function errMsg(e) { var m = String((e && (e.message || e.details)) || e || ''); if (/not allowed|42501|row-level security|permission denied/i.test(m)) return L('Not allowed for your role.', 'Tidak dibenarkan untuk peranan anda.'); if (/already approved/i.test(m)) return L('This month is already approved.', 'Bulan ini sudah diluluskan.'); if (/Approve the month first/i.test(m)) return L('Approve the month first.', 'Luluskan bulan ini dahulu.'); if (/Amount must be greater than 0/i.test(m)) return L('Amount must be greater than 0.', 'Amaun mesti lebih daripada 0.'); if (/No access to Payment Vouchers/i.test(m)) return L('No access to Payment Vouchers.', 'Tiada akses ke Baucar Bayaran.'); if (/Only HR managers can create the payment voucher/i.test(m)) return L('Only Owner/HR can create the payment voucher.', 'Hanya Owner/HR boleh buat baucar bayaran.'); return m; }
   var MEN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MBM = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'];
   function mlabel(m, y) { return (bm() ? MBM : MEN)[m - 1] + ' ' + y; }
@@ -122,6 +125,14 @@
     for (var i = 0; i < 3; i++) if (res[i].error) { if (missing(res[i].error)) { ST.ready = false; return; } throw res[i].error; }
     ST.ready = true; ST.cfgRow = res[0].data || null; ST.cfg = rates(ST.cfgRow || {}); ST.logs = res[1].data || []; ST.mon = res[2].data || null;
     var em = res[3].data; ST.basic = em && em.basic_salary != null ? num(em.basic_salary) : null; ST.empRow = em || ST.empRow || null;
+    ST.pv = null;
+    try {
+      if (ST.mon && ST.mon.id) {
+        var pr = await sb.from('payment_vouchers').select('id,ref_no,amount,status').eq('tenant_id', t).eq('source', 'svc').eq('source_ref', ST.mon.id).is('deleted_at', null).maybeSingle();
+        if (pr.error) { if (!missing(pr.error)) console.warn('[svc] pv', pr.error); }
+        else ST.pv = pr.data || null;
+      }
+    } catch (e) { console.warn('[svc] pv', e); }
     try { await loadSigs(); } catch (e) { console.warn('[svc] signatures', e); }
   }
   function locked() { return !!(ST.mon && ST.mon.status === 'approved'); }
@@ -218,7 +229,9 @@
     return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Payslip lines', 'Baris slip gaji')) + '</span><span class="m">' + esc(empName()) + ' · ' + esc(mlabel(ST.m, ST.y)) + '</span></div>' +
       '<div class="svc-slip">' + rows.map(function (x) { return '<div class="ln"><div class="l">' + esc(x[0]) + (x[1] ? '<span class="s">' + esc(x[1]) + '</span>' : '') + '</div><div class="r">' + esc(rm(x[2])) + '</div></div>'; }).join('') +
       '<div class="ln tot"><div class="l">' + esc(L('Total', 'Jumlah')) + (ST.basic === null ? '<span class="s">' + esc(L('Commission only — basic pay not visible', 'Komisen sahaja — gaji asas tidak dipaparkan')) + '</span>' : '') + '</div><div class="r">' + esc(rm(tot)) + '</div></div></div>' +
-      '<div class="svc-body svc-hint" style="margin:0;padding-top:8px">' + esc(L('Statutory deductions (EPF/SOCSO/EIS/PCB) are applied in Salary Disbursement. Only an APPROVED month flows into payroll.', 'Potongan berkanun (KWSP/PERKESO/EIS/PCB) dikira di Penyaluran Gaji. Hanya bulan yang DILULUSKAN masuk payroll.')) + '</div></div>';
+      '<div class="svc-body svc-hint" style="margin:0;padding-top:8px">' + esc((ST.cfgRow && ST.cfgRow.pay_via_pv) || ST.pv
+        ? L('Bayar via PV — full part-time pay goes to a Payment Voucher (not Salary Disbursement), so there is no double pay.', 'Bayar via PV — gaji separuh masa penuh masuk Baucar Bayaran (bukan Penyaluran Gaji), jadi tiada bayaran berganda.')
+        : L('Statutory deductions (EPF/SOCSO/EIS/PCB) are applied in Salary Disbursement. Only an APPROVED month flows into payroll.', 'Potongan berkanun (KWSP/PERKESO/EIS/PCB) dikira di Penyaluran Gaji. Hanya bulan yang DILULUSKAN masuk payroll.')) + '</div></div>';
   }
   function actionCard(c, st, lk) {
     var mon = ST.mon || {}, isSelf = ST.self && String(ST.self.id) === String(ST.emp), b = '';
@@ -237,9 +250,19 @@
     if (!lk && st !== 'submitted' && (isSelf || ST.hr)) b += '<button type="button" class="btn btn-outline btn-sm" id="svc-submit"><i class="ti ti-send"></i> ' + esc(L('Submit for approval', 'Hantar untuk kelulusan')) + '</button>';
     if (ST.hr && !lk) b += '<button type="button" class="btn btn-primary btn-sm" id="svc-approve"><i class="ti ti-check"></i> ' + esc(L('Approve', 'Luluskan')) + '</button>';
     if (ST.hr && lk) b += '<button type="button" class="btn btn-outline btn-sm" id="svc-reopen"><i class="ti ti-lock-open"></i> ' + esc(L('Reopen', 'Buka semula')) + '</button>';
+    if (ST.hr && lk) {
+      if (ST.pv && ST.pv.id) b += '<button type="button" class="btn btn-primary btn-sm" id="svc-open-pv"><i class="ti ti-file-invoice"></i> ' + esc(L('Open PV', 'Buka PV')) + ' ' + esc(ST.pv.ref_no || '') + '</button>';
+      else b += '<button type="button" class="btn btn-primary btn-sm" id="svc-buat-pv"><i class="ti ti-file-invoice"></i> ' + esc(L('Create PV', 'Buat PV')) + '</button>';
+    }
     b += '</div>';
     if (mon.status === 'submitted' && mon.submitted_at) b += '<div class="svc-hint">' + esc(L('Submitted ', 'Dihantar ')) + esc(fdt(mon.submitted_at)) + '</div>';
-    if (lk && mon.approved_at) b += '<div class="svc-hint">' + esc(L('Approved ', 'Diluluskan ')) + esc(fdt(mon.approved_at)) + ' · ' + esc(L('payroll total ', 'jumlah payroll ')) + esc(rm(mon.commission_total)) + '</div>';
+    if (lk && mon.approved_at) {
+      var payTot = (ST.basic || 0) + num(mon.commission_total);
+      b += '<div class="svc-hint">' + esc(L('Approved ', 'Diluluskan ')) + esc(fdt(mon.approved_at)) + ' · ' + esc(L('slip total ', 'jumlah slip ')) + esc(rm(payTot));
+      if (ST.pv && ST.pv.id) b += ' · PV ' + esc(ST.pv.ref_no || '') + ' (' + esc(rm(ST.pv.amount)) + ')';
+      else if (ST.cfgRow && ST.cfgRow.pay_via_pv) b += ' · ' + esc(L('pay via PV', 'bayar via PV'));
+      b += '</div>';
+    }
     return b + '</div></div>';
   }
   function fdt(s) { try { return new Date(s).toLocaleString(bm() ? 'ms-MY' : 'en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return String(s || ''); } }
@@ -267,7 +290,9 @@
     var s = ST.cfgRow || {}, r = ST.cfg;
     function opt(v, cur, lbl) { return '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + esc(lbl) + '</option>'; }
     return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Commission scheme', 'Skim komisen')) + '</span><span class="m">' + esc(empName()) + '</span></div><div class="svc-body">' +
-      '<div class="svc-act" style="margin-bottom:10px"><label class="svc-tog"><input type="checkbox" id="svc-s-en"' + (s.enabled === false ? '' : ' checked') + '> ' + esc(L('Enabled', 'Aktif')) + '</label></div>' +
+      '<div class="svc-act" style="margin-bottom:10px;flex-wrap:wrap"><label class="svc-tog"><input type="checkbox" id="svc-s-en"' + (s.enabled === false ? '' : ' checked') + '> ' + esc(L('Enabled', 'Aktif')) + '</label>' +
+      '<label class="svc-tog"><input type="checkbox" id="svc-s-pv"' + (s.pay_via_pv ? ' checked' : '') + '> ' + esc(L('Pay via PV', 'Bayar via PV')) + '</label></div>' +
+      '<div class="svc-hint" style="margin:0 0 10px">' + esc(L('Bayar via PV: after Approve, HR creates one Payment Voucher for full part-time pay (basic + commissions). That month is skipped in Salary Disbursement.', 'Bayar via PV: selepas Lulus, HR buat satu Baucar Bayaran untuk gaji separuh masa penuh (asas + komisen). Bulan itu dilangkau di Penyaluran Gaji.')) + '</div>' +
       '<div class="svc-grid">' +
       '<div><label class="form-label" for="svc-s-pb">' + esc(L('Pay basis', 'Asas gaji')) + '</label><select class="form-input" id="svc-s-pb">' + opt('monthly_fixed', s.pay_basis || 'monthly_fixed', L('Monthly fixed', 'Tetap bulanan')) + opt('daily', s.pay_basis, L('Daily', 'Harian')) + opt('hourly', s.pay_basis, L('Hourly', 'Jam')) + opt('commission_only', s.pay_basis, L('Commission only', 'Komisen sahaja')) + '</select></div>' +
       '<div><label class="form-label" for="svc-s-wm">' + esc(L('Work mode', 'Mod kerja')) + '</label><select class="form-input" id="svc-s-wm">' + opt('wfh', s.work_mode || 'wfh', 'WFH') + opt('onsite', s.work_mode, L('On-site', 'Di premis')) + opt('hybrid', s.work_mode, 'Hybrid') + '</select></div>' +
@@ -301,10 +326,20 @@
         var bo = $('svc-bon'); if (bo) extra.p_bonus_on = !!bo.checked;
         var pn = $('svc-pn'); if (pn && ST.mon && String(pn.value || '') !== String(ST.mon.product_note || '')) await saveMonth();
         else if (pn && !ST.mon && pn.value) await saveMonth();
-        return rpc('svc_comm_approve', extra, L('Approved — flows into Salary Disbursement', 'Diluluskan — masuk ke Penyaluran Gaji'));
+        var viaPv = !!(ST.cfgRow && ST.cfgRow.pay_via_pv);
+        return rpc('svc_comm_approve', extra, viaPv
+          ? L('Approved — create a Payment Voucher (Buat PV) to pay', 'Diluluskan — buat Baucar Bayaran (Buat PV) untuk bayar')
+          : L('Approved — flows into Salary Disbursement', 'Diluluskan — masuk ke Penyaluran Gaji'));
       })());
     });
-    on('svc-reopen', function (b) { if (!confirm(L('Reopen this month? Payroll stops adding it until approved again.', 'Buka semula bulan ini? Payroll tidak akan masukkan sehingga diluluskan semula.'))) return; busy(b, rpc('svc_comm_reopen', {}, L('Reopened', 'Dibuka semula'))); });
+    on('svc-reopen', function (b) {
+      var msg = L('Reopen this month? Payroll stops adding it until approved again.', 'Buka semula bulan ini? Payroll tidak akan masukkan sehingga diluluskan semula.');
+      if (ST.pv && ST.pv.id) msg += '\n\n' + L('A Payment Voucher already exists (' + (ST.pv.ref_no || '') + '). Reopening does not void it.', 'Baucar Bayaran sudah wujud (' + (ST.pv.ref_no || '') + '). Buka semula tidak membatalkan baucar itu.');
+      if (!confirm(msg)) return;
+      busy(b, rpc('svc_comm_reopen', {}, L('Reopened', 'Dibuka semula')));
+    });
+    on('svc-buat-pv', function (b) { busy(b, createPv()); });
+    on('svc-open-pv', function () { if (ST.pv && ST.pv.id) openPage('vouchers', { view: 'pv-detail', id: ST.pv.id }); });
     on('svc-s-save', function (b) { busy(b, saveSettings()); });
     var W = $('svc-wrap');
     W.querySelectorAll('[data-svc-ed]').forEach(function (el) { el.onclick = function () { editModal(ST.logs.filter(function (x) { return String(x.id) === el.getAttribute('data-svc-ed'); })[0]); }; });
@@ -315,6 +350,23 @@
     var r = await sb.rpc(fn, args);
     if (r.error) { toast(errMsg(r.error), 'error'); return; }
     PAY.clear(); toast(ok); await refresh();
+  }
+  async function createPv() {
+    var tot = (ST.basic || 0) + num(ST.mon && ST.mon.commission_total);
+    if (!(tot > 0)) return toast(L('Amount must be greater than 0.', 'Amaun mesti lebih daripada 0.'), 'error');
+    if (!confirm(L('Create one Payment Voucher for ' + rm(tot) + ' (basic + commissions) for ' + mlabel(ST.m, ST.y) + '?', 'Buat satu Baucar Bayaran ' + rm(tot) + ' (asas + komisen) untuk ' + mlabel(ST.m, ST.y) + '?'))) return;
+    var r = await sb.rpc('svc_create_pv', { p_emp: ST.emp, p_month: ST.m, p_year: ST.y });
+    if (r.error) {
+      if (missing(r.error)) return toast(L('Run supabase/svc_commission_04.sql in Supabase first.', 'Jalankan supabase/svc_commission_04.sql di Supabase dahulu.'), 'error');
+      return toast(errMsg(r.error), 'error');
+    }
+    PAY.clear();
+    var d = r.data || {};
+    toast(d.existing
+      ? L('Payment Voucher already exists — opening it', 'Baucar Bayaran sudah wujud — dibuka')
+      : L('Payment Voucher created', 'Baucar Bayaran dicipta') + (d.ref_no ? ' · ' + d.ref_no : ''));
+    if (d.id) { openPage('vouchers', { view: 'pv-detail', id: d.id }); return; }
+    await refresh();
   }
   async function saveMonth() {
     var ps = $('svc-ps'), pn = $('svc-pn'), bo = $('svc-bon');
@@ -332,7 +384,7 @@
     if (rate === null || !(rate >= 0 && rate <= 100) || pr === null || !(pr >= 0 && pr <= 100)) return toast(L('Rates must be between 0 and 100', 'Kadar mesti antara 0 dan 100'), 'error');
     if ((cap !== null && !(cap >= 0)) || bo === null || !(bo >= 0)) return toast(L('Amounts must be 0 or more', 'Amaun mesti 0 atau lebih'), 'error');
     var leads = val('svc-s-ld').toUpperCase().split(/[,\s]+/).filter(function (x) { return /^[A-Z0-9_]{1,16}$/.test(x); });
-    var row = { enabled: !!($('svc-s-en') && $('svc-s-en').checked), pay_basis: val('svc-s-pb') || 'monthly_fixed', work_mode: val('svc-s-wm') || 'wfh',
+    var row = { enabled: !!($('svc-s-en') && $('svc-s-en').checked), pay_via_pv: !!($('svc-s-pv') && $('svc-s-pv').checked), pay_basis: val('svc-s-pb') || 'monthly_fixed', work_mode: val('svc-s-wm') || 'wfh',
       svc_rate_pct: rate, svc_cap: cap, eligible_status: val('svc-s-st') || 'NM', eligible_leads: leads, prod_rate_pct: pr, bonus_amount: bo, notes: val('svc-s-no') || null };
     var r = ST.cfgRow ? await sb.from('svc_comm_settings').update(row).eq('id', ST.cfgRow.id).eq('tenant_id', tid())
       : await sb.from('svc_comm_settings').insert(Object.assign({ tenant_id: tid(), employee_id: ST.emp }, row));
@@ -784,9 +836,27 @@
     var p = (async function () {
       var map = {};
       try {
-        var r = await sb.from('svc_comm_months').select('employee_id,month,year,svc_heads,svc_commission,prod_commission,bonus,commission_total,product_sales,rates')
+        var r = await sb.from('svc_comm_months').select('id,employee_id,month,year,svc_heads,svc_commission,prod_commission,bonus,commission_total,product_sales,rates')
           .eq('tenant_id', tid()).eq('month', Number(month)).eq('year', Number(year)).eq('status', 'approved').is('deleted_at', null);
-        if (!r.error) (r.data || []).forEach(function (x) { map[String(x.employee_id)] = x; PAY.slip[x.employee_id + ':' + x.month + ':' + x.year] = x; });
+        if (r.error) return map;
+        var byMid = {};
+        (r.data || []).forEach(function (x) {
+          map[String(x.employee_id)] = x;
+          byMid[String(x.id)] = x;
+          PAY.slip[x.employee_id + ':' + x.month + ':' + x.year] = x;
+        });
+        var ids = Object.keys(map);
+        if (ids.length) {
+          try {
+            var s = await sb.from('svc_comm_settings').select('employee_id,pay_via_pv').eq('tenant_id', tid()).in('employee_id', ids).is('deleted_at', null);
+            if (!s.error) (s.data || []).forEach(function (x) { var m = map[String(x.employee_id)]; if (m && x.pay_via_pv) m.pay_via_pv = true; });
+          } catch (e) {}
+          try {
+            var mids = Object.keys(byMid);
+            var pv = await sb.from('payment_vouchers').select('source_ref').eq('tenant_id', tid()).eq('source', 'svc').in('source_ref', mids).is('deleted_at', null);
+            if (!pv.error) (pv.data || []).forEach(function (p) { var m = byMid[String(p.source_ref)]; if (m) { m.has_pv = true; m.pay_via_pv = true; } });
+          } catch (e) {}
+        }
       } catch (e) {}
       return map;
     })();
@@ -799,7 +869,11 @@
       window._scCommissionTotal = async function (pid, month, year, pf) {
         var res = await o1.apply(this, arguments);
         if (pf === 'earned' || !pid || !tid()) return res;
-        try { var x = (await approvedFor(month, year))[String(pid)]; if (x && num(x.commission_total) > 0) res = Object.assign({}, res, { total: num(res && res.total) + num(x.commission_total), svc: num(x.commission_total) }); } catch (e) {}
+        try {
+          var x = (await approvedFor(month, year))[String(pid)];
+          if (x && (x.pay_via_pv || x.has_pv)) return res; // Bayar via PV — skip SD to avoid double pay
+          if (x && num(x.commission_total) > 0) res = Object.assign({}, res, { total: num(res && res.total) + num(x.commission_total), svc: num(x.commission_total) });
+        } catch (e) {}
         return res;
       };
       window._scCommissionTotal._svc = 1;
