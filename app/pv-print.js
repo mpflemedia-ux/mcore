@@ -179,9 +179,8 @@
     // signatures
     var cells = [];
     try {
-      var set = await X.settings(), req = X.requiredRoles(set, d.total);
       cells = (window.PVS ? await PVS.images(d.kind, docId) : X.ROLES.map(function (r) { return { role: r.r, label: X.roleLabel(r.r), name: '', date: '', img: '' }; }))
-        .filter(function (c) { return req.indexOf(c.role) >= 0 || c.name; });
+        .filter(function (c) { return !!c.name; });
     } catch (e) {}
     if (cells.length) {
       if (y < 120) { pg = doc.addPage([W, H]); y = H - 60; }

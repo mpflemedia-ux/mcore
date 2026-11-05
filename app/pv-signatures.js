@@ -273,10 +273,9 @@
 
   /* ---------- print grid (light; images as data URLs) ---------- */
   P.printHtml = async function (kind, id, amount) {
-    var set = await X.settings();
-    var req = X.requiredRoles(set, amount);
     var cells = await P.images(kind, id);
-    cells = cells.filter(function (c) { return req.indexOf(c.role) >= 0 || c.name; });
+    cells = cells.filter(function (c) { return !!c.name; });
+    if (!cells.length) return '';
     return '<div class="pvp-sgrid" style="grid-template-columns:repeat(' + cells.length + ',minmax(0,1fr))">' + cells.map(function (c) {
       return '<div class="pvp-sg"><div class="pvp-sgi">' + (c.img ? '<img alt="" src="' + c.img + '">' : '') + '</div><div class="pvp-sgl"></div>' +
         '<div class="pvp-sgn">' + esc(c.name || '\u00a0') + '</div><div class="pvp-sgr">' + esc(c.label) + '</div>' +
