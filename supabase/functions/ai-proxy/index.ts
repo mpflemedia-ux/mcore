@@ -1757,12 +1757,34 @@ async function handleDocToSvcLogs(body: Record<string, unknown>) {
 
   const userText = 'Document text:\n"""\n' + documentText.slice(0, DOC_MAX_TEXT) + '\n"""'
   const model = CHAT_MODEL
+  // A log sheet can run to 50-100+ individual service rows (far more array entries than
+  // doc_to_project_tasks' 30-task cap), so this call is far more likely to hit two different
+  // Groq failure modes than that one: truncation on the default max_tokens (hence the explicit
+  // 8192 here, same headroom as handleExtractBankTransactions' dense-table case), and
+  // json_validate_failed on CHAT_MODEL itself (confirmed live on openai/gpt-oss-120b for this
+  // nested logs[] shape — the file's existing retry-once pattern for that exact Groq error code
+  // was written for the vision OCR pass only; this is the same mitigation applied to a chat-model
+  // structuring call, which hadn't needed it before this larger array size).
+  const runStructure = () => callGroq(
+    [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }],
+    model,
+    { response_format: { type: 'json_object' }, max_tokens: 8192 },
+  )
   let raw: string
   try {
-    raw = await callGroq([{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], model, { response_format: { type: 'json_object' } })
+    raw = await runStructure()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${documentText.length}): ${msg}`)
+    if (/json_validate_failed/i.test(msg)) {
+      try {
+        raw = await runStructure()
+      } catch (err2) {
+        const msg2 = err2 instanceof Error ? err2.message : String(err2)
+        throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${documentText.length}): ${msg2}`)
+      }
+    } else {
+      throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${documentText.length}): ${msg}`)
+    }
   }
   let parsed: Record<string, unknown>
   try {
