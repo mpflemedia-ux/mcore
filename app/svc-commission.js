@@ -209,7 +209,8 @@
     h += actionCard(c, st, lk);
     h += sigCard();
     if (edit) h += '<div class="svc-bar"><button type="button" class="btn btn-primary btn-sm" id="svc-add"><i class="ti ti-plus"></i> ' + esc(L('Add log', 'Tambah log')) + '</button>' +
-      '<button type="button" class="btn btn-outline btn-sm" id="svc-imp"><i class="ti ti-clipboard-text"></i> ' + esc(L('Paste CSV', 'Tampal CSV')) + '</button></div>';
+      '<button type="button" class="btn btn-outline btn-sm" id="svc-imp"><i class="ti ti-clipboard-text"></i> ' + esc(L('Paste CSV', 'Tampal CSV')) + '</button>' +
+      (typeof _invokeAiProxy === 'function' ? '<button type="button" class="btn btn-outline btn-sm" id="svc-ai"><i class="ti ti-sparkles"></i> ' + esc(L('Import from doc', 'Import dari dokumen')) + '</button>' : '') + '</div>';
     // statement row: PDF (A4 statement) + WhatsApp, equal width (the separate Statement/print button was removed — PDF covers it)
     h += '<div class="svc-bar svc-docbar"><button type="button" class="btn btn-outline btn-sm" id="svc-pdf"><i class="ti ti-file-download"></i> ' + esc(L('PDF statement', 'PDF penyata')) + '</button>' +
       (ST.hr && SG.ready ? '<button type="button" class="btn btn-outline btn-sm" id="svc-wa"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>' : '') + '</div>';
@@ -314,7 +315,7 @@
     var on = function (id, fn) { var el = $(id); if (el) el.onclick = function () { fn(el); }; };
     var se = $('svc-emp'); if (se) se.onchange = function () { openPage('hr', { view: 'my-payslips', svc: 'log', emp: se.value, m: ST.m, y: ST.y }); };
     on('svc-prev', function () { go(-1); }); on('svc-next', function () { go(1); });
-    on('svc-add', function () { editModal(null); }); on('svc-imp', importModal);
+    on('svc-add', function () { editModal(null); }); on('svc-imp', function () { importModal(); }); on('svc-ai', aiImportModal);
     on('svc-pdf', function (b) { busy(b, statement('pdf')); });
     on('svc-saveps', function (b) { busy(b, saveMonth().then(function (ok) { if (ok) { toast(L('Saved', 'Disimpan')); return refresh(); } })); });
     on('svc-submit', function (b) { busy(b, rpc('svc_comm_submit', {}, L('Submitted to Owner/HR', 'Dihantar kepada Owner/HR'))); });
@@ -461,9 +462,9 @@
     });
     return { rows: out, bad: bad };
   };
-  function importModal() {
+  function importModal(prefill) {
     var body = '<div class="svc-hint" style="margin:0">' + esc(L('One row per line: date, service, price, status (M/NM), lead (TT/ADS). Blank date = same as the row above. Copy straight from the sheet (tabs work too).', 'Satu baris setiap log: tarikh, servis, harga, status (M/NM), lead (TT/ADS). Tarikh kosong = sama dengan baris atas. Boleh salin terus dari sheet (tab pun boleh).')) + '</div>' +
-      '<textarea class="form-input" id="svc-csv" placeholder="1/' + ST.m + ',HAIRCUT,25,NM,TT&#10;,SCALP + KERATIN,180,M,"></textarea><div class="svc-hint" id="svc-csv-p" style="margin:0"></div>';
+      '<textarea class="form-input" id="svc-csv" placeholder="1/' + ST.m + ',HAIRCUT,25,NM,TT&#10;,SCALP + KERATIN,180,M,">' + esc(prefill || '') + '</textarea><div class="svc-hint" id="svc-csv-p" style="margin:0"></div>';
     var o = modal(L('Paste service logs', 'Tampal log servis'), body, L('Import', 'Import'), async function () {
       var p = S.parseCsv(val('svc-csv'), ST.m, ST.y);
       if (p.bad.length) { toast(L('Fix line(s) ', 'Betulkan baris ') + p.bad.join(', '), 'error'); return false; }
@@ -474,6 +475,106 @@
     });
     var ta = o.querySelector('#svc-csv'), pv = o.querySelector('#svc-csv-p');
     ta.oninput = function () { var p = S.parseCsv(ta.value, ST.m, ST.y), c = S.calc(p.rows, ST.cfgRow || {}, {}); pv.textContent = L(p.rows.length + ' ok · ' + c.heads + ' NM heads · ' + rm(c.svc_commission), p.rows.length + ' ok · ' + c.heads + ' kepala NM · ' + rm(c.svc_commission)) + (p.bad.length ? L(' · bad lines: ', ' · baris salah: ') + p.bad.join(', ') : ''); };
+    if (prefill) ta.oninput();
+  }
+
+  /* ---------- AI "Import from doc": Excel/CSV/PDF/photo of a service-log sheet -> ai-proxy
+     action doc_to_svc_logs -> fills the Paste CSV textarea above (still goes through the same
+     S.parseCsv validation and explicit Import click — nothing is saved by the AI step itself). */
+  var xlsxLoading = null;
+  function loadXlsx() {
+    if (window.XLSX && window.XLSX.read) return Promise.resolve(window.XLSX);
+    if (xlsxLoading) return xlsxLoading;
+    xlsxLoading = new Promise(function (ok, no) {
+      var el = document.createElement('script'); el.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'; el.async = true;
+      var to = setTimeout(function () { no(new Error('timeout')); }, 20000);
+      el.onload = function () { clearTimeout(to); window.XLSX ? ok(window.XLSX) : no(new Error('no XLSX')); };
+      el.onerror = function () { clearTimeout(to); no(new Error('load')); };
+      document.head.appendChild(el);
+    }).catch(function (e) { xlsxLoading = null; throw e; });
+    return xlsxLoading;
+  }
+  async function sheetToText(file) {
+    var X = await loadXlsx(), buf = await file.arrayBuffer(), isCsv = /\.(csv|txt)$/i.test(file.name || '');
+    var wb = isCsv ? X.read(new TextDecoder('utf-8').decode(buf).replace(/^﻿/, ''), { type: 'string', raw: true })
+      : X.read(buf, { type: 'array', cellDates: true });
+    var lines = [];
+    wb.SheetNames.forEach(function (name) {
+      var rows = X.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, dateNF: 'yyyy-mm-dd', defval: '' });
+      lines.push('--- ' + file.name + ' · ' + name + ' ---');
+      rows.forEach(function (r) {
+        var vals = r.map(function (v) { return v == null ? '' : String(v); });
+        if (vals.some(function (v) { return v.trim(); })) lines.push(vals.join('\t'));
+      });
+    });
+    return lines.join('\n');
+  }
+  function isSheet(f) { return /\.(xlsx|xls|csv|txt)$/i.test(f.name || ''); }
+  function isPdfFile(f) { return /pdf/i.test(f.type || '') || /\.pdf$/i.test(f.name || ''); }
+  function isImgFile(f) { return /^image\//i.test(f.type || '') || /\.(png|jpe?g|webp|heic)$/i.test(f.name || ''); }
+  async function readAiFiles(files, status) {
+    var text = [], images = [];
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (isSheet(f)) { status(L('Reading sheet: ', 'Membaca helaian: ') + f.name); text.push(await sheetToText(f)); }
+      else if (isPdfFile(f)) {
+        status(L('Reading PDF: ', 'Membaca PDF: ') + f.name);
+        if (typeof _loadPdfJs !== 'function') throw new Error(L('PDF reader is not available on this page.', 'Pembaca PDF tiada pada halaman ini.'));
+        var lib = await _loadPdfJs(), pdf = await lib.getDocument({ data: await f.arrayBuffer() }).promise;
+        for (var p = 1; p <= Math.min(pdf.numPages, 20); p++) {
+          var page = await pdf.getPage(p), tc = await page.getTextContent();
+          var s = tc.items.map(function (it) { return it.str; }).join(' ').replace(/\s+/g, ' ').trim();
+          if (s.length >= 20) { text.push('--- ' + f.name + ' · page ' + p + ' ---\n' + s); continue; }
+          if (images.length >= 5) continue;
+          var vp = page.getViewport({ scale: 1 }), sc = Math.min(2, 1280 / vp.width), v2 = page.getViewport({ scale: sc });
+          var cv = document.createElement('canvas'); cv.width = Math.round(v2.width); cv.height = Math.round(v2.height);
+          await page.render({ canvasContext: cv.getContext('2d'), viewport: v2 }).promise;
+          var u = cv.toDataURL('image/jpeg', 0.7); images.push({ base64: u.split(',')[1], mime: 'image/jpeg' });
+        }
+      } else if (isImgFile(f)) {
+        if (images.length >= 5) continue;
+        status(L('Preparing photo: ', 'Sedia gambar: ') + f.name);
+        if (typeof _compressImageToBase64 !== 'function') throw new Error(L('Image reader is not available on this page.', 'Pembaca gambar tiada pada halaman ini.'));
+        var im = await _compressImageToBase64(f); images.push({ base64: im.base64, mime: im.mimeType || 'image/jpeg' });
+      }
+    }
+    return { text: text.join('\n\n'), images: images };
+  }
+  function aiImportModal() {
+    if (typeof _invokeAiProxy !== 'function') { toast(L('AI is not available on this page.', 'AI tiada pada halaman ini.'), 'error'); return; }
+    var files = [];
+    var body = '<div class="svc-hint" style="margin:0">' + esc(L('Upload an Excel/CSV sheet, PDF, or a photo of the service log. AI reads it and fills the Paste CSV box — nothing is saved until you review and press Import there.', 'Muat naik helaian Excel/CSV, PDF, atau gambar log servis. AI baca dan isi kotak Tampal CSV — tiada apa disimpan sehingga kau semak dan tekan Import di situ.')) + '</div>' +
+      '<div class="svc-act" style="margin-top:8px"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap"><i class="ti ti-upload"></i> ' + esc(L('Choose file', 'Pilih fail')) + '<input type="file" id="svc-ai-f" accept=".xlsx,.xls,.csv,.pdf,image/*" style="display:none"></label>' +
+      '<label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap"><i class="ti ti-camera"></i> ' + esc(L('Take photo', 'Ambil gambar')) + '<input type="file" id="svc-ai-cam" accept="image/*" capture="environment" style="display:none"></label></div>' +
+      '<div class="svc-hint" id="svc-ai-fn" style="margin-top:6px"></div>';
+    var o = modal(L('Import from doc', 'Import dari dokumen'), body, L('Read document', 'Baca dokumen'), async function (ov) {
+      if (!files.length) { toast(L('Choose a file first', 'Pilih fail dahulu'), 'error'); return false; }
+      var fn = ov.querySelector('#svc-ai-fn');
+      var setMsg = function (m) { if (fn) fn.textContent = m; };
+      var got;
+      try {
+        setMsg(L('Reading document…', 'Membaca dokumen…'));
+        got = await readAiFiles(files, setMsg);
+      } catch (e) { toast(errMsg(e), 'error'); setMsg(''); return false; }
+      if (!got.text.trim() && !got.images.length) { toast(L('No readable text or image found in this file.', 'Tiada teks atau gambar yang boleh dibaca dalam fail ini.'), 'error'); setMsg(''); return false; }
+      setMsg(L('AI is reading the logs… (10-40 seconds)', 'AI sedang baca log… (10-40 saat)'));
+      var res = await _invokeAiProxy({ action: 'doc_to_svc_logs', language: bm() ? 'bm' : 'en', text: got.text, images: got.images, month: ST.m, year: ST.y, file_names: files.map(function (f) { return f.name; }) });
+      var payload = res && res.data && res.data.success ? res.data.data : null;
+      if (!payload) { toast((res && res.data && res.data.error) || (res && res.error && res.error.message) || L('AI did not return any data.', 'AI tidak pulangkan data.'), 'error'); setMsg(''); return false; }
+      if (!payload.logs || !payload.logs.length) { toast(L('AI found no service rows in this document.', 'AI tidak jumpa baris servis dalam dokumen ini.'), 'error'); setMsg(''); return false; }
+      var csv = payload.logs.map(function (r) { return [r.log_date, r.service, r.price == null ? '' : r.price, r.client_status || '', r.lead_source || ''].join(','); }).join('\n');
+      if (payload.product_sales != null && ST.hr && !locked()) {
+        var ps = $('svc-ps'), pn = $('svc-pn');
+        if (ps && !ps.value) ps.value = payload.product_sales;
+        if (pn && !pn.value && payload.product_note) pn.value = payload.product_note;
+      }
+      toast(L(payload.logs.length + ' row(s) read — review before importing', payload.logs.length + ' baris dibaca — semak sebelum import'));
+      importModal(csv);
+      return true;
+    });
+    var pick = function (list) { if (list && list[0]) { files = [list[0]]; var fn = o.querySelector('#svc-ai-fn'); if (fn) fn.textContent = list[0].name; } };
+    o.querySelector('#svc-ai-f').onchange = function () { pick(this.files); };
+    o.querySelector('#svc-ai-cam').onchange = function () { pick(this.files); };
   }
 
   /* ---------- signatures + WhatsApp share (same concept as SD: sd-signatures.js / sd_signatures_01.sql) ----------

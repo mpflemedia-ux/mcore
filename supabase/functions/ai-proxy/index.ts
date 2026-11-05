@@ -13,7 +13,8 @@
 // generate_po, marketing_advice, tax_guidance, generate_document,
 // daily_digest, fraud_scan, onboarding_tip, logistics_suggest,
 // production_check, hr_payslip_note, draft_project_task, suggest_service_request,
-// doc_to_project_tasks (text, or vision when images are sent).
+// doc_to_project_tasks (text, or vision when images are sent),
+// doc_to_svc_logs (text, or vision when images are sent).
 // 'receipt', 'scan_application_form', 'scan_ssm_certificate',
 // 'scan_bank_statement', 'extract_bank_transactions', and
 // 'scan_product_image' use a
@@ -1470,6 +1471,7 @@ async function handleDraftProjectTask(body: Record<string, unknown>) {
 const DOC_MAX_TASKS = 30
 const DOC_MAX_IMAGES = 5
 const DOC_MAX_TEXT = 24000
+const DOC_MAX_LOG_ROWS = 500
 
 function docYmd(v: unknown): string | null {
   if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
@@ -1655,6 +1657,163 @@ async function handleDocToProjectTasks(body: Record<string, unknown>) {
     client_name: str(parsed.client_name, 160) || null,
     summary: str(parsed.summary, 400),
     tasks,
+  }
+}
+
+// Service Commission "Import from doc" (svc-commission.js): a service-log sheet/photo's text
+// and/or up to 5 page/photo images -> individual service rows + the Product sales section for
+// one target month/year. The client fills the existing "Paste CSV" textarea with the result (it
+// still goes through the client's own Paste-CSV validation before anything is saved) — this
+// handler never writes to the database.
+async function handleDocToSvcLogs(body: Record<string, unknown>) {
+  const text = typeof body.text === 'string' ? body.text.slice(0, DOC_MAX_TEXT) : ''
+  const images = (Array.isArray(body.images) ? body.images : [])
+    .filter((x) => x && typeof (x as { base64?: unknown }).base64 === 'string' && (x as { base64: string }).base64.length > 100)
+    .slice(0, DOC_MAX_IMAGES) as { base64: string; mime?: string }[]
+  if (!text.trim() && !images.length) throw new Error('text or images is required')
+  const month = Math.min(12, Math.max(1, Math.trunc(Number(body.month) || 0)))
+  const year = Math.trunc(Number(body.year) || 0)
+  if (!month || !year) throw new Error('month and year are required')
+  const fileNames = (Array.isArray(body.file_names) ? body.file_names : []).filter((x) => typeof x === 'string').slice(0, 10) as string[]
+  const uiLang = langName(body)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+
+  const systemPrompt =
+    'You read a Malaysian hair/beauty salon\'s part-time staff service log (a spreadsheet dump, photo or scanned ' +
+    'note) for ' + month + '/' + year + ' and extract two things:\n' +
+    '1. logs: every individual service entry (one per client visit per service). Each entry has:\n' +
+    '   - date: the day of the month it happened, as a number 1-' + lastDay + ', or a full date if one is written ' +
+    '(YYYY-MM-DD or D/M/YYYY). A date written on one row often applies to the rows below it too, until the next ' +
+    'date appears — carry it forward. Never invent a date that is not written or implied by a visible date above it.\n' +
+    '   - service: the service name exactly as written (e.g. HAIRCUT, KERATIN, SCALP TREATMENT). Keep a staff name ' +
+    'in parentheses if present (e.g. "HAIRCUT (EWAN)").\n' +
+    '   - price: the RM amount for that row, or null if none is written. Never invent a price.\n' +
+    '   - client_status: "M" (member/existing) or "NM" (new member) exactly as marked, or null if not marked.\n' +
+    '   - lead_source: the lead/source code exactly as written (e.g. TT, ADS, WALK-IN), or null if not marked.\n' +
+    '   Skip subtotal/total rows ("TOTAL", "X HEAD"), week headers ("WEEK 1"), column headers, and free-text ' +
+    'commentary ("SUMMARY:", notes about clients) — those are not service rows.\n' +
+    '2. product_sales: if the document has a separate product-sold section (not the service rows above), the ' +
+    'TOTAL RM figure for product sales that month, or null if there is no such section. product_note: a short ' +
+    'comma-separated breakdown of that section exactly as written, e.g. "Moisturizer x7, Hairmask x4, Shampoo x2, ' +
+    'Keratin x1" (or null).\n' +
+    'Never invent rows, prices or totals that are not in the document. If the document has no readable service ' +
+    'rows at all, return an empty logs array.\n' +
+    'Respond with ONLY a JSON object, no other text, in this exact shape: {"logs": [{"date": "<string>", ' +
+    '"service": "<string>", "price": <number or null>, "client_status": "<string or null>", "lead_source": ' +
+    '<string or null>}], "product_sales": <number or null>, "product_note": "<string or null>", "summary": ' +
+    '"<one sentence in ' + uiLang + '>"}.\n' +
+    'File names: ' + (fileNames.length ? fileNames.join(' | ') : '(unknown)')
+
+  // Image path: two-pass OCR, same as doc_to_project_tasks (the vision model validates json_object
+  // poorly on nested schemas; OCR raw text first, then structure with CHAT_MODEL).
+  let documentText = text.trim()
+  const visionModel = Deno.env.get('GROQ_VISION_MODEL') || DEFAULT_VISION_MODEL
+  if (images.length) {
+    const ocrSystem =
+      'You are an OCR assistant. Read every attached image (photo, screenshot, or scanned page/sheet) and return ' +
+      'ONLY a JSON object with this exact shape: {"document_text":"<full readable text>"}. Preserve reading order ' +
+      'and table structure (row by row). Include every visible date, service, price, status and lead code. Do not ' +
+      'invent text that is not visible. If an area is illegible, skip it. No other keys.'
+    const ocrUser = ([{ type: 'text', text: 'Extract all readable text from the attached image(s) into document_text.' }] as { type: string; text?: string; image_url?: { url: string } }[])
+      .concat(images.map((im) => ({
+        type: 'image_url',
+        image_url: { url: `data:${typeof im.mime === 'string' && im.mime ? im.mime : 'image/jpeg'};base64,${im.base64}` },
+      })))
+    const runOcr = () => callGroq(
+      [{ role: 'system', content: ocrSystem }, { role: 'user', content: ocrUser }],
+      visionModel,
+      { response_format: { type: 'json_object' }, max_tokens: 4096 },
+    )
+    let ocrRaw: string
+    try {
+      ocrRaw = await runOcr()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/json_validate_failed/i.test(msg)) {
+        try {
+          ocrRaw = await runOcr()
+        } catch (err2) {
+          const msg2 = err2 instanceof Error ? err2.message : String(err2)
+          throw new Error(`Doc import AI call failed (model=${visionModel}, images=${images.length}, text_len=${text.length}): ${msg2}`)
+        }
+      } else {
+        throw new Error(`Doc import AI call failed (model=${visionModel}, images=${images.length}, text_len=${text.length}): ${msg}`)
+      }
+    }
+    let ocrParsed: Record<string, unknown>
+    try {
+      ocrParsed = JSON.parse(ocrRaw)
+    } catch {
+      throw new Error(`AI returned an unparseable OCR response (model=${visionModel}): ${ocrRaw.slice(0, 300)}`)
+    }
+    const extracted = typeof ocrParsed.document_text === 'string' ? ocrParsed.document_text.replace(/\s+/g, ' ').trim() : ''
+    if (extracted) {
+      documentText = documentText ? documentText + '\n\n--- from images ---\n' + extracted : extracted
+    }
+    if (!documentText) {
+      throw new Error(`Doc import AI call failed (model=${visionModel}, images=${images.length}, text_len=0): Could not read any text from the attached image(s)`)
+    }
+  }
+
+  const userText = 'Document text:\n"""\n' + documentText.slice(0, DOC_MAX_TEXT) + '\n"""'
+  const model = CHAT_MODEL
+  let raw: string
+  try {
+    raw = await callGroq([{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], model, { response_format: { type: 'json_object' } })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Doc import AI call failed (model=${model}, images=${images.length}, text_len=${documentText.length}): ${msg}`)
+  }
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`AI returned an unparseable response (model=${model}): ${raw.slice(0, 300)}`)
+  }
+
+  const resolveDate = (v: unknown): string | null => {
+    const s = typeof v === 'string' ? v.trim() : (typeof v === 'number' ? String(v) : '')
+    if (!s) return null
+    let d: number
+    let mm: RegExpMatchArray | null
+    if ((mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) {
+      d = (Number(mm[1]) === year && Number(mm[2]) === month) ? Number(mm[3]) : -1
+    } else if ((mm = s.match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?$/))) {
+      const yy = mm[3] ? (Number(mm[3]) < 100 ? 2000 + Number(mm[3]) : Number(mm[3])) : year
+      d = (Number(mm[2]) === month && yy === year) ? Number(mm[1]) : -1
+    } else if (/^\d{1,2}$/.test(s)) {
+      d = Number(s)
+    } else {
+      d = -1
+    }
+    if (d < 1 || d > lastDay) return null
+    return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '')
+  const statusOk = (v: unknown): string | null => { const s = str(v, 4).toUpperCase(); return s === 'M' || s === 'NM' ? s : null }
+  const leadOk = (v: unknown): string | null => {
+    const s = str(v, 16).toUpperCase().replace(/[^A-Z0-9_]/g, '')
+    return s && /^[A-Z0-9_]{1,16}$/.test(s) ? s : null
+  }
+  const priceOk = (v: unknown): number | null => (typeof v === 'number' && isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null)
+
+  let lastDate: string | null = null
+  const logs = (Array.isArray(parsed.logs) ? parsed.logs : []).map((x) => {
+    const r = (x || {}) as Record<string, unknown>
+    let date = resolveDate(r.date)
+    if (!date && lastDate) date = lastDate // blank/unresolved date carries forward — same convention as Paste CSV
+    if (date) lastDate = date
+    return { log_date: date, service: str(r.service, 120), price: priceOk(r.price), client_status: statusOk(r.client_status), lead_source: leadOk(r.lead_source) }
+  }).filter((r) => r.log_date && r.service).slice(0, DOC_MAX_LOG_ROWS)
+
+  const productSales = typeof parsed.product_sales === 'number' && isFinite(parsed.product_sales) && parsed.product_sales >= 0
+    ? Math.round(parsed.product_sales * 100) / 100 : null
+
+  return {
+    logs,
+    product_sales: productSales,
+    product_note: str(parsed.product_note, 300) || null,
+    summary: str(parsed.summary, 300),
   }
 }
 
@@ -2093,6 +2252,9 @@ Deno.serve(async (req: Request) => {
         break
       case 'doc_to_project_tasks':
         data = await handleDocToProjectTasks(body)
+        break
+      case 'doc_to_svc_logs':
+        data = await handleDocToSvcLogs(body)
         break
       case 'suggest_service_request':
         data = await handleSuggestServiceRequest(body)

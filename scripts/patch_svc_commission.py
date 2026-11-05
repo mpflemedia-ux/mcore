@@ -5,7 +5,7 @@ import re
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / 'app' / 'index.html'
-VER = '5'  # svc-commission.js v5: Buat PV full part-time pay + Bayar via PV skip SD (svc_commission_04.sql); v4: free-text signatory names
+VER = '6'  # svc-commission.js v6: AI "Import from doc" (Excel/CSV/PDF/photo -> ai-proxy doc_to_svc_logs -> Paste CSV box); v5: Buat PV full part-time pay + Bayar via PV skip SD (svc_commission_04.sql)
 DK_VER = 5  # dk-doc.js v5: drawn signature images in sig boxes + PDF (v4: totals labels wrap); only ever bumped up
 TAG = '<script src="./svc-commission.js?v=%s"></script>' % VER
 ANCHOR = re.compile(r'<script src="\./hr-import\.js\?v=\d+"></script>')
