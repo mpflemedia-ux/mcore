@@ -173,7 +173,15 @@
       });
       var inp = box.querySelector('[data-pjc-new]'), add = box.querySelector('[data-pjc-add]');
       var addFn = function (labels) {
-        labels = labels.map(function (s) { return String(s || '').trim().slice(0, 300); }).filter(Boolean); if (!labels.length) return;
+        var existing = {}; (C.items[k.id] || []).forEach(function (x) { existing[String(x.label || '').trim().toLowerCase()] = 1; });
+        var seen = {};
+        labels = labels.map(function (s) { return String(s || '').trim().slice(0, 300); }).filter(function (s) {
+          if (!s) return false;
+          var key = s.toLowerCase();
+          if (existing[key] || seen[key]) return false;
+          seen[key] = 1; return true;
+        });
+        if (!labels.length) return;
         run(function () {
           var list = C.items[k.id] || [], base = list.reduce(function (m, x) { return Math.max(m, Number(x.sort_order) || 0); }, 0);
           return sb.from('project_task_checklist').insert(labels.map(function (s, i) { return { tenant_id: tid(), task_id: k.id, label: s, sort_order: base + i + 1 }; })).select('id,task_id,label,done,sort_order,created_at').then(function (r) {

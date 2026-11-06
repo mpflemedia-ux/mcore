@@ -36,8 +36,11 @@
     if (e.type === 'status') txt = '<b>' + esc(ref) + '</b>: ' + esc(stLabel(e.to_status));
     else if (e.type === 'attachment') txt = ((e.meta || {}).deliverable ? L('Deliverable uploaded', 'Hasil kerja dimuat naik') : L('File attached', 'Fail dilampirkan')) + ': <b>' + esc(e.file_name || e.body || '') + '</b>';
     else txt = esc(e.body || '');
+    /* status events carry the admin's note (eg. the question when moving to "Waiting on you")
+       in e.body separately from the to_status label above -- must show both, not just the status. */
+    var noteLine = (e.type !== 'comment' && e.body) ? '<div style="font-size:13px;margin-top:4px;padding:6px 8px;border-left:3px solid var(--primary);background:var(--bg);border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere">' + esc(e.body) + '</div>' : '';
     var dl = (e.type === 'attachment' && e.file_path) ? '<button type="button" class="btn btn-sm btn-outline" data-pjsr-dl="' + esc(e.file_path) + '" style="margin-top:4px;min-height:32px"><i class="ti ti-download"></i> ' + L('Download', 'Muat turun') + '</button>' : '';
-    return '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--bg);border:1px solid var(--border)"><i class="ti ' + (evIcon[e.type] || 'ti-point') + '" style="font-size:14px;color:var(--primary)"></i></span><div style="flex:1;min-width:0"><div style="font-size:13px;overflow-wrap:anywhere">' + txt + '</div><div class="cob-xs">' + when(e.created_at) + '</div>' + dl + '</div></div>';
+    return '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--bg);border:1px solid var(--border)"><i class="ti ' + (evIcon[e.type] || 'ti-point') + '" style="font-size:14px;color:var(--primary)"></i></span><div style="flex:1;min-width:0"><div style="font-size:13px;overflow-wrap:anywhere">' + txt + '</div>' + noteLine + '<div class="cob-xs">' + when(e.created_at) + '</div>' + dl + '</div></div>';
   }
 
   function loadSr(id) {
