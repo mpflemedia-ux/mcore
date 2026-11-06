@@ -48,14 +48,19 @@
       LNK.ok = !r.error; if (!LNK.ok) console.info('[M-Core] Projects<->SR links hidden until SQL pj_sr_workthread_01.sql is run'); return LNK.ok;
     }, function () { LNK.ok = false; return false; });
   };
+  /* Same shared-state race as pj-checklist.js's C.load (see its comment) -- build into a local
+     object, only publish to LNK.items if this is still the latest call once it resolves. */
+  var lnkLoadTok = 0;
   LNK.load = function (st) {
-    var ids = (st.tasks || []).map(function (k) { return k.id; }); LNK.items = {};
-    if (!ids.length) return Promise.resolve();
+    var ids = (st.tasks || []).map(function (k) { return k.id; });
+    var mine = ++lnkLoadTok, local = {};
+    if (!ids.length) { if (mine === lnkLoadTok) LNK.items = local; return Promise.resolve(); }
     var parts = []; for (var i = 0; i < ids.length; i += 150) parts.push(ids.slice(i, i + 150));
     return Promise.all(parts.map(function (p) {
       return sb.from('project_task_sr_links').select('task_id,sr_id,service_requests(ref_no,status)').eq('tenant_id', tid()).in('task_id', p).is('deleted_at', null).limit(3000);
     })).then(function (rs) {
-      rs.forEach(function (r) { (r.data || []).forEach(function (x) { (LNK.items[x.task_id] = LNK.items[x.task_id] || []).push({ sr_id: x.sr_id, ref_no: x.service_requests && x.service_requests.ref_no, status: x.service_requests && x.service_requests.status }); }); });
+      rs.forEach(function (r) { (r.data || []).forEach(function (x) { (local[x.task_id] = local[x.task_id] || []).push({ sr_id: x.sr_id, ref_no: x.service_requests && x.service_requests.ref_no, status: x.service_requests && x.service_requests.status }); }); });
+      if (mine === lnkLoadTok) LNK.items = local;
     }, function () {});
   };
 

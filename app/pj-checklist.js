@@ -37,14 +37,26 @@
       C.ok = !r.error; if (!C.ok) console.info('[M-Core] Projects checklist hidden until SQL pj_auto_01.sql is run'); return C.ok;
     }, function () { C.ok = false; return false; });
   };
+  /* C.items is shared module state read by badge()/boxHtml()/sync() while this resolves -- two
+     overlapping C.load() calls (board repaint + realtime + Detail toggle can all trigger one) used
+     to both reset C.items={} up front then push into that SAME object as each one's queries
+     resolved, so a slower call's rows landed on top of a faster call's already-pushed rows and
+     every item doubled (confirmed live: task showed 0/6 with each of its 3 real rows twice, a
+     plain reload then showed the correct 0/3 since only one call ran). Fixed by building into a
+     throwaway local object and only publishing it to C.items if this is still the most recent call
+     by the time it resolves -- a stale call's rows are computed then discarded, never touching the
+     shared object. Same pattern already used by pj-task-extras.js's X.ensure/X.data. */
+  var loadTok = 0;
   C.load = function (st) {
-    var ids = (st.tasks || []).map(function (k) { return k.id; }); C.items = {};
-    if (!ids.length) return Promise.resolve();
+    var ids = (st.tasks || []).map(function (k) { return k.id; });
+    var mine = ++loadTok, local = {};
+    if (!ids.length) { if (mine === loadTok) C.items = local; return Promise.resolve(); }
     var parts = []; for (var i = 0; i < ids.length; i += 150) parts.push(ids.slice(i, i + 150));
     return Promise.all(parts.map(function (p) {
       return sb.from('project_task_checklist').select('id,task_id,label,done,sort_order,created_at').eq('tenant_id', tid()).in('task_id', p).is('deleted_at', null).order('sort_order').order('created_at').limit(3000);
     })).then(function (rs) {
-      rs.forEach(function (r) { (r.data || []).forEach(function (x) { (C.items[x.task_id] = C.items[x.task_id] || []).push(x); }); });
+      rs.forEach(function (r) { (r.data || []).forEach(function (x) { (local[x.task_id] = local[x.task_id] || []).push(x); }); });
+      if (mine === loadTok) C.items = local;
     });
   };
   C.pct = function (list) { if (!list || !list.length) return null; var d = list.filter(function (x) { return x.done; }).length; return Math.round(d / list.length * 100); };
@@ -172,16 +184,21 @@
         };
       });
       var inp = box.querySelector('[data-pjc-new]'), add = box.querySelector('[data-pjc-add]');
+      /* Warn on a duplicate label (already on this task, or repeated within one add/paste), don't
+         block it -- a repeated step can be intentional (eg two separate "Follow up with client"
+         steps at different stages). Confirm cancelled -> drop only the repeated occurrence(s),
+         keep the rest of the batch. */
       var addFn = function (labels) {
         var existing = {}; (C.items[k.id] || []).forEach(function (x) { existing[String(x.label || '').trim().toLowerCase()] = 1; });
-        var seen = {};
-        labels = labels.map(function (s) { return String(s || '').trim().slice(0, 300); }).filter(function (s) {
-          if (!s) return false;
-          var key = s.toLowerCase();
-          if (existing[key] || seen[key]) return false;
-          seen[key] = 1; return true;
-        });
+        labels = labels.map(function (s) { return String(s || '').trim().slice(0, 300); }).filter(Boolean);
         if (!labels.length) return;
+        var seen = {}, dupes = [];
+        labels.forEach(function (s) { var key = s.toLowerCase(); if (existing[key] || seen[key]) dupes.push(s); seen[key] = 1; });
+        if (dupes.length && !window.confirm(L('Already on this checklist: ', 'Sudah ada dalam senarai semak: ') + dupes.join(', ') + L('. Add anyway?', '. Tambah juga?'))) {
+          var dupLeft = {}; dupes.forEach(function (s) { var key = s.toLowerCase(); dupLeft[key] = (dupLeft[key] || 0) + 1; });
+          labels = labels.filter(function (s) { var key = s.toLowerCase(); if (dupLeft[key] > 0) { dupLeft[key]--; return false; } return true; });
+          if (!labels.length) return;
+        }
         run(function () {
           var list = C.items[k.id] || [], base = list.reduce(function (m, x) { return Math.max(m, Number(x.sort_order) || 0); }, 0);
           return sb.from('project_task_checklist').insert(labels.map(function (s, i) { return { tenant_id: tid(), task_id: k.id, label: s, sort_order: base + i + 1 }; })).select('id,task_id,label,done,sort_order,created_at').then(function (r) {
