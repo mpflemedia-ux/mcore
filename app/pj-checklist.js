@@ -99,6 +99,19 @@
       return sb.from('project_tasks').update({ progress: pct }).eq('id', k.id).eq('tenant_id', t).then(function (r) { if (r.error) throw r.error; k.progress = pct; });
     });
   }
+  /* Reverse progress flow: when a checklist step on a task is ticked/unticked and that task is the
+     ADMIN's own mirrored task for a client's Service Request (service_requests.linked_task_id), post
+     a client-visible comment event on that SR -- same insert path admin comments already use, no bell/
+     push (every tick would be noisy). No-op for an ordinary tenant task (no SR ever points at it). */
+  function postSrTick(taskId, label, on) {
+    if (!label || !window.sb) return;
+    sb.from('service_requests').select('id,tenant_id').eq('linked_task_id', taskId).is('deleted_at', null).then(function (r) {
+      (r.data || []).forEach(function (sr) {
+        sb.from('service_request_events').insert({ tenant_id: sr.tenant_id, request_id: sr.id, type: 'comment', actor_id: APP.user ? APP.user.id : null, body: (on ? '✓ ' : '☐ ') + label, meta: { checklist: true } })
+          .then(function (x) { if (x.error) console.warn('[pj-checklist] SR checklist event', x.error); }, function (e) { console.warn('[pj-checklist] SR checklist event', e); });
+      });
+    }, function () {});
+  }
   /* "To do" lines in the Update text -> checklist steps (Update text is left as it is) */
   C.todoLines = function (notes) {
     var out = [], on = false;
@@ -139,9 +152,11 @@
       box.querySelectorAll('[data-pjc-t]').forEach(function (c) {
         c.onchange = function () {
           var id = c.getAttribute('data-pjc-t'), on = c.checked;
+          var item = (C.items[k.id] || []).find(function (x) { return same(x.id, id); }), label = item && item.label;
           run(function () {
             return sb.from('project_task_checklist').update({ done: on, done_at: on ? new Date().toISOString() : null, done_by: on && APP.user ? APP.user.id : null }).eq('tenant_id', tid()).eq('id', id).then(function (r) {
               if (r.error) throw r.error; (C.items[k.id] || []).forEach(function (x) { if (same(x.id, id)) x.done = on; });
+              postSrTick(k.id, label, on);
             });
           });
         };

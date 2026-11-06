@@ -1373,25 +1373,24 @@ async function handleSuggestServiceRequest(body: Record<string, unknown>) {
   const svcList = services.map((s) => `${s.code}: ${typeof s.name_en === 'string' ? s.name_en : s.code}`).join('\n')
 
   const systemPrompt =
-    'You are drafting a service request to send to an outsourced admin/ops team (M-Core), based on an ' +
-    "internal project task that needs their help. Pick the SINGLE most relevant service from the list " +
-    'below (at most 2 if the task genuinely spans two distinct service types) -- you MUST pick service codes ' +
-    'ONLY from this list, never invent one. Then write a clean request title and a short details paragraph ' +
-    'summarising what is needed, based on the task information given. Respond with ONLY a JSON object in ' +
-    'this exact shape, no other text: {"service_codes": ["<code>", ...], "title": "<string>", "details": ' +
-    `"<string>"}. Reply in ${langName(body)}.\n\nAvailable services:\n${svcList}\n\n` +
+    'You are routing an internal project task to the right service queue for an outsourced admin/ops ' +
+    'team (M-Core). Pick the SINGLE most relevant service from the list below (at most 2 if the task ' +
+    'genuinely spans two distinct service types) -- you MUST pick service code(s) ONLY from this list, ' +
+    'never invent one. Do not write a title or any description text -- the request text is built ' +
+    'separately, deterministically, from the task itself. Respond with ONLY a JSON object in this exact ' +
+    `shape, no other text: {"service_codes": ["<code>", ...]}.\n\nAvailable services:\n${svcList}\n\n` +
     `Task title: ${taskTitle}\nTask tag: ${taskTag || '-'}\nTask notes:\n${taskNotes || '(none)'}`
 
   const raw = await callGroq(
     [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'Suggest the service request.' },
+      { role: 'user', content: 'Pick the service code(s).' },
     ],
     CHAT_MODEL,
     { response_format: { type: 'json_object' } },
   )
 
-  let parsed: { service_codes?: unknown; title?: string; details?: string }
+  let parsed: { service_codes?: unknown }
   try {
     parsed = JSON.parse(raw)
   } catch {
@@ -1403,11 +1402,7 @@ async function handleSuggestServiceRequest(body: Record<string, unknown>) {
     .filter((c: unknown): c is string => typeof c === 'string' && validCodes.has(c))
     .slice(0, 2)
 
-  return {
-    service_codes: codes,
-    title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : taskTitle,
-    details: typeof parsed.details === 'string' ? parsed.details.trim() : taskNotes,
-  }
+  return { service_codes: codes }
 }
 
 async function handleDraftProjectTask(body: Record<string, unknown>) {

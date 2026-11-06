@@ -105,9 +105,47 @@
       return attempt();
     });
   };
+  /* Projects task owner lookup for an SR raised from a tenant task (project_task_sr_links, written by
+     pj-sr-convert.js) -- deterministic email match, same rule sd-task-sync.js uses the other way round.
+     Feature-detects the link table itself; silently no-ops until it exists or no task/assignee matches. */
+  function taskOwnersFor(r) {
+    return sb.from('project_task_sr_links').select('task_id').eq('tenant_id', r.tenant_id).eq('sr_id', r.id).is('deleted_at', null).then(function (lr) {
+      var ids = (lr.data || []).map(function (x) { return x.task_id; });
+      if (!ids.length) return [];
+      return sb.from('project_tasks').select('id,assignee_employee_id').eq('tenant_id', r.tenant_id).in('id', ids).is('deleted_at', null).then(function (tr) {
+        return (tr.data || []).filter(function (t) { return t.assignee_employee_id; });
+      }, function () { return []; });
+    }, function () { return []; });
+  }
+  /* Notification coverage: SR moves to "waiting on you" (SD.setStatus) or a deliverable is uploaded
+     (SD.event below) also reach the tenant's own Projects task owner -- not just the tenant's Owner/
+     Admin role users SD.bellFor already covers -- via NT.notify with an explicit tenant_id (no cross-
+     tenant tagging even though this runs from the platform admin's own session/tenant context). */
+  function notifyTaskOwner(r, title, body) {
+    taskOwnersFor(r).then(function (tasks) {
+      if (!tasks.length || typeof NT === 'undefined' || !NT.notify) return;
+      var empIds = tasks.map(function (t) { return t.assignee_employee_id; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+      return sb.from('employees').select('id,email').eq('tenant_id', r.tenant_id).in('id', empIds).is('deleted_at', null).then(function (er) {
+        var emails = {}; (er.data || []).forEach(function (e) { if (e.email) emails[e.id] = String(e.email).toLowerCase(); });
+        var needed = Object.keys(emails); if (!needed.length) return;
+        return sb.from('user_profiles').select('id,email').eq('tenant_id', r.tenant_id).then(function (ur) {
+          var byEmail = {}; (ur.data || []).forEach(function (u) { if (u.email) byEmail[String(u.email).toLowerCase()] = u.id; });
+          tasks.forEach(function (t) {
+            var email = emails[t.assignee_employee_id], uid = email && byEmail[email];
+            if (!uid) return;
+            NT.notify({ tenant_id: r.tenant_id, users: [uid], title: title, body: body, category: 'service_desk', type: 'sd.status', ref_table: 'service_requests', ref_id: r.id, link: { page: 'projects', params: { id: t.id } } });
+          });
+        });
+      });
+    }, function () {}).catch(function () {});
+  }
   SD.event = function (r, type, extra) {
     var ev = Object.assign({ tenant_id: r.tenant_id, request_id: r.id, type: type, actor_id: SD.uid(), meta: {} }, extra || {});
-    return sb.from('service_request_events').insert(ev).then(function (x) { if (x.error) throw x.error; return x; });
+    return sb.from('service_request_events').insert(ev).then(function (x) {
+      if (x.error) throw x.error;
+      if (type === 'attachment' && ev.meta && ev.meta.deliverable) notifyTaskOwner(r, r.ref_no + ': ' + SD.L('Deliverable uploaded', 'Hasil kerja dimuat naik'), ev.file_name || ev.body || r.title);
+      return x;
+    });
   };
   SD.setStatus = function (r, to, body, asClient) {
     if (!SD.canMove(r.status, to, asClient) && !(SD.isPA() && to === 'closed')) return Promise.reject(new Error(SD.L('Status change not allowed', 'Perubahan status tidak dibenarkan')));
@@ -123,7 +161,9 @@
       return SD.event(nr, 'status', { from_status: r.status, to_status: to, body: body || null }).catch(function () {}).then(function () {
         if (r.status === to) return nr; /* no real change -> no bell */
         var type = to === 'delivered' ? 'sd.delivered' : to === 'revision' ? 'sd.revision' : 'sd.status';
-        SD.bellFor(nr, nr.ref_no + ': ' + SD.stLabel(to), nr.title, type); return nr;
+        SD.bellFor(nr, nr.ref_no + ': ' + SD.stLabel(to), nr.title, type);
+        if (to === 'waiting_client') notifyTaskOwner(nr, nr.ref_no + ': ' + SD.stLabel(to), body || nr.title);
+        return nr;
       });
     });
   };

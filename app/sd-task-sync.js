@@ -86,6 +86,9 @@
       ctx.avgHours = x[1];
       ctx.employeeId = x[2];
       ctx.custName = (x[3] && x[3].data && x[3].data.name) || '';
+      var snap = r.task_snapshot || {};
+      ctx.entityName = (snap.entity_name && snap.entity_name !== ctx.custName) ? snap.entity_name : '';
+      ctx.snapshotChecklist = Array.isArray(snap.checklist) ? snap.checklist.filter(function (c) { return c && c.label; }) : [];
       if (!ctx.isInternal && !ctx.customerId) {
         throw new Error(SD.L('Could not find or create the client record (tenant may have been deleted) — cannot sync.', 'Tidak dapat cari/cipta rekod klien (tenant mungkin telah dipadam) — tidak boleh sync.'));
       }
@@ -124,6 +127,8 @@
         '<div class="modal-box-body">' +
         (ctx.draft ? '' : '<div class="cob-banner warn"><i class="ti ti-alert-triangle"></i><div>' + SD.L('AI draft unavailable — using the raw request title/description. You can edit everything below.', 'Draf AI tidak tersedia — guna tajuk/keterangan asal. Anda boleh edit semua di bawah.') + '</div></div>') +
         '<div class="form-group"><label class="form-label">' + SD.L('Project', 'Projek') + '</label><div class="form-input" style="background:var(--bg)">' + (ctx.isInternal ? SD.L('Internal', 'Dalaman') : SD.esc(ctx.custName || '—')) + '</div></div>' +
+        (ctx.entityName ? '<div class="form-group"><label class="form-label">' + SD.L('Entity', 'Entiti') + '</label><div class="form-input" style="background:var(--bg)">' + SD.esc(ctx.entityName) + '</div></div>' : '') +
+        (ctx.snapshotChecklist.length ? '<div class="cob-xs" style="margin-bottom:10px"><i class="ti ti-checklist"></i> ' + ctx.snapshotChecklist.length + ' ' + SD.L('checklist step(s) will be copied in', 'langkah senarai semak akan disalin masuk') + '</div>' : '') +
         '<div class="form-group"><label class="form-label">' + SD.L('Title', 'Tajuk') + '</label><input class="form-input" id="sts-title" value="' + SD.esc(title) + '"></div>' +
         '<div class="form-group"><label class="form-label">' + SD.L('Tag', 'Tag') + '</label><input class="form-input" id="sts-tag" value="' + SD.esc(tag) + '"></div>' +
         '<div class="row" style="gap:10px;flex-wrap:wrap"><div class="form-group" style="flex:1;min-width:140px"><label class="form-label">' + SD.L('Due date', 'Tarikh akhir') + '</label><input type="date" class="form-input" id="sts-due-date" value="' + dueDate + '"></div>' +
@@ -171,7 +176,11 @@
         var ownerRow = ctx.employeeId
           ? sb.from('project_task_assignees').insert({ tenant_id: ctx.platformId, task_id: taskId, employee_id: ctx.employeeId, is_owner: true }).then(function (a) { if (a.error) throw a.error; })
           : Promise.resolve();
-        return ownerRow.then(function () {
+        var checklistRows = (ctx.snapshotChecklist || []).length
+          ? sb.from('project_task_checklist').insert(ctx.snapshotChecklist.map(function (c, i) { return { tenant_id: ctx.platformId, task_id: taskId, label: String(c.label).slice(0, 300), done: false, sort_order: i + 1 }; }))
+            .then(function (c) { if (c.error) console.warn('[sd-task-sync] checklist seed', c.error); })
+          : Promise.resolve();
+        return ownerRow.then(function () { return checklistRows; }).then(function () {
           return sb.from('service_requests').update({ linked_task_id: taskId, updated_at: new Date().toISOString() }).eq('id', r.id);
         }).then(function (u) {
           if (u.error) throw u.error;
