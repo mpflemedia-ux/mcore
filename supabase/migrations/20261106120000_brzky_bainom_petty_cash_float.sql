@@ -40,8 +40,8 @@ begin
     select account_id into petty_acc from public.default_account_mappings where tenant_id = tid and mapping_key = 'petty_cash';
     if cash_acc is not null and petty_acc is not null then
       jref := public.generate_ref_no(tid, 'JNL', to_char(idate, 'YYMM'));
-      insert into public.journal_entries (tenant_id, ref_no, entry_date, description, entry_type, source_table, source_id, total_debit, total_credit, is_balanced)
-      values (tid, jref, idate, 'Petty cash float — ' || holder, 'auto', 'petty_cash_floats', float_id, amt, amt, true)
+      insert into public.journal_entries (tenant_id, ref_no, entry_date, description, entry_type, source_table, source_id, total_debit, total_credit)
+      values (tid, jref, idate, 'Petty cash float — ' || holder, 'auto', 'petty_cash_floats', float_id, amt, amt)
       returning id into jentry_id;
       insert into public.journal_lines (id, tenant_id, entry_id, account_id, line_no, description, debit_amt, credit_amt) values
         (gen_random_uuid(), tid, jentry_id, petty_acc, 1, 'Petty cash float — ' || holder, amt, 0),
