@@ -136,6 +136,15 @@
     state.customers = cu.error ? [] : (cu.data || []);
   }
 
+  /* Move to another project: a plain <select> in Detail, same save/patch mechanism as every other
+     field here. Only rendered when there's somewhere else to move to. Archived projects are never
+     offered as a destination, but the task's own current project always appears even if it has
+     since been archived, so the select never shows a value that isn't actually selected. */
+  function moveProjectHtml(task) {
+    var opts = (state.allProjects || []).filter(function (p) { return !p.archived_at || String(p.id) === String(task.project_id); });
+    if (opts.length < 2) return '';
+    return '<label>' + esc(t('Project', 'Projek')) + '<select data-f="project_id">' + opts.map(function (p) { return '<option value="' + esc(p.id) + '"' + (String(p.id) === String(task.project_id) ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>';
+  }
   function cardHtml(task) {
     var who = empById(task.assignee_employee_id);
     var pct = Math.max(0, Math.min(100, Number(task.progress) || 0));
@@ -148,6 +157,7 @@
       '<div class="pj-bar"><i style="width:' + pct + '%"></i></div><div class="pj-pct">' + pct + '%</div>' +
       '<details class="pj-detail"' + (String(state.focus) === String(task.id) ? ' open' : '') + '><summary>' + esc(t('Detail', 'Butiran')) + '</summary>' +
       '<label>' + esc(t('Title', 'Tajuk')) + '<input data-f="title" value="' + esc(task.title) + '"></label>' +
+      moveProjectHtml(task) +
       '<label>' + esc(t('Tag', 'Tag')) + '<select data-f="tag">' + tagList().map(function (tag) { return '<option' + (task.tag === tag ? ' selected' : '') + '>' + esc(tag) + '</option>'; }).join('') + '</select></label>' +
       '<label>' + esc(t('Assignee', 'Assignee')) + '<select data-f="assignee_employee_id"><option value="">—</option>' + state.employees.map(function (e) { return '<option value="' + esc(e.id) + '"' + (String(e.id) === String(task.assignee_employee_id) ? ' selected' : '') + '>' + esc(nick(e)) + '</option>'; }).join('') + '</select></label>' +
       '<label>' + esc(t('Start', 'Mula')) + '<input data-f="start_date" type="date" value="' + esc(String(task.start_date || '').slice(0, 10)) + '"></label>' +
@@ -645,11 +655,14 @@
       is_important: val('matrix') === 'do' || val('matrix') === 'schedule',
       is_urgent: val('matrix') === 'do' || val('matrix') === 'delegate'
     };
+    var newProjectId = val('project_id');
+    var movedProject = newProjectId && task && String(newProjectId) !== String(task.project_id);
+    if (movedProject) patch.project_id = newProjectId;
     var ntOld = (state.tasks.filter(function (x) { return String(x.id) === String(id); })[0] || {}).assignee_employee_id;
     var up = await sb.from('project_tasks').update(patch).eq('id', id).eq('tenant_id', tid());
     if (up.error) { showToast(up.error.message, 'error'); return; }
     if (window.NT && NT.taskSaved) NT.taskSaved(id, ntOld, patch, (task && task.project_id) || state.projectId);
-    showToast(t('Saved', 'Disimpan'), 'success');
+    showToast(movedProject ? t('Saved — moved to another project', 'Disimpan — dipindah ke projek lain') : t('Saved', 'Disimpan'), 'success');
     state.focus = '';
     refresh();
   }
