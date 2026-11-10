@@ -20626,6 +20626,15 @@ let _recoPosting = false
 // ═══════════════════════════════════════════════════════════════════════════
 
 const _BR_RULES = [
+  // Interest/profit payouts (incl. Ryt "Daily interest payout", Islamic
+  // "hibah"/"profit payout") — FIRST so money-in interest never falls to
+  // Other Income and then gets AI-suggested as Sales Income.
+  { keywords:['INTEREST','FAEDAH','PROFIT PAYOUT','PROFIT CREDIT','HIBAH'], category:'Interest Income', type:'in', conf:95 },
+  { keywords:['GERAN','GRANT','SUBSIDI','SUBSIDY'], category:'Grant / Subsidy', type:'in', conf:80 },
+  { keywords:['ZAKAT','DERMA','DONATION','SEDEKAH','WAKAF'], category:'Donation / Zakat', type:'out', conf:85 },
+  { keywords:['LATE PAYMENT CHARGE','LATE CHARGE','FINANCE CHARGE','PENALTY CHARGE'], category:'Finance Charges', type:'out', conf:85 },
+  { keywords:['COMMISSION','KOMISEN'], category:'Commission', type:'out', conf:80 },
+  { keywords:['TRAINING','KURSUS','LATIHAN'], category:'Training', type:'out', conf:80 },
   { keywords:['TNB','TENAGA NASIONAL'], category:'Utilities', type:'out', conf:95 },
   { keywords:['INDAH WATER','IWK','SYABAS','AIR SELANGOR'], category:'Utilities', type:'out', conf:95 },
   { keywords:['UNIFI','MAXIS','CELCOM','DIGI','TIME FIBRE','TIME DOTCOM'], category:'Telephone & Internet', type:'out', conf:95 },
@@ -20659,7 +20668,7 @@ const _BR_RULES = [
   { keywords:['INSURANCE','TAKAFUL','INSURAN'], category:'Insurance', type:'out', conf:85 },
   { keywords:['POS LAJU','J&T','J&T EXPRESS','DHL','NINJAVAN','CITY-LINK','GDEX'], category:'Postage & Courier', type:'out', conf:85 },
   { keywords:['STAMP DUTY','SSM','SETIAUSAHA','COMPANY SECRETARY'], category:'Professional Fees', type:'out', conf:80 },
-  { keywords:['INTEREST CREDIT','PROFIT CREDIT','DIVIDEND'], category:'Other Income', type:'in', conf:85 },
+  { keywords:['DIVIDEND'], category:'Other Income', type:'in', conf:85 },
   { keywords:['SHOPEE','TIKTOK','LAZADA'], category:'Sales Income', type:'in', conf:80 },
   // Cash & carry wholesalers (Segi, Mydin Wholesale, etc.) — stock/raw
   // material purchases, not a generic operating expense. Specific enough
@@ -20686,7 +20695,9 @@ const _BR_RULES = [
   // doesn't actually work here, and 'GHL' alone is too short/generic a
   // substring to risk matching unrelated text. 'EGHL' (eGHL's actual
   // brand prefix) is specific enough on its own.
-  { keywords:['BILLPLZ','IPAY88','TOYYIBPAY','SENANGPAY','CURLEC','STRIPE','EGHL','2C2P'], category:'Bank Charges', type:'out', conf:80 },
+  // Nov 2026: moved from Bank Charges to the dedicated Platform & Payment
+  // Fees category (bank's own fees stay Bank Charges).
+  { keywords:['BILLPLZ','IPAY88','TOYYIBPAY','SENANGPAY','CURLEC','STRIPE','EGHL','2C2P','SHOPEE FEE','TIKTOK SHOP FEE','LAZADA FEE','QR FEE','MDR FEE'], category:'Platform & Payment Fees', type:'out', conf:80 },
 ]
 
 // journal_entries.source_id is a real Postgres `uuid` column — a bank recon
@@ -20708,7 +20719,13 @@ const _BR_CATEGORIES = [
   'Statutory','Salaries & Wages','Bank Charges','Rental','Insurance',
   'Postage & Courier','Professional Fees','Cost of Sales','Marketing & Advertising',
   'Sales Income','Other Income','Other Expense',
-  'Owner Drawings',"Owner's Capital Injection",'Fixed Asset Purchase','Loan Drawdown','Internal Transfer'
+  'Owner Drawings',"Owner's Capital Injection",'Fixed Asset Purchase','Loan Drawdown','Internal Transfer',
+  // Added Nov 2026 (appended — existing stored English values above unchanged)
+  'Interest Income','Grant / Subsidy','Customer Receipt','Refund',
+  'Entertainment (Client)','Staff Meals & Welfare','Repair & Maintenance','Office Supplies',
+  'Finance Charges','Commission','Platform & Payment Fees','Training','Donation / Zakat','Supplier Payment',
+  'Staff Claims','Tax Payment (LHDN/SST)',
+  'Loan Repayment','Deposit'
 ]
 // Categories that are ALWAYS a deliberate manual choice, never something
 // the system guesses for the user:
@@ -20735,7 +20752,20 @@ const _BR_CATEGORIES = [
 // _recoSetCategory), and never offered to/accepted from the AI (see
 // _BR_AI_CATEGORIES below) — every path to a category on these five is a
 // direct, explicit user click.
-const _BR_MANUAL_ONLY_CATEGORIES = ['Owner Drawings', "Owner's Capital Injection", 'Fixed Asset Purchase', 'Loan Drawdown', 'Internal Transfer']
+// Nov 2026 additions: Loan Repayment (principal vs interest split, liability),
+// Tax Payment (LHDN/SST — settles a tax liability, not a P&L expense) and
+// Deposit (balance-sheet asset/liability either way) follow the same rule.
+const _BR_MANUAL_ONLY_CATEGORIES = ['Owner Drawings', "Owner's Capital Injection", 'Fixed Asset Purchase', 'Loan Drawdown', 'Internal Transfer', 'Loan Repayment', 'Tax Payment (LHDN/SST)', 'Deposit']
+// Link-only: the money already exists in the ledger as an invoice/payment
+// (Customer Receipt) or a supplier bill (Supplier Payment). Posting it again
+// via Post Unmatched would double count revenue/expense, so these lines are
+// settled ONLY by Match + Confirm and are always excluded from Post
+// Unmatched, the AI and the GL map.
+const _BR_LINK_ONLY_CATEGORIES = ['Customer Receipt', 'Supplier Payment']
+function _brIsLinkOnlyCategory(cat) {
+  const norm = String(cat||'').toLowerCase()
+  return _BR_LINK_ONLY_CATEGORIES.some(c => c.toLowerCase() === norm)
+}
 function _brIsManualOnlyCategory(cat) {
   const norm = String(cat||'').toLowerCase()
   return _BR_MANUAL_ONLY_CATEGORIES.some(c => c.toLowerCase() === norm)
@@ -20746,7 +20776,7 @@ function _brIsManualOnlyCategory(cat) {
 // that's already "Other" would be a no-op). Used for BOTH the outgoing
 // request and validating the response, so the AI can never suggest a
 // category outside what it was actually asked to choose from.
-const _BR_AI_CATEGORIES = _BR_CATEGORIES.filter(c => !/^Other /i.test(c) && !_brIsManualOnlyCategory(c))
+const _BR_AI_CATEGORIES = _BR_CATEGORIES.filter(c => !/^Other /i.test(c) && !_brIsManualOnlyCategory(c) && !_brIsLinkOnlyCategory(c))
 // Which direction each category belongs to — an expense category (e.g.
 // Salaries & Wages) offered to the AI for a CREDIT (money in) transaction,
 // or vice versa, is a structurally wrong suggestion no confidence score
@@ -20767,6 +20797,52 @@ const _BR_CATEGORY_TYPE = {
   'Cost of Sales': 'out', 'Marketing & Advertising': 'out', 'Other Expense': 'out',
   'Owner Drawings': 'out', 'Fixed Asset Purchase': 'out',
   'Sales Income': 'in', 'Other Income': 'in', "Owner's Capital Injection": 'in', 'Loan Drawdown': 'in',
+  'Interest Income': 'in', 'Grant / Subsidy': 'in', 'Customer Receipt': 'in',
+  'Entertainment (Client)': 'out', 'Staff Meals & Welfare': 'out', 'Repair & Maintenance': 'out',
+  'Office Supplies': 'out', 'Finance Charges': 'out', 'Commission': 'out', 'Platform & Payment Fees': 'out',
+  'Training': 'out', 'Donation / Zakat': 'out', 'Supplier Payment': 'out', 'Staff Claims': 'out',
+  'Tax Payment (LHDN/SST)': 'out', 'Loan Repayment': 'out',
+  // 'Refund' and 'Deposit' are two-way (no entry) like 'Internal Transfer'.
+}
+// Dropdown groups (B). Order inside a group follows _BR_CATEGORIES.
+const _BR_CATEGORY_GROUP = {
+  'Sales Income':'inc','Other Income':'inc','Interest Income':'inc','Grant / Subsidy':'inc','Customer Receipt':'inc',
+  'Salaries & Wages':'pay','Statutory':'pay','Staff Claims':'pay','Tax Payment (LHDN/SST)':'pay',
+  'Owner Drawings':'bs',"Owner's Capital Injection":'bs','Fixed Asset Purchase':'bs','Loan Drawdown':'bs',
+  'Loan Repayment':'bs','Deposit':'bs','Internal Transfer':'bs'
+}
+// Category options for ONE line: only categories matching the line's
+// direction (two-way ones for both), grouped. The line's current category is
+// always kept as an option even if it doesn't fit (older data stays visible).
+function _brCategoryOptionsHtml(txn) {
+  const isBm = APP.language==='bm'
+  const dir = Number(txn.amount) >= 0 ? 'in' : 'out'
+  const groups = [
+    ['inc', isBm?'Pendapatan':'Income'],
+    ['opx', isBm?'Perbelanjaan Operasi':'Operating Expenses'],
+    ['pay', isBm?'Gaji & Statutori':'Payroll & Statutory'],
+    ['bs', isBm?'Aset / Liabiliti / Ekuiti':'Assets / Liabilities / Equity']
+  ]
+  const fits = c => !_BR_CATEGORY_TYPE[c] || _BR_CATEGORY_TYPE[c] === dir || c === txn.category
+  const opt = c => `<option value="${_aiEscapeHtml(c)}" ${txn.category===c?'selected':''}>${_aiEscapeHtml(_brCatLabel(c))}</option>`
+  let html = ''
+  groups.forEach(([g, label]) => {
+    // Two-way 'Refund' sits with Income for money in, Operating Expenses for money out
+    const grp = c => _BR_CATEGORY_GROUP[c] || ((_BR_CATEGORY_TYPE[c] || dir) === 'in' ? 'inc' : 'opx')
+    const cats = _BR_CATEGORIES.filter(c => grp(c) === g && fits(c))
+    if (cats.length) html += `<optgroup label="${_aiEscapeHtml(label)}">${cats.map(opt).join('')}</optgroup>`
+  })
+  if (txn.category && !_BR_CATEGORIES.includes(txn.category)) html += opt(txn.category)
+  return html
+}
+// Small per-category hint under the dropdown (EN/BM).
+function _brCategoryHintHtml(cat) {
+  const isBm = APP.language==='bm'
+  let t = ''
+  if (cat === 'Entertainment (Client)') t = isBm ? 'Biasanya ~50% boleh ditolak cukai (LHDN). Simpan resit.' : 'Usually ~50% tax deductible (LHDN). Keep receipts.'
+  else if (_brIsLinkOnlyCategory(cat)) t = isBm ? 'Padankan dengan invois/bil sedia ada. Tidak diposkan oleh Post Unmatched.' : 'Match to an existing invoice/bill. Not posted by Post Unmatched.'
+  else if (_brIsManualOnlyCategory(cat)) t = isBm ? 'Kategori kunci kira-kira — tidak diposkan oleh Post Unmatched.' : 'Balance-sheet category — not posted by Post Unmatched.'
+  return t ? `<div class="rc-hint" style="font-size:10px;color:var(--text-3);margin-top:2px;white-space:normal">${t}</div>` : ''
 }
 // The two subsets _recoRefineOther actually sends to the AI, one call per
 // direction — see _BR_CATEGORY_TYPE's own comment. A category with no
@@ -20790,7 +20866,13 @@ const _BR_CATEGORY_LABEL_BM = {
   'Other Income':'Pendapatan Lain', 'Other Expense':'Perbelanjaan Lain',
   'Owner Drawings':'Pengeluaran Pemilik', "Owner's Capital Injection":'Suntikan Modal Pemilik',
   'Fixed Asset Purchase':'Pembelian Aset Tetap', 'Loan Drawdown':'Pengeluaran Pinjaman',
-  'Internal Transfer':'Pindahan Dalaman'
+  'Internal Transfer':'Pindahan Dalaman',
+  'Interest Income':'Pendapatan Faedah', 'Grant / Subsidy':'Geran / Subsidi', 'Customer Receipt':'Terimaan Pelanggan',
+  'Refund':'Bayaran Balik', 'Entertainment (Client)':'Keraian (Pelanggan)', 'Staff Meals & Welfare':'Makan & Kebajikan Staf',
+  'Repair & Maintenance':'Pembaikan & Penyelenggaraan', 'Office Supplies':'Bekalan Pejabat', 'Finance Charges':'Caj Kewangan',
+  'Commission':'Komisen', 'Platform & Payment Fees':'Yuran Platform & Pembayaran', 'Training':'Latihan',
+  'Donation / Zakat':'Derma / Zakat', 'Supplier Payment':'Bayaran Pembekal', 'Staff Claims':'Tuntutan Staf',
+  'Tax Payment (LHDN/SST)':'Bayaran Cukai (LHDN/SST)', 'Loan Repayment':'Bayaran Balik Pinjaman', 'Deposit':'Deposit'
 }
 function _brCatLabel(cat) {
   return (APP.language==='bm' && _BR_CATEGORY_LABEL_BM[cat]) || cat
@@ -20979,7 +21061,22 @@ async function _brResolveGlAccount(category, isIncome) {
   // mapping, this returns null and the line is skipped (skippedNoGl), not
   // silently posted to the wrong account.
   if (category === 'Cost of Sales') return await _getDefaultAccountId('cogs')
+  // Commission falls back to the tenant's Commission Expense mapping first
+  // (same key payroll commission uses), then General Expense.
+  if (category === 'Commission') return (await _getDefaultAccountId('commission_expense')) || await _getDefaultAccountId('general_expense')
+  // Refund reverses the OTHER side: money back IN reverses an expense
+  // (General Expense), money OUT to a customer reverses a sale (Sales Revenue).
+  if (category === 'Refund') isIncome = !isIncome
   return await _getDefaultAccountId(isIncome ? 'sales_revenue' : 'general_expense')
+}
+// Text after "— Use default" in the Category → Account modal, so the user
+// sees which default mapping a category falls back to.
+function _brGlDefaultLabel(cat, isBm) {
+  const key = cat === 'Cost of Sales' ? 'cogs' : cat === 'Commission' ? 'commission_expense'
+    : cat === 'Refund' ? null : (_BR_CATEGORY_TYPE[cat] === 'in' ? 'sales_revenue' : 'general_expense')
+  if (!key) return isBm ? ' (Perbelanjaan Am bila masuk / Hasil Jualan bila keluar)' : ' (General Expense when in / Sales Revenue when out)'
+  const k = DEFAULT_ACCOUNT_MAPPING_KEYS.find(x => x.key === key)
+  return k ? ' (' + (isBm ? k.bm : k.en) + ')' : ''
 }
 function _recoOpenGlMap() {
   document.getElementById('reco-glmap-modal-overlay')?.classList.add('active')
@@ -20999,7 +21096,7 @@ async function _recoRenderGlMap() {
   // actually used by anything, which would mislead an admin into thinking
   // they've configured where those lines post to.
   const usedCats = Array.from(new Set([..._BR_CATEGORIES, ...(_recoTxns||[]).map(t=>t.category).filter(Boolean)]))
-    .filter(c => !_brIsManualOnlyCategory(c))
+    .filter(c => !_brIsManualOnlyCategory(c) && !_brIsLinkOnlyCategory(c))
   if (!accounts.length) {
     body.innerHTML = `<div style="color:var(--text-3);font-size:13px">${isBm?'Tiada akaun dalam Carta Akaun lagi.':'No accounts in Chart of Accounts yet.'}</div>`
     return
@@ -21008,7 +21105,7 @@ async function _recoRenderGlMap() {
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;font-size:13px">${_aiEscapeHtml(_brCatLabel(cat))}</div>
       <select class="form-input" style="max-width:260px;font-size:12px" data-cat="${_aiEscapeHtml(cat)}" onchange="_recoSetGlMap(this.dataset.cat, this.value)">
-        <option value="">${isBm?'— Guna default —':'— Use default —'}</option>
+        <option value="">${isBm?'— Guna default':'— Use default'}${_brGlDefaultLabel(cat, isBm)} —</option>
         ${accounts.map(a=>`<option value="${a.id}" ${map[cat]===a.id?'selected':''}>${_aiEscapeHtml(a.code)} — ${_aiEscapeHtml(a.name_en)}</option>`).join('')}
       </select>
     </div>`).join('')
@@ -21785,6 +21882,64 @@ function _recoParseRytFooterText(lines) {
   return null
 }
 
+// Statement header facts for the balance check (F) and duplicate-import
+// warning (G): account (last 4 digits only — full number never stored),
+// period, and printed opening/closing balances. Text readers only (Maybank,
+// Ryt); anything not printed comes back null and that check is skipped.
+function _recoStatementMeta(bank, lines, rows) {
+  const num = s => parseFloat(String(s).replace(/[,+]/g, ''))
+  const dates = (rows||[]).map(r => r.date).filter(Boolean).sort()
+  const meta = { bank, acct4: null, from: dates[0] || null, to: dates[dates.length-1] || null, opening: null, closing: null }
+  const mon = { JAN:'01', FEB:'02', MAR:'03', APR:'04', MAY:'05', JUN:'06', JUL:'07', AUG:'08', SEP:'09', OCT:'10', NOV:'11', DEC:'12' }
+  const iso = (d, m, y) => `${y}-${mon[String(m).toUpperCase()]}-${String(d).padStart(2,'0')}`
+  if (bank === 'RYT') {
+    const head = lines.slice(0, 40).join(' ')
+    const a = head.match(/Account No\.?[^:]*:\s*([\d ]{6,})/i)
+    if (a) meta.acct4 = a[1].replace(/\D/g, '').slice(-4)
+    const p = head.match(/From (\d{1,2}) ([A-Za-z]{3}) (\d{4}) to (\d{1,2}) ([A-Za-z]{3}) (\d{4})/)
+    if (p) { meta.from = iso(p[1], p[2], p[3]); meta.to = iso(p[4], p[5], p[6]) }
+    const idx = lines.findIndex(l => /^Total \(MYR\)/i.test(l.trim()))
+    for (let j = idx; idx !== -1 && j < Math.min(idx + 3, lines.length); j++) {
+      const n = lines[j].match(/[+-]?[\d,]+\.\d{2}/g) || []
+      if (n.length >= 5) { meta.opening = num(n[0]); meta.closing = num(n[4]); break }
+    }
+  } else if (bank === 'MAYBANK') {
+    const acct = lines.slice(0, 80).map(l => l.trim()).find(l => /^\d{12}$/.test(l))
+    if (acct) meta.acct4 = acct.slice(-4)
+    const bal = (re) => {
+      for (const line of lines) {
+        const m = line.trim().match(re)
+        if (m) { const v = num(m[1]); return m[2] ? -v : v }
+      }
+      return null
+    }
+    meta.opening = bal(/BEGINNING BALANCE\s*:?\s*([\d,]+\.\d{2})\s*(DR|-)?/i)
+    meta.closing = bal(/^ENDING BALANCE\s*:?\s*([\d,]+\.\d{2})\s*(DR|-)?/i)
+    if (meta.closing == null) meta.closing = bal(/LEDGER ENDING BALANCE\s*:?\s*([\d,]+\.\d{2})\s*(DR|-)?/i)
+  }
+  return meta
+}
+// F: opening + IN − OUT must equal the printed closing balance.
+function _recoRenderBalanceCheck(isBm, meta, sumCredit, sumDebit, scanId) {
+  if (!meta || meta.opening == null || meta.closing == null) return
+  const el = document.getElementById('reco-pdf-tally')
+  const expected = Math.round((meta.opening + sumCredit - sumDebit) * 100) / 100
+  const ok = Math.abs(expected - meta.closing) <= RECO_PDF_TALLY_TOLERANCE
+  const c = ok ? 'var(--success)' : 'var(--danger)'
+  const head = ok
+    ? (isBm ? 'Semakan baki lulus — baki awal + masuk − keluar = baki akhir' : 'Balance check passed — opening + IN − OUT = closing')
+    : (isBm ? 'Amaran — baki TIDAK tally (baki awal + masuk − keluar ≠ baki akhir)' : 'Warning — balance does NOT tally (opening + IN − OUT ≠ closing)')
+  const html = `<div${scanId != null ? ` data-reco-pdf-scan="${scanId}"` : ''} class="card reco-bal-check" style="padding:10px 12px;margin-top:8px;border:1px solid ${c};background:color-mix(in srgb,${c} 10%,transparent)">
+      <div style="font-size:12px;font-weight:600;color:${c}"><i class="ti ${ok?'ti-circle-check':'ti-alert-triangle'}"></i> ${head}</div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:12px;padding-top:3px;font-variant-numeric:tabular-nums">
+        <span style="color:var(--text-3)">${formatRM(meta.opening)} + ${formatRM(sumCredit)} − ${formatRM(sumDebit)} = <b style="color:var(--text)">${formatRM(expected)}</b></span>
+        <span style="color:${c}">${isBm?'Baki akhir penyata':'Statement closing'} ${formatRM(meta.closing)}</span>
+      </div>
+    </div>`
+  if (el && document.contains(el)) el.insertAdjacentHTML('beforeend', html)
+  else showToast(head, ok ? 'success' : 'error')
+}
+
 async function _recoPdfUpload(event) {
   const file = event.target.files[0]
   if (!file) return
@@ -21892,6 +22047,10 @@ async function _recoPdfUpload(event) {
           // page) and no per-page failure mode to track; either the
           // parser found rows for the whole document or it didn't.
           _recoRenderPdfTally(isBm, sumDebit, sumCredit, footer?.totalOut ?? null, footer?.totalIn ?? null, false, scanId)
+          const stmtMeta = _recoStatementMeta(bank, textLines, fastRows)
+          _recoRenderBalanceCheck(isBm, stmtMeta, sumCredit, sumDebit, scanId)
+          // Read by reco-tools.js at Import time (duplicate-import warning).
+          window._recoPendingStmtMeta = stmtMeta
           _recoAppendCsvLines(csvLines)
           const doneMsg = t.done(csvLines.length, textNumPages)
           setStatus(`<span style="color:var(--success)"><i class="ti ti-check"></i> ${doneMsg}</span>`)
@@ -23187,6 +23346,10 @@ async function _recoDeleteAllBankReconData() {
     }
     const { error: bslErr } = await sb.from('bank_statement_lines').delete().eq('tenant_id', APP.tenant.id)
     if (bslErr) console.warn('_recoDeleteAllBankReconData bank_statement_lines', bslErr)
+    // Import log (duplicate-import warning) is soft-deleted with it, so a clean
+    // restart doesn't warn about statements that were just wiped. Remembered
+    // category rules (bank_recon_rules) are tenant knowledge and are kept.
+    try { await sb.from('bank_recon_imports').update({ deleted_at: new Date().toISOString() }).eq('tenant_id', APP.tenant.id).is('deleted_at', null) } catch (e) {}
     _recoClearSession()
     showToast(isBm
       ? `Selesai: ${ids.length} jurnal Bank Recon dipadam, sesi & backup dikosongkan.`
@@ -23348,14 +23511,22 @@ function _recoRenderResults() {
       const cand = m && m.candidate
       const state = txn._state
       const catColor = /^Other /i.test(txn.category||'') ? 'var(--warning, #F59E0B)' : 'var(--text-2)'
-      return `<tr>
+      // Quick-filter flags read by reco-sort-filter.js chips:
+      // u=uncategorised o=Other a=AI suggestion pending x=uncertain d=done
+      const _f = []
+      if (!txn.category || txn.categorySource === 'default') _f.push('u')
+      if (/^Other /i.test(txn.category||'')) _f.push('o')
+      if (txn._aiSuggestion && state !== 'confirmed' && txn.status !== 'posted') _f.push('a')
+      if ((m && m.ambiguous && !state) || (txn.categoryConfidence != null && txn.categoryConfidence < 70 && !['manual','default','tenant_rule'].includes(txn.categorySource))) _f.push('x')
+      if (txn.status === 'posted' || state === 'confirmed' || (txn.category && !/^Other /i.test(txn.category) && txn.categorySource !== 'default')) _f.push('d')
+      return `<tr data-i="${i}" data-f="${_f.join('')}">
         <td class="rc-date" style="white-space:nowrap">${formatDate(txn.date)}</td>
         <td class="rc-desc" style="max-width:220px;font-size:12px" onclick="this.classList.toggle('rc-open')">${_aiEscapeHtml(txn.description)}</td>
         <td class="rc-amt" style="text-align:right;font-variant-numeric:tabular-nums;color:${txn.amount<0?'var(--danger)':'var(--success)'}">${formatRM(txn.amount)}</td>
         <td class="rc-cat" style="font-size:11px">
           <select class="form-input" style="font-size:11px;padding:2px 4px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%" ${(state==='confirmed'||txn.status==='posted')?'disabled':''} onchange="_recoSetCategory(${i}, this.value)">
-            ${_BR_CATEGORIES.map(c=>`<option value="${_aiEscapeHtml(c)}" ${txn.category===c?'selected':''}>${_aiEscapeHtml(_brCatLabel(c))}</option>`).join('')}
-          </select>
+            ${_brCategoryOptionsHtml(txn)}
+          </select>${_brCategoryHintHtml(txn.category)}
           ${txn._aiSuggestion ? `<div style="font-size:10px;color:var(--primary);margin-top:2px">→ ${_aiEscapeHtml(_brCatLabel(txn._aiSuggestion.category))} (${txn._aiSuggestion.confidence}%)
             <button onclick="_recoApplySuggestion(${i})" style="border:none;background:none;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:10px;padding:0">${isBm?'Guna':'Apply'}</button></div>` : ''}
         </td>
@@ -23540,7 +23711,13 @@ async function _recoRefineOther() {
   // "amount is positive for money in" is a soft instruction it doesn't
   // reliably follow; only NEVER OFFERING the wrong-direction categories at
   // all is a real guarantee.
-  const incomeOthers = others.filter(({t}) => Number(t.amount) >= 0)
+  // Interest/profit payouts are suggested locally as Interest Income and are
+  // never sent to the AI (it was suggesting Sales Income for them).
+  const _intRe = /interest|faedah|profit payout|hibah/i
+  others.filter(({t}) => Number(t.amount) >= 0 && _intRe.test(t.description||'')).forEach(({t}) => {
+    t._aiSuggestion = { category: 'Interest Income', confidence: 95 }
+  })
+  const incomeOthers = others.filter(({t}) => Number(t.amount) >= 0 && !_intRe.test(t.description||''))
   const expenseOthers = others.filter(({t}) => Number(t.amount) < 0)
   const runBatch = async (batch, categories) => {
     if (!batch.length || !categories.length) return []
@@ -23573,12 +23750,16 @@ async function _recoRefineOther() {
   if (incomeResult.status === 'rejected') console.warn('categorize_bank (income) unavailable', incomeResult.reason)
   if (expenseResult.status === 'rejected') console.warn('categorize_bank (expense) unavailable', expenseResult.reason)
   if (incomeResult.status === 'rejected' && expenseResult.status === 'rejected') {
+    _brSaveStore(_recoTxns)
+    _recoRenderResults()
     showToast(isBm
       ? 'AI Refine tak tersedia buat masa ini (edge function belum sokong categorize_bank).'
       : 'AI Refine unavailable right now (edge function does not support categorize_bank yet).', 'warning')
     return
   }
   if (!suggestions.length) {
+    _brSaveStore(_recoTxns)
+    _recoRenderResults()
     showToast(isBm?'AI tiada cadangan baharu.':'AI has no new suggestions.', 'info')
     return
   }
@@ -23653,7 +23834,7 @@ async function _recoPostUnmatchedInner(isBm) {
   // the "has Match run?" gate below and from `candidates` itself — so
   // tagging a line Owner Drawings/Internal Transfer/etc. doesn't force an
   // unrelated Match/AI run on it.
-  const postable = _recoTxns.filter(t => t.status !== 'posted' && !_brIsManualOnlyCategory(t.category))
+  const postable = _recoTxns.filter(t => t.status !== 'posted' && !_brIsManualOnlyCategory(t.category) && !_brIsLinkOnlyCategory(t.category))
   // _recoRunMatch is the only place that sets _matchChecked=true, right
   // alongside t._match — a line without it has never actually been checked
   // against ERP records, so its eligibility below can't be trusted yet.
@@ -40675,7 +40856,7 @@ if('serviceWorker' in navigator){
 <script src="./do-table-fit.js?v=1"></script>
 <script src="./list-table-fit.js?v=3"></script>
 <script src="./reco-print.js?v=4"></script>
-<script src="./reco-sort-filter.js?v=2"></script>
+<script src="./reco-sort-filter.js?v=3"></script>
 <script src="./jnl-print.js?v=2"></script>
 <script src="./jnl-search.js?v=1"></script>
 <script src="./coa-seed-advanced.js?v=2"></script>
@@ -40707,6 +40888,7 @@ if('serviceWorker' in navigator){
 <script src="./keep-page-scroll.js?v=1"></script>
 <script src="./reco-scan-tally.js?v=3"></script>
 <script src="./reco-delete-confirm.js?v=1"></script>
+<script src="./reco-tools.js?v=1"></script>
 <script src="./onboarding-core.js?v=1"></script>
 <script src="./onboarding-css.js?v=1"></script>
 <script src="./onboarding-data.js?v=1"></script>
