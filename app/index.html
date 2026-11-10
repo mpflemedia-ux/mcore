@@ -1753,7 +1753,35 @@ html[data-skip-intro="1"] #intro-skip {
 <script src="./public-inv-scroll.js?v=5"></script><link rel="stylesheet" href="./print-multipage.css?v=1"><link rel="stylesheet" href="./settings-audit-mobile.css?v=1"><script src="./public-apply-scroll.js?v=1"></script>
 <style id="sd-paper-off">/* SD: the white paper is never shown (cards = only UI, sd-mobile-cards.js / sd-mobile-view.js); #sd-pdoc stays as hidden input layer, its loading/empty/error state + Generate Payslip card stay visible */
 @media screen{#sd-pdoc,#sd-pdoc>#sd-content{display:contents!important}#sd-pdoc>:not(#sd-content),#sd-content>:not(.empty-state):not(.card){display:none!important}}
-@media print{#sd-pdoc{display:none!important}}</style></head>
+@media print{#sd-pdoc{display:none!important}}
+/* Bank Reconciliation lines: stacked cards on phone (<=640px). Same DOM as the desktop table,
+   so every onchange/onclick (category, Apply, confirm/reject) keeps working. !important beats the
+   inline nowrap/max-content/max-height that list-table-fit.js stamps on #reco-result. */
+@media (max-width:640px){
+  #reco-result .reco-card{padding:8px!important;background:transparent;border:0;box-shadow:none}
+  #reco-result .reco-wrap{overflow:visible!important;max-height:none!important}
+  #reco-result table.reco-tbl{display:block;width:100%!important;min-width:0!important;border:0}
+  #reco-result .reco-tbl thead{display:none}
+  #reco-result .reco-tbl tbody{display:flex;flex-direction:column;gap:10px}
+  #reco-result .reco-tbl tr{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);min-width:0}
+  #reco-result .reco-tbl td{display:block;border:0!important;padding:0!important;white-space:normal!important;max-width:100%!important;min-width:0;background:none!important}
+  #reco-result .reco-tbl td.rc-amt{order:1}#reco-result .reco-tbl td.rc-desc{order:2}#reco-result .reco-tbl td.rc-cat{order:3}#reco-result .reco-tbl td.rc-match{order:4}#reco-result .reco-tbl td.rc-conf{order:5}#reco-result .reco-tbl td.rc-act{order:6}
+  #reco-result .reco-tbl td.rc-date{flex:1 1 auto;font-size:12.5px;color:var(--text-2);white-space:nowrap!important}
+  #reco-result .reco-tbl td.rc-amt{flex:0 0 auto;font-weight:700;font-size:15px;white-space:nowrap!important}
+  #reco-result .reco-tbl td.rc-desc{flex:1 1 100%;font-size:13px!important;line-height:1.4;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+  #reco-result .reco-tbl td.rc-desc.rc-open{display:block;-webkit-line-clamp:unset;overflow:visible}
+  #reco-result .reco-tbl td.rc-cat{flex:1 1 100%;font-size:12px!important}
+  #reco-result .reco-tbl td.rc-cat select{width:100%;max-width:100%;font-size:13px!important;padding:6px 8px!important;min-height:36px}
+  #reco-result .reco-tbl td.rc-cat div{font-size:12px!important;margin-top:6px!important;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+  #reco-result .reco-tbl td.rc-cat div button{font-size:12px!important;white-space:nowrap}
+  #reco-result .reco-tbl td.rc-match,#reco-result .reco-tbl td.rc-conf{flex:0 1 auto;font-size:12px!important;color:var(--text-2);border:1px solid var(--border)!important;border-radius:999px;padding:3px 10px!important;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis}
+  #reco-result .reco-tbl td.rc-match::before,#reco-result .reco-tbl td.rc-conf::before{content:attr(data-label) ": ";color:var(--text-3)}
+  #reco-result .reco-tbl td.rc-match{white-space:normal!important;overflow-wrap:anywhere;border-radius:12px}
+  #reco-result .reco-tbl td.rc-match div{display:inline-block;margin-left:6px;white-space:nowrap}
+  #reco-result .reco-tbl td.rc-act{flex:0 0 auto;margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;white-space:nowrap!important}
+  #reco-result .reco-tbl td.rc-act .btn{min-height:34px;min-width:40px}
+}
+</style></head>
 <body>
 <!-- ─── INTRO VIDEO SCREEN ─────────────────────────────────────────────────── -->
 <div id="intro-screen" class="hidden" style="display:none">
@@ -23310,7 +23338,7 @@ function _recoRenderResults() {
     <span><strong>${nConf}</strong> ${isBm?'disahkan':'confirmed'}</span>
     <span style="color:var(--text-3)">${isBm?'Tarikh = tarikh bank (back-dated OK)':'Dates = bank dates (back-dated OK)'}</span>
   </div>
-  <div class="card"><div style="overflow-x:auto"><table>
+  <div class="card reco-card"><div class="reco-wrap" style="overflow-x:auto"><table class="reco-tbl">
     <thead><tr>
       <th>${t.date}</th><th>${t.desc}</th><th style="text-align:right">${t.amount}</th>
       <th>${t.cat}</th><th>${t.match}</th><th>${t.confidence}</th><th>${t.action}</th>
@@ -23321,19 +23349,19 @@ function _recoRenderResults() {
       const state = txn._state
       const catColor = /^Other /i.test(txn.category||'') ? 'var(--warning, #F59E0B)' : 'var(--text-2)'
       return `<tr>
-        <td style="white-space:nowrap">${formatDate(txn.date)}</td>
-        <td style="max-width:220px;font-size:12px">${_aiEscapeHtml(txn.description)}</td>
-        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${txn.amount<0?'var(--danger)':'var(--success)'}">${formatRM(txn.amount)}</td>
-        <td style="font-size:11px">
+        <td class="rc-date" style="white-space:nowrap">${formatDate(txn.date)}</td>
+        <td class="rc-desc" style="max-width:220px;font-size:12px" onclick="this.classList.toggle('rc-open')">${_aiEscapeHtml(txn.description)}</td>
+        <td class="rc-amt" style="text-align:right;font-variant-numeric:tabular-nums;color:${txn.amount<0?'var(--danger)':'var(--success)'}">${formatRM(txn.amount)}</td>
+        <td class="rc-cat" style="font-size:11px">
           <select class="form-input" style="font-size:11px;padding:2px 4px;color:${catColor}" title="${txn.categorySource||''} ${txn.categoryConfidence||''}%" ${(state==='confirmed'||txn.status==='posted')?'disabled':''} onchange="_recoSetCategory(${i}, this.value)">
             ${_BR_CATEGORIES.map(c=>`<option value="${_aiEscapeHtml(c)}" ${txn.category===c?'selected':''}>${_aiEscapeHtml(_brCatLabel(c))}</option>`).join('')}
           </select>
           ${txn._aiSuggestion ? `<div style="font-size:10px;color:var(--primary);margin-top:2px">→ ${_aiEscapeHtml(_brCatLabel(txn._aiSuggestion.category))} (${txn._aiSuggestion.confidence}%)
             <button onclick="_recoApplySuggestion(${i})" style="border:none;background:none;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:10px;padding:0">${isBm?'Guna':'Apply'}</button></div>` : ''}
         </td>
-        <td style="font-size:12px">${cand ? `<span>[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)}</span>${(m.ambiguous && !state) ? `<div style="font-size:10px;color:var(--warning,#F59E0B)" title="${isBm?'Lebih dari satu rekod sepadan amaun+tarikh sama rapat — sila sahkan keterangan sebelum confirm':'More than one record matches this amount+date equally closely — verify the description before confirming'}"><i class="ti ti-alert-triangle"></i> ${isBm?'Tak pasti':'Uncertain'}</div>` : ''}` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
-        <td>${m && m.confidence!=null ? Math.round((m.confidence <= 1 ? m.confidence*100 : m.confidence))+'%' : '-'}</td>
-        <td>${txn.status==='posted'
+        <td class="rc-match" data-label="${t.match}" style="font-size:12px">${cand ? `<span>[${cand.type}] ${_aiEscapeHtml(cand.ref||'')} — ${formatRM(cand.amount)}</span>${(m.ambiguous && !state) ? `<div style="font-size:10px;color:var(--warning,#F59E0B)" title="${isBm?'Lebih dari satu rekod sepadan amaun+tarikh sama rapat — sila sahkan keterangan sebelum confirm':'More than one record matches this amount+date equally closely — verify the description before confirming'}"><i class="ti ti-alert-triangle"></i> ${isBm?'Tak pasti':'Uncertain'}</div>` : ''}` : `<span style="color:var(--text-3)">${t.noMatch}</span>`}</td>
+        <td class="rc-conf" data-label="${t.confidence}">${m && m.confidence!=null ? Math.round((m.confidence <= 1 ? m.confidence*100 : m.confidence))+'%' : '-'}</td>
+        <td class="rc-act">${txn.status==='posted'
           ? `<span style="color:var(--success);font-size:12px;font-weight:600" title="${_aiEscapeHtml(txn.journal_ref||'')}"><i class="ti ti-book"></i> ${isBm?'Diposkan':'Posted'}</span>`
           : state
           ? `<span style="color:${state==='confirmed'?'var(--success)':'var(--text-3)'};font-size:12px;font-weight:600">${state==='confirmed'?t.confirmed:t.rejected}</span>`
