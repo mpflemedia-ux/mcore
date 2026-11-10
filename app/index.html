@@ -21533,6 +21533,11 @@ async function _recoExtractPdfTextLines(file) {
 // live against a real statement" comments.
 function _recoDetectBankFromText(lines) {
   const sample = lines.slice(0, 60).join(' ').toUpperCase().slice(0, 3000)
+  // Checked BEFORE Maybank, on a WHOLE line that starts with Ryt's own
+  // page footer ("YTL Digital Bank Berhad (Registration No. 202201037182")
+  // — a Maybank row always starts with a date, so a Maybank statement that
+  // merely mentions Ryt/YTL in a description can't match this.
+  if (lines.slice(0, 60).some(l => /^YTL Digital Bank Berhad\s*\(Registration No\.?\s*202201037182/i.test(l.trim()))) return 'RYT'
   if (sample.includes('MAYBANK') || sample.includes('MBBEMYKL') || sample.includes('MBBQR') || sample.includes('MAYBANK ISLAMIC')) return 'MAYBANK'
   return 'OTHER'
 }
@@ -21693,6 +21698,65 @@ function _recoParseMaybankFooterText(lines) {
   return { totalIn, totalOut }
 }
 
+// Ryt Bank (YTL Digital Bank Berhad) statement parser. Layout confirmed
+// live on a real 19-page Ryt savings statement (Oct 2026, 98 rows): each
+// row is "D Mon YYYY   <description>  +/-<amount>   <balance>", followed by
+// 1-3 detail lines (Transfer / QR / Card ••xxxx / "Ref. ID: ..."). The
+// sign on the amount is the direction (+ in, - out). Before this parser,
+// Ryt fell through to the AI vision path, which misread cents on some rows
+// (OUT came out RM0.20 high) and also dropped digits from Ref. IDs.
+function _recoParseRytText(lines) {
+  const mon = { Jan:'01', Feb:'02', Mar:'03', Apr:'04', May:'05', Jun:'06', Jul:'07', Aug:'08', Sep:'09', Oct:'10', Nov:'11', Dec:'12' }
+  const rowRe = /^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})\s+(.+?)\s+([+-])([\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})$/
+  const dateOnlyRe = /^\d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}\s/
+  // Ends the current row's detail lines: page footer/header, closing block.
+  const stopRe = /^(Page\s+\d+\s+of\s+\d+|YTL Digital Bank|\(dahulu|Closing balance|END OF STATEMENT|Notes \/)/i
+  const out = []
+  let cur = null
+  lines.forEach(line => {
+    const l = line.trim()
+    if (!l) return
+    const m = l.match(rowRe)
+    if (m) {
+      const amount = parseFloat(m[6].replace(/,/g, ''))
+      cur = { date: `${m[3]}-${mon[m[2]]}-${String(m[1]).padStart(2, '0')}`, desc: m[4], sign: m[5], amount }
+      out.push(cur)
+      return
+    }
+    // A date row without a signed amount is the "Opening balance" line —
+    // not a transaction, and nothing after it belongs to the previous row.
+    if (dateOnlyRe.test(l) || stopRe.test(l)) { cur = null; return }
+    if (cur) cur.desc += ' ' + l
+  })
+  return out.filter(t => t.amount > 0).map(t => ({
+    date: t.date,
+    description: t.desc.replace(/\s+/g, ' ').trim(),
+    debit: t.sign === '-' ? t.amount : null,
+    credit: t.sign === '+' ? t.amount : null,
+  }))
+}
+
+// Ryt's Account Summary row: "Total (MYR)" then "opening  interest
+// outgoing  incoming  closing". Ryt prints interest in its OWN column,
+// NOT inside "Total incoming", but the daily "interest payout" rows are
+// real money-in rows in the transaction list. So the IN figure to tally
+// against is incoming + interest (Oct 2026: 1,336.21 + 0.14 = 1,336.35).
+function _recoParseRytFooterText(lines) {
+  const idx = lines.findIndex(l => /^Total \(MYR\)/i.test(l.trim()))
+  if (idx === -1) return null
+  for (let j = idx; j < Math.min(idx + 3, lines.length); j++) {
+    const nums = (lines[j].match(/[+-]?[\d,]+\.\d{2}/g) || []).map(s => parseFloat(s.replace(/,/g, '')))
+    if (nums.length >= 5) {
+      const [, interest, outgoing, incoming] = nums
+      return {
+        totalIn: Math.round((Math.abs(incoming) + Math.abs(interest)) * 100) / 100,
+        totalOut: Math.abs(outgoing),
+      }
+    }
+  }
+  return null
+}
+
 async function _recoPdfUpload(event) {
   const file = event.target.files[0]
   if (!file) return
@@ -21788,13 +21852,13 @@ async function _recoPdfUpload(event) {
     try {
       const { lines: textLines, numPages: textNumPages } = await _recoExtractPdfTextLines(file)
       const bank = _recoDetectBankFromText(textLines)
-      if (bank === 'MAYBANK') {
-        const fastRows = _recoParseMaybankText(textLines)
+      if (bank === 'MAYBANK' || bank === 'RYT') {
+        const fastRows = bank === 'RYT' ? _recoParseRytText(textLines) : _recoParseMaybankText(textLines)
         if (fastRows.length) {
           const resolved = _recoBankRowsToLines(fastRows)
           const csvLines = resolved.map(x => x.line)
           const { sumDebit, sumCredit } = _recoSumResolvedRows(resolved)
-          const footer = _recoParseMaybankFooterText(textLines)
+          const footer = bank === 'RYT' ? _recoParseRytFooterText(textLines) : _recoParseMaybankFooterText(textLines)
           // sumIncomplete: false — unlike the vision path, there's no
           // page cap here (text extraction is light enough to run every
           // page) and no per-page failure mode to track; either the
