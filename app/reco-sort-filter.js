@@ -1,5 +1,5 @@
 (function () {
-  window._recoView = window._recoView || { q: '', cat: '', sort: 'date', dir: 'asc' };
+  window._recoView = window._recoView || { q: '', cat: '', sort: 'date', dir: 'asc', chip: '' };
 
   function table() {
     return document.querySelector('#reco-result table');
@@ -59,6 +59,8 @@
     rows.forEach(function (r) {
       var ok = true;
       if (v.cat && r.cat !== v.cat) ok = false;
+      /* quick-filter chip: flags written by _recoRenderResults (tr data-f) */
+      if (ok && v.chip && String(r.tr.getAttribute('data-f') || '').indexOf(v.chip) === -1) ok = false;
       if (ok && q) {
         var blob = [r.date, r.desc, r.amount, r.cat, r.match, r.conf].join(' ').toLowerCase();
         ok = blob.indexOf(q) !== -1;
@@ -71,6 +73,10 @@
     });
     var hint = document.getElementById('reco-view-count');
     if (hint) hint.textContent = shown + ' / ' + rows.length;
+    var done = rows.filter(function (r) { return String(r.tr.getAttribute('data-f') || '').indexOf('d') !== -1; }).length;
+    var prog = document.getElementById('reco-done-count');
+    var isBm = typeof APP !== 'undefined' && APP.language === 'bm';
+    if (prog) prog.textContent = done + '/' + rows.length + (isBm ? ' siap' : ' done');
   }
   function toolbarHtml() {
     var isBm = typeof APP !== 'undefined' && APP.language === 'bm';
@@ -98,7 +104,24 @@
         opt('asc', isBm ? 'Menaik' : 'Ascending', v.dir) +
         opt('desc', isBm ? 'Menurun' : 'Descending', v.dir) +
       '</select>' +
-      '<span id="reco-view-count" style="font-size:12px;color:var(--text-3)"></span></div>';
+      '<span id="reco-view-count" style="font-size:12px;color:var(--text-3)"></span></div>' +
+      chipsHtml(isBm, v);
+  }
+  function chipsHtml(isBm, v) {
+    var chips = [
+      ['', isBm ? 'Semua' : 'All'],
+      ['u', isBm ? 'Belum berkategori' : 'Uncategorised'],
+      ['o', isBm ? 'Lain-lain' : 'Other'],
+      ['a', isBm ? 'Cadangan AI' : 'AI suggested'],
+      ['x', isBm ? 'Tak pasti' : 'Uncertain']
+    ];
+    return '<div id="reco-chip-bar" class="no-print" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 0 10px">' +
+      chips.map(function (c) {
+        var on = (v.chip || '') === c[0];
+        return '<button type="button" class="btn btn-sm ' + (on ? 'btn-primary' : 'btn-outline') + '" data-chip="' + c[0] +
+          '" style="white-space:nowrap;border-radius:999px">' + c[1] + '</button>';
+      }).join('') +
+      '<span id="reco-done-count" style="margin-left:auto;font-size:12px;font-weight:600;color:var(--text-2);white-space:nowrap"></span></div>';
   }
   function bind() {
     function read() {
@@ -116,6 +139,9 @@
     }
     var q = document.getElementById('reco-q');
     if (q) q.oninput = function () { clearTimeout(window._recoQTimer); window._recoQTimer = setTimeout(read, 200); };
+    [].slice.call(document.querySelectorAll('#reco-chip-bar [data-chip]')).forEach(function (b) {
+      b.onclick = function () { window._recoView.chip = b.getAttribute('data-chip') || ''; inject(); };
+    });
     ['reco-cat', 'reco-sort', 'reco-dir'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.onchange = read;
@@ -140,6 +166,8 @@
     if (!host) return;
     var old = document.getElementById('reco-view-bar');
     if (old) old.remove();
+    var oldChips = document.getElementById('reco-chip-bar');
+    if (oldChips) oldChips.remove();
     applyDom();
     host.insertAdjacentHTML('afterbegin', toolbarHtml());
     bind();
