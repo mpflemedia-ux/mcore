@@ -10975,6 +10975,7 @@ async function _plannerSave() {
   }
   // Default due for todo if only remind set
   if (!payload.starts_at && !payload.due_at && payload.remind_at) payload.due_at = payload.remind_at
+  Object.assign(payload, (typeof window._plannerPayloadExtra === 'function' && window._plannerPayloadExtra()) || {}) // mywork.js: Repeat / Until
   try {
     let error
     if (id) {
@@ -11004,7 +11005,10 @@ async function _plannerComplete(id) {
       if (document.getElementById('planner-list')) renderPlanner()
       else if (typeof _dbLoadPlanner === 'function') _dbLoadPlanner()
     } catch (e2) {}
-  } catch (e) { showToast(String(e.message || e), 'error') }
+  } catch (e) {
+    const m = String(e.message || e)
+    showToast(/mw_not_assignee/.test(m) ? (isBm ? 'Hanya assignee atau PIC boleh tanda siap' : 'Only the assignee or PIC can mark this done') : m, 'error')
+  }
 }
 
 async function _plannerDelete(id) {
@@ -40730,7 +40734,7 @@ if('serviceWorker' in navigator){
 <script src="./pv-preview-scroll.js?v=4"></script>
 <script src="./pdoc-preview-light.js?v=1"></script>
 <script src="./pv-sig-boxes.js?v=1"></script>
-<script src="./projects.js?v=15"></script>
+<script src="./projects.js?v=16"></script>
 <script src="./pj-wa-css.js?v=2"></script>
 <script src="./pj-wa-core.js?v=2"></script>
 <script src="./pj-wa-pick.js?v=1"></script>
@@ -40744,7 +40748,7 @@ if('serviceWorker' in navigator){
 <script src="./pj-multi-core.js?v=2"></script>
 <script src="./pj-multi-ui.js?v=2"></script>
 <script src="./pj-multi-daily.js?v=1"></script>
-<script src="./pj-multi-remind.js?v=1"></script>
+<script src="./pj-multi-remind.js?v=2"></script>
 <script src="./pj-multi2-css.js?v=1"></script>
 <script src="./pj-multi2-core.js?v=1"></script>
 <script src="./pj-multi2-detail.js?v=2"></script>
@@ -40765,6 +40769,8 @@ if('serviceWorker' in navigator){
 <script src="./pj-checklist.js?v=4"></script>
 <script src="./pj-task-extras.js?v=1"></script>
 <script src="./pj-digest.js?v=1"></script>
+<script src="./mywork.js?v=1"></script>
+<script src="./pj-close-review.js?v=1"></script>
 <script src="./sales-plan.js?v=1"></script>
 <script src="./sales-plan-core.js?v=1"></script>
 <script src="./sales-plan-list.js?v=1"></script>
