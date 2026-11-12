@@ -1,7 +1,8 @@
 /* M-Core Projects phase 1 - reminders + Planner.
    Reminders: there is no server cron in M-Core, so this runs in the browser of any assignee who has the app open (on load + every 5 min).
    The first client claims the reminder by stamping project_tasks.remind_sent_for (conditional update = dedupe), then writes one bell row per assignee.
-   Planner: timed tasks are shown on each assignee's calendar (read-only chips that open the task). Hidden until pj_multi_01.sql (PJM.ok). */
+   Planner: timed tasks are shown on each assignee's calendar (read-only chips that open the task). Hidden until pj_multi_01.sql (PJM.ok).
+   Once the My Work SQL has run (MW.on) the chips stop: the DB mirrors every task into one Planner row per assignee instead. */
 (function () {
   var M = window.PJM; if (!M || M._rem) return; M._rem = 1;
   function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -87,6 +88,7 @@
     return true;
   }
   async function addRows() {
+    if (window.MW && MW.on) return false; // mywork.js on: project tasks are real Planner rows per assignee (DB trigger) - no extra read-only chips
     var p = String(window._plannerCalYm || '').split('-'); if (p.length < 2) return false;
     var y = +p[0], m = +p[1], from = ymd(new Date(y, m - 1, 1)), to = ymd(new Date(y, m, 0)), f = window._plannerFilter || {};
     if (f.type && f.type !== 'todo') return false;
