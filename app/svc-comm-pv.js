@@ -98,6 +98,10 @@
     var ids = mons.map(function (x) { return x.employee_id; });
     var emps = {}; if (ids.length) { var re = await sb.from('employees').select('id,name').eq('tenant_id', t).in('id', ids); (re.data || []).forEach(function (x) { emps[String(x.id)] = x.name; }); }
     var go = mons.filter(function (x) { var s = cfg[String(x.employee_id)]; return x.status === 'approved' && num(x.commission_total) > 0 && ((s && s.pay_via_pv) || pvBy[String(x.id)]); });
+    // mixed schemes: only staff on the all-services (commission-only) scheme go into this PV run + PVD
+    var isAll = function (x) { var s = cfg[String(x.employee_id)]; return !!(s && s.svc_all); };
+    var otherScheme = [];
+    if (mons.some(isAll)) { otherScheme = mons.filter(function (x) { return !isAll(x); }); go = go.filter(isAll); mons = mons.filter(isAll); }
     var notApproved = mons.filter(function (x) { return x.status !== 'approved'; }).length;
     var viaPayroll = mons.filter(function (x) { var s = cfg[String(x.employee_id)]; return x.status === 'approved' && !(s && s.pay_via_pv) && !pvBy[String(x.id)]; }).length;
     if (!go.length) { u.toast(L('No approved month to pay via PV for ', 'Tiada bulan diluluskan untuk dibayar via PV bagi ') + u.mlabel(m, y) + (notApproved ? L(' (' + notApproved + ' not approved yet)', ' (' + notApproved + ' belum diluluskan)') : ''), 'error'); return; }
@@ -105,6 +109,7 @@
     var msg = L('Create a PV for ' + go.length + ' staff (' + rmT(tot) + ' commission) and one PVD for ' + u.mlabel(m, y) + '?', 'Buat PV untuk ' + go.length + ' staff (komisen ' + rmT(tot) + ') dan satu PVD bagi ' + u.mlabel(m, y) + '?');
     if (notApproved) msg += '\n' + L(notApproved + ' not approved yet — skipped.', notApproved + ' belum diluluskan — dilangkau.');
     if (viaPayroll) msg += '\n' + L(viaPayroll + ' paid through payroll — skipped.', viaPayroll + ' dibayar melalui payroll — dilangkau.');
+    if (otherScheme.length) { var on = otherScheme.map(function (x) { return emps[String(x.employee_id)] || ''; }).filter(Boolean).join(', '); msg += '\n' + L('Other scheme, not in this PVD: ', 'Skim lain, tiada dalam PVD ini: ') + on; }
     if (!confirm(msg)) return;
     var by = function (rows) { var o = {}; (rows || []).forEach(function (x) { (o[String(x.employee_id)] = o[String(x.employee_id)] || []).push(x); }); return o; };
     var lg = by(r0[2].data), it = by(r0[3].data), pv = {}; (r0[4].data || []).forEach(function (x) { pv[String(x.employee_id)] = x; });
@@ -116,7 +121,10 @@
       var r = await sb.rpc('svc_create_pv', args);
       if (r.error) errs.push((emps[e] || e.slice(0, 8)) + ': ' + u.errMsg(r.error)); else made++;
     }
-    var rb = await sb.rpc('svc_create_pvd', { p_month: m, p_year: y, p_title: null, p_bm: u.bm() });
+    var pa = { p_month: m, p_year: y, p_title: null, p_bm: u.bm() };
+    if (otherScheme.length) pa.p_emp_ids = go.map(function (x) { return x.employee_id; });
+    var rb = await sb.rpc('svc_create_pvd', pa);
+    if (rb.error && pa.p_emp_ids && (rb.error.code === 'PGRST202' || /function|schema cache/i.test(rb.error.message || ''))) { u.toast(L('Run the latest service-commission SQL in Supabase first.', 'Jalankan SQL komisen servis terkini di Supabase dahulu.'), 'error'); await u.refresh(); return; }
     try { S()._pay.clear(); } catch (e2) {}
     if (rb.error) { u.toast(u.errMsg(rb.error), 'error'); await u.refresh(); return; }
     var b = rb.data || {};
