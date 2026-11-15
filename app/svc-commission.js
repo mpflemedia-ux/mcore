@@ -11,10 +11,15 @@
    - Payslip: the commission line is split into Komisen servis / Komisen produk / Bonus when an approved month exists.
    - Signatures + WhatsApp (svc_commission_02.sql, same concept as SD): Prepared by + Approved by (free-text names like SD, svc_commission_03.sql), draw pad in app or
      public-svc.html?svc_sign=<token> via the shared WAD sheet; signed names / dates / PNGs on the A4 statement + PDF (dk-doc v5).
+   v4 (20261115200000_svc_commission_all_services_pv_suite.sql): scheme option svc_all (10% of ALL services, no lead/cap),
+     itemised products (svc_product_logs → product sales = sum), per-tenant code list (svc_price_codes; code autofills name + price,
+     rows without a code = "needs review"), DATE/PRODUK/RM/SERVICE/RM sheet import without AI, commission-only = no basic,
+     closed month (PV paid → locked; Owner reopens with a reason). PV for all staff / PVD / PV description / receipt / source file
+     live in app/svc-comm-pv.js (window.SVCPV) and plug in through S.ext.
    Soft-fails before supabase/svc_commission_01.sql (and _02 for signatures) is run. EN/BM, existing tokens only. */
 (function () {
   if (window.SVC) return;
-  var S = window.SVC = { v: 3 };
+  var S = window.SVC = { v: 4, ext: {} };
   function bm() { try { return APP.language === 'bm'; } catch (e) { return false; } }
   function L(en, b) { return bm() ? b : en; }
   function tid() { try { return APP.tenant.id; } catch (e) { return null; } }
@@ -38,7 +43,7 @@
   function weekOf(r) { var w = num(r.week_no); if (w >= 1) return w; var d = num(String(r.log_date || '').slice(8, 10)) || 1; return Math.min(5, Math.ceil(d / 7)); }
 
   /* ---------- calc (twin of public.svc__calc; cents-exact) ---------- */
-  var DEF = { svc_rate_pct: 5, svc_cap: 10, eligible_status: 'NM', eligible_leads: ['TT', 'ADS'], prod_rate_pct: 5, bonus_amount: 100 };
+  var DEF = { svc_rate_pct: 5, svc_cap: 10, eligible_status: 'NM', eligible_leads: ['TT', 'ADS'], prod_rate_pct: 5, bonus_amount: 100, svc_all: false };
   function rates(cfg) {
     cfg = cfg || {}; var r = {};
     Object.keys(DEF).forEach(function (k) { r[k] = cfg[k] === undefined ? DEF[k] : cfg[k]; });
@@ -46,11 +51,25 @@
     r.svc_cap = (r.svc_cap === null || r.svc_cap === '') ? null : num(r.svc_cap);
     r.eligible_status = String(r.eligible_status || 'NM').toUpperCase();
     r.eligible_leads = (Array.isArray(r.eligible_leads) ? r.eligible_leads : String(r.eligible_leads || '').split(/[,\s]+/)).map(function (x) { return String(x).trim().toUpperCase(); }).filter(Boolean);
+    r.svc_all = r.svc_all === true || r.svc_all === 'true';
     return r;
   }
   function cents(x) { return Math.round(Number((x).toFixed(6))); }
+  // code list (svc_price_codes) per tenant: { service: { HC: {code,name,default_price} }, product: {...} }
+  var CODES = { service: {}, product: {}, t: null };
+  S.codes = CODES;
+  function codeOf(kind, v) { var k = String(v || '').trim().toUpperCase(); return k && CODES[kind] && CODES[kind][k] ? CODES[kind][k] : null; }
+  S.codeOf = codeOf;
+  // all-services scheme: a log without a known code is "needs review" (still paid — never blocked)
+  function needsReview(row, r) { return !!(r.svc_all && !row.code && !codeOf('service', row.service)); }
+  function itemReview(it) { return !it.code && !String(it.name || '').trim() && !codeOf('product', it.name); }
+  S.needsReview = needsReview; S.itemReview = itemReview;
   function rowCalc(row, r) {
     var price = row.price === null || row.price === undefined || row.price === '' ? null : num(row.price);
+    if (r.svc_all) {
+      var okA = price !== null && price > 0;
+      return { ok: okA, cents: okA ? cents(price * r.svc_rate_pct) : 0, flag: price === null ? 'noprice' : (price === 0 ? 'zero' : null), review: needsReview(row, r) };
+    }
     var st = row.client_status ? String(row.client_status).toUpperCase() : null;
     var lead = row.lead_source ? String(row.lead_source).toUpperCase() : null;
     var flag = null;
@@ -61,18 +80,21 @@
     if (ok) { c = cents(price * r.svc_rate_pct); if (r.svc_cap !== null) c = Math.min(c, cents(r.svc_cap * 100)); }
     return { ok: ok, cents: c, flag: flag };
   }
+  // month.items = product items (svc_product_logs): when present, product sales = their sum (same rule as svc__calc)
   S.calc = function (rows, cfg, month) {
     var r = rates(cfg); month = month || {};
-    var heads = 0, svcC = 0, flags = 0;
-    (rows || []).forEach(function (x) { var c = rowCalc(x, r); if (c.ok) { heads++; svcC += c.cents; } if (c.flag) flags++; });
-    var sales = num(month.product_sales), prodC = cents(sales * r.prod_rate_pct), bonC = month.bonus_on ? cents(r.bonus_amount * 100) : 0;
-    return { rows: (rows || []).length, heads: heads, svc_commission: svcC / 100, flags: flags, product_sales: sales, prod_commission: prodC / 100,
+    var heads = 0, svcC = 0, flags = 0, review = 0, items = Array.isArray(month.items) ? month.items : [];
+    (rows || []).forEach(function (x) { var c = rowCalc(x, r); if (c.ok) { heads++; svcC += c.cents; } if (c.flag) flags++; if (c.review) review++; });
+    var itemC = 0; items.forEach(function (it) { itemC += Math.round(num(it.amount) * 100); if (itemReview(it)) review++; });
+    var sales = items.length ? itemC / 100 : num(month.product_sales), prodC = cents(sales * r.prod_rate_pct), bonC = month.bonus_on ? cents(r.bonus_amount * 100) : 0;
+    return { rows: (rows || []).length, heads: heads, svc_commission: svcC / 100, flags: flags, review: review, product_items: items.length, product_sales: sales, prod_commission: prodC / 100,
       bonus: bonC / 100, commission_total: (svcC + prodC + bonC) / 100, rates: r };
   };
   S.rowCalc = function (row, cfg) { return rowCalc(row, rates(cfg)); };
   function flagText(f) {
     return { noprice: L('No price — no commission', 'Tiada harga — tiada komisen'), zero: L('Price RM0', 'Harga RM0'),
-      nostatus: L('No client status (M / NM)', 'Tiada status pelanggan (M / NM)'), nolead: L('NM but no TT / ADS lead', 'NM tapi tiada lead TT / ADS') }[f] || f;
+      nostatus: L('No client status (M / NM)', 'Tiada status pelanggan (M / NM)'), nolead: L('NM but no TT / ADS lead', 'NM tapi tiada lead TT / ADS'),
+      nocode: L('Needs review — no code', 'Perlu semak — tiada kod'), noname: L('Needs review — no product name', 'Perlu semak — tiada nama produk') }[f] || f;
   }
 
   /* ---------- styles (tokens only) ---------- */
@@ -112,7 +134,20 @@
   }
 
   /* ---------- data ---------- */
-  var ST = { emp: null, m: null, y: null, emps: [], cfg: null, cfgRow: null, logs: [], mon: null, basic: null, hr: false, self: null, ready: true };
+  var ST = { emp: null, m: null, y: null, emps: [], cfg: null, cfgRow: null, logs: [], items: [], prev: null, v4: true, mon: null, basic: null, hr: false, self: null, ready: true };
+  S._st = ST;
+  function prevMY(m, y) { return m === 1 ? [12, y - 1] : [m - 1, y]; }
+  function isOwner() { try { var r = String((APP.user && APP.user.role) || '').toLowerCase(); return r === 'owner' || (typeof isPlatformAdmin === 'function' && isPlatformAdmin()); } catch (e) { return false; } }
+  async function loadCodes() {
+    var t = tid(); if (CODES.t === t) return;
+    var r = await sb.from('svc_price_codes').select('id,kind,code,name,default_price').eq('tenant_id', t).is('deleted_at', null).order('code');
+    CODES.service = {}; CODES.product = {}; CODES.list = [];
+    if (r.error) { if (!missing(r.error)) console.warn('[svc] codes', r.error); CODES.t = t; return; }
+    CODES.list = r.data || [];
+    CODES.list.forEach(function (x) { (CODES[x.kind] || (CODES[x.kind] = {}))[String(x.code).toUpperCase()] = x; });
+    CODES.t = t;
+  }
+  S.loadCodes = function (force) { if (force) CODES.t = null; return loadCodes(); };
   function monthRange(m, y) { var nm = m === 12 ? 1 : m + 1, ny = m === 12 ? y + 1 : y; return [iso(y, m, 1), iso(ny, nm, 1)]; }
   async function load() {
     var t = tid(), e = ST.emp, r = monthRange(ST.m, ST.y);
@@ -121,21 +156,41 @@
       .is('deleted_at', null).gte('log_date', r[0]).lt('log_date', r[1]).order('log_date', { ascending: true }).order('created_at', { ascending: true });
     var q3 = sb.from('svc_comm_months').select('*').eq('tenant_id', t).eq('employee_id', e).eq('month', ST.m).eq('year', ST.y).is('deleted_at', null).maybeSingle();
     var q4 = sb.from('employees').select('id,name,position,basic_salary,phone').eq('tenant_id', t).eq('id', e).maybeSingle();
-    var res = await Promise.all([q1, q2, q3, q4]);
+    var pmy = prevMY(ST.m, ST.y);
+    var q5 = sb.from('svc_product_logs').select('id,log_date,code,name,qty,amount,notes,source,created_at').eq('tenant_id', t).eq('employee_id', e)
+      .is('deleted_at', null).gte('log_date', r[0]).lt('log_date', r[1]).order('log_date', { ascending: true }).order('created_at', { ascending: true });
+    var q6 = sb.from('svc_comm_months').select('id,month,year,status,svc_commission,prod_commission,commission_total').eq('tenant_id', t).eq('employee_id', e)
+      .eq('month', pmy[0]).eq('year', pmy[1]).is('deleted_at', null).maybeSingle();
+    var res = await Promise.all([q1, q2, q3, q4, q5, q6, loadCodes().catch(function () {})]);
     for (var i = 0; i < 3; i++) if (res[i].error) { if (missing(res[i].error)) { ST.ready = false; return; } throw res[i].error; }
     ST.ready = true; ST.cfgRow = res[0].data || null; ST.cfg = rates(ST.cfgRow || {}); ST.logs = res[1].data || []; ST.mon = res[2].data || null;
+    ST.v4 = !res[4].error; ST.items = res[4].error ? [] : (res[4].data || []); ST.prev = res[5].error ? null : (res[5].data || null);
     var em = res[3].data; ST.basic = em && em.basic_salary != null ? num(em.basic_salary) : null; ST.empRow = em || ST.empRow || null;
+    if (ST.cfgRow && ST.cfgRow.pay_basis === 'commission_only') ST.basic = null; // commission only: no basic on slip / PV
     ST.pv = null;
     try {
       if (ST.mon && ST.mon.id) {
-        var pr = await sb.from('payment_vouchers').select('id,ref_no,amount,status').eq('tenant_id', t).eq('source', 'svc').eq('source_ref', ST.mon.id).is('deleted_at', null).neq('status', 'void').maybeSingle();
+        var pr = await sb.from('payment_vouchers').select('id,ref_no,amount,status,description').eq('tenant_id', t).eq('source', 'svc').eq('source_ref', ST.mon.id).is('deleted_at', null).neq('status', 'void').maybeSingle();
         if (pr.error) { if (!missing(pr.error)) console.warn('[svc] pv', pr.error); }
         else ST.pv = pr.data || null;
       }
     } catch (e) { console.warn('[svc] pv', e); }
     try { await loadSigs(); } catch (e) { console.warn('[svc] signatures', e); }
+    if (S.ext.load) { try { await S.ext.load(ST); } catch (e) { console.warn('[svc] ext', e); } }
   }
   function locked() { return !!(ST.mon && ST.mon.status === 'approved'); }
+  function closed() { return !!(ST.mon && ST.mon.closed_at); }
+  S.closed = closed;
+  function monArg() { var mon = ST.mon || {}; return { product_sales: mon.product_sales, bonus_on: mon.bonus_on, items: ST.items }; }
+  S.monArg = monArg;
+  // G) comparison with last month: "Sep 2026 RM900.00 · +11.1%"
+  function compare(cur, prev, pm, py, lang) {
+    if (!prev || prev.commission_total == null) return '';
+    var p = num(prev.commission_total), c = num(cur), en = lang ? lang !== 'bm' : !bm();
+    var lbl = (en ? MEN : MBM)[pm - 1] + ' ' + py, pct = p > 0 ? ((c - p) / p) * 100 : null;
+    return lbl + ' ' + rm(p) + (pct === null ? '' : ' · ' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%');
+  }
+  S.compare = function (cur, lang) { var pmy = prevMY(ST.m, ST.y); return compare(cur, ST.prev, pmy[0], pmy[1], lang); };
   function canEditLogs() { return !locked() && (ST.hr || (ST.self && String(ST.self.id) === String(ST.emp))); }
 
   /* ---------- page ---------- */
@@ -186,11 +241,12 @@
   }
   function empName() { var e = ST.emps.filter(function (x) { return String(x.id) === String(ST.emp); })[0]; return (e && e.name) || (ST.empRow && ST.empRow.name) || ''; }
   function schemeText(r) {
+    if (r.svc_all) return L(r.svc_rate_pct + '% of all services, no cap', r.svc_rate_pct + '% semua servis, tiada had');
     return L(r.svc_rate_pct + '% per head' + (r.svc_cap !== null ? ', max ' + rm(r.svc_cap) + '/head' : ''), r.svc_rate_pct + '% sekepala' + (r.svc_cap !== null ? ', maks ' + rm(r.svc_cap) + '/kepala' : ''));
   }
   function paint() {
     var W = $('svc-wrap'); if (!W) return;
-    var r = ST.cfg, mon = ST.mon || {}, c = S.calc(ST.logs, ST.cfgRow || {}, { product_sales: mon.product_sales, bonus_on: mon.bonus_on });
+    var r = ST.cfg, mon = ST.mon || {}, c = S.calc(ST.logs, ST.cfgRow || {}, monArg());
     S.last = c; var lk = locked(), edit = canEditLogs(), st = mon.status || 'draft';
     var h = '<div class="svc-bar">';
     if (ST.hr) h += '<select class="form-input" id="svc-emp" aria-label="' + esc(L('Employee', 'Pekerja')) + '">' + ST.emps.map(function (e) {
@@ -200,13 +256,14 @@
     if (ST.cfgRow && ST.cfgRow.enabled === false) h += '<div class="svc-card"><div class="svc-body svc-flag">' + esc(L('Service commission is switched off for this employee.', 'Komisen servis dimatikan untuk pekerja ini.')) + '</div></div>';
     if (!ST.cfgRow && ST.hr) h += '<div class="svc-card"><div class="svc-body svc-hint" style="margin:0">' + esc(L('No scheme saved for this employee yet — default rates shown. Save the scheme below.', 'Tiada skim disimpan untuk pekerja ini — kadar lalai ditunjukkan. Simpan skim di bawah.')) + '</div></div>';
     h += '<div class="svc-stats">' +
-      stat(L('NM heads', 'Kepala NM'), String(c.heads), L(c.rows + ' logs', c.rows + ' log')) +
+      stat(r.svc_all ? L('Heads', 'Kepala') : L('NM heads', 'Kepala NM'), String(c.heads), L(c.rows + ' logs', c.rows + ' log')) +
       stat(L('Service comm.', 'Komisen servis'), rm(c.svc_commission), schemeText(r)) +
       stat(L('Product comm.', 'Komisen produk'), rm(c.prod_commission), r.prod_rate_pct + '% × ' + rm(c.product_sales)) +
       stat(L('KPI bonus', 'Bonus KPI'), rm(c.bonus), mon.bonus_on ? L('On', 'Aktif') : L('Off', 'Tidak aktif')) +
-      stat(L('Total commission', 'Jumlah komisen'), rm(c.commission_total), c.flags ? L(c.flags + ' flagged', c.flags + ' ditanda') : L('No flags', 'Tiada tanda'), 'g') + '</div>';
+      stat(L('Total commission', 'Jumlah komisen'), rm(c.commission_total), c.review ? L(c.review + ' need review', c.review + ' perlu semak') : (c.flags ? L(c.flags + ' flagged', c.flags + ' ditanda') : L('No flags', 'Tiada tanda')), 'g') + '</div>';
     h += slipCard(c);
     h += actionCard(c, st, lk);
+    if (S.ext.card) { try { h += S.ext.card(ST, c) || ''; } catch (e) { console.warn('[svc] ext card', e); } }
     h += sigCard();
     if (edit) h += '<div class="svc-bar"><button type="button" class="btn btn-primary btn-sm" id="svc-add"><i class="ti ti-plus"></i> ' + esc(L('Add log', 'Tambah log')) + '</button>' +
       '<button type="button" class="btn btn-outline btn-sm" id="svc-imp"><i class="ti ti-clipboard-text"></i> ' + esc(L('Paste CSV', 'Tampal CSV')) + '</button>' +
@@ -214,22 +271,24 @@
     // statement row: PDF (A4 statement) + WhatsApp, equal width (the separate Statement/print button was removed — PDF covers it)
     h += '<div class="svc-bar svc-docbar"><button type="button" class="btn btn-outline btn-sm" id="svc-pdf"><i class="ti ti-file-download"></i> ' + esc(L('PDF statement', 'PDF penyata')) + '</button>' +
       (ST.hr && SG.ready ? '<button type="button" class="btn btn-outline btn-sm" id="svc-wa"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>' : '') + '</div>';
-    if (lk) h += '<div class="svc-hint" style="margin:-4px 0 10px">' + esc(L('Approved — logs are locked. Owner/HR can reopen to change.', 'Diluluskan — log dikunci. Owner/HR boleh buka semula untuk ubah.')) + '</div>';
+    if (closed()) h += '<div class="svc-hint" style="margin:-4px 0 10px"><i class="ti ti-lock"></i> ' + esc(L('Closed — the PV is paid. Logs and product items are locked. Only the Owner can reopen (with a reason).', 'Ditutup — PV sudah dibayar. Log dan item produk dikunci. Hanya Owner boleh buka semula (dengan sebab).')) + '</div>';
+    else if (lk) h += '<div class="svc-hint" style="margin:-4px 0 10px">' + esc(L('Approved — logs are locked. Owner/HR can reopen to change.', 'Diluluskan — log dikunci. Owner/HR boleh buka semula untuk ubah.')) + '</div>';
     h += weeksHtml(edit);
     if (ST.hr) h += settingsCard();
-    W.innerHTML = h; wire(c); wireSig();
+    if (ST.hr && ST.v4) h += codesCard();
+    W.innerHTML = h; wire(c); wireSig(); if (S.ext.wire) { try { S.ext.wire(ST, c); } catch (e) { console.warn('[svc] ext wire', e); } }
   }
   function stat(k, v, s, cls) { return '<div class="svc-stat ' + (cls || '') + '"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div><div class="s">' + esc(s || '') + '</div></div>'; }
   function slipCard(c) {
     var r = c.rates, rows = [];
     if (ST.basic !== null) rows.push([L('Basic pay', 'Gaji asas'), '', ST.basic]);
-    rows.push([L('Service commission', 'Komisen servis'), L(c.heads + ' heads NM, ', c.heads + ' kepala NM, ') + schemeText(r), c.svc_commission]);
+    rows.push([L('Service commission', 'Komisen servis'), (r.svc_all ? L(c.heads + ' heads, ', c.heads + ' kepala, ') : L(c.heads + ' heads NM, ', c.heads + ' kepala NM, ')) + schemeText(r), c.svc_commission]);
     rows.push([L('Product commission', 'Komisen produk'), r.prod_rate_pct + '% × ' + rm(c.product_sales), c.prod_commission]);
-    rows.push([L('Conversion bonus', 'Bonus conversion'), c.bonus > 0 ? L('KPI met', 'KPI dicapai') : L('Not awarded', 'Tidak diberi'), c.bonus]);
-    var tot = (ST.basic || 0) + c.commission_total;
+    if (!(r.svc_all && !(c.bonus > 0) && !(r.bonus_amount > 0))) rows.push([L('Conversion bonus', 'Bonus conversion'), c.bonus > 0 ? L('KPI met', 'KPI dicapai') : L('Not awarded', 'Tidak diberi'), c.bonus]);
+    var tot = (ST.basic || 0) + c.commission_total, cmp = S.compare(c.commission_total);
     return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Payslip lines', 'Baris slip gaji')) + '</span><span class="m">' + esc(empName()) + ' · ' + esc(mlabel(ST.m, ST.y)) + '</span></div>' +
       '<div class="svc-slip">' + rows.map(function (x) { return '<div class="ln"><div class="l">' + esc(x[0]) + (x[1] ? '<span class="s">' + esc(x[1]) + '</span>' : '') + '</div><div class="r">' + esc(rm(x[2])) + '</div></div>'; }).join('') +
-      '<div class="ln tot"><div class="l">' + esc(L('Total', 'Jumlah')) + (ST.basic === null ? '<span class="s">' + esc(L('Commission only — basic pay not visible', 'Komisen sahaja — gaji asas tidak dipaparkan')) + '</span>' : '') + '</div><div class="r">' + esc(rm(tot)) + '</div></div></div>' +
+      '<div class="ln tot"><div class="l">' + esc(L('Total', 'Jumlah')) + (ST.basic === null ? '<span class="s">' + esc(L('Commission only — basic pay not visible', 'Komisen sahaja — gaji asas tidak dipaparkan')) + '</span>' : '') + (cmp ? '<span class="s">' + esc(L('Last month: ', 'Bulan lepas: ') + cmp) + '</span>' : '') + '</div><div class="r">' + esc(rm(tot)) + '</div></div></div>' +
       '<div class="svc-body svc-hint" style="margin:0;padding-top:8px">' + esc((ST.cfgRow && ST.cfgRow.pay_via_pv) || ST.pv
         ? L('Bayar via PV — full part-time pay goes to a Payment Voucher (not Salary Disbursement), so there is no double pay.', 'Bayar via PV — gaji separuh masa penuh masuk Baucar Bayaran (bukan Penyaluran Gaji), jadi tiada bayaran berganda.')
         : L('Statutory deductions (EPF/SOCSO/EIS/PCB) are applied in Salary Disbursement. Only an APPROVED month flows into payroll.', 'Potongan berkanun (KWSP/PERKESO/EIS/PCB) dikira di Penyaluran Gaji. Hanya bulan yang DILULUSKAN masuk payroll.')) + '</div></div>';
@@ -238,23 +297,31 @@
     var mon = ST.mon || {}, isSelf = ST.self && String(ST.self.id) === String(ST.emp), b = '';
     var canSales = ST.hr && !lk;
     b += '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Product sales & approval', 'Jualan produk & kelulusan')) + '</span><span class="m">' + statusChip(st) + ' ' + sigChip() + '</span></div><div class="svc-body">';
-    if (canSales) {
+    var hasItems = ST.v4 && ST.items.length > 0;
+    if (ST.v4 && (hasItems || canSales)) b += itemsHtml(c, canSales);
+    if (canSales && !hasItems) {
       b += '<div class="svc-grid"><div><label class="form-label" for="svc-ps">' + esc(L('Product sales (RM)', 'Jualan produk (RM)')) + '</label><input class="form-input" id="svc-ps" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(mon.product_sales == null ? '' : mon.product_sales) + '"></div>' +
         '<div><label class="form-label" for="svc-pn">' + esc(L('Products (note)', 'Produk (nota)')) + '</label><input class="form-input" id="svc-pn" maxlength="300" value="' + esc(mon.product_note || '') + '" placeholder="' + esc(L('e.g. Moisturizer x7', 'cth. Moisturizer x7')) + '"></div></div>' +
         '<div class="svc-act" style="margin-top:10px"><label class="svc-tog"><input type="checkbox" id="svc-bon"' + (mon.bonus_on ? ' checked' : '') + '> ' + esc(L('KPI bonus', 'Bonus KPI')) + ' (' + esc(rm(c.rates.bonus_amount)) + ')</label>' +
         '<button type="button" class="btn btn-outline btn-sm" id="svc-saveps"><i class="ti ti-device-floppy"></i> ' + esc(L('Save', 'Simpan')) + '</button></div>' +
         '<div class="svc-hint">' + esc(L('Entered manually (not linked to POS) so it is never double-counted with Sales Commission.', 'Diisi manual (tidak dipaut ke POS) supaya tidak dikira dua kali dengan Komisen Jualan.')) + '</div>';
+    } else if (canSales) {
+      b += '<div class="svc-act" style="margin-top:10px"><label class="svc-tog"><input type="checkbox" id="svc-bon"' + (mon.bonus_on ? ' checked' : '') + '> ' + esc(L('KPI bonus', 'Bonus KPI')) + ' (' + esc(rm(c.rates.bonus_amount)) + ')</label>' +
+        '<button type="button" class="btn btn-outline btn-sm" id="svc-saveps"><i class="ti ti-device-floppy"></i> ' + esc(L('Save', 'Simpan')) + '</button></div>';
+    } else if (hasItems) {
+      b += '';
     } else {
       b += '<div class="svc-hint" style="margin:0 0 8px">' + esc(L('Product sales: ', 'Jualan produk: ')) + esc(rm(mon.product_sales || 0)) + (mon.product_note ? ' · ' + esc(mon.product_note) : '') + '</div>';
     }
     b += '<div class="svc-act" style="margin-top:12px">';
     if (!lk && st !== 'submitted' && (isSelf || ST.hr)) b += '<button type="button" class="btn btn-outline btn-sm" id="svc-submit"><i class="ti ti-send"></i> ' + esc(L('Submit for approval', 'Hantar untuk kelulusan')) + '</button>';
     if (ST.hr && !lk) b += '<button type="button" class="btn btn-primary btn-sm" id="svc-approve"><i class="ti ti-check"></i> ' + esc(L('Approve', 'Luluskan')) + '</button>';
-    if (ST.hr && lk) b += '<button type="button" class="btn btn-outline btn-sm" id="svc-reopen"><i class="ti ti-lock-open"></i> ' + esc(L('Reopen', 'Buka semula')) + '</button>';
+    if (ST.hr && lk && (!closed() || isOwner())) b += '<button type="button" class="btn btn-outline btn-sm" id="svc-reopen"><i class="ti ti-lock-open"></i> ' + esc(L('Reopen', 'Buka semula')) + '</button>';
     if (ST.hr && lk) {
       if (ST.pv && ST.pv.id) b += '<button type="button" class="btn btn-primary btn-sm" id="svc-open-pv"><i class="ti ti-file-invoice"></i> ' + esc(L('Open PV', 'Buka PV')) + ' ' + esc(ST.pv.ref_no || '') + '</button>';
       else b += '<button type="button" class="btn btn-primary btn-sm" id="svc-buat-pv"><i class="ti ti-file-invoice"></i> ' + esc(L('Create PV', 'Buat PV')) + '</button>';
     }
+    if (ST.hr && ST.v4 && S.ext.createAll) b += '<button type="button" class="btn btn-outline btn-sm" id="svc-pv-all"><i class="ti ti-files"></i> ' + esc(L('Create PV for all staff this month', 'Buat PV semua staff bulan ini')) + '</button>';
     b += '</div>';
     if (mon.status === 'submitted' && mon.submitted_at) b += '<div class="svc-hint">' + esc(L('Submitted ', 'Dihantar ')) + esc(fdt(mon.submitted_at)) + '</div>';
     if (lk && mon.approved_at) {
@@ -266,13 +333,41 @@
     }
     return b + '</div></div>';
   }
+  // B) product items list (svc_product_logs)
+  function itemsHtml(c, canEdit) {
+    var h = '<div class="svc-hd" style="padding:0 0 6px;border-bottom:0"><span>' + esc(L('Product items', 'Item produk')) + '</span><span class="m">' + esc(rm(c.product_sales)) + ' · ' + esc(c.rates.prod_rate_pct + '% = ' + rm(c.prod_commission)) + '</span></div>';
+    if (!ST.items.length) h += '<div class="svc-hint" style="margin:0 0 8px">' + esc(L('No product items yet — add each product sold, or type one total below.', 'Belum ada item produk — tambah setiap produk dijual, atau taip satu jumlah di bawah.')) + '</div>';
+    else h += '<div style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px">' + ST.items.map(function (it) {
+      var cd = codeOf('product', it.code), nm = it.name || (cd && cd.name) || it.code || '', rv = itemReview(it);
+      return '<div class="svc-row"><div class="d"><b>' + esc(dmy(it.log_date)) + '</b>' + esc(dayName(it.log_date)) + '</div><div class="x"><div class="n">' + esc(nm || L('No name', 'Tanpa nama')) + '</div><div class="t">' +
+        (it.code && nm !== it.code ? '<span class="svc-chip">' + esc(it.code) + '</span>' : '') + (num(it.qty) !== 1 ? '<span class="svc-chip">×' + esc(num(it.qty)) + '</span>' : '') +
+        (rv ? '<span class="svc-flag"><i class="ti ti-alert-triangle"></i> ' + esc(flagText('noname')) + '</span>' : '') + (it.notes ? '<span class="svc-hint" style="margin:0">' + esc(it.notes) + '</span>' : '') + '</div></div>' +
+        '<div class="a"><b>' + esc(rm(it.amount)) + '</b></div>' +
+        (canEdit ? '<div class="o"><button type="button" class="btn btn-outline btn-sm" data-svc-ied="' + esc(it.id) + '" aria-label="' + esc(L('Edit', 'Sunting')) + '"><i class="ti ti-pencil"></i></button>' +
+          '<button type="button" class="btn btn-outline btn-sm" data-svc-idel="' + esc(it.id) + '" aria-label="' + esc(L('Delete', 'Padam')) + '"><i class="ti ti-trash"></i></button></div>' : '') + '</div>';
+    }).join('') + '</div>';
+    if (canEdit) h += '<div class="svc-act" style="margin-bottom:10px"><button type="button" class="btn btn-outline btn-sm" id="svc-iadd"><i class="ti ti-plus"></i> ' + esc(L('Add product', 'Tambah produk')) + '</button></div>';
+    return h;
+  }
+  // C) code list card (Owner/HR)
+  function codesCard() {
+    var list = CODES.list || [];
+    var row = function (x) {
+      return '<div class="svc-row"><div class="x"><div class="n">' + esc(x.code) + (x.name ? ' · ' + esc(x.name) : '') + '</div><div class="t"><span class="svc-chip ' + (x.kind === 'product' ? 'p' : '') + '">' + esc(x.kind === 'product' ? L('Product', 'Produk') : L('Service', 'Servis')) + '</span></div></div>' +
+        '<div class="a"><b>' + (x.default_price == null ? '—' : esc(rm(x.default_price))) + '</b></div><div class="o"><button type="button" class="btn btn-outline btn-sm" data-svc-ced="' + esc(x.id) + '" aria-label="' + esc(L('Edit', 'Sunting')) + '"><i class="ti ti-pencil"></i></button></div></div>';
+    };
+    return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Price / code list', 'Senarai kod / harga')) + '</span><span class="m">' + esc(L(list.length + ' codes', list.length + ' kod')) + '</span></div>' +
+      (list.length ? list.map(row).join('') : '<div class="svc-empty">' + esc(L('No codes yet.', 'Belum ada kod.')) + '</div>') +
+      '<div class="svc-body"><div class="svc-hint" style="margin:0 0 8px">' + esc(L('Typing a code in a log fills its name and price. Logs without a code are marked "needs review" (still counted).', 'Taip kod dalam log untuk isi nama dan harga. Log tanpa kod ditanda "perlu semak" (tetap dikira).')) + '</div>' +
+      '<div class="svc-act"><button type="button" class="btn btn-outline btn-sm" id="svc-cadd"><i class="ti ti-plus"></i> ' + esc(L('Add code', 'Tambah kod')) + '</button></div></div></div>';
+  }
   function fdt(s) { try { return new Date(s).toLocaleString(bm() ? 'ms-MY' : 'en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return String(s || ''); } }
   function weeksHtml(edit) {
     if (!ST.logs.length) return '<div class="svc-card"><div class="svc-empty">' + esc(L('No service logs this month yet.', 'Belum ada log servis bulan ini.')) + '</div></div>';
     var g = {}; ST.logs.forEach(function (x) { var w = weekOf(x); (g[w] = g[w] || []).push(x); });
     return Object.keys(g).sort(function (a, b) { return a - b; }).map(function (w) {
-      var rows = g[w], c = S.calc(rows, ST.cfgRow || {}, {}), sum = rows.reduce(function (s, x) { return s + num(x.price); }, 0);
-      return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Week ', 'Minggu ')) + w + '</span><span class="m">' + esc(L(rows.length + ' logs · ' + c.heads + ' NM heads · sales ', rows.length + ' log · ' + c.heads + ' kepala NM · jualan ')) + esc(rm(sum)) + ' · <b style="color:var(--success)">' + esc(rm(c.svc_commission)) + '</b></span></div>' +
+      var rows = g[w], c = S.calc(rows, ST.cfgRow || {}, {}), sum = rows.reduce(function (s, x) { return s + num(x.price); }, 0), hl = ST.cfg.svc_all ? L(' heads', ' kepala') : L(' NM heads', ' kepala NM');
+      return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Week ', 'Minggu ')) + w + '</span><span class="m">' + esc(L(rows.length + ' logs · ' + c.heads + hl + ' · sales ', rows.length + ' log · ' + c.heads + hl + ' · jualan ')) + esc(rm(sum)) + ' · <b style="color:var(--success)">' + esc(rm(c.svc_commission)) + '</b></span></div>' +
         rows.map(function (x) { return rowHtml(x, edit); }).join('') + '</div>';
     }).join('');
   }
@@ -281,7 +376,9 @@
     return '<div class="svc-row"><div class="d"><b>' + esc(dmy(x.log_date)) + '</b>' + esc(dayName(x.log_date)) + '</div>' +
       '<div class="x"><div class="n">' + esc(x.service) + '</div><div class="t">' +
       (st ? '<span class="svc-chip ' + (st === ST.cfg.eligible_status ? 'p' : '') + '">' + esc(st) + '</span>' : '') + (ld ? '<span class="svc-chip">' + esc(ld) + '</span>' : '') +
+      (x.code && x.code !== String(x.service || '').toUpperCase() ? '<span class="svc-chip">' + esc(x.code) + '</span>' : '') +
       (rc.flag ? '<span class="svc-flag"><i class="ti ti-alert-triangle"></i> ' + esc(flagText(rc.flag)) + '</span>' : '') +
+      (rc.review ? '<span class="svc-flag"><i class="ti ti-alert-triangle"></i> ' + esc(flagText('nocode')) + '</span>' : '') +
       (x.notes ? '<span class="svc-hint" style="margin:0">' + esc(x.notes) + '</span>' : '') + '</div></div>' +
       '<div class="a"><b>' + (x.price == null ? '—' : esc(rm(x.price))) + '</b>' + (rc.ok ? '<span class="c">+' + esc(rm(rc.cents / 100)) + '</span>' : '<span>—</span>') + '</div>' +
       (edit ? '<div class="o"><button type="button" class="btn btn-outline btn-sm" data-svc-ed="' + esc(x.id) + '" aria-label="' + esc(L('Edit', 'Sunting')) + '"><i class="ti ti-pencil"></i></button>' +
@@ -293,6 +390,8 @@
     return '<div class="svc-card"><div class="svc-hd"><span>' + esc(L('Commission scheme', 'Skim komisen')) + '</span><span class="m">' + esc(empName()) + '</span></div><div class="svc-body">' +
       '<div class="svc-act" style="margin-bottom:10px;flex-wrap:wrap"><label class="svc-tog"><input type="checkbox" id="svc-s-en"' + (s.enabled === false ? '' : ' checked') + '> ' + esc(L('Enabled', 'Aktif')) + '</label>' +
       '<label class="svc-tog"><input type="checkbox" id="svc-s-pv"' + (s.pay_via_pv ? ' checked' : '') + '> ' + esc(L('Pay via PV', 'Bayar via PV')) + '</label></div>' +
+      (ST.v4 ? '<div class="svc-act" style="margin-bottom:6px"><label class="svc-tog" style="white-space:normal"><input type="checkbox" id="svc-s-all"' + (r.svc_all ? ' checked' : '') + '> ' + esc(L('Commission on all services (no lead/cap conditions)', 'Komisen semua servis (tanpa syarat lead / had)')) + '</label></div>' +
+        '<div class="svc-hint" style="margin:0 0 10px">' + esc(L('On: every log with a price earns service % — no M/NM, TT/ADS or cap. Off: only eligible status + lead, capped per head.', 'Aktif: setiap log yang ada harga dapat % servis — tiada syarat M/NM, TT/ADS atau had. Tidak aktif: hanya status + lead layak, ada had sekepala.')) + '</div>' : '') +
       '<div class="svc-hint" style="margin:0 0 10px">' + esc(L('Bayar via PV: after Approve, HR creates one Payment Voucher for full part-time pay (basic + commissions). That month is skipped in Salary Disbursement.', 'Bayar via PV: selepas Lulus, HR buat satu Baucar Bayaran untuk gaji separuh masa penuh (asas + komisen). Bulan itu dilangkau di Penyaluran Gaji.')) + '</div>' +
       '<div class="svc-grid">' +
       '<div><label class="form-label" for="svc-s-pb">' + esc(L('Pay basis', 'Asas gaji')) + '</label><select class="form-input" id="svc-s-pb">' + opt('monthly_fixed', s.pay_basis || 'monthly_fixed', L('Monthly fixed', 'Tetap bulanan')) + opt('daily', s.pay_basis, L('Daily', 'Harian')) + opt('hourly', s.pay_basis, L('Hourly', 'Jam')) + opt('commission_only', s.pay_basis, L('Commission only', 'Komisen sahaja')) + '</select></div>' +
@@ -334,6 +433,12 @@
       })());
     });
     on('svc-reopen', function (b) {
+      if (closed()) {
+        var why = window.prompt(L('This month is closed (PV paid). Reason for reopening:', 'Bulan ini ditutup (PV dibayar). Sebab buka semula:'), '');
+        if (why === null) return;
+        if (String(why).trim().length < 3) return toast(L('Reason required', 'Sebab diperlukan'), 'error');
+        return busy(b, rpc('svc_comm_reopen_closed', { p_reason: String(why).trim() }, L('Reopened', 'Dibuka semula')));
+      }
       var msg = L('Reopen this month? Payroll stops adding it until approved again.', 'Buka semula bulan ini? Payroll tidak akan masukkan sehingga diluluskan semula.');
       if (ST.pv && ST.pv.id) msg += '\n\n' + L('A Payment Voucher already exists (' + (ST.pv.ref_no || '') + '). Reopening does not void it.', 'Baucar Bayaran sudah wujud (' + (ST.pv.ref_no || '') + '). Buka semula tidak membatalkan baucar itu.');
       if (!confirm(msg)) return;
@@ -342,9 +447,14 @@
     on('svc-buat-pv', function (b) { busy(b, createPv()); });
     on('svc-open-pv', function () { if (ST.pv && ST.pv.id) openPage('vouchers', { view: 'pv-detail', id: ST.pv.id }); });
     on('svc-s-save', function (b) { busy(b, saveSettings()); });
+    on('svc-iadd', function () { itemModal(null); }); on('svc-cadd', function () { codeModal(null); });
+    on('svc-pv-all', function (b) { if (S.ext.createAll) busy(b, S.ext.createAll(ST.m, ST.y)); });
     var W = $('svc-wrap');
     W.querySelectorAll('[data-svc-ed]').forEach(function (el) { el.onclick = function () { editModal(ST.logs.filter(function (x) { return String(x.id) === el.getAttribute('data-svc-ed'); })[0]); }; });
     W.querySelectorAll('[data-svc-del]').forEach(function (el) { el.onclick = function () { delLog(el.getAttribute('data-svc-del'), el); }; });
+    W.querySelectorAll('[data-svc-ied]').forEach(function (el) { el.onclick = function () { itemModal(ST.items.filter(function (x) { return String(x.id) === el.getAttribute('data-svc-ied'); })[0]); }; });
+    W.querySelectorAll('[data-svc-idel]').forEach(function (el) { el.onclick = function () { delItem(el.getAttribute('data-svc-idel'), el); }; });
+    W.querySelectorAll('[data-svc-ced]').forEach(function (el) { el.onclick = function () { codeModal((CODES.list || []).filter(function (x) { return String(x.id) === el.getAttribute('data-svc-ced'); })[0]); }; });
   }
   async function rpc(fn, extra, ok) {
     var args = Object.assign({ p_emp: ST.emp, p_month: ST.m, p_year: ST.y }, extra || {});
@@ -355,8 +465,12 @@
   async function createPv() {
     var tot = (ST.basic || 0) + num(ST.mon && ST.mon.commission_total);
     if (!(tot > 0)) return toast(L('Amount must be greater than 0.', 'Amaun mesti lebih daripada 0.'), 'error');
-    if (!confirm(L('Create one Payment Voucher for ' + rm(tot) + ' (basic + commissions) for ' + mlabel(ST.m, ST.y) + '?', 'Buat satu Baucar Bayaran ' + rm(tot) + ' (asas + komisen) untuk ' + mlabel(ST.m, ST.y) + '?'))) return;
-    var r = await sb.rpc('svc_create_pv', { p_emp: ST.emp, p_month: ST.m, p_year: ST.y });
+    var co = ST.basic === null && ST.cfgRow && ST.cfgRow.pay_basis === 'commission_only';
+    if (!confirm(co ? L('Create one Payment Voucher for ' + rm(tot) + ' (commission only) for ' + mlabel(ST.m, ST.y) + '?', 'Buat satu Baucar Bayaran ' + rm(tot) + ' (komisen sahaja) untuk ' + mlabel(ST.m, ST.y) + '?')
+      : L('Create one Payment Voucher for ' + rm(tot) + ' (basic + commissions) for ' + mlabel(ST.m, ST.y) + '?', 'Buat satu Baucar Bayaran ' + rm(tot) + ' (asas + komisen) untuk ' + mlabel(ST.m, ST.y) + '?'))) return;
+    var args = { p_emp: ST.emp, p_month: ST.m, p_year: ST.y };
+    if (ST.v4 && S.ext.desc) { var dsc = S.ext.desc(ST); if (dsc) args.p_desc = dsc; }
+    var r = await sb.rpc('svc_create_pv', args);
     if (r.error) {
       if (missing(r.error)) return toast(L('Run supabase/svc_commission_04.sql in Supabase first.', 'Jalankan supabase/svc_commission_04.sql di Supabase dahulu.'), 'error');
       return toast(errMsg(r.error), 'error');
@@ -387,6 +501,7 @@
     var leads = val('svc-s-ld').toUpperCase().split(/[,\s]+/).filter(function (x) { return /^[A-Z0-9_]{1,16}$/.test(x); });
     var row = { enabled: !!($('svc-s-en') && $('svc-s-en').checked), pay_via_pv: !!($('svc-s-pv') && $('svc-s-pv').checked), pay_basis: val('svc-s-pb') || 'monthly_fixed', work_mode: val('svc-s-wm') || 'wfh',
       svc_rate_pct: rate, svc_cap: cap, eligible_status: val('svc-s-st') || 'NM', eligible_leads: leads, prod_rate_pct: pr, bonus_amount: bo, notes: val('svc-s-no') || null };
+    if ($('svc-s-all')) row.svc_all = !!$('svc-s-all').checked;
     var r = ST.cfgRow ? await sb.from('svc_comm_settings').update(row).eq('id', ST.cfgRow.id).eq('tenant_id', tid())
       : await sb.from('svc_comm_settings').insert(Object.assign({ tenant_id: tid(), employee_id: ST.emp }, row));
     if (r.error) return toast(errMsg(r.error), 'error');
@@ -399,6 +514,75 @@
       if (r.error) return toast(errMsg(r.error), 'error');
       toast(L('Log deleted', 'Log dipadam')); await refresh();
     })());
+  }
+
+  async function delItem(id, b) {
+    if (!confirm(L('Delete this product item?', 'Padam item produk ini?'))) return;
+    await busy(b, (async function () {
+      var r = await sb.from('svc_product_logs').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('tenant_id', tid());
+      if (r.error) return toast(errMsg(r.error), 'error');
+      toast(L('Deleted', 'Dipadam')); await refresh();
+    })());
+  }
+  function codeOpts(kind) { return (CODES.list || []).filter(function (x) { return x.kind === kind; }).map(function (x) { return '<option value="' + esc(x.code) + '">' + esc((x.name || x.code) + (x.default_price != null ? ' · ' + rm(x.default_price) : '')) + '</option>'; }).join(''); }
+  // code typed → fill name / price if empty (never overwrites what HR typed)
+  function autoFill(o, kind, codeId, nameId, priceId) {
+    var ci = o.querySelector('#' + codeId); if (!ci) return;
+    ci.addEventListener('change', function () {
+      ci.value = String(ci.value || '').trim().toUpperCase(); var k = codeOf(kind, ci.value); if (!k) return;
+      var ni = nameId && o.querySelector('#' + nameId), pi = priceId && o.querySelector('#' + priceId);
+      if (ni && !ni.value) ni.value = k.name || k.code;
+      if (pi && !pi.value && k.default_price != null) pi.value = k.default_price;
+    });
+  }
+  var CODE_RX = /^[A-Z0-9][A-Z0-9 ._\/&+-]{0,23}$/;
+  function itemModal(x) {
+    x = x || {}; var r = monthRange(ST.m, ST.y), last = new Date(ST.y, ST.m, 0).getDate(), today = new Date();
+    var d0 = x.log_date || (today.getMonth() + 1 === ST.m && today.getFullYear() === ST.y ? iso(ST.y, ST.m, today.getDate()) : r[0]);
+    var body = '<div><label class="form-label" for="svc-i-d">' + esc(L('Date', 'Tarikh')) + '</label><input class="form-input" id="svc-i-d" type="date" min="' + r[0] + '" max="' + iso(ST.y, ST.m, last) + '" value="' + esc(String(d0).slice(0, 10)) + '"></div>' +
+      '<div class="svc-grid"><div><label class="form-label" for="svc-i-c">' + esc(L('Code', 'Kod')) + '</label><input class="form-input" id="svc-i-c" maxlength="24" autocapitalize="characters" list="svc-dl-pc" value="' + esc(x.code || '') + '"><datalist id="svc-dl-pc">' + codeOpts('product') + '</datalist></div>' +
+      '<div><label class="form-label" for="svc-i-n">' + esc(L('Product', 'Produk')) + '</label><input class="form-input" id="svc-i-n" maxlength="120" value="' + esc(x.name || '') + '"></div></div>' +
+      '<div class="svc-grid"><div><label class="form-label" for="svc-i-q">' + esc(L('Qty', 'Kuantiti')) + '</label><input class="form-input" id="svc-i-q" type="number" min="1" step="1" inputmode="numeric" value="' + esc(x.qty || 1) + '"></div>' +
+      '<div><label class="form-label" for="svc-i-a">' + esc(L('Amount (RM)', 'Amaun (RM)')) + '</label><input class="form-input" id="svc-i-a" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(x.amount == null ? '' : x.amount) + '"></div></div>' +
+      '<div><label class="form-label" for="svc-i-no">' + esc(L('Notes', 'Nota')) + '</label><input class="form-input" id="svc-i-no" maxlength="300" value="' + esc(x.notes || '') + '"></div>' +
+      '<div class="svc-hint">' + esc(L('Amount is the line total (qty × price). Without a code or name the item is marked "needs review" (still counted).', 'Amaun ialah jumlah baris (kuantiti × harga). Tanpa kod atau nama, item ditanda "perlu semak" (tetap dikira).')) + '</div>';
+    var o = modal(x.id ? L('Edit product', 'Sunting produk') : L('Add product', 'Tambah produk'), body, L('Save', 'Simpan'), async function () {
+      var d = val('svc-i-d'), c = val('svc-i-c').toUpperCase(), n = val('svc-i-n'), q = Number(val('svc-i-q') || 1), a = val('svc-i-a');
+      if (!d || d < r[0] || d >= r[1]) { toast(L('Pick a date in ', 'Pilih tarikh dalam ') + mlabel(ST.m, ST.y), 'error'); return false; }
+      if (c && !CODE_RX.test(c)) { toast(L('Code: letters/numbers only (max 24)', 'Kod: huruf/nombor sahaja (maks 24)'), 'error'); return false; }
+      if (!(q >= 1) || Math.round(q) !== q) { toast(L('Qty must be 1 or more', 'Kuantiti mesti 1 atau lebih'), 'error'); return false; }
+      if (a === '' || !(Number(a) >= 0)) { toast(L('Amount must be 0 or more', 'Amaun mesti 0 atau lebih'), 'error'); return false; }
+      var row = { log_date: d, code: c || null, name: n ? n.slice(0, 120) : null, qty: q, amount: Math.round(Number(a) * 100) / 100, notes: val('svc-i-no') || null };
+      var res = x.id ? await sb.from('svc_product_logs').update(row).eq('id', x.id).eq('tenant_id', tid())
+        : await sb.from('svc_product_logs').insert(Object.assign({ tenant_id: tid(), employee_id: ST.emp, source: 'manual' }, row));
+      if (res.error) { toast(errMsg(res.error), 'error'); return false; }
+      toast(L('Saved', 'Disimpan')); await refresh(); return true;
+    });
+    autoFill(o, 'product', 'svc-i-c', 'svc-i-n', 'svc-i-a');
+  }
+  function codeModal(x) {
+    x = x || {};
+    var body = '<div class="svc-grid"><div><label class="form-label" for="svc-c-k">' + esc(L('Type', 'Jenis')) + '</label><select class="form-input" id="svc-c-k"><option value="service"' + (x.kind !== 'product' ? ' selected' : '') + '>' + esc(L('Service', 'Servis')) + '</option><option value="product"' + (x.kind === 'product' ? ' selected' : '') + '>' + esc(L('Product', 'Produk')) + '</option></select></div>' +
+      '<div><label class="form-label" for="svc-c-c">' + esc(L('Code', 'Kod')) + '</label><input class="form-input" id="svc-c-c" maxlength="24" autocapitalize="characters" value="' + esc(x.code || '') + '"></div></div>' +
+      '<div class="svc-grid"><div><label class="form-label" for="svc-c-n">' + esc(L('Name', 'Nama')) + '</label><input class="form-input" id="svc-c-n" maxlength="120" value="' + esc(x.name || '') + '"></div>' +
+      '<div><label class="form-label" for="svc-c-p">' + esc(L('Price (RM)', 'Harga (RM)')) + '</label><input class="form-input" id="svc-c-p" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(x.default_price == null ? '' : x.default_price) + '"></div></div>' +
+      (x.id ? '<div class="svc-act" style="margin-top:8px"><button type="button" class="btn btn-outline btn-sm" id="svc-c-del"><i class="ti ti-trash"></i> ' + esc(L('Delete', 'Padam')) + '</button></div>' : '');
+    var o = modal(x.id ? L('Edit code', 'Sunting kod') : L('Add code', 'Tambah kod'), body, L('Save', 'Simpan'), async function () {
+      var c = val('svc-c-c').toUpperCase(), p = val('svc-c-p');
+      if (!CODE_RX.test(c)) { toast(L('Code: letters/numbers only (max 24)', 'Kod: huruf/nombor sahaja (maks 24)'), 'error'); return false; }
+      if (p !== '' && !(Number(p) >= 0)) { toast(L('Price must be 0 or more', 'Harga mesti 0 atau lebih'), 'error'); return false; }
+      var row = { kind: val('svc-c-k') === 'product' ? 'product' : 'service', code: c, name: val('svc-c-n') || null, default_price: p === '' ? null : Math.round(Number(p) * 100) / 100 };
+      var res = x.id ? await sb.from('svc_price_codes').update(row).eq('id', x.id).eq('tenant_id', tid()) : await sb.from('svc_price_codes').insert(Object.assign({ tenant_id: tid() }, row));
+      if (res.error) { toast(errMsg(res.error), 'error'); return false; }
+      CODES.t = null; toast(L('Saved', 'Disimpan')); await refresh(); return true;
+    });
+    var del = o.querySelector('#svc-c-del');
+    if (del) del.onclick = async function () {
+      if (!confirm(L('Delete this code? Existing logs keep their code.', 'Padam kod ini? Log sedia ada kekal dengan kod.'))) return;
+      var res = await sb.from('svc_price_codes').update({ deleted_at: new Date().toISOString() }).eq('id', x.id).eq('tenant_id', tid());
+      if (res.error) return toast(errMsg(res.error), 'error');
+      o.remove(); CODES.t = null; toast(L('Deleted', 'Dipadam')); await refresh();
+    };
   }
 
   /* ---------- modals ---------- */
@@ -420,25 +604,31 @@
     var leads = ST.cfg.eligible_leads.slice(); if (x.lead_source && leads.indexOf(x.lead_source) < 0) leads.push(x.lead_source);
     var last = new Date(ST.y, ST.m, 0).getDate();
     var body = '<div><label class="form-label" for="svc-f-d">' + esc(L('Date', 'Tarikh')) + '</label><input class="form-input" id="svc-f-d" type="date" min="' + r[0] + '" max="' + iso(ST.y, ST.m, last) + '" value="' + esc(String(d0).slice(0, 10)) + '"></div>' +
+      (ST.v4 ? '<div><label class="form-label" for="svc-f-c">' + esc(L('Code', 'Kod')) + '</label><input class="form-input" id="svc-f-c" maxlength="24" autocapitalize="characters" list="svc-dl-sc" value="' + esc(x.code || '') + '"><datalist id="svc-dl-sc">' + codeOpts('service') + '</datalist></div>' : '') +
       '<div><label class="form-label" for="svc-f-s">' + esc(L('Service', 'Servis')) + '</label><input class="form-input" id="svc-f-s" maxlength="120" value="' + esc(x.service || '') + '" placeholder="' + esc(L('e.g. HAIRCUT', 'cth. HAIRCUT')) + '" list="svc-dl"><datalist id="svc-dl">' +
       uniq(ST.logs.map(function (l) { return l.service; })).slice(0, 40).map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist></div>' +
       '<div class="svc-grid"><div><label class="form-label" for="svc-f-p">' + esc(L('Price (RM)', 'Harga (RM)')) + '</label><input class="form-input" id="svc-f-p" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(x.price == null ? '' : x.price) + '"></div>' +
       '<div><label class="form-label" for="svc-f-st">' + esc(L('Client', 'Pelanggan')) + '</label><select class="form-input" id="svc-f-st"><option value="">—</option><option value="NM"' + (x.client_status === 'NM' ? ' selected' : '') + '>' + esc(L('NM (new)', 'NM (baru)')) + '</option><option value="M"' + (x.client_status === 'M' ? ' selected' : '') + '>' + esc(L('M (member)', 'M (ahli)')) + '</option></select></div>' +
       '<div><label class="form-label" for="svc-f-l">Lead</label><select class="form-input" id="svc-f-l"><option value="">—</option>' + leads.map(function (l) { return '<option' + (l === x.lead_source ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('') + '<option value="OTHER"' + (x.lead_source === 'OTHER' ? ' selected' : '') + '>' + esc(L('Other', 'Lain')) + '</option></select></div></div>' +
       '<div><label class="form-label" for="svc-f-n">' + esc(L('Notes', 'Nota')) + '</label><input class="form-input" id="svc-f-n" maxlength="300" value="' + esc(x.notes || '') + '"></div>' +
-      '<div class="svc-hint">' + esc(L('Commission counts only for ', 'Komisen dikira hanya untuk ')) + esc(ST.cfg.eligible_status + ' + ' + ST.cfg.eligible_leads.join('/')) + esc(L(' with a price.', ' yang ada harga.')) + '</div>';
-    modal(x.id ? L('Edit service log', 'Sunting log servis') : L('Add service log', 'Tambah log servis'), body, L('Save', 'Simpan'), async function () {
-      var d = val('svc-f-d'), s = val('svc-f-s'), p = val('svc-f-p');
+      '<div class="svc-hint">' + (ST.cfg.svc_all ? esc(L('All services with a price earn commission. No code = "needs review".', 'Semua servis yang ada harga dapat komisen. Tiada kod = "perlu semak".'))
+        : esc(L('Commission counts only for ', 'Komisen dikira hanya untuk ')) + esc(ST.cfg.eligible_status + ' + ' + ST.cfg.eligible_leads.join('/')) + esc(L(' with a price.', ' yang ada harga.'))) + '</div>';
+    var mo = modal(x.id ? L('Edit service log', 'Sunting log servis') : L('Add service log', 'Tambah log servis'), body, L('Save', 'Simpan'), async function () {
+      var d = val('svc-f-d'), s = val('svc-f-s'), p = val('svc-f-p'), cd = $('svc-f-c') ? val('svc-f-c').toUpperCase() : undefined;
+      if (cd && !CODE_RX.test(cd)) { toast(L('Code: letters/numbers only (max 24)', 'Kod: huruf/nombor sahaja (maks 24)'), 'error'); return false; }
+      if (!s && cd) s = (codeOf('service', cd) || {}).name || cd;
       if (!d || d < r[0] || d >= r[1]) { toast(L('Pick a date in ', 'Pilih tarikh dalam ') + mlabel(ST.m, ST.y), 'error'); return false; }
       if (!s) { toast(L('Service is required', 'Servis diperlukan'), 'error'); return false; }
       if (p !== '' && !(Number(p) >= 0)) { toast(L('Price must be 0 or more', 'Harga mesti 0 atau lebih'), 'error'); return false; }
       var row = { log_date: d, service: s.slice(0, 120), price: p === '' ? null : Math.round(Number(p) * 100) / 100, client_status: val('svc-f-st') || null, lead_source: val('svc-f-l') || null, notes: val('svc-f-n') || null };
+      if (cd !== undefined) row.code = cd || null;
       if (!x.id || String(x.log_date).slice(0, 10) !== d) row.week_no = null;
       var q = x.id ? sb.from('svc_logs').update(row).eq('id', x.id).eq('tenant_id', tid())
         : sb.from('svc_logs').insert(Object.assign({ tenant_id: tid(), employee_id: ST.emp, source: 'manual' }, row));
       var res = await q; if (res.error) { toast(errMsg(res.error), 'error'); return false; }
       toast(L('Saved', 'Disimpan')); await refresh(); return true;
     });
+    autoFill(mo, 'service', 'svc-f-c', 'svc-f-s', 'svc-f-p');
   }
   function uniq(a) { var s = {}, o = []; a.forEach(function (x) { x = String(x || '').trim(); if (x && !s[x]) { s[x] = 1; o.push(x); } }); return o; }
   /* CSV / sheet paste: date, service, price, status, lead — date may be blank (carries forward), D/M, D/M/YYYY or YYYY-MM-DD */
@@ -509,6 +699,82 @@
     });
     return lines.join('\n');
   }
+  /* Deterministic sheet layout (no AI): header row DATE | PRODUK | RM | SERVICE | RM (any columns, any order), date
+     carries down, stops at TOTAL. Product cell = code if it looks like one, else a name. Blank code/name rows are kept
+     and marked "needs review". Returns null when the sheet has no such header. */
+  function cellDate(v, m, y) {
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) { var t = new Date(v.getTime() + 12 * 3600e3); return t.getFullYear() === y && t.getMonth() + 1 === m ? t.getDate() : -1; }
+    var s = String(v == null ? '' : v).trim(), mm; if (!s) return 0;
+    if ((mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return (+mm[1] === y && +mm[2] === m) ? +mm[3] : -1;
+    if ((mm = s.match(/^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?$/))) { var yy = mm[3] ? (+mm[3] < 100 ? 2000 + +mm[3] : +mm[3]) : y; return (+mm[2] === m && yy === y) ? +mm[1] : -1; }
+    return null;
+  }
+  function amt(v) { if (v == null || v === '') return null; var n = typeof v === 'number' ? v : Number(String(v).replace(/^RM\s*/i, '').replace(/,/g, '')); return isFinite(n) ? Math.round(n * 100) / 100 : NaN; }
+  S.parseSheet = function (rows, m, y) {
+    var H = null, hi = -1, U = function (v) { return String(v == null ? '' : v).trim().toUpperCase(); };
+    for (var i = 0; i < Math.min(rows.length, 15) && !H; i++) {
+      var r = rows[i] || [], dc = -1, pc = -1, sc = -1;
+      r.forEach(function (v, j) { var u = U(v); if (dc < 0 && /^(DATE|TARIKH)$/.test(u)) dc = j; else if (pc < 0 && /^(PRODUK|PRODUCT|PRODUCTS)$/.test(u)) pc = j; else if (sc < 0 && /^(SERVICE|SERVIS|SERVICES)$/.test(u)) sc = j; });
+      if (dc >= 0 && sc >= 0) { H = { d: dc, p: pc, s: sc }; hi = i; }
+    }
+    if (!H) return null;
+    var last = new Date(y, m, 0).getDate(), d = null, svc = [], prod = [], bad = [];
+    for (var k = hi + 1; k < rows.length; k++) {
+      var r2 = rows[k] || [], dv = r2[H.d];
+      if (/^TOTAL/.test(U(dv)) || /^TOTAL/.test(U(r2[H.s])) || (H.p >= 0 && /^TOTAL/.test(U(r2[H.p])))) break;
+      var nd = cellDate(dv, m, y);
+      if (nd === -1 || (nd && (nd < 1 || nd > last))) { bad.push(k + 1); continue; }
+      if (nd) d = nd;
+      if (H.p >= 0) {
+        var pt = String(r2[H.p] == null ? '' : r2[H.p]).trim(), pa = amt(r2[H.p + 1]);
+        if (pt || pa !== null) {
+          if (!d || pa === null || isNaN(pa) || pa < 0) bad.push(k + 1);
+          else { var pu = pt.toUpperCase(), isCode = CODE_RX.test(pu) && (codeOf('product', pu) || !/\s/.test(pu)); prod.push({ log_date: iso(y, m, d), code: pt && isCode ? pu : null, name: pt && !isCode ? pt.slice(0, 120) : null, qty: 1, amount: pa }); }
+        }
+      }
+      var st = String(r2[H.s] == null ? '' : r2[H.s]).trim(), sa = amt(r2[H.s + 1]);
+      if (st || sa !== null) {
+        if (!d || (sa !== null && (isNaN(sa) || sa < 0))) bad.push(k + 1);
+        else { var su = st.toUpperCase(); svc.push({ log_date: iso(y, m, d), service: su ? su.slice(0, 120) : '—', code: su && CODE_RX.test(su) ? su : null, price: sa }); }
+      }
+    }
+    return { svc: svc, prod: prod, bad: bad };
+  };
+  async function readBook(file) {
+    var X = await loadXlsx(), buf = await file.arrayBuffer(), isCsv = /\.(csv|txt)$/i.test(file.name || '');
+    var wb = isCsv ? X.read(new TextDecoder('utf-8').decode(buf).replace(/^\ufeff/, ''), { type: 'string', raw: true }) : X.read(buf, { type: 'array', cellDates: true });
+    return wb.SheetNames.map(function (n) { return { name: n, rows: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) }; });
+  }
+  function sheetImportModal(file, sheets) {
+    var ok = sheets.map(function (sh) { return { name: sh.name, p: S.parseSheet(sh.rows, ST.m, ST.y) }; }).filter(function (x) { return x.p && (x.p.svc.length || x.p.prod.length); });
+    if (!ok.length) return false;
+    var en = String(empName() || '').toUpperCase(), pre = 0;
+    ok.forEach(function (x, i) { var n = String(x.name).trim().toUpperCase(); if (n && en.indexOf(n) >= 0) pre = i; });
+    var body = '<div><label class="form-label" for="svc-sh">' + esc(L('Sheet', 'Helaian')) + '</label><select class="form-input" id="svc-sh">' + ok.map(function (x, i) { return '<option value="' + i + '"' + (i === pre ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="svc-hint" id="svc-sh-p"></div>' +
+      (S.ext.attach ? '<label class="svc-tog" style="margin-top:6px"><input type="checkbox" id="svc-sh-att" checked> ' + esc(L('Attach the source file to this month', 'Lampirkan fail asal pada bulan ini')) + '</label>' : '') +
+      ((ST.logs.length || ST.items.length) ? '<div class="svc-hint" style="color:var(--warning)"><i class="ti ti-alert-triangle"></i> ' + esc(L('This month already has ' + ST.logs.length + ' logs / ' + ST.items.length + ' products — import adds more.', 'Bulan ini sudah ada ' + ST.logs.length + ' log / ' + ST.items.length + ' produk — import akan tambah lagi.')) + '</div>' : '');
+    var cur = function (o) { return ok[Number(o.querySelector('#svc-sh').value) || 0].p; };
+    var o = modal(L('Import from doc', 'Import dari dokumen') + ' · ' + mlabel(ST.m, ST.y), body, L('Import', 'Import'), async function (ov) {
+      var p = cur(ov);
+      if (p.bad.length) { toast(L('Fix line(s) ', 'Betulkan baris ') + p.bad.join(', '), 'error'); return false; }
+      var base = { tenant_id: tid(), employee_id: ST.emp, source: 'import' };
+      if (p.svc.length) { var r1 = await sb.from('svc_logs').insert(p.svc.map(function (x) { return Object.assign({}, base, x); })); if (r1.error) { toast(errMsg(r1.error), 'error'); return false; } }
+      if (p.prod.length) { var r2 = await sb.from('svc_product_logs').insert(p.prod.map(function (x) { return Object.assign({}, base, x); })); if (r2.error) { toast(errMsg(r2.error), 'error'); await refresh(); return false; } }
+      var att = ov.querySelector('#svc-sh-att');
+      if (att && att.checked && S.ext.attach) { try { await S.ext.attach(file); } catch (e) { console.warn('[svc] attach', e); } }
+      toast(L(p.svc.length + ' logs + ' + p.prod.length + ' products imported', p.svc.length + ' log + ' + p.prod.length + ' produk diimport')); await refresh(); return true;
+    });
+    var sel = o.querySelector('#svc-sh'), pv = o.querySelector('#svc-sh-p');
+    var show = function () {
+      var p = cur(o), c = S.calc(p.svc, ST.cfgRow || {}, { items: p.prod });
+      pv.textContent = L(p.svc.length + ' services · ' + rm(p.svc.reduce(function (a, x) { return a + num(x.price); }, 0)) + ' → ' + rm(c.svc_commission) + ' | ' + p.prod.length + ' products · ' + rm(c.product_sales) + ' → ' + rm(c.prod_commission) + ' | total ' + rm(c.commission_total) + (c.review ? ' · ' + c.review + ' need review' : ''),
+        p.svc.length + ' servis · ' + rm(p.svc.reduce(function (a, x) { return a + num(x.price); }, 0)) + ' → ' + rm(c.svc_commission) + ' | ' + p.prod.length + ' produk · ' + rm(c.product_sales) + ' → ' + rm(c.prod_commission) + ' | jumlah ' + rm(c.commission_total) + (c.review ? ' · ' + c.review + ' perlu semak' : '')) +
+        (p.bad.length ? L(' · bad lines: ', ' · baris salah: ') + p.bad.join(', ') : '');
+    };
+    sel.onchange = show; show();
+    return true;
+  }
   function isSheet(f) { return /\.(xlsx|xls|csv|txt)$/i.test(f.name || ''); }
   function isPdfFile(f) { return /pdf/i.test(f.type || '') || /\.pdf$/i.test(f.name || ''); }
   function isImgFile(f) { return /^image\//i.test(f.type || '') || /\.(png|jpe?g|webp|heic)$/i.test(f.name || ''); }
@@ -549,6 +815,9 @@
       '<div class="svc-hint" id="svc-ai-fn" style="margin-top:6px"></div>';
     var o = modal(L('Import from doc', 'Import dari dokumen'), body, L('Read document', 'Baca dokumen'), async function (ov) {
       if (!files.length) { toast(L('Choose a file first', 'Pilih fail dahulu'), 'error'); return false; }
+      if (ST.v4 && isSheet(files[0])) {
+        try { var book = await readBook(files[0]); if (sheetImportModal(files[0], book)) return true; } catch (e) { console.warn('[svc] sheet parse', e); }
+      }
       var fn = ov.querySelector('#svc-ai-fn');
       var setMsg = function (m) { if (fn) fn.textContent = m; };
       var got;
@@ -715,18 +984,19 @@
   }
   function waText(k, lang, url) {
     var en = lang !== 'bm', mon = ST.mon || {}, live = stNow() === 'draft';
-    var c = live ? S.calc(ST.logs, ST.cfgRow || {}, { product_sales: mon.product_sales, bonus_on: mon.bonus_on }) : null;
+    var c = live ? S.calc(ST.logs, ST.cfgRow || {}, monArg()) : null;
     var heads = live ? c.heads : num(mon.svc_heads), tot = live ? c.commission_total : num(mon.commission_total);
     var per = (en ? MEN : MBM)[ST.m - 1] + ' ' + ST.y, nm = empName(), pn = slotName('prepared') || nm, first = String(pn).split(/\s+/)[0] || pn, an = slotName('approved');
     var co = (window.WAD && WAD.company && WAD.company()) || (APP.tenant && APP.tenant.name) || 'M-Core', money = rm(tot);
+    var all = !!(ST.cfg && ST.cfg.svc_all), hE = all ? ' heads' : ' NM heads', hB = all ? ' kepala' : ' kepala NM', HE = all ? 'Heads: ' : 'NM heads: ', HB = all ? 'Kepala: ' : 'Kepala NM: ';
     if (k === 'svc_sign') return en
-      ? 'Hi' + (an ? ' ' + an : '') + ', please review the Service Commission statement of ' + nm + ' for ' + per + ' (' + heads + ' NM heads, total commission ' + money + ') and sign as Approved by via the link below (no login needed).\nView & sign: ' + url + '\nThank you. – ' + co
-      : 'Salam' + (an ? ' ' + an : '') + ', sila semak Penyata Komisen Servis ' + nm + ' bagi ' + per + ' (' + heads + ' kepala NM, jumlah komisen ' + money + ') dan tandatangan sebagai Diluluskan oleh melalui pautan di bawah (tiada log masuk).\nSemak & tandatangan: ' + url + '\nTerima kasih. – ' + co;
+      ? 'Hi' + (an ? ' ' + an : '') + ', please review the Service Commission statement of ' + nm + ' for ' + per + ' (' + heads + hE + ', total commission ' + money + ') and sign as Approved by via the link below (no login needed).\nView & sign: ' + url + '\nThank you. – ' + co
+      : 'Salam' + (an ? ' ' + an : '') + ', sila semak Penyata Komisen Servis ' + nm + ' bagi ' + per + ' (' + heads + hB + ', jumlah komisen ' + money + ') dan tandatangan sebagai Diluluskan oleh melalui pautan di bawah (tiada log masuk).\nSemak & tandatangan: ' + url + '\nTerima kasih. – ' + co;
     var signed = !!SG.rows.prepared, rem = k === 'svc_remind';
     return en
-      ? (rem ? 'Hi ' + first + ', reminder: ' : 'Hi ' + first + ', ') + (pn === nm ? 'your Service Commission statement' : 'the Service Commission statement of ' + nm) + ' for ' + per + ' is ready.\nNM heads: ' + heads + '\nTotal commission: ' + money + '\n\n' +
+      ? (rem ? 'Hi ' + first + ', reminder: ' : 'Hi ' + first + ', ') + (pn === nm ? 'your Service Commission statement' : 'the Service Commission statement of ' + nm) + ' for ' + per + ' is ready.\n' + HE + heads + '\nTotal commission: ' + money + '\n\n' +
         (signed ? 'View statement: ' : 'Review & sign as Prepared by (no login needed): ') + url + '\nThank you. – ' + co
-      : (rem ? 'Salam ' + first + ', peringatan: ' : 'Salam ' + first + ', ') + (pn === nm ? 'penyata Komisen Servis anda' : 'penyata Komisen Servis ' + nm) + ' bagi ' + per + ' sudah sedia.\nKepala NM: ' + heads + '\nJumlah komisen: ' + money + '\n\n' +
+      : (rem ? 'Salam ' + first + ', peringatan: ' : 'Salam ' + first + ', ') + (pn === nm ? 'penyata Komisen Servis anda' : 'penyata Komisen Servis ' + nm) + ' bagi ' + per + ' sudah sedia.\n' + HB + heads + '\nJumlah komisen: ' + money + '\n\n' +
         (signed ? 'Lihat penyata: ' : 'Semak & tandatangan sebagai Disediakan oleh (tiada log masuk): ') + url + '\nTerima kasih. – ' + co;
   }
   async function share(role, btn) {
@@ -889,26 +1159,28 @@
   function coSub(t) { var a = ''; try { a = typeof _pdocAddressLine === 'function' ? _pdocAddressLine(t) : (t.address || ''); } catch (e) {} return [a, t.phone].filter(Boolean).join(' · '); }
   function stModel(t) {
     t = t || APP.tenant || {};
-    var mon = ST.mon || {}, c = S.calc(ST.logs, ST.cfgRow || {}, { product_sales: mon.product_sales, bonus_on: mon.bonus_on }), r = c.rates;
+    var mon = ST.mon || {}, c = S.calc(ST.logs, ST.cfgRow || {}, monArg()), r = c.rates;
     var code = String((APP.tenant && APP.tenant.code) || 'MCORE').replace(/[^\w]+/g, '').toUpperCase();
     var ref = 'SC' + ST.y + pad(ST.m) + '-' + String(ST.emp).slice(0, 4).toUpperCase();
     var coName = t.name || (APP.tenant && APP.tenant.name) || '';
     var m = { co: coName, sub: coSub(t), logo: t.logo_url || '',
       title: L('SERVICE COMMISSION STATEMENT', 'PENYATA KOMISEN SERVIS'),
       meta: [{ k: L('Ref', 'Ruj.'), v: ref }, { k: L('Period', 'Tempoh'), v: mlabel(ST.m, ST.y) }, { k: L('Status', 'Status'), v: ({ draft: L('Draft', 'Draf'), submitted: L('Submitted', 'Dihantar'), approved: L('Approved', 'Diluluskan') })[mon.status || 'draft'] }],
-      party: { name: empName(), lines: [ST.empRow && ST.empRow.position || '', L('Scheme: ', 'Skim: ') + schemeText(r) + ' · ' + r.eligible_status + ' + ' + r.eligible_leads.join('/') + ' · ' + L('product ', 'produk ') + r.prod_rate_pct + '%'].filter(Boolean) },
+      party: { name: empName(), lines: [ST.empRow && ST.empRow.position || '', L('Scheme: ', 'Skim: ') + schemeText(r) + ' · ' + (r.svc_all ? '' : r.eligible_status + ' + ' + r.eligible_leads.join('/') + ' · ') + L('product ', 'produk ') + r.prod_rate_pct + '%'].filter(Boolean) },
       cols: [L('Date · Service', 'Tarikh · Servis'), L('Price', 'Harga'), L('Client', 'Pelanggan'), 'Lead', L('Commission', 'Komisen')],
-      rows: ST.logs.map(function (x) { var rc = rowCalc(x, r); return [dmy(x.log_date) + ' · ' + x.service + (rc.flag ? ' (' + flagText(rc.flag) + ')' : ''), x.price == null ? '—' : rm(x.price), x.client_status || '—', x.lead_source || '—', rc.ok ? rm(rc.cents / 100) : '—']; }),
+      rows: ST.logs.map(function (x) { var rc = rowCalc(x, r); return [dmy(x.log_date) + ' · ' + x.service + (x.code && x.code !== String(x.service || '').toUpperCase() ? ' [' + x.code + ']' : '') + (rc.flag ? ' (' + flagText(rc.flag) + ')' : '') + (rc.review ? ' (' + flagText('nocode') + ')' : ''), x.price == null ? '—' : rm(x.price), x.client_status || '—', x.lead_source || '—', rc.ok ? rm(rc.cents / 100) : '—']; }),
       tots: [], notes: [], sigs: [], foot: L('Computer-generated statement', 'Penyata janaan komputer') + ' · ' + coName,
       file: 'SVC-' + code + '-' + ref + '-' + ddmmyyyy() };
     if (!m.rows.length) m.rows.push([L('No logs this month', 'Tiada log bulan ini'), '', '', '', '']);
     if (ST.basic !== null) m.tots.push({ k: L('Basic pay', 'Gaji asas'), v: rm(ST.basic) });
     // short label + detail line (dk-doc wraps both; nothing is cut with "." any more)
-    m.tots.push({ k: L('Service commission', 'Komisen servis'), sub: L(c.heads + ' NM heads · ', c.heads + ' kepala NM · ') + schemeText(r), v: rm(c.svc_commission) });
+    m.tots.push({ k: L('Service commission', 'Komisen servis'), sub: (r.svc_all ? L(c.heads + ' heads · ', c.heads + ' kepala · ') : L(c.heads + ' NM heads · ', c.heads + ' kepala NM · ')) + schemeText(r), v: rm(c.svc_commission) });
     m.tots.push({ k: L('Product commission', 'Komisen produk'), sub: r.prod_rate_pct + '% × ' + rm(c.product_sales), v: rm(c.prod_commission) });
-    m.tots.push({ k: L('Conversion bonus', 'Bonus conversion'), v: rm(c.bonus) });
+    if (!(r.svc_all && !(c.bonus > 0))) m.tots.push({ k: L('Conversion bonus', 'Bonus conversion'), v: rm(c.bonus) });
     m.tots.push({ k: L('Total', 'Jumlah'), v: rm((ST.basic || 0) + c.commission_total), g: true });
-    if (mon.product_note) m.notes.push({ k: L('Products', 'Produk'), v: mon.product_note });
+    if (ST.items.length) m.notes.push({ k: L('Products', 'Produk'), v: ST.items.map(function (it) { var cd = codeOf('product', it.code); return dmy(it.log_date) + ' ' + (it.name || (cd && cd.name) || it.code || L('No name', 'Tanpa nama')) + (num(it.qty) !== 1 ? ' ×' + num(it.qty) : '') + ' ' + rm(it.amount); }).join(' · ') });
+    else if (mon.product_note) m.notes.push({ k: L('Products', 'Produk'), v: mon.product_note });
+    if (c.review) m.notes.push({ k: L('Needs review', 'Perlu semak'), v: L(c.review + ' row(s) have no code / name — already included in the total.', c.review + ' baris tiada kod / nama — sudah termasuk dalam jumlah.') });
     if (c.flags) m.notes.push({ k: L('Flags', 'Tanda'), v: L(c.flags + ' row(s) earn no commission (no price / no status / NM without TT-ADS lead).', c.flags + ' baris tiada komisen (tiada harga / tiada status / NM tanpa lead TT-ADS).') });
     m.notes.push({ k: L('Note', 'Nota'), v: L('Statutory deductions are applied in the payslip. Only approved months are paid.', 'Potongan berkanun dikira dalam slip gaji. Hanya bulan diluluskan dibayar.') });
     // signed slots: signer name + signed date + drawn PNG (dk-doc v5 sigs[].img); unsigned keep the old fallback
@@ -1029,6 +1301,10 @@
     }
   }
   S.split = split;
+  // helpers for app/svc-comm-pv.js (PV for all staff / PVD / PV description / receipt / source file)
+  S.util = { L: L, bm: bm, tid: tid, esc: esc, toast: toast, rm: rm, num: num, errMsg: errMsg, missing: missing, mlabel: mlabel, dmy: dmy, pad: pad,
+    MEN: MEN, MBM: MBM, rates: rates, rowCalc: rowCalc, refresh: refresh, paint: function () { paint(); }, isOwner: isOwner, empName: empName, base: base, sigErr: sigErr,
+    modal: modal, busy: busy, prevMY: prevMY, sigRows: function () { return SG.rows; } };
   function split(html, rec, isBm) {
     if (!rec || !(num(rec.commission) > 0)) return html;
     var x = PAY.slip[rec.employee_id + ':' + rec.month + ':' + rec.year];
@@ -1039,7 +1315,8 @@
     var B = function (en, b) { return isBm ? b : en; };
     var row = function (lbl, amt) { return '<tr><td>' + esc(lbl) + '</td><td style="' + mm[2] + '">+ ' + esc(rm(amt)) + '</td></tr>'; };
     var out = '';
-    if (num(x.svc_commission) > 0) out += row(B('Service commission (' + num(x.svc_heads) + ' heads NM, ' + pct + '%' + (cap != null ? ' max ' + rm(cap) + '/head' : '') + ')', 'Komisen servis (' + num(x.svc_heads) + ' kepala NM, ' + pct + '%' + (cap != null ? ' maks ' + rm(cap) + '/kepala' : '') + ')'), x.svc_commission);
+    if (num(x.svc_commission) > 0 && r.svc_all) out += row(B('Service commission (' + num(x.svc_heads) + ' heads, ' + pct + '%)', 'Komisen servis (' + num(x.svc_heads) + ' kepala, ' + pct + '%)'), x.svc_commission);
+    else if (num(x.svc_commission) > 0) out += row(B('Service commission (' + num(x.svc_heads) + ' heads NM, ' + pct + '%' + (cap != null ? ' max ' + rm(cap) + '/head' : '') + ')', 'Komisen servis (' + num(x.svc_heads) + ' kepala NM, ' + pct + '%' + (cap != null ? ' maks ' + rm(cap) + '/kepala' : '') + ')'), x.svc_commission);
     if (num(x.prod_commission) > 0) out += row(B('Product commission (' + pp + '% × ' + rm(x.product_sales) + ')', 'Komisen produk (' + pp + '% × ' + rm(x.product_sales) + ')'), x.prod_commission);
     if (num(x.bonus) > 0) out += row(B('Conversion bonus', 'Bonus conversion'), x.bonus);
     var rest = Math.round((num(rec.commission) - num(x.commission_total)) * 100) / 100;
