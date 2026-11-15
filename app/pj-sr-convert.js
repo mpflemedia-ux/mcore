@@ -26,14 +26,17 @@
     return 'low';
   }
 
-  var elig = null; /* cached per session: {ok, c} or null = not checked yet */
+  var elig = null; /* cached per tenant: {ok, c, tid} or null = not checked yet. Keyed by tenant because Support mode
+                       (support-tenant.js / pa-core.js) swaps APP.tenant in place without a reload - a per-session cache kept
+                       the first tenant's answer (eg. platform admin's own workspace = no contract) and hid View Request / Request from M-Core */
   function eligible() {
-    if (elig) return Promise.resolve(elig);
     if (typeof SD === 'undefined' || !SD.probe || !window.APP || !APP.tenant) return Promise.resolve({ ok: false, c: null });
+    var t = String(APP.tenant.id);
+    if (elig && elig.tid === t) return Promise.resolve(elig);
     return SD.probe().then(function (h) {
-      if (!h.desk) { elig = { ok: false, c: null }; return elig; }
-      return SD.myContract(APP.tenant.id).then(function (c) {
-        elig = { ok: SD.usable(c), c: c };
+      if (!h.desk) { elig = { ok: false, c: null, tid: t }; return elig; }
+      return SD.myContract(t).then(function (c) {
+        elig = { ok: SD.usable(c), c: c, tid: t };
         return elig;
       });
     }).catch(function () { return { ok: false, c: null }; });
