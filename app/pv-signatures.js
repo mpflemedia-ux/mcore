@@ -54,6 +54,27 @@
     await P.loadImgs(sigs);
     return X.ROLES.map(function (x) { var g = sigs[x.r]; return { role: x.r, label: X.roleLabel(x.r), name: g ? g.signer_name : '', date: g ? X.dmy(g.signed_at) : '', img: g ? IMG[g.storage_path] || '' : '' }; });
   };
+  /* Print/PDF slots: use signed name, else typed prepared_by / checked_by / first_approved_by / approved_by.
+     If any slot has a name or signature, hide the empty ones. If none do, keep required blank lines for wet-ink. */
+  P.printSlots = async function (kind, id, doc, amount) {
+    var cells = await P.images(kind, id);
+    var col = { prepared: 'prepared_by', checked: 'checked_by', first: 'first_approved_by', second: 'approved_by' };
+    var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    doc = doc || {};
+    cells.forEach(function (c) {
+      var n = String(c.name || '').trim();
+      if (!n) {
+        var raw = String(doc[col[c.role]] || '').trim();
+        if (raw && !uuid.test(raw)) n = raw;
+      }
+      c.name = n;
+    });
+    var filled = cells.filter(function (c) { return !!(c.name || c.img); });
+    if (filled.length) return filled;
+    var req = X.ROLES.map(function (r) { return r.r; });
+    try { req = X.requiredRoles(await X.settings(), amount); } catch (e) {}
+    return cells.filter(function (c) { return req.indexOf(c.role) >= 0; });
+  };
 
   /* ---------- css ---------- */
   function css() {
@@ -272,11 +293,10 @@
   }
 
   /* ---------- print grid (light; images as data URLs) ---------- */
-  P.printHtml = async function (kind, id, amount) {
-    var cells = await P.images(kind, id);
-    cells = cells.filter(function (c) { return !!c.name; });
+  P.printHtml = async function (kind, id, amount, doc) {
+    var cells = await P.printSlots(kind, id, doc, amount);
     if (!cells.length) return '';
-    return '<div class="pvp-sgrid" style="grid-template-columns:repeat(' + cells.length + ',170px);justify-content:center">' + cells.map(function (c) {
+    return '<div class="pvp-sgrid" style="grid-template-columns:repeat(' + cells.length + ',minmax(0,1fr))">' + cells.map(function (c) {
       return '<div class="pvp-sg"><div class="pvp-sgi">' + (c.img ? '<img alt="" src="' + c.img + '">' : '') + '</div><div class="pvp-sgl"></div>' +
         '<div class="pvp-sgn">' + esc(c.name || '\u00a0') + '</div><div class="pvp-sgr">' + esc(c.label) + '</div>' +
         '<div class="pvp-sgd">' + esc(L('Date', 'Tarikh') + ': ' + (c.date || '')) + '</div></div>';

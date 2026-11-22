@@ -15,13 +15,13 @@
       var b = (await sb.from('payment_voucher_batches').select('*').eq('id', id).eq('tenant_id', X.tid()).maybeSingle()).data;
       if (!b) throw new Error(L('Not found', 'Tidak dijumpai'));
       var ls = (await sb.from('payment_voucher_batch_lines').select('*').eq('batch_id', id).eq('tenant_id', X.tid()).order('sort_order')).data || [];
-      return { kind: kind, tn: tn, ref: b.ref_no || 'PVD', date: b.batch_date, status: b.status, title: b.title || '', note: b.notes || b.description || '', lines: ls,
+      return { kind: kind, tn: tn, ref: b.ref_no || 'PVD', date: b.batch_date, status: b.status, title: b.title || '', note: b.notes || b.description || '', doc: b, lines: ls,
         total: X.r2(ls.reduce(function (s, l) { return s + (Number(l.amount) || 0); }, 0)), phone: '', to: null };
     }
     var v = (await sb.from('payment_vouchers').select('*').eq('id', id).eq('tenant_id', X.tid()).maybeSingle()).data;
     if (!v) throw new Error(L('Not found', 'Tidak dijumpai'));
     return { kind: kind, tn: tn, ref: v.ref_no || 'PV', date: v.voucher_date, status: v.status, title: v.payee_name || '', note: v.description || '', lines: [v],
-      total: X.r2(v.amount), phone: v.phone || '', to: v.payee_name || null, v: v };
+      total: X.r2(v.amount), phone: v.phone || '', to: v.payee_name || null, v: v, doc: v };
   }
   function docTitle(kind) { return kind === 'pvd' ? L('PAYMENT VOUCHER DISBURSEMENT', 'PENYALURAN BAUCAR BAYARAN') : L('PAYMENT VOUCHER', 'BAUCAR BAYARAN'); }
   function fname(d) { var s = function (x) { try { return _pdocSlug(x); } catch (e) { return String(x || '').replace(/[^a-zA-Z0-9-]/g, ''); } }; return (d.kind === 'pvd' ? 'PVD' : 'PV') + '_' + s(d.ref) + (d.kind === 'pv' ? '_' + s(d.title) : '') + '.pdf'; }
@@ -66,7 +66,7 @@
       return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(l.payee_name || '') + '</b>' + (l.description ? '<div class="pvp-mu pvp-desc">' + esc(descLines(X.descText(l.description)).join('\n')) + '</div>' : '') + '</td>' +
         '<td>' + esc(bankOf(l) || '—') + '</td><td>' + esc(payOf(l)) + '</td><td>' + esc(X.catLabel(l.category) || '') + '</td><td class="pvp-r">' + esc(rm(l.amount)) + '</td></tr>';
     }).join('');
-    var sig = ''; try { sig = window.PVS ? await PVS.printHtml(d.kind, docId, d.total) : ''; } catch (e) {}
+    var sig = ''; try { sig = window.PVS ? await PVS.printHtml(d.kind, docId, d.total, d.doc) : ''; } catch (e) {}
     return '<div class="pvp-sheet"' + (acc ? ' style="--pdoc-accent:' + esc(acc) + '"' : '') + '>' +
       '<div class="pvp-h"><div class="pvp-co">' + (tn.logo_url ? '<img alt="" src="' + esc(tn.logo_url) + '">' : '') + '<div><div class="pvp-con">' + esc(tn.name || '') + '</div>' +
       (addr ? '<div class="pvp-cos">' + esc(addr) + '</div>' : '') + (tn.phone ? '<div class="pvp-cos">' + esc(tn.phone) + '</div>' : '') + '</div></div>' +
@@ -179,14 +179,15 @@
     // signatures
     var cells = [];
     try {
-      cells = (window.PVS ? await PVS.images(d.kind, docId) : X.ROLES.map(function (r) { return { role: r.r, label: X.roleLabel(r.r), name: '', date: '', img: '' }; }))
-        .filter(function (c) { return !!c.name; });
+      cells = window.PVS
+        ? await PVS.printSlots(d.kind, docId, d.doc, d.total)
+        : X.ROLES.map(function (r) { return { role: r.r, label: X.roleLabel(r.r), name: '', date: '', img: '' }; });
     } catch (e) {}
     if (cells.length) {
       if (y < 120) { pg = doc.addPage([W, H]); y = H - 60; }
-      var cw = (x1 - x0) / X.ROLES.length, rowX0 = x0 + ((x1 - x0) - cw * cells.length) / 2;
+      var cw = (x1 - x0) / cells.length;
       for (var i = 0; i < cells.length; i++) {
-        var c = cells[i], cx = rowX0 + cw * i, by = y - 56;
+        var c = cells[i], cx = x0 + cw * i, by = y - 56;
         if (c.img) {
           var im = null; try { im = /^data:image\/png/.test(c.img) ? await doc.embedPng(b64(c.img)) : await doc.embedJpg(b64(c.img)); } catch (e) { im = null; }
           if (im) { var s2 = Math.min((cw - 20) / im.width, 46 / im.height); pg.drawImage(im, { x: cx + (cw - im.width * s2) / 2, y: by + 4, width: im.width * s2, height: im.height * s2 }); }
