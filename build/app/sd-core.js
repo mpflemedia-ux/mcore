@@ -4,7 +4,7 @@
   if (window.SD && window.SD._core) return;
   var SD = window.SD = window.SD || {};
   SD._core = 1; SD.view = SD.view || {}; SD.admin = SD.admin || {};
-  SD.has = { contracts: false, desk: false, consent: false, packs: false };
+  SD.has = { contracts: false, desk: false, consent: false, packs: false, agent: false };
   var C = function () { return window.COB || {}; };
   ['bm', 'L', 'esc', 'isPA', 'isTA', 'tid', 'date', 'time', 'dt', 'today', 'daysTo', 'age', 'size', 'toast', 'err', 'modal', 'closeModal', 'loading', 'fail'].forEach(function (k) {
     SD[k] = function () { var f = C()[k]; return typeof f === 'function' ? f.apply(null, arguments) : undefined; };
@@ -91,8 +91,9 @@
   SD.head = function (title, sub, right) {
     return '<div class="page-header"><div><div class="page-title">' + SD.esc(title) + '</div>' + (sub ? '<div style="font-size:13px;color:var(--text-3);margin-top:2px">' + SD.esc(sub) + '</div>' : '') + '</div>' + (right || '') + '</div>';
   };
-  function tabBtn(v, icon, en, bm, active) {
-    return '<button class="btn btn-sm ' + (active === v ? 'btn-primary' : 'btn-outline') + '" onclick="openPage(\'admin\',{view:\'' + v + '\'})"><i class="ti ' + icon + '"></i> ' + (SD.bm() ? bm : en) + '</button>';
+  function tabBtn(v, icon, en, bm, active, badge) {
+    var b = badge ? '<span id="sd-open-badge" style="margin-left:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">' + badge + '</span>' : '';
+    return '<button class="btn btn-sm ' + (active === v ? 'btn-primary' : 'btn-outline') + '" onclick="openPage(\'admin\',{view:\'' + v + '\'})"><i class="ti ' + icon + '"></i> ' + (SD.bm() ? bm : en) + b + '</button>';
   }
   function wrap() {
     var o = window.openPage;
@@ -117,7 +118,8 @@
       var wt = function (active) {
         var h = t.apply(this, arguments);
         if (!SD.isPA() || !SD.has.contracts) return h;
-        var add = tabBtn('sd_contracts', 'ti-file-certificate', 'Service Contracts', 'Kontrak Servis', active) + (SD.has.desk ? tabBtn('sd_desk', 'ti-headset', 'Service Desk', 'Service Desk', active) : '');
+        var add = tabBtn('sd_contracts', 'ti-file-certificate', 'Service Contracts', 'Kontrak Servis', active) + (SD.has.desk ? tabBtn('sd_desk', 'ti-headset', 'Service Desk', 'Service Desk', active, '') : '');
+        if (SD.has.desk) setTimeout(function(){ SD.openBadge && SD.openBadge(); }, 50);
         var i = h.indexOf("view:'clients'"), j = i >= 0 ? h.indexOf('</button>', i) : -1;
         if (j >= 0) return h.slice(0, j + 9) + add + h.slice(j + 9);
         var k = h.lastIndexOf('</div>');
