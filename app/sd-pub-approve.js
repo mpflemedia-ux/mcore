@@ -27,7 +27,10 @@
   SD.pubInject = function (m, S) {
     if (!SD.pubOn) return;
     var root = m.querySelector('.cob-root'); if (!root) return;
-    root.insertAdjacentHTML('afterbegin', SD.tabsBar('req')); SD.bindTabs(m);
+    var tb = root.querySelector('#sd-toolbar');
+    if (tb) tb.insertAdjacentHTML('afterbegin', SD.tabsBar('req'));
+    else root.insertAdjacentHTML('afterbegin', SD.tabsBar('req'));
+    SD.bindTabs(m);
     var l = SD.pub.link, pend = SD.pub.pending;
     if (l && l.enabled) {
       var pct = l.monthly_quota ? Math.min(100, Math.round(SD.pub.used / l.monthly_quota * 100)) : 0, q = S.c && S.c.monthly_quota;

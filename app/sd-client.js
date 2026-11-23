@@ -1,4 +1,4 @@
-/* M-Core Service Desk - client 'Servis Saya': contract card, counters, list, FAB, 3-step new request. */
+/* M-Core Service Desk - client 'Servis Saya': contract card, counters, list, FAB (phone) + toolbar New request (tablet/desktop), 3-step new request. */
 (function () {
   var SD = window.SD; if (!SD || SD._client) return; SD._client = 1;
   var S = SD.CL = { c: null, rows: [], f: 'all', used: 0 };
@@ -27,7 +27,9 @@
     S.rows.forEach(function (r) { if (['submitted', 'triaged', 'in_progress', 'revision'].indexOf(r.status) >= 0) n.p++; else if (r.status === 'waiting_client') n.w++; else if (r.status === 'delivered') n.d++; else n.c++; });
     var act = S.rows.filter(function (r) { return r.status === 'waiting_client' || r.status === 'delivered'; }).length;
     var rows = S.rows.filter(function (r) { return S.f === 'all' || (S.f === 'act' ? (r.status === 'waiting_client' || r.status === 'delivered') : r.status === 'delivered'); });
-    m.innerHTML = '<div class="cob-root" style="padding-bottom:80px">' + (ok ? '' : lockMsg(c)) + notices(c) + card(c) +
+    m.innerHTML = '<div class="cob-root" style="padding-bottom:80px">' +
+      '<div class="sd-toolbar" id="sd-toolbar">' + (ok ? '<button type="button" class="btn btn-primary sd-new" id="sd-new"><i class="ti ti-plus"></i> ' + SD.L('New request', 'Permohonan baharu') + '</button>' : '') + '</div>' +
+      (ok ? '' : lockMsg(c)) + notices(c) + card(c) +
       '<div class="sd-cnt">' + [[n.p, SD.L('In progress', 'Proses'), 'var(--cob-info,var(--info))'], [n.w, SD.L('Waiting', 'Tunggu'), 'var(--cob-warn,var(--warning))'], [n.d, SD.L('Delivered', 'Dihantar'), 'var(--cob-ok,var(--success))'], [n.c, SD.L('Closed', 'Ditutup'), 'var(--text-2)']]
         .map(function (x) { return '<div class="cob-card"><b style="color:' + x[2] + '">' + x[0] + '</b><span class="cob-xs">' + x[1] + '</span></div>'; }).join('') + '</div>' +
       '<div class="cob-chips" style="margin-bottom:10px">' + [['all', SD.L('All ', 'Semua ') + S.rows.length], ['act', SD.L('Needs action ', 'Perlu tindakan ') + act], ['del', SD.L('Delivered ', 'Dihantar ') + n.d]]
@@ -38,7 +40,7 @@
       (ok ? '<button class="btn btn-primary sd-fab" id="sd-fab"><i class="ti ti-plus"></i> ' + SD.L('New request', 'Permohonan baharu') + '</button>' : '') + '</div>';
     m.querySelectorAll('[data-f]').forEach(function (b) { b.onclick = function () { S.f = b.dataset.f; paint(); }; });
     m.querySelectorAll('.sd-li').forEach(function (b) { b.onclick = function () { SD.go('servis_saya', { id: b.dataset.id }); }; });
-    var f = m.querySelector('#sd-fab'); if (f) f.onclick = function () { SD.go('servis_saya', { new: 1 }); };
+    m.querySelectorAll('#sd-fab, #sd-new').forEach(function (b) { b.onclick = function () { SD.go('servis_saya', { new: 1 }); }; });
     if (SD.pubInject) SD.pubInject(m, S);
   }
   function load() {
