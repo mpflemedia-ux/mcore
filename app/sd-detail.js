@@ -48,8 +48,7 @@
     var paid = admin || c === true;
     /* Draf AI card (platform admin only): latest ai_draft internal_note not yet promoted to a
        deliverable attachment. "Hantar" copies the same file_path into a real deliverable event
-       + SD.setStatus(delivered); "Minta semula" is a plain internal_note the agent reads on its
-       next queue() pass (see sd-agent/handler.ts redoRequested). */
+       + SD.setStatus(delivered). The SR Agent was removed (Nov 2026): no redo button; existing drafts can still be viewed / sent. */
     var drafts = admin ? ev.filter(function (e) { return e.type === 'internal_note' && (e.meta || {}).ai_draft; }).sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at); }) : [];
     var latestDraft = drafts[0] || null;
     var draftPromoted = latestDraft && ev.some(function (e) { return e.type === 'attachment' && e.file_path === latestDraft.file_path && (e.meta || {}).deliverable; });
@@ -58,8 +57,7 @@
       '<div class="cob-sm" style="margin-top:4px;overflow-wrap:anywhere">' + SD.esc(latestDraft.file_name || '') + '</div>' +
       (latestDraft.body ? '<p class="cob-xs" style="white-space:pre-wrap;margin-top:6px;overflow-wrap:anywhere">' + SD.lnk(latestDraft.body) + '</p>' : '') +
       '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" id="sd-draft-view"><i class="ti ti-eye"></i> ' + SD.L('View', 'Lihat') + '</button>' +
-      '<button class="btn btn-success btn-sm" id="sd-draft-send"><i class="ti ti-send"></i> ' + SD.L('Send to client', 'Hantar ke client') + '</button>' +
-      '<button class="btn btn-outline btn-sm" id="sd-draft-again"><i class="ti ti-refresh"></i> ' + SD.L('Request redo', 'Minta semula') + '</button></div></div>' : '';
+      '<button class="btn btn-success btn-sm" id="sd-draft-send"><i class="ti ti-send"></i> ' + SD.L('Send to client', 'Hantar ke client') + '</button></div></div>' : '';
     var files = ev.filter(function (e) { return e.type === 'attachment' && e.file_path; });
     var dels = files.filter(function (e) { return (e.meta || {}).deliverable; }), atts = files.filter(function (e) { return !(e.meta || {}).deliverable; });
     var due = SD.due(r), who = function (id) { return names[id] || (admin ? '' : 'M-Core'); };
@@ -119,14 +117,6 @@
         .then(function () { return SD.setStatus(r, 'delivered', null, false); })
         .then(function () { SD.toast(SD.L('Sent to client', 'Dihantar kepada client'), 'success'); reload(); })
         .catch(function (e) { ds.disabled = false; SD.toast(SD.err(e), 'error'); });
-    };
-    var da = m.querySelector('#sd-draft-again'); if (da) da.onclick = function () {
-      var note = prompt(SD.L('What should the agent fix?', 'Apa yang perlu diperbetulkan oleh agent?'));
-      if (!note || !note.trim()) return;
-      da.disabled = true;
-      SD.event(r, 'internal_note', { body: note.trim() })
-        .then(function () { SD.toast(SD.L('Noted — the agent will see this next run', 'Dicatat — agent akan lihat pada larian seterusnya'), 'success'); reload(); })
-        .catch(function (e) { da.disabled = false; SD.toast(SD.err(e), 'error'); });
     };
     var mine = m.querySelector('#sd-mine'); if (mine) mine.onclick = function () {
       sb.from('service_requests').update({ assigned_to: SD.uid(), updated_at: new Date().toISOString() }).eq('id', r.id).then(function (x) { if (x.error) return SD.toast(SD.err(x.error), 'error'); reload(); });

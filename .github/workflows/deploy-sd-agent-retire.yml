@@ -1,0 +1,25 @@
+name: deploy-sd-agent-retire-oneshot
+# One-shot (owner-approved): deploy the retired sd-agent stub (410 for every call), then remove this file.
+on:
+  push:
+    branches: [ccr-363bf08c-fi4j7s]
+    paths: ['.github/workflows/deploy-sd-agent-retire.yml']
+permissions:
+  contents: write
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.33.0
+      - run: supabase functions deploy sd-agent --project-ref wjqhhnjlgoigoagsnsen --no-verify-jwt
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -q .github/workflows/deploy-sd-agent-retire.yml
+          git commit -m "ci: remove one-shot deploy-sd-agent-retire workflow"
+          git push
