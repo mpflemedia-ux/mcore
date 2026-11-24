@@ -40693,7 +40693,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     // No controllerchange→reload: that forced a second full load after SW claim
     // (blank first paint + auto reload). Pass-through SW (v38+) needs no HTML re-fetch.
-    navigator.serviceWorker.register('./sw.js?v=18').then(reg=>{
+    navigator.serviceWorker.register('./sw.js?v=19').then(reg=>{
       try { reg.update() } catch(e) {}
       caches.keys().then(keys =>
         keys.filter(k => k.startsWith('nexerp-shell-') && k !== 'nexerp-shell-v4')
@@ -40784,14 +40784,14 @@ if('serviceWorker' in navigator){
 <script src="./sales-plan-css.js?v=1"></script>
 <script src="./sales-plan-css2.js?v=2"></script>
 <script src="./sales-plan-calc.js?v=2"></script>
-<script src="./sales-plan-data.js?v=2"></script>
+<script src="./sales-plan-data.js?v=3"></script>
 <script src="./sales-plan-overview.js?v=1"></script>
 <script src="./sales-plan-weekly.js?v=1"></script>
 <script src="./sales-plan-weekly-save.js?v=1"></script>
 <script src="./sales-plan-miles.js?v=1"></script>
 <script src="./sales-plan-miles-save.js?v=1"></script>
 <script src="./sales-plan-css3.js?v=1"></script>
-<script src="./sales-plan-stock.js?v=2"></script>
+<script src="./sales-plan-stock.js?v=3"></script>
 <script src="./sales-plan-batch-form.js?v=2"></script>
 <script src="./sales-plan-fin.js?v=1"></script>
 <script src="./sales-plan-repay.js?v=1"></script>
@@ -40800,7 +40800,7 @@ if('serviceWorker' in navigator){
 <script src="./sales-plan-report.js?v=2"></script>
 <script src="./sales-plan-import-map.js?v=1"></script>
 <script src="./sales-plan-import.js?v=1"></script>
-<script src="./sales-plan-css5.js?v=1"></script>
+<script src="./sales-plan-css5.js?v=2"></script>
 <script src="./booking-state.js?v=4"></script>
 <script src="./booking-settings-ui.js?v=2"></script>
 <script src="./booking-realtime.js?v=5"></script>
@@ -41021,7 +41021,9 @@ if('serviceWorker' in navigator){
 <script src="./booking-inbox2.js?v=4"></script>
 <script src="./booking-notif-set.js?v=1"></script>
 <script src="./ffm-core.js?v=10"></script>
-<script src="./ffm-hub.js?v=17"></script>
+<script src="./ffm-hub.js?v=18"></script>
+<script src="./ffm-sold.js?v=1"></script>
+<script src="./ffm-daily.js?v=1"></script>
 <script src="./ffm-do.js?v=10"></script>
 <script src="./ffm-po.js?v=10"></script>
 <script src="./dk-cards.js?v=5"></script>

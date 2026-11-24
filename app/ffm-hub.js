@@ -24,12 +24,15 @@
       var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-outline btn-sm'; b.setAttribute('data-ffm-hub', '1');
       b.innerHTML = '<i class="ti ti-building-warehouse"></i> ' + esc(t('Flash Fulfillment', 'Flash Fulfillment'));
       b.onclick = function () { openPage('logistics', { view: 'ffm' }); };
-      box.appendChild(b); btns.forEach(function (x) { box.appendChild(x); });
+      var d = document.createElement('button'); d.type = 'button'; d.className = 'btn btn-outline btn-sm'; d.setAttribute('data-ffm-hub', 'daily');
+      d.innerHTML = '<i class="ti ti-calendar"></i> ' + esc(t('FFM today', 'FFM hari ini'));
+      d.onclick = function () { openPage('logistics', { view: 'ffm', tab: 'daily' }); };
+      box.appendChild(b); box.appendChild(d); btns.forEach(function (x) { box.appendChild(x); });
       head.classList.add('ffm-page-head'); head.style.flexWrap = 'wrap'; head.style.gap = '10px';
       head.appendChild(box);
     }
 
-    var TABS = [['accounts', 'Accounts', 'Akaun', 'ti-plug'], ['products', 'Products', 'Produk', 'ti-barcode'], ['stock', 'Stock', 'Stok', 'ti-box'], ['recon', 'Reconciliation', 'Rekonsiliasi', 'ti-scale'], ['funded', 'Funded', 'Dibiayai', 'ti-coin']];
+    var TABS = [['accounts', 'Accounts', 'Akaun', 'ti-plug'], ['products', 'Products', 'Produk', 'ti-barcode'], ['stock', 'Stock', 'Stok', 'ti-box'], ['recon', 'Reconciliation', 'Rekonsiliasi', 'ti-scale'], ['funded', 'Funded', 'Dibiayai', 'ti-coin'], ['daily', 'Today', 'Hari ini', 'ti-calendar']];
 
     async function renderHub(params) {
       var main = document.getElementById('main');
@@ -48,9 +51,14 @@
         if (tab === 'accounts') return accountsTab(body, accts);
         if (!accts.length) { body.innerHTML = emptyNoAcct(); return; }
         if (tab === 'products') return productsTab(body, accts, params.account);
-        if (tab === 'stock') return stockTab(body, accts);
-        if (tab === 'recon') return reconTab(body, accts);
+        if (tab === 'stock') return stockTab(body, accts, params.batch);
+        if (tab === 'recon') return reconTab(body, accts, params.batch);
         if (tab === 'funded') return fundedTab(body, accts);
+        if (tab === 'daily') {
+          if (window.FFMDaily && typeof FFMDaily.render === 'function') return FFMDaily.render(body, accts);
+          body.innerHTML = '<div class="card" style="padding:16px"><span class="ffm-muted">' + esc(t('Daily list is loading… close and reopen this page.', 'Senarai harian sedang dimuat… tutup dan buka semula halaman ini.')) + '</span></div>';
+          return;
+        }
       } catch (e) { body.innerHTML = '<div class="card" style="padding:20px"><div class="ffm-err">' + esc(e.message || e) + '</div></div>'; }
     }
     function emptyNoAcct() {
@@ -204,8 +212,11 @@
       var rs = await Promise.all([
         sb.from('products').select('id,code,name_en,name_bm,barcode').eq('tenant_id', F.tid()).is('deleted_at', null).order('name_en').limit(1000),
         // Whole tenant (not just this account): need to know which products are already claimed by OTHER accounts, to hide them here.
-        sb.from('ffm_product_links').select('product_id,account_id,barcode,pcs_per_unit,synced_ok,last_synced_at,last_error').eq('tenant_id', F.tid()).is('deleted_at', null)
+        sb.from('ffm_product_links').select('product_id,account_id,barcode,pcs_per_unit,tiktok_listed_qty,synced_ok,last_synced_at,last_error').eq('tenant_id', F.tid()).is('deleted_at', null)
       ]);
+      if (rs[1].error && /tiktok_listed_qty/i.test(rs[1].error.message || '')) {
+        rs[1] = await sb.from('ffm_product_links').select('product_id,account_id,barcode,pcs_per_unit,synced_ok,last_synced_at,last_error').eq('tenant_id', F.tid()).is('deleted_at', null);
+      }
       var allLinks = rs[1].data || [], links = {}, elsewhere = {};
       allLinks.forEach(function (l) { if (F.same(l.account_id, acct.id)) links[String(l.product_id)] = l; else elsewhere[String(l.product_id)] = true; });
       // A product already linked to a different account doesn't show here — avoids the "No barcode" card that looks
@@ -245,19 +256,24 @@
       var html = '<div class="ffm-muted" style="margin-bottom:10px">' + esc((typeof prodName === 'function' ? prodName(p) : p.name_en) + ' · ' + acct.label) + '</div>' +
         '<div class="ffm-row">' + inp('fl-bc', t('FFM barcode for this account', 'Barkod FFM untuk akaun ini'), bc, 'maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-no-titlecase="1"') +
         inp('fl-ppu', t('Pcs per FFM unit', 'Pcs seunit FFM'), String(ppu), 'type="number" min="1" step="1" inputmode="numeric"') + '</div>' +
+        inp('fl-listed', t('TikTok listed stock (manual)', 'Stok tersenarai TikTok (manual)'), (l && l.tiktok_listed_qty != null && l.tiktok_listed_qty !== '') ? String(l.tiktok_listed_qty) : '', 'type="number" min="0" step="1" inputmode="numeric"') +
         '<div class="ffm-muted" id="fl-hint"></div><div class="ffm-warn" id="fl-ppu-warn" role="status"></div><div class="ffm-warn" id="fl-warn" role="status"></div>' +
         (l ? '<button type="button" class="btn btn-outline btn-sm" id="fl-del" style="color:var(--danger);border-color:var(--danger);margin-top:10px"><i class="ti ti-unlink"></i> ' + esc(t('Remove link for this account', 'Buang pautan untuk akaun ini')) + '</button>' : '') +
         '<div class="ffm-sec" style="margin-top:16px">' + esc(t('Not this product? ', 'Bukan produk ini? ')) + '</div>' +
         '<button type="button" class="btn btn-outline btn-sm" id="fl-delprod" style="color:var(--danger);border-color:var(--danger)"><i class="ti ti-trash"></i> ' + esc(t('Delete this product', 'Padam produk ini')) + '</button>';
       var ov = F.modal(t('FFM barcode & pack size', 'Barkod FFM & saiz pek'), html, t('Save', 'Simpan'), async function (ov, btn) {
         var nb = ov.querySelector('#fl-bc').value.trim(), np = Number(ov.querySelector('#fl-ppu').value);
+        var listedEl = ov.querySelector('#fl-listed'), listed = listedEl && listedEl.value.trim() !== '' ? Number(listedEl.value) : null;
         if (!F.barcodeOk(nb)) return F.modalErr(t('Barcode: letters and digits only (max 40).', 'Barkod: huruf dan digit sahaja (maks 40).'));
         if (!(np >= 1 && Math.floor(np) === np)) return F.modalErr(t('Pcs per unit must be a whole number of 1 or more.', 'Pcs seunit mesti nombor bulat 1 atau lebih.'));
+        if (listed != null && !(listed >= 0 && isFinite(listed))) return F.modalErr(t('TikTok listed stock must be 0 or more.', 'Stok tersenarai TikTok mesti 0 atau lebih.'));
         F.modalErr('');
         if (!F.ean13Ok(nb) && warned !== nb) { warned = nb; ov.querySelector('#fl-warn').textContent = t('Warning: ' + nb + ' fails the EAN-13 check digit. Check the barcode, or press Save again to keep it.', 'Amaran: ' + nb + ' gagal semakan digit EAN-13. Semak barkod, atau tekan Simpan sekali lagi untuk kekalkan.'); return; }
         F.busy(btn, true, t('Saving…', 'Menyimpan…'));
         try {
-          var r = await F.api('save_link', { account_id: acct.id, product_id: p.id, barcode: nb, pcs_per_unit: np });
+          var payload = { account_id: acct.id, product_id: p.id, barcode: nb, pcs_per_unit: np };
+          if (listed != null) payload.tiktok_listed_qty = listed;
+          var r = await F.api('save_link', payload);
           F.closeModal();
           showToast(r.resync ? t('Saved — sync products to send the new barcode to FFM', 'Disimpan — segerak produk untuk hantar barkod baharu ke FFM') : t('Saved', 'Disimpan'), r.resync ? 'warning' : 'success');
           reload('products', { account: acct.id });
@@ -296,8 +312,30 @@
       };
     }
 
+    async function loadBatchOpts() {
+      try {
+        var r = await sb.from('sales_plan_batch_barcodes').select('batch_id,barcode,account_id').eq('tenant_id', F.tid()).is('deleted_at', null);
+        if (r.error) return { batches: [], rows: [] };
+        var ids = Array.from(new Set((r.data || []).map(function (x) { return x.batch_id; })));
+        if (!ids.length) return { batches: [], rows: r.data || [] };
+        var b = await sb.from('sales_plan_batches').select('id,code,label').eq('tenant_id', F.tid()).is('deleted_at', null).in('id', ids);
+        return { batches: b.data || [], rows: r.data || [] };
+      } catch (e) { return { batches: [], rows: [] }; }
+    }
+    function batchFilterHtml(opts, cur) {
+      if (!opts.batches || !opts.batches.length) return '';
+      return '<select class="form-select" id="ffm-batch-filter" style="max-width:220px"><option value="">' + esc(t('All batches', 'Semua batch')) + '</option>' +
+        opts.batches.map(function (b) { return '<option value="' + esc(b.id) + '"' + (F.same(b.id, cur) ? ' selected' : '') + '>' + esc(b.label || b.code) + '</option>'; }).join('') + '</select>';
+    }
+    function barcodesForBatch(opts, id) {
+      if (!id) return null;
+      var set = {};
+      (opts.rows || []).forEach(function (r) { if (F.same(r.batch_id, id)) set[String(r.barcode)] = 1; });
+      return set;
+    }
+
     /* ---------- Stock (FFM only; M-Core stock shown for reference, never overwritten) ---------- */
-    async function stockTab(body, accts) {
+    async function stockTab(body, accts, batchId) {
       var rs = await sb.from('ffm_stock').select('account_id,product_id,barcode,available_qty,total_qty,synced_at').eq('tenant_id', F.tid()).is('deleted_at', null);
       var lk = await sb.from('ffm_product_links').select('account_id,product_id,pcs_per_unit').eq('tenant_id', F.tid()).is('deleted_at', null);
       var ppu = {}; (lk.data || []).forEach(function (l) { ppu[l.account_id + ':' + l.product_id] = F.ppu(l.pcs_per_unit); });
@@ -306,37 +344,53 @@
       var pm = {}; (pr.data || []).forEach(function (p) { pm[String(p.id)] = p; });
       var rows = {}; st.forEach(function (s) { var k = String(s.product_id || s.barcode); (rows[k] = rows[k] || { p: pm[String(s.product_id)], bc: s.barcode, by: {} }).by[String(s.account_id)] = s; });
       var keys = Object.keys(rows);
+      var bopts = await loadBatchOpts();
+      var allow = barcodesForBatch(bopts, batchId);
+      if (allow) keys = keys.filter(function (k) { var r = rows[k]; return !!(allow[String(r.bc)] || (r.p && allow[String(r.p.barcode || r.p.code || '')])); });
+      var listed = [], comboMap = {};
+      try {
+        var lk2 = await sb.from('ffm_product_links').select('barcode,tiktok_listed_qty,account_id').eq('tenant_id', F.tid()).is('deleted_at', null);
+        if (!lk2.error) listed = lk2.data || [];
+        var cm = await sb.from('ffm_combo_components').select('parent_barcode,component_barcode,qty').eq('tenant_id', F.tid()).is('deleted_at', null);
+        if (!cm.error && window.FFMS) comboMap = FFMS.comboMap(cm.data || []);
+      } catch (e) {}
       var shareTitle = t('FFM Stock', 'Stok FFM');
-      body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px"><button type="button" class="btn btn-primary btn-sm" id="ffm-pull"><i class="ti ti-refresh"></i> ' + esc(t('Refresh from FFM', 'Muat semula dari FFM')) + '</button>' +
+      body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px">' + batchFilterHtml(bopts, batchId) + '<button type="button" class="btn btn-primary btn-sm" id="ffm-pull"><i class="ti ti-refresh"></i> ' + esc(t('Refresh from FFM', 'Muat semula dari FFM')) + '</button>' +
         (keys.length && typeof _repShareToolbar === 'function' ? _repShareToolbar('ffm_stock', shareTitle) : '') +
         '<span class="ffm-muted">' + esc(t('Auto every 30 min. FFM stock is kept separate — M-Core stock is not changed.', 'Auto setiap 30 min. Stok FFM diasingkan — stok M-Core tidak diubah.')) + '</span></div>' +
-        (keys.length ? '<div class="ffm-tbl" id="ffm-stock-wrap"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th>' + accts.map(function (a) { return '<th>' + esc(a.label) + '<div class="ffm-muted" style="text-transform:none">' + esc(t('avail / total', 'tersedia / jumlah')) + '</div></th>'; }).join('') + '<th>' + esc(t('M-Core stock', 'Stok M-Core')) + '</th><th>' + esc(t('Status', 'Keadaan')) + '</th></tr></thead><tbody>' +
+        (keys.length ? '<div class="ffm-tbl" id="ffm-stock-wrap"><table><thead><tr><th>' + esc(t('Product', 'Produk')) + '</th>' + accts.map(function (a) { return '<th>' + esc(a.label) + '<div class="ffm-muted" style="text-transform:none">' + esc(t('avail / locked / total', 'tersedia / dikunci / jumlah')) + '</div></th>'; }).join('') + '<th>' + esc(t('M-Core stock', 'Stok M-Core')) + '</th><th>' + esc(t('Status', 'Keadaan')) + '</th></tr></thead><tbody>' +
           keys.map(function (k) {
             var r = rows[k], p = r.p, rp = p && p.reorder_point != null ? Number(p.reorder_point) : 5, anyLow = false;
             var acctTds = accts.map(function (a) {
               var s = r.by[String(a.id)]; if (!s) return '<td class="ffm-muted">-</td>';
               var k = ppu[a.id + ':' + s.product_id] || 1, low = Number(s.available_qty) * k <= rp; // reorder point is pcs
               if (low) anyLow = true;
-              return '<td><strong>' + esc(F.qty(s.available_qty, k)) + '</strong><div>/ ' + esc(F.qty(s.total_qty, k)) + '</div>' + (low ? ' <span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '<div class="ffm-muted">' + esc(F.dt(s.synced_at)) + '</div></td>';
+              var lockU = Math.max(0, Number(s.total_qty || 0) - Number(s.available_qty || 0));
+              var need = (window.FFMS ? FFMS.listedNeeded(listed, comboMap, s.barcode) : 0);
+              var over = need > Number(s.available_qty || 0);
+              if (over) anyLow = true;
+              return '<td><strong>' + esc(F.qty(s.available_qty, k)) + '</strong><div>/ ' + esc(F.qty(lockU, k)) + ' / ' + esc(F.qty(s.total_qty, k)) + '</div>' + (over ? ' <span class="badge badge-red">' + esc(t('Oversell', 'Lebih jual')) + '</span>' : (low ? ' <span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '')) + '<div class="ffm-muted">' + esc(F.dt(s.synced_at)) + (over ? ' · ' + t('Listed needs ' + need, 'Senarai perlukan ' + need) : '') + '</div></td>';
             }).join('');
-            return '<tr><td>' + esc(p ? (typeof prodName === 'function' ? prodName(p) : p.name_en) : r.bc) + '<div class="ffm-muted">' + esc(r.bc) + '</div></td>' + acctTds + '<td>' + esc(p ? p.stock_qty + ' pcs' : '-') + '</td><td>' + (anyLow ? '<span class="badge badge-red">' + esc(t('Low', 'Rendah')) + '</span>' : '') + '</td></tr>';
+            return '<tr><td>' + esc(p ? (typeof prodName === 'function' ? prodName(p) : p.name_en) : r.bc) + '<div class="ffm-muted">' + esc(r.bc) + '</div></td>' + acctTds + '<td>' + esc(p ? p.stock_qty + ' pcs' : '-') + '</td><td>' + (anyLow ? '<span class="badge badge-red">' + esc(t('Low / alert', 'Rendah / amaran')) + '</span>' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>'
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-box"></i><h3>' + esc(t('No FFM stock yet', 'Belum ada stok FFM')) + '</h3><p>' + esc(t('Sync products first, then refresh.', 'Segerak produk dahulu, kemudian muat semula.')) + '</p></div>') + '</div>';
       if (keys.length && window.RPTShare) RPTShare.setSnapshot('ffm_stock', {
         kind: 'table', title: shareTitle, company: (APP.tenant && APP.tenant.name) || 'Company',
         table: {
-          headers: [t('Product', 'Produk')].concat(accts.map(function (a) { return a.label + ' ' + t('(avail/total)', '(tersedia/jumlah)'); })).concat([t('M-Core stock', 'Stok M-Core')]),
+          headers: [t('Product', 'Produk')].concat(accts.map(function (a) { return a.label + ' ' + t('(avail/locked/total)', '(tersedia/dikunci/jumlah)'); })).concat([t('M-Core stock', 'Stok M-Core')]),
           rows: keys.map(function (k) {
             var r = rows[k], p = r.p, name = p ? (typeof prodName === 'function' ? prodName(p) : (APP.language === 'bm' ? (p.name_bm || p.name_en) : p.name_en)) : r.bc;
             var accVals = accts.map(function (a) {
               var s = r.by[String(a.id)]; if (!s) return '-';
               var kk = ppu[a.id + ':' + s.product_id] || 1;
-              return F.qty(s.available_qty, kk) + ' / ' + F.qty(s.total_qty, kk);
+              var lockU = Math.max(0, Number(s.total_qty || 0) - Number(s.available_qty || 0)); return F.qty(s.available_qty, kk) + ' / ' + F.qty(lockU, kk) + ' / ' + F.qty(s.total_qty, kk);
             });
             return [name].concat(accVals).concat([p ? p.stock_qty + ' pcs' : '-']);
           })
         }
       });
+      var bf = document.getElementById('ffm-batch-filter');
+      if (bf) bf.onchange = function () { reload('stock', { batch: bf.value || undefined }); };
       var b = document.getElementById('ffm-pull');
       b.onclick = async function () {
         F.busy(b, true, t('Refreshing…', 'Memuat semula…'));
@@ -354,12 +408,15 @@
     }
 
     /* ---------- Reconciliation ---------- */
-    async function reconTab(body) {
+    async function reconTab(body, accts, batchId) {
       var al = {}; (await F.loadAccounts().catch(function () { return []; })).forEach(function (a) { al[String(a.id)] = a.label; });
       var r = await sb.from('ffm_recon_runs').select('*').eq('tenant_id', F.tid()).is('deleted_at', null).order('run_date', { ascending: false }).limit(1);
       var run = (r.data || [])[0], diffs = run ? (run.rows || []).filter(function (x) { return Number(x.diff) !== 0; }) : [];
+      var bopts = await loadBatchOpts();
+      var allow = barcodesForBatch(bopts, batchId);
+      if (allow) diffs = diffs.filter(function (x) { return !!(allow[String(x.barcode || '')] || allow[String(x.code || '')]); });
       var shareTitle = (t('FFM Reconciliation', 'Rekonsiliasi FFM')) + (run ? ' ' + run.run_date : '');
-      body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px"><button type="button" class="btn btn-primary btn-sm" id="ffm-recon"><i class="ti ti-scale"></i> ' + esc(t('Run now', 'Jalankan sekarang')) + '</button>' +
+      body.innerHTML = '<div class="card" style="padding:16px"><div class="ffm-actions" style="margin-bottom:12px">' + batchFilterHtml(bopts, batchId) + '<button type="button" class="btn btn-primary btn-sm" id="ffm-recon"><i class="ti ti-scale"></i> ' + esc(t('Run now', 'Jalankan sekarang')) + '</button>' +
         (run && typeof _repShareToolbar === 'function' ? _repShareToolbar('ffm_recon', shareTitle) : '') +
         '<span class="ffm-muted">' + esc(run ? t('Last run ' + run.run_date + ' · ' + run.product_count + ' products · ' + run.diff_count + ' differences', 'Terakhir ' + run.run_date + ' · ' + run.product_count + ' produk · ' + run.diff_count + ' perbezaan') : t('Runs daily 07:15 MYT', 'Berjalan setiap hari 07:15 MYT')) + '</span></div>' +
         (!run ? '<div class="empty-state" style="padding:30px"><i class="ti ti-scale"></i><h3>' + esc(t('No report yet', 'Belum ada laporan')) + '</h3></div>'
@@ -375,6 +432,8 @@
           rows: diffs.map(function (x) { return [APP.language === 'bm' ? (x.name_bm || x.name_en) : x.name_en, x.mcore_qty + ' pcs', x.ffm_total + ' pcs', (x.diff > 0 ? '+' : '') + x.diff + ' pcs']; })
         }
       });
+      var bf = document.getElementById('ffm-batch-filter');
+      if (bf) bf.onchange = function () { reload('recon', { batch: bf.value || undefined }); };
       var b = document.getElementById('ffm-recon');
       b.onclick = async function () { F.busy(b, true); try { await F.api('recon', {}); reload('recon'); } catch (e) { F.busy(b, false); F.err(e); } };
     }
@@ -383,12 +442,18 @@
     async function fundedTab(body, accts) {
       var funded = accts.filter(function (a) { return a.is_funded; });
       if (!funded.length) { body.innerHTML = '<div class="card"><div class="empty-state"><i class="ti ti-coin"></i><h3>' + esc(t('No funded FFM account', 'Tiada akaun FFM dibiayai')) + '</h3><p>' + esc(t('Mark an account as Funded and link its Sales Plan.', 'Tandakan akaun sebagai Dibiayai dan pautkan Pelan Jualan.')) + '</p></div></div>'; return; }
+      var comboMap = {};
+      try {
+        var cm = await sb.from('ffm_combo_components').select('parent_barcode,component_barcode,qty').eq('tenant_id', F.tid()).is('deleted_at', null);
+        if (!cm.error && window.FFMS) comboMap = FFMS.comboMap(cm.data || []);
+      } catch (e) {}
       var r = await sb.from('ffm_shipments').select('account_id,status,goods,total_amount,shipped_at,returned_at').eq('tenant_id', F.tid()).is('deleted_at', null).in('account_id', funded.map(function (a) { return a.id; })).not('shipped_at', 'is', null);
       var ships = r.data || [];
       body.innerHTML = funded.map(function (a) {
         var m = {};
         ships.filter(function (s) { return F.same(s.account_id, a.id); }).forEach(function (s) {
-          var k = String(s.shipped_at).slice(0, 7), sign = s.status === 'returned' ? 0 : 1, units = (s.goods || []).reduce(function (n, g) { return n + (g.pcs != null ? Number(g.pcs) : Number(g.num || 0)); }, 0); // pcs (older rows: num was pcs)
+          var k = String(s.shipped_at).slice(0, 7), sign = s.status === 'returned' ? 0 : 1;
+          var units = window.FFMS ? FFMS.sum(FFMS.expand(s.goods, comboMap)) : (s.goods || []).reduce(function (n, g) { return n + (g.pcs != null ? Number(g.pcs) : Number(g.num || 0)); }, 0);
           var x = m[k] = m[k] || { units: 0, value: 0, ret: 0 };
           if (sign) { x.units += units; x.value += Number(s.total_amount || 0); } else x.ret += units;
         });
