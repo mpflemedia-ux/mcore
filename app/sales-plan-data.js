@@ -27,6 +27,7 @@
     st.counts = { batches: st.batches.length, milestones: st.miles.length };
     st.auto = null; st.autoErr = null;
     st.canEdit = SP.isAdmin() ? true : await SP.checkPic(id);
+    await SP.loadFundedSales();
   };
   SP.checkPic = async function (id) {
     try {
@@ -61,6 +62,68 @@
     return a ? (a.code ? a.code + ' — ' : '') + (a.name_en || '') : '';
   };
   SP.ffmAcctLabel = function (id) { var a = (st.ffmAccounts || []).find(function (x) { return SP.same(x.id, id); }); return a ? a.label : ''; };
+  SP.loadFundedSales = async function () {
+    st.comboRows = []; st.batchBarcodes = []; st.ffmShips = []; st.barcodePrice = {}; st.listedRows = []; st.ffmStock = [];
+    var none = function () { return []; };
+    try { st.comboRows = await SP.fetchAll('ffm_combo_components', 'id,account_id,parent_barcode,component_barcode,qty'); } catch (e) { st.comboRows = []; }
+    try { st.batchBarcodes = await SP.fetchAll('sales_plan_batch_barcodes', 'id,batch_id,account_id,barcode'); } catch (e) { st.batchBarcodes = []; }
+    var acctIds = [];
+    (st.batches || []).forEach(function (b) { if (b.ffm_account_id && acctIds.indexOf(b.ffm_account_id) < 0) acctIds.push(b.ffm_account_id); });
+    (st.batchBarcodes || []).forEach(function (r) { if (r.account_id && acctIds.indexOf(r.account_id) < 0) acctIds.push(r.account_id); });
+    if (acctIds.length) {
+      try {
+        var r = await sb.from('ffm_shipments').select('id,account_id,order_sn,status,goods,total_amount,shipped_at,returned_at,created_at').eq('tenant_id', SP.tid()).is('deleted_at', null).in('account_id', acctIds);
+        if (!r.error) st.ffmShips = r.data || [];
+      } catch (e) { st.ffmShips = []; }
+    }
+    try {
+      var lk = await sb.from('ffm_product_links').select('barcode,product_id,account_id,tiktok_listed_qty').eq('tenant_id', SP.tid()).is('deleted_at', null);
+      if (lk.error && /tiktok_listed_qty/i.test(lk.error.message || '')) lk = await sb.from('ffm_product_links').select('barcode,product_id,account_id').eq('tenant_id', SP.tid()).is('deleted_at', null);
+      var links = lk.error ? [] : (lk.data || []);
+      st.listedRows = links;
+      var pids = [];
+      links.forEach(function (l) { if (l.product_id && pids.indexOf(l.product_id) < 0) pids.push(l.product_id); });
+      if (pids.length) {
+        var pr = await sb.from('products').select('id,unit_price,barcode,code').eq('tenant_id', SP.tid()).is('deleted_at', null).in('id', pids);
+        var pm = {}; (pr.data || []).forEach(function (x) { pm[String(x.id)] = x; });
+        links.forEach(function (l) {
+          var p = pm[String(l.product_id)]; if (!p) return;
+          var price = Number(p.unit_price || 0);
+          if (l.barcode) st.barcodePrice[String(l.barcode)] = price;
+          if (p.barcode) st.barcodePrice[String(p.barcode)] = price;
+          if (p.code) st.barcodePrice[String(p.code)] = price;
+        });
+      }
+    } catch (e) {}
+    try {
+      var sk = await sb.from('ffm_stock').select('account_id,barcode,available_qty,total_qty').eq('tenant_id', SP.tid()).is('deleted_at', null);
+      if (!sk.error) st.ffmStock = sk.data || [];
+    } catch (e) { st.ffmStock = []; }
+  };
+  SP.batchFfmSold = function (b) {
+    if (!window.FFMS || !b) return null;
+    var bcs = (st.batchBarcodes || []).filter(function (r) { return SP.same(r.batch_id, b.id); }).map(function (r) { return r.barcode; });
+    if (!bcs.length) return null;
+    var ships = (st.ffmShips || []).filter(function (s) { return !b.ffm_account_id || SP.same(s.account_id, b.ffm_account_id); });
+    var fromDate = b.actual_inbound, toDate = null;
+    if (fromDate && b.ffm_account_id) {
+      (st.batches || []).forEach(function (bb) {
+        if (SP.same(bb.ffm_account_id, b.ffm_account_id) && bb.actual_inbound && bb.actual_inbound > fromDate && (!toDate || bb.actual_inbound < toDate)) toDate = bb.actual_inbound;
+      });
+      ships = ships.filter(function (s) {
+        var d = String(s.shipped_at || s.created_at || '').slice(0, 10);
+        if (fromDate && d && d < String(fromDate).slice(0, 10)) return false;
+        if (toDate && d && d >= String(toDate).slice(0, 10)) return false;
+        return true;
+      });
+    }
+    return FFMS.sold(ships, FFMS.comboMap(st.comboRows || []), bcs);
+  };
+  SP.batchTiktokPrice = function (b) {
+    var bcs = (st.batchBarcodes || []).filter(function (r) { return SP.same(r.batch_id, b.id); }).map(function (r) { return r.barcode; });
+    for (var i = 0; i < bcs.length; i++) if (st.barcodePrice && st.barcodePrice[bcs[i]] != null) return Number(st.barcodePrice[bcs[i]] || 0);
+    return 0;
+  };
   /** Sum of a Funded FFM account's shipment sales (status != returned) from `fromDate` up to the NEXT
       batch's actual_inbound on the same account (if any) — avoids double-counting revenue across batches
       that share one FFM account. No upper bound when this is the latest/only batch on that account. */
