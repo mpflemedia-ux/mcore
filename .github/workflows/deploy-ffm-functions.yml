@@ -32,11 +32,11 @@ jobs:
         with:
           version: latest
       - name: Deploy ffm-api (JWT verified)
-        run: supabase functions deploy ffm-api --project-ref "$PROJECT_REF" --use-api
+        run: supabase functions deploy ffm-api --project-ref "$PROJECT_REF" --use-api --yes
       - name: Deploy ffm-webhook (no JWT — HMAC checked inside)
-        run: supabase functions deploy ffm-webhook --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
+        run: supabase functions deploy ffm-webhook --project-ref "$PROJECT_REF" --use-api --no-verify-jwt --yes
       - name: Deploy ffm-cron (no JWT — x-push-secret checked inside)
-        run: supabase functions deploy ffm-cron --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
+        run: supabase functions deploy ffm-cron --project-ref "$PROJECT_REF" --use-api --no-verify-jwt --yes
       - name: Smoke check (must not be 404)
         run: |
           fail=0
