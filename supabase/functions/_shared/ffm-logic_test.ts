@@ -1,6 +1,6 @@
 // deno test supabase/functions/_shared/ffm-logic_test.ts
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { normBaseUrl, normUrlHost, barcodeOk, ean13Ok, pcsToUnits, ppuOf, unitsToPcs, alg1String, alg2String, dedupeKey, feeFromDetail, hmacOk, hmacSign, nextStatus, orderSnFor, sha256Upper, signAlg1, signAlg2, toMinor, validateConsignee } from './ffm-logic.ts';
+import { normBaseUrl, normUrlHost, barcodeOk, ean13Ok, pcsToUnits, ppuOf, unitsToPcs, alg1String, alg2String, dedupeKey, feeFromDetail, hmacOk, hmacSign, nextStatus, orderSnFor, sha256Upper, signAlg1, signAlg2, toMinor, validateConsignee, listStatusOf, extractGoods, expandGoodsToBottles, bottlesSoldFromShipments, bottlesListedNeeded, paceKey, comboMapFromRows } from './ffm-logic.ts';
 
 const KEY = 'dd807a8e18b40153888e5a9864e70080';
 Deno.test('Algorithm 1 — FFM doc vector', async () => {
@@ -70,4 +70,76 @@ Deno.test('base URL normalisation (mobile auto-capital)', () => {
   assertEquals(normBaseUrl('https://open.flashfulfillment.my'), 'https://open.flashfulfillment.my');
   assertEquals(normUrlHost('Https://Track.Example.My/T/{pno}'), 'https://track.example.my/T/{pno}');
   assertEquals(normBaseUrl(''), '');
+});
+
+
+const FH = '9555277201526', BRZKY = '9555277201519', COMBO2 = 'KV-COMBO-A-2X', COMBO3 = 'KV-COMBO-B-3X';
+const COMBOS = comboMapFromRows([
+  { parent_barcode: COMBO2, component_barcode: FH, qty: 2 },
+  { parent_barcode: COMBO3, component_barcode: FH, qty: 3 },
+]);
+
+Deno.test('list status maps in-outbound / signed / wait_approval; in-progress is not sold', () => {
+  assertEquals(listStatusOf('in_outbound'), 'picked');
+  assertEquals(listStatusOf('signed'), 'delivered');
+  assertEquals(listStatusOf('wait_approval'), 'created');
+  assertEquals(listStatusOf('shipped'), 'shipped');
+  assertEquals(listStatusOf(''), null);
+});
+
+Deno.test('combo expansion: 2X=2, 3X=3, single=1; other barcode ignored', () => {
+  const goods = [
+    { barCode: COMBO2, num: 3 },
+    { barCode: COMBO3, num: 1 },
+    { barCode: FH, num: 2 },
+    { barCode: BRZKY, num: 10 },
+  ];
+  const all = expandGoodsToBottles(goods, COMBOS);
+  assertEquals(all[FH], 3 * 2 + 1 * 3 + 2);
+  assertEquals(all[BRZKY], 10);
+  const only = expandGoodsToBottles(goods, COMBOS, [FH]);
+  assertEquals(only[FH], 11);
+  assertEquals(only[BRZKY], undefined);
+});
+
+Deno.test('sold count is idempotent on order_sn and ignores cancelled / in-progress', () => {
+  const ships = [
+    { order_sn: 'A', status: 'shipped', shipped_at: '2026-11-20', goods: [{ barCode: FH, num: 5 }] },
+    { order_sn: 'A', status: 'shipped', shipped_at: '2026-11-20', goods: [{ barCode: FH, num: 5 }] }, // dup
+    { order_sn: 'B', status: 'cancelled', goods: [{ barCode: FH, num: 3 }] },
+    { order_sn: 'C', status: 'picked', goods: [{ barCode: COMBO2, num: 4 }] }, // outbound in progress
+    { order_sn: 'D', status: 'delivered', goods: [{ barCode: COMBO2, num: 2 }] },
+    { order_sn: 'E', status: 'returned', goods: [{ barCode: FH, num: 1 }] },
+    { order_sn: 'F', status: 'shipped', goods: [{ barCode: BRZKY, num: 9 }] },
+  ];
+  const r = bottlesSoldFromShipments(ships, COMBOS, [FH]);
+  // A: 5, D: 4, E: -1, F ignored, B/C ignored, A dup ignored → 8
+  assertEquals(r.sold, 8);
+  assertEquals(r.returned, 1);
+  const r2 = bottlesSoldFromShipments(ships, COMBOS, [FH]);
+  assertEquals(r2.sold, r.sold);
+});
+
+Deno.test('extractGoods reads mixed API shapes', () => {
+  assertEquals(extractGoods({ goodsList: [{ barCode: FH, number: '2', name: 'Moist' }] })[0].num, 2);
+  assertEquals(extractGoods({ goods: [{ barcode: FH, qty: 3 }] })[0].num, 3);
+});
+
+Deno.test('oversell bottles needed from listed singles + combos', () => {
+  const listed = [
+    { barcode: FH, tiktok_listed_qty: 10 },
+    { barcode: COMBO2, tiktok_listed_qty: 4 },
+    { barcode: COMBO3, tiktok_listed_qty: 1 },
+    { barcode: BRZKY, tiktok_listed_qty: 50 },
+  ];
+  assertEquals(bottlesListedNeeded(listed, COMBOS, FH), 10 + 4 * 2 + 1 * 3);
+});
+
+Deno.test('pace: on track / watch / at risk / overdue / achieved', () => {
+  assertEquals(paceKey({ sold: 1080, qty: 1080, today: '2026-11-24', due: '2026-11-28' }), 'ach');
+  assertEquals(paceKey({ sold: 100, qty: 1080, today: '2026-11-29', due: '2026-11-28' }), 'overdue');
+  // 800 sold in 10 days → 80/day, 4 days left → project 1120 >= 1080 → on
+  assertEquals(paceKey({ sold: 800, qty: 1080, today: '2026-11-24', due: '2026-11-28', inbound: '2026-11-14' }), 'on');
+  // 80 sold in 10 days → 8/day × 4 = 32, project 112 / 1080 ≈ 10% → risk
+  assertEquals(paceKey({ sold: 80, qty: 1080, today: '2026-11-24', due: '2026-11-28', inbound: '2026-11-14' }), 'risk');
 });

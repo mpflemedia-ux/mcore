@@ -1,7 +1,7 @@
 // M-Core FFM connector — server I/O shared by ffm-api / ffm-webhook / ffm-cron (service role only).
 // Keys are read here from ffm_account_secrets and never returned to any client.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { doStatusFor, nextStatus, normBaseUrl, NOTIFY_STATUS, nonce, POLL_STATE, ppuOf, Row, same, signAlg1, signAlg2, TERMINAL, unitsToPcs } from './ffm-logic.ts';
+import { doStatusFor, extractGoods, listStatusOf, nextStatus, normBaseUrl, NOTIFY_STATUS, nonce, POLL_STATE, ppuOf, Row, same, signAlg1, signAlg2, TERMINAL, unitsToPcs, WEBHOOK_STATE } from './ffm-logic.ts';
 
 export const DEFAULT_BASE = 'https://open.flashfulfillment.my';
 export const env = (k: string) => Deno.env.get(k) || '';
@@ -154,10 +154,10 @@ export async function applyShipment(sb: SB, ship: Row, status: string, extra: Ro
     if (nxt === 'cancelled') patch.cancelled_at = nowIso();
     if (nxt === 'returned') patch.returned_at = nowIso();
   }
-  await sb.from('ffm_shipments').update(patch).eq('id', ship.id).eq('tenant_id', ship.tenant_id);
+  await safeShipPatch(sb, ship, patch);
   if (!nxt) return false;
   const ds = doStatusFor(nxt);
-  if (ds) {
+  if (ds && ship.delivery_order_id) {
     const up: Row = { status: ds }; if (ds === 'delivered') up.delivered_at = nowIso();
     await sb.from('delivery_orders').update(up).eq('id', ship.delivery_order_id).eq('tenant_id', ship.tenant_id).not('status', 'in', '("delivered","cancelled")');
   }
@@ -165,9 +165,10 @@ export async function applyShipment(sb: SB, ship: Row, status: string, extra: Ro
   if (ev) {
     const { data: d } = await sb.from('delivery_orders').select('do_no').eq('id', ship.delivery_order_id).maybeSingle();
     const ref = d?.do_no || ship.order_sn, why = String(extra.state_text || extra.last_error || '');
+    const doId = ship.delivery_order_id;
     await notify(sb, { tenantId: ship.tenant_id, actorId, ev, ref: ship.id + ':' + nxt, kind: ev === 'failed' ? 'action' : 'for_you', prio: ev === 'failed' ? 1 : 0,
       title: [EV_TXT[ev][0] + ': ' + ref, EV_TXT[ev][1] + ': ' + ref], body: why ? [why, why] : undefined,
-      link: { page: 'logistics', params: { view: 'do-detail', id: ship.delivery_order_id }, icon: 'ti-truck-delivery' }, refTable: 'delivery_orders', refId: ship.delivery_order_id });
+      link: { page: 'logistics', params: doId ? { view: 'do-detail', id: doId } : { view: 'ffm', tab: 'daily' }, icon: 'ti-truck-delivery' }, refTable: doId ? 'delivery_orders' : 'ffm_shipments', refId: doId || ship.id });
   }
   return true;
 }
@@ -180,9 +181,142 @@ export async function pollShipment(sb: SB, acct: Row, sec: Row | null, ship: Row
   const st = lastStep ? POLL_STATE[Number(lastStep.status)] : null;
   const extra: Row = { last_polled_at: nowIso() };
   if (d.expressSn) extra.pno = d.expressSn;
+  if (d.expressCompany) extra.courier = String(d.expressCompany).slice(0, 80);
+  const goods = extractGoods(d);
+  if (goods.length && !(Array.isArray(ship.goods) && ship.goods.length)) extra.goods = goods;
   if (lastStep) extra.state_text = String(lastStep.statusDesc || d.status || '');
-  if (st) await applyShipment(sb, ship, st, extra); else await sb.from('ffm_shipments').update(extra).eq('id', ship.id);
-  return { status: d.status || '', expressSn: d.expressSn || '', expressCompany: d.expressCompany || '', steps };
+  const nxt = st || null;
+  if ((nxt === 'awaiting_pickup' || nxt === 'shipped' || nxt === 'delivered') && !ship.pickup_at) extra.pickup_at = nowIso();
+  if (st) await applyShipment(sb, ship, st, extra); else await safeShipPatch(sb, ship, extra);
+  return { status: d.status || '', expressSn: d.expressSn || '', expressCompany: d.expressCompany || '', steps, goods };
+}
+
+
+// ---------- safe shipment writes (new columns courier/pickup_at/source appear only after SQL) ----------
+const NEW_SHIP_COLS = ['courier', 'pickup_at', 'source'];
+function stripNewShipCols(row: Row): Row { const o = { ...row }; for (const k of NEW_SHIP_COLS) delete o[k]; return o; }
+function missingCol(err: { message?: string } | null, keys: string[]): boolean {
+  const m = String(err?.message || '');
+  return keys.some((k) => m.includes(k)) || /column|schema cache|could not find/i.test(m);
+}
+export async function safeShipPatch(sb: SB, ship: Row, patch: Row): Promise<void> {
+  let r = await sb.from('ffm_shipments').update(patch).eq('id', ship.id).eq('tenant_id', ship.tenant_id);
+  if (!r.error) { Object.assign(ship, patch); return; }
+  if (!missingCol(r.error, NEW_SHIP_COLS)) throw new Error(r.error.message);
+  r = await sb.from('ffm_shipments').update(stripNewShipCols(patch)).eq('id', ship.id).eq('tenant_id', ship.tenant_id);
+  if (r.error) throw new Error(r.error.message);
+  Object.assign(ship, stripNewShipCols(patch));
+}
+
+function ymdAdd(day: string, n: number): string {
+  const t0 = Date.parse(day.slice(0, 10) + 'T00:00:00+08:00') + n * 86400000;
+  return new Date(t0 + 8 * 3600000).toISOString().slice(0, 10);
+}
+
+/** Create a skeleton ffm_shipments row for an FFM-native order (no M-Core DO). Returns null if SQL not applied yet. */
+export async function ensureImportedShipment(sb: SB, acct: Row, p: Row): Promise<Row | null> {
+  const ffmId = String(p.orderId || p.deliverySn || '').trim();
+  const orderSn = String(p.outTradeNo || p.orderSn || ffmId || '').trim();
+  if (!orderSn && !ffmId) return null;
+  const existing = await findImported(sb, acct, { order_sn: orderSn, ffm_order_id: ffmId });
+  if (existing) return existing;
+  const st = listStatusOf(p.stateText || p.status) || WEBHOOK_STATE[Number(p.state)] || 'created';
+  const row: Row = {
+    tenant_id: acct.tenant_id, account_id: acct.id, delivery_order_id: null, order_sn: orderSn || ffmId,
+    ffm_order_id: ffmId || null, status: st, state: p.state != null ? Number(p.state) : null,
+    state_text: String(p.stateText || p.message || p.status || '').slice(0, 200),
+    pno: p.pno ? String(p.pno) : (p.expressSn ? String(p.expressSn) : null),
+    recent_pno: p.recentPno ? String(p.recentPno) : null,
+    courier: p.logistic || p.expressCompany ? String(p.logistic || p.expressCompany).slice(0, 80) : null,
+    goods: extractGoods(p), total_amount: Number(p.total_price ?? p.totalPrice ?? p.totalAmount ?? 0) || 0,
+    source: 'ffm_import', created_at: nowIso(), updated_at: nowIso(), deleted_at: null,
+  };
+  if (st === 'shipped' || st === 'delivered') row.shipped_at = nowIso();
+  if (st === 'cancelled') row.cancelled_at = nowIso();
+  const ins = await sb.from('ffm_shipments').insert(row).select('*').single();
+  if (!ins.error) return ins.data;
+  if (/duplicate|unique/i.test(ins.error.message || '')) return await findImported(sb, acct, { order_sn: orderSn, ffm_order_id: ffmId });
+  if (missingCol(ins.error, ['delivery_order_id', 'source', 'courier', 'pickup_at'])) {
+    console.warn(JSON.stringify({ ffm: 'import_schema', err: ins.error.message }));
+    return null;
+  }
+  console.warn(JSON.stringify({ ffm: 'import_insert', err: ins.error.message }));
+  return null;
+}
+async function findImported(sb: SB, acct: Row, ids: { order_sn?: string; ffm_order_id?: string }): Promise<Row | null> {
+  if (ids.ffm_order_id) {
+    const { data } = await sb.from('ffm_shipments').select('*').eq('account_id', acct.id).eq('ffm_order_id', ids.ffm_order_id).is('deleted_at', null).maybeSingle();
+    if (data) return data;
+  }
+  if (ids.order_sn) {
+    const { data } = await sb.from('ffm_shipments').select('*').eq('account_id', acct.id).eq('order_sn', ids.order_sn).is('deleted_at', null).maybeSingle();
+    if (data) return data;
+  }
+  return null;
+}
+
+/** Pull /order/getOrderList into ffm_shipments (idempotent on account_id + order_sn). Does not write products.stock_qty. */
+export async function importOrders(sb: SB, acct: Row, sec: Row | null, opts: Row = {}): Promise<Row> {
+  const to = String(opts.to || mytDay()).slice(0, 10);
+  const from = String(opts.from || ymdAdd(to, -45)).slice(0, 10);
+  const maxPages = Math.min(20, Number(opts.max_pages || 12) || 12);
+  let page = 1, upserted = 0, detailed = 0, skipped = 0;
+  const needDetail: Row[] = [];
+  for (; page <= maxPages; page++) {
+    const body: Row = { startTime: from, endTime: to, page: String(page), limit: '50' };
+    const r = await ffmCall(acct, sec, '/order/getOrderList', body);
+    const list: Row[] = Array.isArray(r.data?.list) ? r.data.list : (Array.isArray(r.data) ? r.data : []);
+    if (!list.length) break;
+    for (const row of list) {
+      const res = await upsertListRow(sb, acct, row);
+      if (res === 'skip') { skipped++; continue; }
+      if (res) { upserted++; if (!Array.isArray(res.goods) || !res.goods.length || (!res.pno && !res.courier)) needDetail.push(res); }
+    }
+    if (list.length < 50) break;
+    await sleep(120);
+  }
+  const budget = Math.min(20, needDetail.length);
+  for (let i = 0; i < budget; i++) {
+    try { await pollShipment(sb, acct, sec, needDetail[i]); detailed++; } catch { /* next tick */ }
+    await sleep(80);
+  }
+  return { from, to, pages: page, upserted, detailed, skipped };
+}
+
+async function upsertListRow(sb: SB, acct: Row, row: Row): Promise<Row | 'skip' | null> {
+  const deliverySn = String(row.deliverySn || row.delivery_sn || '').trim();
+  const orderSn = String(row.orderSn || row.outTradeNo || deliverySn || '').trim();
+  if (!orderSn) return 'skip';
+  const st = listStatusOf(row.status || row.statusId);
+  const goods = extractGoods(row);
+  const pno = String(row.expressSn || row.pno || '').trim();
+  const courier = String(row.logistic || row.expressCompany || row.logisticCompany || '').trim();
+  const amount = Number(row.total_price ?? row.totalPrice ?? row.totalAmount ?? 0) || 0;
+  const existing = await findImported(sb, acct, { order_sn: orderSn, ffm_order_id: deliverySn });
+  const extra: Row = {
+    updated_at: nowIso(),
+    state_text: String(row.status || row.statusText || '').slice(0, 200),
+  };
+  if (deliverySn) extra.ffm_order_id = deliverySn;
+  if (pno) extra.pno = pno;
+  if (courier) extra.courier = courier.slice(0, 80);
+  if (goods.length) extra.goods = goods;
+  if (amount) extra.total_amount = amount;
+  if (st === 'shipped' || st === 'delivered') { extra.shipped_at = extra.shipped_at || nowIso(); if (!existing?.pickup_at) extra.pickup_at = nowIso(); }
+  if (st === 'awaiting_pickup' && !existing?.pickup_at) extra.pickup_at = nowIso();
+  if (existing) {
+    if (st) await applyShipment(sb, existing, st, extra);
+    else await safeShipPatch(sb, existing, extra);
+    return existing;
+  }
+  const created = await ensureImportedShipment(sb, acct, {
+    orderSn, orderId: deliverySn, expressSn: pno, logistic: courier, status: row.status, total_price: amount,
+    goods, stateText: row.status,
+  });
+  if (!created) return null;
+  if (st && st !== created.status) await applyShipment(sb, created, st, extra);
+  else if (Object.keys(extra).length) await safeShipPatch(sb, created, extra);
+  return created;
 }
 
 // ---------- stock (ffm_stock ONLY — never products.stock_qty) ----------

@@ -2,7 +2,7 @@
 // Credentials are WRITE-ONLY: save_account stores mchId/key server-side; nothing secret is ever returned.
 import {
   applyShipment, CORS, credentialAlert, FfmError, ffmCall, hasModule, isAdminRole, json, loadAccount, markAccount,
-  notify, nowIso, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin, tenantEnabled,
+  importOrders, notify, nowIso, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin, tenantEnabled,
 } from '../_shared/ffm-core.ts';
 import { barcodeOk, CANCELLABLE, ean13Ok, maskMch, normBaseUrl, normState, normUrlHost, orderSnFor, pcsToUnits, ppuOf, Row, same, toMinor, feeFromDetail, validateConsignee } from '../_shared/ffm-logic.ts';
 
@@ -166,8 +166,17 @@ async function saveLink(c: Ctx, b: Row) {
   }
   const changed = !mine || String(mine.barcode).trim() !== bc;
   const row: Row = { tenant_id: c.tenantId, account_id: acct.id, product_id: pid, barcode: bc, pcs_per_unit: ppu, updated_at: nowIso(), deleted_at: null };
+  if (b.tiktok_listed_qty != null && b.tiktok_listed_qty !== '') {
+    const listed = Number(b.tiktok_listed_qty);
+    need(isFinite(listed) && listed >= 0, tl(c, 'TikTok listed stock must be 0 or more.', 'Stok tersenarai TikTok mesti 0 atau lebih.'));
+    row.tiktok_listed_qty = listed;
+  }
   if (changed) { row.synced_ok = false; row.last_error = null; }
-  const { error } = await c.sb.from('ffm_product_links').upsert(row, { onConflict: 'account_id,product_id' });
+  let { error } = await c.sb.from('ffm_product_links').upsert(row, { onConflict: 'account_id,product_id' });
+  if (error && row.tiktok_listed_qty != null && /tiktok_listed_qty/i.test(error.message || '')) {
+    delete row.tiktok_listed_qty;
+    ({ error } = await c.sb.from('ffm_product_links').upsert(row, { onConflict: 'account_id,product_id' }));
+  }
   need(!error, error?.message?.includes('ffm_product_links_bc_uidx') ? tl(c, 'Barcode already used on this account.', 'Barkod sudah digunakan di akaun ini.') : (error?.message || 'save failed'), error?.message?.includes('bc_uidx') ? 409 : 400);
   if (changed && mine) await c.sb.from('ffm_stock').update({ deleted_at: nowIso() }).eq('account_id', acct.id).eq('product_id', pid).neq('barcode', bc).is('deleted_at', null);
   return { ok: true, resync: changed, ean13_warning: !ean13Ok(bc) };
@@ -369,9 +378,23 @@ async function syncStock(c: Ctx, b: Row) {
 }
 async function recon(c: Ctx) { requireMod(c, ['logistics', 'inventory']); return await reconTenant(c.sb, c.tenantId, c.user.id); }
 
+async function importOrdersAction(c: Ctx, b: Row) {
+  requireMod(c, ['logistics', 'inventory']);
+  const { data: accts } = await c.sb.from('ffm_accounts').select('id').eq('tenant_id', c.tenantId).is('deleted_at', null).eq('is_active', true);
+  const ids = (accts || []).map((a: Row) => String(a.id)).filter((id: string) => !b.account_id || same(id, b.account_id));
+  const out: Row[] = [];
+  for (const id of ids) {
+    const { acct, sec } = await loadAccount(c.sb, id, c.tenantId);
+    try { out.push({ account_id: id, ...(await importOrders(c.sb, acct, sec, { from: b.from, to: b.to })) }); }
+    catch (e) { await markAccount(c.sb, acct, errMsg(e)); await onFfmErr(c, acct, e); out.push({ account_id: id, error: errMsg(e) }); }
+  }
+  return { results: out };
+}
+
 const ACTIONS: Record<string, (c: Ctx, b: Row) => Promise<Row>> = {
   save_account: saveAccount, delete_account: deleteAccount, test: testAccount, sync_products: syncProducts, send_order: sendOrder, cancel: cancelOrder,
   save_link: saveLink, delete_link: deleteLink, label, tracking, fee, create_asn: createAsn, refresh_asn: refreshAsn, sync_stock: syncStock, recon,
+  import_orders: importOrdersAction,
 };
 
 Deno.serve(async (req) => {

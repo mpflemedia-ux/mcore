@@ -140,3 +140,148 @@ export function ean13Ok(bc: unknown): boolean {
   let sum = 0; for (let i = 0; i < 12; i++) sum += Number(s[i]) * (i % 2 ? 3 : 1);
   return (10 - (sum % 10)) % 10 === Number(s[12]);
 }
+
+
+// ---------- outbound list import + funded batch sold (pure) ----------
+/** getOrderList / portal status string -> internal shipment status. Unsold in-progress stays below shipped. */
+export const LIST_STATE: Row = {
+  wait_activate: 'created', pre_sale: 'created', wait_allocate_warehouse: 'created', allocated_warehouse: 'verified',
+  wait_approval: 'created', failed_get_the_label: 'exception', sold_out: 'stock_out', cancelled: 'cancelled',
+  in_outbound: 'picked', packed: 'packed', awaiting_pickup: 'awaiting_pickup', shipped: 'shipped',
+  abnormal_delivery: 'exception', rejected: 'rejected', signed: 'delivered', delivered: 'delivered',
+};
+export function listStatusOf(raw: unknown): string | null {
+  const s = String(raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!s) return null;
+  if (LIST_STATE[s]) return LIST_STATE[s];
+  if (RANK[s] != null) return s;
+  return null;
+}
+export const SOLD_STATUSES = ['shipped', 'delivered'];
+export function isSoldStatus(status: unknown): boolean { return SOLD_STATUSES.includes(String(status || '')); }
+export function isPendingReview(ship: Row): boolean {
+  const raw = String(ship?.state_text || ship?.list_status || '').toLowerCase();
+  return raw.includes('wait_approval') || raw.includes('wait approval') || raw.includes('pending review') || raw.includes('pending approval');
+}
+
+export function goodsBarcode(g: Row): string {
+  return String(g?.barCode || g?.barcode || g?.goodsCode || g?.goods_code || g?.sku || '').trim();
+}
+export function goodsQty(g: Row): number {
+  const n = Number(g?.num ?? g?.qty ?? g?.number ?? g?.quantity ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+/** Pull a goods array out of a list or detail payload (shape varies by endpoint). */
+export function extractGoods(data: unknown): Row[] {
+  if (!data || typeof data !== 'object') return [];
+  const d = data as Row;
+  const raw = d.goods || d.goodsList || d.goodList || d.skuList || d.items || d.orderGoods || (Array.isArray(d) ? d : null);
+  const arr = Array.isArray(raw) ? raw : (Array.isArray(raw?.list) ? raw.list : []);
+  const out: Row[] = [];
+  for (const g of arr) {
+    if (!g || typeof g !== 'object') continue;
+    const barCode = goodsBarcode(g as Row), num = goodsQty(g as Row);
+    if (!barCode || !num) continue;
+    out.push({ barCode, num, externalName: String((g as Row).externalName || (g as Row).name || (g as Row).goodsName || barCode) });
+  }
+  return out;
+}
+
+export type ComboComp = { barcode: string; qty: number };
+export type ComboMap = Record<string, ComboComp[]>;
+export function comboMapFromRows(rows: Row[]): ComboMap {
+  const m: ComboMap = {};
+  for (const r of rows || []) {
+    const p = String(r.parent_barcode || '').trim(), c = String(r.component_barcode || '').trim(), q = Number(r.qty || 0);
+    if (!p || !c || !(q > 0)) continue;
+    (m[p] = m[p] || []).push({ barcode: c, qty: q });
+  }
+  return m;
+}
+/** Expand shipment goods into component-barcode bottle counts. Unknown parents count as 1 of themselves. Only `batchBarcodes` are kept when that set is non-empty. */
+export function expandGoodsToBottles(goods: unknown, comboMap: ComboMap, batchBarcodes?: Iterable<string>): Record<string, number> {
+  const allow = new Set(Array.from(batchBarcodes || []).map((b) => String(b).trim()).filter(Boolean));
+  const out: Record<string, number> = {};
+  const add = (bc: string, q: number) => {
+    if (!bc || !q) return;
+    if (allow.size && !allow.has(bc)) return;
+    out[bc] = (out[bc] || 0) + q;
+  };
+  const list = Array.isArray(goods) ? goods : extractGoods(goods);
+  for (const g of list) {
+    const bc = goodsBarcode(g), q = goodsQty(g);
+    if (!bc || !q) continue;
+    const comps = comboMap[bc] || comboMap[bc.toUpperCase()];
+    if (comps && comps.length) {
+      for (const c of comps) add(c.barcode, q * Number(c.qty || 0));
+    } else add(bc, q);
+  }
+  return out;
+}
+export function bottlesSum(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
+}
+/** Net bottles sold for a batch from a shipment list. Counting is a replace (idempotent): the same order_sn must appear once. Cancelled / in-progress / rejected are excluded; returned is netted off. */
+export function bottlesSoldFromShipments(ships: Row[], comboMap: ComboMap, batchBarcodes: Iterable<string>): { sold: number; returned: number; byBarcode: Record<string, number> } {
+  const seen = new Set<string>();
+  let sold = 0, returned = 0;
+  const by: Record<string, number> = {};
+  for (const s of ships || []) {
+    const key = String(s.order_sn || s.id || '');
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    const st = String(s.status || '');
+    if (st === 'cancelled' || st === 'failed' || st === 'rejected' || st === 'sending') continue;
+    const n = bottlesSum(expandGoodsToBottles(s.goods, comboMap, batchBarcodes));
+    if (!n) continue;
+    if (st === 'returned') { returned += n; continue; }
+    if (!isSoldStatus(st)) continue;
+    sold += n;
+    const part = expandGoodsToBottles(s.goods, comboMap, batchBarcodes);
+    for (const [k, v] of Object.entries(part)) by[k] = (by[k] || 0) + v;
+  }
+  return { sold: Math.max(0, sold - returned), returned, byBarcode: by };
+}
+
+/** Bottles that TikTok-listed SKUs (singles + combos) would need of one component barcode. */
+export function bottlesListedNeeded(listed: Row[], comboMap: ComboMap, componentBarcode: string): number {
+  const want = String(componentBarcode || '').trim();
+  if (!want) return 0;
+  let n = 0;
+  for (const row of listed || []) {
+    const bc = String(row.barcode || '').trim(), q = Number(row.tiktok_listed_qty ?? row.qty ?? 0);
+    if (!bc || !(q > 0)) continue;
+    if (bc === want) { n += q; continue; }
+    const comps = comboMap[bc] || comboMap[bc.toUpperCase()] || [];
+    for (const c of comps) if (c.barcode === want) n += q * Number(c.qty || 0);
+  }
+  return n;
+}
+
+export function isoDiffDays(from: string, to: string): number {
+  const a = Date.parse(String(from || '').slice(0, 10) + 'T00:00:00Z');
+  const b = Date.parse(String(to || '').slice(0, 10) + 'T00:00:00Z');
+  if (!isFinite(a) || !isFinite(b)) return 0;
+  return Math.round((b - a) / 86400000);
+}
+/** Projected pace to sell `qty` by `due`. 'risk' = At Risk. */
+export function paceKey(opts: { sold: number; qty: number; today: string; due?: string | null; inbound?: string | null; watchPct?: number }): 'on' | 'watch' | 'risk' | 'overdue' | 'ns' | 'ach' {
+  const qty = Number(opts.qty || 0), sold = Number(opts.sold || 0);
+  if (!(qty > 0)) return 'ns';
+  if (sold >= qty - 1e-9) return 'ach';
+  const today = String(opts.today || '').slice(0, 10), due = opts.due ? String(opts.due).slice(0, 10) : '';
+  if (due && today > due) return 'overdue';
+  const daysLeft = due ? Math.max(0, isoDiffDays(today, due)) : null;
+  const inbound = opts.inbound ? String(opts.inbound).slice(0, 10) : '';
+  const elapsed = inbound && inbound < today ? Math.max(1, isoDiffDays(inbound, today)) : Math.max(1, inbound === today ? 1 : 1);
+  const rate = sold / elapsed;
+  if (daysLeft == null) return qty > 0 && sold / qty >= 0.6 ? 'on' : 'watch';
+  const projected = sold + rate * daysLeft;
+  const pct = projected / qty * 100;
+  const watch = opts.watchPct != null ? Number(opts.watchPct) : 85;
+  if (pct >= 100 - 1e-9) return 'on';
+  if (pct >= watch - 1e-9) return 'watch';
+  return 'risk';
+}
