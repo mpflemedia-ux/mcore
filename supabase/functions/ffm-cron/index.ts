@@ -1,7 +1,7 @@
 // ffm-cron — pg_cron entry (verify_jwt = false; x-push-secret must equal PUSH_CRON_SECRET, same as pj-auto).
 // tick (every 30 min): FFM stock pull -> ffm_stock (NEVER products.stock_qty) + low-stock alerts; poll live shipments; poll pending ASNs.
 // recon (daily 07:15 MYT): M-Core stock_qty vs FFM per tenant -> ffm_recon_runs + notification when diffs.
-import { credentialAlert, enabledTenants, env, FfmError, isLive, json, CORS, markAccount, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin } from '../_shared/ffm-core.ts';
+import { credentialAlert, enabledTenants, env, FfmError, importOrders, isLive, json, CORS, markAccount, pollAsn, pollShipment, pullStock, reconTenant, SB, sbAdmin } from '../_shared/ffm-core.ts';
 import { Row, secretOk } from '../_shared/ffm-logic.ts';
 
 const msg = (e: unknown) => String((e as Error)?.message || e);
@@ -13,6 +13,8 @@ async function tickAccount(sb: SB, acct: Row): Promise<Row> {
   const out: Row = { account_id: acct.id };
   try { out.stock = await pullStock(sb, acct, sec); }
   catch (e) { out.stock_error = msg(e); await markAccount(sb, acct, msg(e)); if (isCred(e)) { await credentialAlert(sb, acct, 'connection', msg(e)); return out; } }
+  try { out.import = await importOrders(sb, acct, sec); }
+  catch (e) { out.import_error = msg(e); }
   const { data: ships } = await sb.from('ffm_shipments').select('*').eq('account_id', acct.id).is('deleted_at', null).not('status', 'in', '("delivered","rejected","cancelled","returned","failed","sending")').order('last_polled_at', { ascending: true, nullsFirst: true }).limit(30);
   let polled = 0;
   for (const s of ships || []) { if (!isLive(s.status)) continue; try { await pollShipment(sb, acct, sec, s); polled++; } catch (e) { if (isCred(e)) break; } }

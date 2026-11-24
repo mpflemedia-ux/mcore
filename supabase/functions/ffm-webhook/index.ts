@@ -1,7 +1,7 @@
 // ffm-webhook — FFM push endpoint (verify_jwt = false). URL: https://<project>.supabase.co/functions/v1/ffm-webhook
 // Auth: Authorization = HMAC-SHA256(appSecret, appKey + rawJson) per FFM docs. Idempotent via ffm_events.dedupe_key.
 // If the matched account has NO webhook secret yet, the push is only a trigger: state is re-fetched from the FFM API (never trusted).
-import { applyAsn, applyShipment, claim, CORS, credentialAlert, nowIso, tenantEnabled, pollAsn, pollShipment, pullStock, SB, sbAdmin } from '../_shared/ffm-core.ts';
+import { applyAsn, applyShipment, claim, CORS, credentialAlert, ensureImportedShipment, nowIso, tenantEnabled, pollAsn, pollShipment, pullStock, SB, sbAdmin } from '../_shared/ffm-core.ts';
 import { dedupeKey, hmacOk, RETURN_STATE, Row, WEBHOOK_STATE } from '../_shared/ffm-logic.ts';
 
 const ok = () => new Response(JSON.stringify({ code: 1, msg: 'success' }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -40,7 +40,9 @@ async function findShipment(sb: SB, acct: Row, p: Row): Promise<Row | null> {
 async function process(sb: SB, acct: Row, sec: Row, p: Row, verified: boolean): Promise<string> {
   const m = String(p.method || '');
   if (m === 'deliveryOrder') {
-    const ship = await findShipment(sb, acct, p); if (!ship) return 'no_shipment';
+    let ship = await findShipment(sb, acct, p);
+    if (!ship) ship = await ensureImportedShipment(sb, acct, p);
+    if (!ship) return 'no_shipment';
     if (!verified) { await pollShipment(sb, acct, sec, ship); return 'polled'; }
     const st = WEBHOOK_STATE[Number(p.state)];
     const extra: Row = { state: Number(p.state) || null, state_text: String(p.stateText || p.message || '').slice(0, 200) };
