@@ -145,7 +145,7 @@
       if (a.disabled) b.disabled = true; ft.appendChild(b);
     });
     if (!acts.length) ft.remove(); else dockFt(ft);
-    if (o.sign !== false && o.doc && window.DKSign && DKSign.has(o.doc)) DKSign.panel(w.querySelector('.dk-doc-sign'), o.doc, o.id, { pdoc: p, ref: o.ref });
+    if (o.sign !== false && o.doc && window.DKSign && DKSign.has(o.doc)) DKSign.panel(w.querySelector('.dk-doc-sign'), o.doc, o.id, { pdoc: p, ref: o.ref, model: o.model });
     if (o.id && o.doc && o.timeline !== false && window.DK && DK.timeline) {
       var tl = w.querySelector('.dk-doc-tl'); tl.className = 'dk-doc-card dk-doc-tl';
       tl.innerHTML = '<div class="dk-doc-lb">' + esc(L('Timeline', 'Garis masa')) + '</div><div style="color:var(--text-3);font-size:13px">' + esc(L('Loading history…', 'Memuat sejarah…')) + '</div>';

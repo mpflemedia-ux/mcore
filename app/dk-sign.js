@@ -1,6 +1,7 @@
 /* dk-sign.js — generic signature / approval engine (window.DKSign). Slots per document type come from
    dk__slots (supabase/dk_phase0_kit.sql); RPCs dk_sign_state / dk_sign_request / dk_sign / dk_sign_reset.
-   Panel on document card views, modal from list cards, print/PDF signature boxes. Tokens only; EN/BM. v1 */
+   Panel on document card views, modal from list cards, print/PDF signature boxes. Tokens only; EN/BM. v1
+   v2: doc 'do' delegates to dk-do-sign.js (window.DODSign: draw pad + WhatsApp link + images); falls back here until its SQL is run. */
 (function () {
   if (window.DKSign) return;
   function bm() { try { return APP.language === 'bm'; } catch (e) { return false; } }
@@ -83,9 +84,13 @@
     }
     return h + '</div>';
   }
-  /* panel(el, doc, id, {pdoc, ref, onChange}) */
+  /* panel(el, doc, id, {pdoc, ref, model, onChange}) — DO goes to DODSign (PV-style); everything else stays here */
   function panel(el, doc, id, o) {
     addCss(); o = o || {}; if (!el || !has(doc)) return;
+    if (doc === 'do' && window.DODSign && !DODSign.off) return DODSign.mount(el, id, o, function () { panelBase(el, doc, id, o); });
+    return panelBase(el, doc, id, o);
+  }
+  function panelBase(el, doc, id, o) {
     el.className = 'dks-p no-print';
     el.innerHTML = '<div class="dks-lb"><span>' + esc(L('Signatures', 'Tandatangan')) + '</span></div><div class="dks-ld" style="color:var(--text-3);font-size:13px">' + esc(L('Loading…', 'Memuatkan…')) + '</div>';
     var paint = function (st) {
@@ -163,7 +168,11 @@
     inner.classList.remove('no-print'); inner.style.border = '0'; inner.style.padding = '0';
   }
   /* for PDF: model.sigs */
-  function sigsFor(doc, id) { if (!has(doc)) return Promise.resolve([]); return state(doc, id).then(boxes, function () { return []; }); }
+  function sigsFor(doc, id) {
+    if (!has(doc)) return Promise.resolve([]);
+    if (doc === 'do' && window.DODSign && !DODSign.off) return DODSign.sigsFor(id).then(function (b) { return b && b.length ? b : state(doc, id).then(boxes, function () { return []; }); });
+    return state(doc, id).then(boxes, function () { return []; });
+  }
 
   /* on-open reminder check (cron does the same daily at 09:00 MYT): once a day per tenant on this device */
   function remindOnOpen() {
@@ -176,6 +185,9 @@
   }
   var rt = setInterval(function () { if (window.APP && APP.tenant && APP.user) { clearInterval(rt); setTimeout(remindOnOpen, 8000); } }, 2000);
   setTimeout(function () { clearInterval(rt); }, 120000);
+
+  // DO module: normally loaded by its own <script> tag before this file; load it here if the tag is missing (stale index.html)
+  if (!window.DODSign) { try { var ds = document.createElement('script'); ds.src = './dk-do-sign.js?v=1'; ds.async = true; document.head.appendChild(ds); } catch (e) {} }
 
   window.DKSign = { has: has, open: open, panel: panel, state: state, slotLabel: slotLabel, sigsFor: sigsFor, boxes: boxes, SL: SL };
 })();
