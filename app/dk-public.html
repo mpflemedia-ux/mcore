@@ -132,6 +132,13 @@
   .lang a.on{color:var(--psd-primary);border-color:var(--psd-primary)}
   .foot{margin-top:18px;font-size:11px;color:var(--psd-muted-2);text-align:center}
   .msg{max-width:560px;margin:60px auto;padding:24px;background:var(--psd-surface);border-radius:12px;border:1px solid var(--psd-border);text-align:center}
+  .pad{display:block;width:100%;height:170px;margin:4px 0 4px;border:1px solid var(--psd-border);border-radius:8px;background:#fff;touch-action:none;cursor:crosshair}
+  .padrow{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:var(--psd-muted-2)}
+  .lnk{background:none;border:0;padding:6px 0;font:inherit;font-size:13px;font-weight:700;color:var(--psd-primary);cursor:pointer;white-space:nowrap}
+  .sigs{border:1px solid var(--psd-row-border);border-radius:10px;overflow:hidden}
+  .sg{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--psd-row-border);font-size:14px}.sg:first-child{border-top:0}
+  .sg div{min-width:0}.sg b{display:block;font-size:13px}.sg small{display:block;font-size:12px;color:var(--psd-muted-2);overflow-wrap:anywhere}
+  .chip.wait{color:#b45309;border-color:#d97706}
   @media (max-width:520px){.wrap{margin:8px 8px 40px;border-radius:12px}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -144,10 +151,13 @@ const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
 </script>
 <script>
-/* dk-public.html?public_do=<token>[&lang=bm] — customer views a delivery order and confirms receipt (dk_phase1_sales.sql) */
+/* dk-public.html?public_do=<token>[&lang=bm] — customer views a delivery order and signs "Received by" (DO confirm link, doc_public_links)
+   dk-public.html?do_sign=<token>[&lang=bm]   — per-slot DO sign link, e.g. "Delivered by" (dk_do_sign_links)
+   Draw pad -> PNG in doc-files {tenant}/do-sign/{sha256(token)}/… -> public_do_confirm / public_do_sign (20261128120000_do_sign_pv_style.sql).
+   Signing never changes the DO status (stays manual in the app). Falls back to the typed-name confirm when that SQL is not run yet. */
 (function(){
-  var qs=new URLSearchParams(location.search), tok=qs.get('public_do')||'', bm=qs.get('lang')==='bm';
-  var root=document.getElementById('root');
+  var qs=new URLSearchParams(location.search), signTok=qs.get('do_sign')||'', tok=signTok||qs.get('public_do')||'', mode=signTok?'sign':'confirm', bm=qs.get('lang')==='bm';
+  var root=document.getElementById('root'), pad=null;
   function L(en,b){return bm?b:en}
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
   function dt(s,t){if(!s)return '-';var d=new Date(s);if(isNaN(d))return String(s);return d.toLocaleDateString(bm?'ms-MY':'en-MY',{day:'2-digit',month:'short',year:'numeric'})+(t?' '+d.toLocaleTimeString(bm?'ms-MY':'en-MY',{hour:'2-digit',minute:'2-digit'}):'')}
@@ -158,39 +168,80 @@ window.sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{persistSession
   function msg(t){root.innerHTML=langBar()+'<div class="msg">'+esc(t)+'</div>'}
   document.documentElement.lang=bm?'ms':'en';
   if(!tok||tok.length<16){msg(L('This link is invalid or has expired.','Pautan ini tidak sah atau telah tamat tempoh.'));return}
+  function slotLbl(x){return x?(bm?x.label_bm:x.label_en):''}
+  /* ---- pad (same feel as the PV public pad) ---- */
+  function initPad(cv){
+    var r=cv.getBoundingClientRect(),dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+    var w=Math.max(240,Math.round(r.width||400)),h=Math.max(120,Math.round(r.height||170));
+    cv.width=w*dpr;cv.height=h*dpr;var c=cv.getContext('2d');if(!c)return;c.scale(dpr,dpr);
+    pad={cv:cv,c:c,ink:false,down:false};clearPad();
+    function pt(e){var b=cv.getBoundingClientRect();return{x:(e.clientX-b.left)*(w/(b.width||w)),y:(e.clientY-b.top)*(h/(b.height||h))}}
+    cv.addEventListener('pointerdown',function(e){e.preventDefault();try{cv.setPointerCapture(e.pointerId)}catch(x){}pad.down=true;var p=pt(e);c.beginPath();c.moveTo(p.x,p.y);c.lineTo(p.x+.1,p.y+.1);c.stroke();pad.ink=true});
+    cv.addEventListener('pointermove',function(e){if(!pad||!pad.down)return;e.preventDefault();var p=pt(e);c.lineTo(p.x,p.y);c.stroke()});
+    var up=function(){if(pad)pad.down=false};cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);cv.addEventListener('pointerleave',up);
+  }
+  function clearPad(){if(!pad)return;var c=pad.c;c.save();c.setTransform(1,0,0,1,0,0);c.fillStyle='#fff';c.fillRect(0,0,pad.cv.width,pad.cv.height);c.restore();c.strokeStyle='#000';c.lineWidth=2.5;c.lineCap='round';c.lineJoin='round';pad.ink=false}
+  function padBlob(){return new Promise(function(res){pad.cv.toBlob(function(b){res(b)},'image/png')})}
   function render(r){
-    var c=r.company||{}, d=r.do||{}, items=r.items||[], done=!!d.received_at;
+    var c=r.company||{}, d=r.do||{}, items=r.items||[], sigs=r.sigs||[], slot=r.slot||'received', canPad=!!(r.tid&&r.hash);
+    var me=sigs.filter(function(x){return x.slot===slot})[0]||null, mine=me?!!me.signed_at:(slot==='received'&&!!d.received_at);
+    var lbl=me?slotLbl(me):(slot==='received'?L('Received by','Diterima oleh'):L('Delivered by','Dihantar oleh'));
     document.title=(d.no||'DO')+' · '+(c.name||'');
     var h=langBar()+'<div class="wrap"><div class="co">'+(c.logo?'<img src="'+esc(c.logo)+'" alt="">':'')+'<div><b>'+esc(c.name||'')+'</b>'+(c.address?'<small>'+esc(c.address)+'</small>':'')+(c.phone?'<small>'+esc(c.phone)+'</small>':'')+'</div></div>';
-    h+='<div class="ttl"><h1>'+esc(L('Delivery Order','Pesanan Penghantaran'))+' '+esc(d.no||'')+'</h1><span class="chip'+(done||d.status==='delivered'?' ok':'')+'">'+esc(st(done?'delivered':d.status))+'</span></div>';
+    h+='<div class="ttl"><h1>'+esc(L('Delivery Order','Pesanan Penghantaran'))+' '+esc(d.no||'')+'</h1><span class="chip'+(d.status==='delivered'?' ok':'')+'">'+esc(st(d.status))+'</span></div>';
     h+='<div class="kv"><div><span>'+esc(L('Date','Tarikh'))+'</span><b>'+esc(dt(d.date))+'</b></div><div><span>'+esc(L('Customer','Pelanggan'))+'</span><b>'+esc(d.customer||'-')+'</b></div>'+
       (d.invoice?'<div><span>'+esc(L('Invoice','Invois'))+'</span><b>'+esc(d.invoice)+'</b></div>':'')+(d.driver?'<div><span>'+esc(L('Driver','Pemandu'))+'</span><b>'+esc(d.driver)+(d.vehicle?' · '+esc(d.vehicle):'')+'</b></div>':'')+'</div>';
     if(d.address) h+='<div class="lb">'+esc(L('Deliver to','Hantar ke'))+'</div><div class="sub" style="white-space:pre-line;color:var(--psd-text)">'+esc(d.address)+'</div>';
     h+='<div class="lb">'+esc(L('Items','Item'))+'</div><div class="items">'+(items.length?items.map(function(i){return '<div class="it"><span>'+esc(i.d||'-')+'</span><b>× '+esc(i.q==null?'-':i.q)+'</b></div>'}).join(''):'<div class="it"><span class="sub">'+esc(L('No item list on this delivery order.','Tiada senarai item pada pesanan ini.'))+'</span></div>')+'</div>';
     if(d.notes) h+='<div class="lb">'+esc(L('Notes','Nota'))+'</div><div class="sub" style="white-space:pre-wrap">'+esc(d.notes)+'</div>';
+    if(sigs.length){
+      var n=sigs.filter(function(x){return x.signed_at}).length;
+      h+='<div class="lb">'+esc(L('Signatures','Tandatangan'))+' · '+n+'/'+sigs.length+'</div><div class="sigs">'+sigs.map(function(x){var ok=!!x.signed_at;
+        return '<div class="sg"><div><b>'+esc(slotLbl(x))+'</b><small>'+esc(ok?(x.signer_name||'-')+' · '+dt(x.signed_at,1):L('Not signed yet','Belum ditandatangani'))+'</small></div><span class="chip '+(ok?'ok':'wait')+'">'+esc(ok?L('Signed','Ditandatangani'):L('Pending','Menunggu'))+'</span></div>'}).join('')+'</div>';
+    }
     h+='<div class="box" id="dkp-box">';
-    if(done) h+='<div class="ok">✓ '+esc(L('Received','Diterima'))+'</div><div class="sub">'+esc(L('Confirmed by ','Disahkan oleh ')+(d.received_by||'-')+' · '+dt(d.received_at,1))+'</div>';
-    else if(d.status==='cancelled') h+='<div class="sub">'+esc(L('This delivery order was cancelled.','Pesanan penghantaran ini telah dibatalkan.'))+'</div>';
-    else h+='<b>'+esc(L('Confirm you received the goods','Sahkan anda telah menerima barang'))+'</b><div class="sub">'+esc(L('Check the items above, then type your name to confirm.','Semak item di atas, kemudian taip nama anda untuk mengesahkan.'))+'</div>'+
-      '<label for="dkp-n">'+esc(L('Your name','Nama anda'))+'</label><input id="dkp-n" maxlength="120" autocomplete="name">'+
-      '<label for="dkp-t">'+esc(L('Note (optional)','Nota (pilihan)'))+'</label><textarea id="dkp-t" maxlength="500" placeholder="'+esc(L('e.g. 1 box damaged','cth. 1 kotak rosak'))+'"></textarea>'+
-      '<div class="err" id="dkp-e"></div><button class="btn" id="dkp-b" type="button">'+esc(L('Confirm received','Sahkan diterima'))+'</button>';
+    if(mine){
+      var who=me&&me.signer_name?me.signer_name:(d.received_by||'-'), at=me&&me.signed_at?me.signed_at:d.received_at;
+      h+='<div class="ok">✓ '+esc(L('Signed','Ditandatangani')+' · '+lbl)+'</div><div class="sub">'+esc(who+' · '+dt(at,1))+'</div><div class="sub">'+esc(L('Thank you. You can close this page.','Terima kasih. Anda boleh tutup halaman ini.'))+'</div>';
+    } else if(d.status==='cancelled') h+='<div class="sub">'+esc(L('This delivery order was cancelled.','Pesanan penghantaran ini telah dibatalkan.'))+'</div>';
+    else {
+      h+='<b>'+esc(slot==='received'?L('Confirm you received the goods','Sahkan anda telah menerima barang'):L('Sign as ','Tandatangan sebagai ')+lbl)+'</b>'+
+        '<div class="sub">'+esc(slot==='received'?L('Check the items above, then type your name and sign below.','Semak item di atas, kemudian taip nama dan tandatangan di bawah.'):L('Check the delivery order above, then type your name and sign below.','Semak pesanan di atas, kemudian taip nama dan tandatangan di bawah.'))+'</div>'+
+        '<label for="dkp-n">'+esc(L('Your name','Nama anda'))+'</label><input id="dkp-n" maxlength="120" autocomplete="name">';
+      if(canPad) h+='<label>'+esc(L('Your signature','Tandatangan anda'))+'</label><canvas id="dkp-pad" class="pad" aria-label="'+esc(L('Signature pad','Pad tandatangan'))+'"></canvas>'+
+        '<div class="padrow"><span>'+esc(L('Sign with your finger.','Tandatangan dengan jari.'))+'</span><button type="button" class="lnk" id="dkp-clr">'+esc(L('Clear','Padam'))+'</button></div>';
+      h+='<label for="dkp-t">'+esc(L('Note (optional)','Nota (pilihan)'))+'</label><textarea id="dkp-t" maxlength="500" placeholder="'+esc(L('e.g. 1 box damaged','cth. 1 kotak rosak'))+'"></textarea>'+
+        '<div class="err" id="dkp-e" role="alert"></div><button class="btn" id="dkp-b" type="button">'+esc(slot==='received'?L('Sign & confirm received','Tandatangan & sahkan diterima'):L('Sign','Tandatangan'))+'</button>';
+    }
     h+='</div><div class="foot">'+esc(L('Shared securely by ','Dikongsi dengan selamat oleh ')+(c.name||'M-Core'))+'</div></div>';
     root.innerHTML=h;
     var b=document.getElementById('dkp-b'); if(!b) return;
+    var cv=document.getElementById('dkp-pad'); if(cv) initPad(cv);
+    var clr=document.getElementById('dkp-clr'); if(clr) clr.onclick=clearPad;
+    var bl=b.textContent;
     b.onclick=function(){
       var n=document.getElementById('dkp-n').value.trim(), t=document.getElementById('dkp-t').value.trim(), e=document.getElementById('dkp-e');
+      var fail=function(m){e.textContent=m;e.style.display='block';b.disabled=false;b.textContent=bl};
       e.style.display='none';
-      if(n.length<2){e.textContent=L('Please type your name.','Sila taip nama anda.');e.style.display='block';return}
-      b.disabled=true;b.textContent=L('Confirming…','Mengesahkan…');
-      sb.rpc('public_do_confirm',{p_token:tok,p_name:n,p_note:t||null}).then(function(x){
+      if(n.length<2) return fail(L('Please type your name.','Sila taip nama anda.'));
+      if(canPad&&(!pad||!pad.ink)) return fail(L('Please draw your signature.','Sila lukis tandatangan anda.'));
+      b.disabled=true;b.textContent=L('Saving…','Menyimpan…');
+      var path=canPad?r.tid+'/do-sign/'+r.hash+'/'+slot+'-'+Date.now()+'.png':null;
+      var upP=canPad?padBlob().then(function(blob){if(!blob)throw new Error('blob');return sb.storage.from('doc-files').upload(path,blob,{contentType:'image/png',upsert:false})}).then(function(u){if(u&&u.error)throw u.error}):Promise.resolve();
+      upP.then(function(){
+        if(mode==='sign') return sb.rpc('public_do_sign',{p_token:tok,p_name:n,p_path:path,p_note:t||null});
+        return sb.rpc('public_do_confirm',canPad?{p_token:tok,p_name:n,p_note:t||null,p_path:path}:{p_token:tok,p_name:n,p_note:t||null});
+      },function(){throw {upload:true}}).then(function(x){
         var r2=x.data||{};
-        if(x.error||!r2.ok){var k=(r2&&r2.error)||'';e.textContent=k==='rate'?L('Too many attempts. Please try again later.','Terlalu banyak cubaan. Sila cuba sebentar lagi.'):k==='name'?L('Please type your name.','Sila taip nama anda.'):L('Could not confirm. Please try again.','Tidak dapat disahkan. Sila cuba lagi.');e.style.display='block';b.disabled=false;b.textContent=L('Confirm received','Sahkan diterima');return}
-        d.received_at=r2.received_at||new Date().toISOString();d.received_by=r2.received_by||n;d.status='delivered';render(r);
-      },function(){e.textContent=L('Network error. Please try again.','Ralat rangkaian. Sila cuba lagi.');e.style.display='block';b.disabled=false;b.textContent=L('Confirm received','Sahkan diterima')});
+        if(x.error||!r2.ok){var k=(r2&&r2.error)||'';return fail(k==='rate'?L('Too many attempts. Please try again later.','Terlalu banyak cubaan. Sila cuba sebentar lagi.'):k==='name'?L('Please type your name.','Sila taip nama anda.'):k==='signature'?L('Please draw your signature.','Sila lukis tandatangan anda.'):L('Could not save. Please try again.','Tidak dapat disimpan. Sila cuba lagi.'))}
+        var at=r2.signed_at||r2.received_at||new Date().toISOString(), nm=r2.signer_name||r2.received_by||n;
+        if(me){me.signed_at=at;me.signer_name=nm}
+        if(slot==='received'){d.received_at=d.received_at||at;d.received_by=d.received_by||nm}
+        render(r);
+      }).catch(function(err){fail(err&&err.upload?L('Could not upload the signature. Please try again.','Tandatangan tidak dapat dimuat naik. Sila cuba lagi.'):L('Network error. Please try again.','Ralat rangkaian. Sila cuba lagi.'))});
     };
   }
-  sb.rpc('get_public_do',{p_token:tok}).then(function(x){
+  sb.rpc(mode==='sign'?'get_public_do_sign':'get_public_do',{p_token:tok}).then(function(x){
     if(x.error||!x.data||!x.data.ok){msg(L('This link is invalid or has expired.','Pautan ini tidak sah atau telah tamat tempoh.'));return}
     render(x.data);
   },function(){msg(L('Network error. Please refresh.','Ralat rangkaian. Sila muat semula.'))});
